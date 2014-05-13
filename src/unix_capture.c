@@ -141,6 +141,7 @@ unix_capture_symlink(struct wim_dentry **root_p,
 {
 	char deref_name_buf[4096];
 	ssize_t deref_name_len;
+	char *dest;
 	int ret;
 
 	inode->i_attributes = FILE_ATTRIBUTE_REPARSE_POINT;
@@ -151,51 +152,50 @@ unix_capture_symlink(struct wim_dentry **root_p,
 	 * that contains a relative or absolute symbolic link. */
 	deref_name_len = readlink(path, deref_name_buf,
 				  sizeof(deref_name_buf) - 1);
-	if (deref_name_len >= 0) {
-		char *dest = deref_name_buf;
-
-		dest[deref_name_len] = '\0';
-		DEBUG("Read symlink `%s'", dest);
-
-		if ((params->add_flags & WIMLIB_ADD_FLAG_RPFIX) &&
-		     dest[0] == '/')
-		{
-			dest = capture_fixup_absolute_symlink(dest,
-							      params->capture_root_ino,
-							      params->capture_root_dev);
-			if (dest == NULL) {
-				/* RPFIX (reparse point fixup) mode:  Ignore
-				 * absolute symbolic link that points out of the
-				 * tree to be captured.  */
-				free_dentry(*root_p);
-				*root_p = NULL;
-				params->progress.scan.cur_path = path;
-				params->progress.scan.symlink_target = deref_name_buf;
-				do_capture_progress(params,
-						    WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK,
-						    NULL);
-				return 0;
-			}
-			inode->i_not_rpfixed = 0;
-		}
-		ret = wim_inode_set_symlink(inode, dest, params->lookup_table);
-		if (ret == 0) {
-			/* Unfortunately, Windows seems to have the concept of
-			 * "file" symbolic links as being different from
-			 * "directory" symbolic links...  so
-			 * FILE_ATTRIBUTE_DIRECTORY needs to be set on the
-			 * symbolic link if the *target* of the symbolic link is
-			 * a directory.  */
-			struct stat stbuf;
-			if (stat(path, &stbuf) == 0 && S_ISDIR(stbuf.st_mode))
-				inode->i_attributes |= FILE_ATTRIBUTE_DIRECTORY;
-		}
-	} else {
+	if (deref_name_len < 0) {
 		ERROR_WITH_ERRNO("Failed to read target of "
 				 "symbolic link `%s'", path);
-		ret = WIMLIB_ERR_READLINK;
+		return WIMLIB_ERR_READLINK;
 	}
-	return ret;
+
+	dest = deref_name_buf;
+
+	dest[deref_name_len] = '\0';
+	DEBUG("Read symlink `%s'", dest);
+
+	if ((params->add_flags & WIMLIB_ADD_FLAG_RPFIX) &&
+	     dest[0] == '/')
+	{
+		dest = capture_fixup_absolute_symlink(dest,
+						      params->capture_root_ino,
+						      params->capture_root_dev);
+		if (dest == NULL) {
+			/* RPFIX (reparse point fixup) mode:  Ignore
+			 * absolute symbolic link that points out of the
+			 * tree to be captured.  */
+			free_dentry(*root_p);
+			*root_p = NULL;
+			params->progress.scan.cur_path = path;
+			params->progress.scan.symlink_target = deref_name_buf;
+			do_capture_progress(params,
+					    WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK,
+					    NULL);
+			return 0;
+		}
+		inode->i_not_rpfixed = 0;
+	}
+	ret = wim_inode_set_symlink(inode, dest, params->lookup_table);
+	if (ret)
+		return ret;
+
+	/* Unfortunately, Windows seems to have the concept of "file" symbolic
+	 * links as being different from "directory" symbolic links...  so
+	 * FILE_ATTRIBUTE_DIRECTORY needs to be set on the symbolic link if the
+	 * *target* of the symbolic link is a directory.  */
+	struct stat stbuf;
+	if (stat(path, &stbuf) == 0 && S_ISDIR(stbuf.st_mode))
+		inode->i_attributes |= FILE_ATTRIBUTE_DIRECTORY;
+	return 0;
 }
 
 static int
