@@ -352,7 +352,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				  size_t filename_nchars,
 				  struct add_image_params *params,
 				  struct win32_capture_state *state,
-				  unsigned vol_flags);
+				  DWORD vol_flags);
 
 /* Reads the directory entries of directory and recursively calls
  * win32_build_dentry_tree() on them.  */
@@ -363,7 +363,7 @@ win32_recurse_directory(HANDLE h,
 			struct wim_dentry *root,
 			struct add_image_params *params,
 			struct win32_capture_state *state,
-			unsigned vol_flags)
+			DWORD vol_flags)
 {
 	int ret;
 
@@ -834,7 +834,7 @@ win32_capture_streams(HANDLE *hFile_p,
 		      struct wim_inode *inode,
 		      struct list_head *unhashed_streams,
 		      u64 file_size,
-		      unsigned vol_flags)
+		      DWORD vol_flags)
 {
 	int ret;
 	u8 _buf[8192] _aligned_attribute(8);
@@ -957,7 +957,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				  size_t filename_nchars,
 				  struct add_image_params *params,
 				  struct win32_capture_state *state,
-				  unsigned vol_flags)
+				  DWORD vol_flags)
 {
 	struct wim_dentry *root = NULL;
 	struct wim_inode *inode = NULL;
@@ -998,6 +998,31 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		ERROR_WITH_ERRNO("\"%ls\": Can't get file information", full_path);
 		ret = WIMLIB_ERR_STAT;
 		goto out;
+	}
+
+	if (!cur_dir) {
+		/* Root directory; get volume information.  */
+		FILE_FS_ATTRIBUTE_INFORMATION info;
+		IO_STATUS_BLOCK iosb;
+
+		params->capture_root_ino =
+			((u64)file_info.nFileIndexHigh << 32) |
+				file_info.nFileIndexLow;
+		params->capture_root_dev = file_info.dwVolumeSerialNumber;
+
+		status = (*func_NtQueryVolumeInformationFile)(h, &iosb,
+							      &info, sizeof(info),
+							      FileFsAttributeInformation);
+		if ((NT_SUCCESS(status) || (status == STATUS_BUFFER_OVERFLOW)) &&
+		    iosb.Information >= sizeof(FILE_FS_ATTRIBUTE_INFORMATION))
+		{
+			vol_flags = info.FileSystemAttributes;
+		} else {
+			set_errno_from_nt_status(status);
+			WARNING_WITH_ERRNO("\"%ls\": Can't get volume information",
+					   full_path);
+			vol_flags = 0;
+		}
 	}
 
 	if (file_info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
@@ -1172,35 +1197,20 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 			const wchar_t *root_disk_path,
 			struct add_image_params *params)
 {
-	size_t path_nchars;
 	wchar_t *path;
+	DWORD dret;
+	size_t path_nchars;
 	int ret;
 	struct win32_capture_state state;
-	unsigned vol_flags;
-	DWORD dret;
-
-	path_nchars = wcslen(root_disk_path);
-	if (path_nchars > WINDOWS_NT_MAX_PATH)
-		return WIMLIB_ERR_INVALID_PARAM;
-
-	ret = win32_get_file_and_vol_ids(root_disk_path,
-					 &params->capture_root_ino,
-					 &params->capture_root_dev);
-	if (ret) {
-		ERROR_WITH_ERRNO("Can't open %ls", root_disk_path);
-		return ret;
-	}
-
-	win32_get_vol_flags(root_disk_path, &vol_flags, NULL);
 
 	/* WARNING: There is no check for overflow later when this buffer is
 	 * being used!  But it's as long as the maximum path length understood
-	 * by Windows NT (which is NOT the same as MAX_PATH). */
+	 * by Windows NT (which is NOT the same as MAX_PATH).  */
 	path = MALLOC((WINDOWS_NT_MAX_PATH + 1) * sizeof(wchar_t));
 	if (!path)
 		return WIMLIB_ERR_NOMEM;
 
-	/* Translate into full path  */
+	/* Translate into full path.  */
 	dret = GetFullPathName(root_disk_path, WINDOWS_NT_MAX_PATH - 3,
 			       &path[4], NULL);
 
@@ -1209,7 +1219,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 
-	/* Add \??\ prefix  */
+	/* Add \??\ prefix to form the NT namespace path.  */
 	wmemcpy(path, L"\\??\\", 4);
 	path_nchars = dret + 4;
 
@@ -1228,7 +1238,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	memset(&state, 0, sizeof(state));
 	ret = win32_build_dentry_tree_recursive(root_ret, NULL,
 						path, path_nchars, L"", 0,
-						params, &state, vol_flags);
+						params, &state, 0);
 	FREE(path);
 	if (ret == 0)
 		win32_do_capture_warnings(root_disk_path, &state, params->add_flags);

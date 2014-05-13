@@ -79,6 +79,12 @@ extern NTSTATUS (WINAPI *func_NtQueryDirectoryFile) (HANDLE FileHandle,
 						     PUNICODE_STRING FileName,
 						     BOOLEAN RestartScan);
 
+extern NTSTATUS (WINAPI *func_NtQueryVolumeInformationFile) (HANDLE FileHandle,
+							     PIO_STATUS_BLOCK IoStatusBlock,
+							     PVOID FsInformation,
+							     ULONG Length,
+							     FS_INFORMATION_CLASS FsInformationClass);
+
 
 extern NTSTATUS (WINAPI *func_NtSetSecurityObject)(HANDLE Handle,
 						   SECURITY_INFORMATION SecurityInformation,

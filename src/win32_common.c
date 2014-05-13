@@ -565,6 +565,12 @@ NTSTATUS (WINAPI *func_NtQueryDirectoryFile) (HANDLE FileHandle,
 					      PUNICODE_STRING FileName,
 					      BOOLEAN RestartScan);
 
+NTSTATUS (WINAPI *func_NtQueryVolumeInformationFile) (HANDLE FileHandle,
+						      PIO_STATUS_BLOCK IoStatusBlock,
+						      PVOID FsInformation,
+						      ULONG Length,
+						      FS_INFORMATION_CLASS FsInformationClass);
+
 NTSTATUS (WINAPI *func_NtSetSecurityObject)(HANDLE Handle,
 					    SECURITY_INFORMATION SecurityInformation,
 					    PSECURITY_DESCRIPTOR SecurityDescriptor);
@@ -615,6 +621,7 @@ struct dll_spec ntdll_spec = {
 		DLL_SYM(NtQueryInformationFile, true),
 		DLL_SYM(NtQuerySecurityObject, true),
 		DLL_SYM(NtQueryDirectoryFile, true),
+		DLL_SYM(NtQueryVolumeInformationFile, true),
 		DLL_SYM(NtSetSecurityObject, true),
 		DLL_SYM(NtClose, true),
 		DLL_SYM(RtlNtStatusToDosError, true),
