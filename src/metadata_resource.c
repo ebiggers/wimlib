@@ -152,7 +152,7 @@ prepare_metadata_resource(WIMStruct *wim, int image,
 	int ret;
 	u64 subdir_offset;
 	struct wim_dentry *root;
-	u64 len;
+	size_t len;
 	struct wim_security_data *sd;
 	struct wim_image_metadata *imd;
 
@@ -193,10 +193,12 @@ prepare_metadata_resource(WIMStruct *wim, int image,
 	len = subdir_offset;
 
 	/* Allocate a buffer to contain the uncompressed metadata resource.  */
-	buf = MALLOC(len);
+	buf = NULL;
+	if (likely(len == subdir_offset))
+		buf = MALLOC(len);
 	if (!buf) {
 		ERROR("Failed to allocate %"PRIu64" bytes for "
-		      "metadata resource", len);
+		      "metadata resource", subdir_offset);
 		return WIMLIB_ERR_NOMEM;
 	}
 
