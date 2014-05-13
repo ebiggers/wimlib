@@ -2108,6 +2108,20 @@ wimlib_add_image_multisource(WIMStruct *wim,
 			     wimlib_progress_func_t progress_func);
 
 /**
+ * @ingroup G_modifying_wims
+ *
+ * Add the file or directory tree at @p fs_source_path on the filesystem to the
+ * location @p wim_target_path within the specified @p image of the @p wim.
+ *
+ * This just builds an appropriate ::wimlib_add_command and passes it to
+ * wimlib_update_image().
+ */
+extern int
+wimlib_add_tree(WIMStruct *wim, int image,
+		const wimlib_tchar *fs_source_path,
+		const wimlib_tchar *wim_target_path, int add_flags);
+
+/**
  * @ingroup G_creating_and_opening_wims
  *
  * Creates a ::WIMStruct for a new WIM file.
@@ -2172,6 +2186,18 @@ wimlib_create_new_wim(int ctype, WIMStruct **wim_ret);
  */
 extern int
 wimlib_delete_image(WIMStruct *wim, int image);
+
+/**
+ * @ingroup G_modifying_wims
+ *
+ * Delete the @p path from the specified @p image of the @p wim.
+ *
+ * This just builds an appropriate ::wimlib_delete_command and passes it to
+ * wimlib_update_image().
+ */
+extern int
+wimlib_delete_path(WIMStruct *wim, int image,
+		   const wimlib_tchar *path, int delete_flags);
 
 /**
  * @ingroup G_modifying_wims
@@ -3350,6 +3376,19 @@ extern int
 wimlib_reference_template_image(WIMStruct *wim, int new_image,
 				WIMStruct *template_wim, int template_image,
 				int flags, wimlib_progress_func_t progress_func);
+
+/**
+ * @ingroup G_modifying_wims
+ *
+ * Rename the @p source_path to the @p dest_path in the specified @p image of
+ * the @p wim.
+ *
+ * This just builds an appropriate ::wimlib_rename_command and passes it to
+ * wimlib_update_image().
+ */
+extern int
+wimlib_rename_path(WIMStruct *wim, int image,
+		   const wimlib_tchar *source_path, const wimlib_tchar *dest_path);
 
 /**
  * @ingroup G_wim_information

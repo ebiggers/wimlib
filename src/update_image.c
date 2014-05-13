@@ -1471,3 +1471,52 @@ out_free_cmds_copy:
 out:
 	return ret;
 }
+
+static int
+update1(WIMStruct *wim, int image, const struct wimlib_update_command *cmd)
+{
+	return wimlib_update_image(wim, image, cmd, 1, 0, NULL);
+}
+
+WIMLIBAPI int
+wimlib_delete_path(WIMStruct *wim, int image,
+		   const tchar *path, int delete_flags)
+{
+	struct wimlib_update_command cmd;
+
+	cmd.op = WIMLIB_UPDATE_OP_DELETE;
+	cmd.delete_.wim_path = (tchar *)path;
+	cmd.delete_.delete_flags = delete_flags;
+
+	return update1(wim, image, &cmd);
+}
+
+WIMLIBAPI int
+wimlib_rename_path(WIMStruct *wim, int image,
+		   const tchar *source_path, const tchar *dest_path)
+{
+	struct wimlib_update_command cmd;
+
+	cmd.op = WIMLIB_UPDATE_OP_RENAME;
+	cmd.rename.wim_source_path = (tchar *)source_path;
+	cmd.rename.wim_target_path = (tchar *)dest_path;
+	cmd.rename.rename_flags = 0;
+
+	return update1(wim, image, &cmd);
+}
+
+WIMLIBAPI int
+wimlib_add_tree(WIMStruct *wim, int image,
+		const tchar *fs_source_path, const tchar *wim_target_path,
+		int add_flags)
+{
+	struct wimlib_update_command cmd;
+
+	cmd.op = WIMLIB_UPDATE_OP_ADD;
+	cmd.add.fs_source_path = (tchar *)fs_source_path;
+	cmd.add.wim_target_path = (tchar *)wim_target_path;
+	cmd.add.add_flags = add_flags;
+	cmd.add.config_file = NULL;
+
+	return update1(wim, image, &cmd);
+}
