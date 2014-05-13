@@ -141,6 +141,8 @@ struct wim_ads_entry *
 inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name,
 		    u16 *idx_ret)
 {
+	int ret;
+	const utf16lechar *stream_name_utf16le;
 	size_t stream_name_utf16le_nbytes;
 	u16 i;
 	struct wim_ads_entry *result;
@@ -151,24 +153,11 @@ inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name,
 	if (stream_name[0] == T('\0'))
 		return NULL;
 
-#if TCHAR_IS_UTF16LE
-	const utf16lechar *stream_name_utf16le;
+	ret = tstr_get_utf16le_and_len(stream_name, &stream_name_utf16le,
+				       &stream_name_utf16le_nbytes);
+	if (ret)
+		return NULL;
 
-	stream_name_utf16le = stream_name;
-	stream_name_utf16le_nbytes = tstrlen(stream_name) * sizeof(tchar);
-#else
-	utf16lechar *stream_name_utf16le;
-
-	{
-		int ret = tstr_to_utf16le(stream_name,
-					  tstrlen(stream_name) *
-					      sizeof(tchar),
-					  &stream_name_utf16le,
-					  &stream_name_utf16le_nbytes);
-		if (ret)
-			return NULL;
-	}
-#endif
 	i = 0;
 	result = NULL;
 	do {
@@ -183,45 +172,19 @@ inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name,
 			break;
 		}
 	} while (++i != inode->i_num_ads);
-#if !TCHAR_IS_UTF16LE
-	FREE(stream_name_utf16le);
-#endif
+
+	tstr_put_utf16le(stream_name_utf16le);
+
 	return result;
 }
 
-static int
-init_ads_entry(struct wim_ads_entry *ads_entry, const void *name,
-	       size_t name_nbytes, bool is_utf16le)
-{
-	int ret = 0;
-	memset(ads_entry, 0, sizeof(*ads_entry));
-
-	if (is_utf16le) {
-		utf16lechar *p = MALLOC(name_nbytes + sizeof(utf16lechar));
-		if (p == NULL)
-			return WIMLIB_ERR_NOMEM;
-		memcpy(p, name, name_nbytes);
-		p[name_nbytes / 2] = cpu_to_le16(0);
-		ads_entry->stream_name = p;
-		ads_entry->stream_name_nbytes = name_nbytes;
-	} else {
-		if (name && *(const tchar*)name != T('\0')) {
-			ret = get_utf16le_string(name, &ads_entry->stream_name,
-						 &ads_entry->stream_name_nbytes);
-		}
-	}
-	return ret;
-}
-
 static struct wim_ads_entry *
-do_inode_add_ads(struct wim_inode *inode, const void *stream_name,
-		 size_t stream_name_nbytes, bool is_utf16le)
+do_inode_add_ads(struct wim_inode *inode,
+		 utf16lechar *stream_name, size_t stream_name_nbytes)
 {
 	u16 num_ads;
 	struct wim_ads_entry *ads_entries;
 	struct wim_ads_entry *new_entry;
-
-	wimlib_assert(stream_name_nbytes != 0);
 
 	if (inode->i_num_ads >= 0xfffe) {
 		ERROR("Too many alternate data streams in one inode!");
@@ -237,8 +200,10 @@ do_inode_add_ads(struct wim_inode *inode, const void *stream_name,
 	inode->i_ads_entries = ads_entries;
 
 	new_entry = &inode->i_ads_entries[num_ads - 1];
-	if (init_ads_entry(new_entry, stream_name, stream_name_nbytes, is_utf16le))
-		return NULL;
+
+	memset(new_entry, 0, sizeof(struct wim_ads_entry));
+	new_entry->stream_name = stream_name;
+	new_entry->stream_name_nbytes = stream_name_nbytes;
 	new_entry->stream_id = inode->i_next_stream_id++;
 	inode->i_num_ads = num_ads;
 	return new_entry;
@@ -246,26 +211,49 @@ do_inode_add_ads(struct wim_inode *inode, const void *stream_name,
 
 struct wim_ads_entry *
 inode_add_ads_utf16le(struct wim_inode *inode,
-		      const utf16lechar *stream_name,
-		      size_t stream_name_nbytes)
+		      const utf16lechar *stream_name, size_t stream_name_nbytes)
 {
-	DEBUG("Add alternate data stream \"%"WS"\"", stream_name);
-	return do_inode_add_ads(inode, stream_name, stream_name_nbytes, true);
+	utf16lechar *dup = NULL;
+	struct wim_ads_entry *result;
+
+	if (stream_name_nbytes) {
+		dup = utf16le_dupz(stream_name, stream_name_nbytes);
+		if (!dup)
+			return NULL;
+	}
+
+	result = do_inode_add_ads(inode, dup, stream_name_nbytes);
+	if (!result)
+		FREE(dup);
+	return result;
 }
 
 /*
  * Add an alternate stream entry to a WIM inode.  On success, returns a pointer
  * to the new entry; on failure, returns NULL.
- *
- * @stream_name must be a nonempty string.
  */
 struct wim_ads_entry *
 inode_add_ads(struct wim_inode *inode, const tchar *stream_name)
 {
-	DEBUG("Add alternate data stream \"%"TS"\"", stream_name);
-	return do_inode_add_ads(inode, stream_name,
-				tstrlen(stream_name) * sizeof(tchar),
-				TCHAR_IS_UTF16LE);
+	utf16lechar *stream_name_utf16le = NULL;
+	size_t stream_name_utf16le_nbytes = 0;
+	int ret;
+	struct wim_ads_entry *result;
+
+	if (stream_name && *stream_name) {
+		ret = tstr_to_utf16le(stream_name,
+				      tstrlen(stream_name) * sizeof(tchar),
+				      &stream_name_utf16le,
+				      &stream_name_utf16le_nbytes);
+		if (ret)
+			return NULL;
+	}
+
+	result = do_inode_add_ads(inode, stream_name_utf16le,
+				  stream_name_utf16le_nbytes);
+	if (!result)
+		FREE(stream_name_utf16le);
+	return result;
 }
 
 int
@@ -736,14 +724,10 @@ read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
 			    cur_entry->stream_name_nbytes > length)
 				goto out_invalid;
 
-			cur_entry->stream_name = MALLOC(cur_entry->stream_name_nbytes + 2);
+			cur_entry->stream_name = utf16le_dupz(disk_entry->stream_name,
+							      cur_entry->stream_name_nbytes);
 			if (cur_entry->stream_name == NULL)
 				goto out_of_memory;
-
-			memcpy(cur_entry->stream_name,
-			       disk_entry->stream_name,
-			       cur_entry->stream_name_nbytes);
-			cur_entry->stream_name[cur_entry->stream_name_nbytes / 2] = cpu_to_le16(0);
 		} else {
 			/* Mark inode as having weird stream entries.  */
 			inode->i_canonical_streams = 0;

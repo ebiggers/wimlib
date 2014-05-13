@@ -51,27 +51,16 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry,
 	struct wim_lookup_table_entry *lte;
 	const u8 *hash;
 
-#if TCHAR_IS_UTF16LE
-	wdentry->filename = dentry->file_name;
-	wdentry->dos_name = dentry->short_name;
-#else
-	if (dentry_has_long_name(dentry)) {
-		ret = utf16le_to_tstr(dentry->file_name,
-				      dentry->file_name_nbytes,
-				      (tchar**)&wdentry->filename,
-				      &dummy);
-		if (ret)
-			return ret;
-	}
-	if (dentry_has_short_name(dentry)) {
-		ret = utf16le_to_tstr(dentry->short_name,
-				      dentry->short_name_nbytes,
-				      (tchar**)&wdentry->dos_name,
-				      &dummy);
-		if (ret)
-			return ret;
-	}
-#endif
+	ret = utf16le_get_tstr(dentry->file_name, dentry->file_name_nbytes,
+			       &wdentry->filename, &dummy);
+	if (ret)
+		return ret;
+
+	ret = utf16le_get_tstr(dentry->short_name, dentry->short_name_nbytes,
+			       &wdentry->dos_name, &dummy);
+	if (ret)
+		return ret;
+
 	ret = calculate_dentry_full_path(dentry);
 	if (ret)
 		return ret;
@@ -119,20 +108,16 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry,
 			wdentry->streams[
 				wdentry->num_named_streams].resource.is_missing = 1;
 		}
-	#if TCHAR_IS_UTF16LE
-		wdentry->streams[wdentry->num_named_streams].stream_name =
-				inode->i_ads_entries[i].stream_name;
-	#else
+
 		size_t dummy;
 
-		ret = utf16le_to_tstr(inode->i_ads_entries[i].stream_name,
-				      inode->i_ads_entries[i].stream_name_nbytes,
-				      (tchar**)&wdentry->streams[
-						wdentry->num_named_streams].stream_name,
-				      &dummy);
+		ret = utf16le_get_tstr(inode->i_ads_entries[i].stream_name,
+				       inode->i_ads_entries[i].stream_name_nbytes,
+				       &wdentry->streams[
+					       wdentry->num_named_streams].stream_name,
+				       &dummy);
 		if (ret)
 			return ret;
-	#endif
 	}
 	return 0;
 }
@@ -140,12 +125,10 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry,
 static void
 free_wimlib_dentry(struct wimlib_dir_entry *wdentry)
 {
-#if !TCHAR_IS_UTF16LE
-	FREE((tchar*)wdentry->filename);
-	FREE((tchar*)wdentry->dos_name);
+	utf16le_put_tstr(wdentry->filename);
+	utf16le_put_tstr(wdentry->dos_name);
 	for (unsigned i = 1; i <= wdentry->num_named_streams; i++)
-		FREE((tchar*)wdentry->streams[i].stream_name);
-#endif
+		utf16le_put_tstr(wdentry->streams[i].stream_name);
 	FREE(wdentry);
 }
 

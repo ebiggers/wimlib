@@ -214,60 +214,59 @@ dentry_correct_length_aligned(const struct wim_dentry *dentry)
 	return (len + 7) & ~7;
 }
 
-static int
-dentry_clear_short_name(struct wim_dentry *dentry)
+static void
+do_dentry_set_name(struct wim_dentry *dentry, utf16lechar *file_name,
+		   size_t file_name_nbytes)
 {
+	FREE(dentry->file_name);
+	dentry->file_name = file_name;
+	dentry->file_name_nbytes = file_name_nbytes;
+
 	if (dentry_has_short_name(dentry)) {
 		FREE(dentry->short_name);
 		dentry->short_name = NULL;
 		dentry->short_name_nbytes = 0;
 	}
-	return 0;
-}
-
-/* Sets the name of a WIM dentry from a multibyte string.
- * Only use this on dentries not inserted into the tree.  Use rename_wim_path()
- * to do a real rename.  */
-int
-dentry_set_name(struct wim_dentry *dentry, const tchar *new_name)
-{
-	int ret;
-
-	ret = get_utf16le_string(new_name, &dentry->file_name,
-				 &dentry->file_name_nbytes);
-	if (ret)
-		return ret;
-
-	return dentry_clear_short_name(dentry);
 }
 
 /* Sets the name of a WIM dentry from a UTF-16LE string.
  * Only use this on dentries not inserted into the tree.  Use rename_wim_path()
  * to do a real rename.  */
 int
-dentry_set_name_utf16le(struct wim_dentry *dentry, const utf16lechar *new_name)
+dentry_set_name_utf16le(struct wim_dentry *dentry, const utf16lechar *name,
+			size_t name_nbytes)
 {
-	utf16lechar *name = NULL;
-	size_t name_nbytes = 0;
+	utf16lechar *dup = NULL;
 
-	if (new_name && *new_name) {
-		const utf16lechar *tmp;
-
-		tmp = new_name;
-		do {
-			name_nbytes += sizeof(utf16lechar);
-		} while (*++tmp);
-
-		name = memdup(new_name, name_nbytes + sizeof(utf16lechar));
-		if (!name)
+	if (name_nbytes) {
+		dup = utf16le_dupz(name, name_nbytes);
+		if (!dup)
 			return WIMLIB_ERR_NOMEM;
 	}
+	do_dentry_set_name(dentry, dup, name_nbytes);
+	return 0;
+}
 
-	FREE(dentry->file_name);
-	dentry->file_name = name;
-	dentry->file_name_nbytes = name_nbytes;
 
-	return dentry_clear_short_name(dentry);
+/* Sets the name of a WIM dentry from a multibyte string.
+ * Only use this on dentries not inserted into the tree.  Use rename_wim_path()
+ * to do a real rename.  */
+int
+dentry_set_name(struct wim_dentry *dentry, const tchar *name)
+{
+	utf16lechar *name_utf16le = NULL;
+	size_t name_utf16le_nbytes = 0;
+	int ret;
+
+	if (name && *name) {
+		ret = tstr_to_utf16le(name, tstrlen(name) * sizeof(tchar),
+				      &name_utf16le, &name_utf16le_nbytes);
+		if (ret)
+			return ret;
+	}
+
+	do_dentry_set_name(dentry, name_utf16le, name_utf16le_nbytes);
+	return 0;
 }
 
 /* Returns the total length of a WIM alternate data stream entry on-disk,
@@ -400,74 +399,36 @@ for_dentry_in_tree_depth(struct wim_dentry *root,
 int
 calculate_dentry_full_path(struct wim_dentry *dentry)
 {
-	tchar *full_path;
-	u32 full_path_nbytes;
-	int ret;
+	size_t ulen;
+	size_t dummy;
+	const struct wim_dentry *d;
 
 	if (dentry->_full_path)
 		return 0;
 
-	if (dentry_is_root(dentry)) {
-		static const tchar _root_path[] = {WIM_PATH_SEPARATOR, T('\0')};
-		full_path = TSTRDUP(_root_path);
-		if (full_path == NULL)
-			return WIMLIB_ERR_NOMEM;
-		full_path_nbytes = 1 * sizeof(tchar);
-	} else {
-		struct wim_dentry *parent;
-		tchar *parent_full_path;
-		u32 parent_full_path_nbytes;
-		size_t filename_nbytes;
+	ulen = 0;
+	d = dentry;
+	do {
+		ulen += d->file_name_nbytes / sizeof(utf16lechar);
+		ulen++;
+		d = d->parent;  /* assumes d == d->parent for root  */
+	} while (!dentry_is_root(d));
 
-		parent = dentry->parent;
-		if (dentry_is_root(parent)) {
-			parent_full_path = T("");
-			parent_full_path_nbytes = 0;
-		} else {
-			if (parent->_full_path == NULL) {
-				ret = calculate_dentry_full_path(parent);
-				if (ret)
-					return ret;
-			}
-			parent_full_path = parent->_full_path;
-			parent_full_path_nbytes = parent->full_path_nbytes;
-		}
+	utf16lechar ubuf[ulen];
+	utf16lechar *p = &ubuf[ulen];
 
-		/* Append this dentry's name as a tchar string to the full path
-		 * of the parent followed by the path separator */
-	#if TCHAR_IS_UTF16LE
-		filename_nbytes = dentry->file_name_nbytes;
-	#else
-		{
-			int ret = utf16le_to_tstr_nbytes(dentry->file_name,
-							 dentry->file_name_nbytes,
-							 &filename_nbytes);
-			if (ret)
-				return ret;
-		}
-	#endif
+	d = dentry;
+	do {
+		p -= d->file_name_nbytes / sizeof(utf16lechar);
+		memcpy(p, d->file_name, d->file_name_nbytes);
+		*--p = cpu_to_le16(WIM_PATH_SEPARATOR);
+		d = d->parent;  /* assumes d == d->parent for root  */
+	} while (!dentry_is_root(d));
 
-		full_path_nbytes = parent_full_path_nbytes + sizeof(tchar) +
-				   filename_nbytes;
-		full_path = MALLOC(full_path_nbytes + sizeof(tchar));
-		if (full_path == NULL)
-			return WIMLIB_ERR_NOMEM;
-		memcpy(full_path, parent_full_path, parent_full_path_nbytes);
-		full_path[parent_full_path_nbytes / sizeof(tchar)] = WIM_PATH_SEPARATOR;
-	#if TCHAR_IS_UTF16LE
-		memcpy(&full_path[parent_full_path_nbytes / sizeof(tchar) + 1],
-		       dentry->file_name,
-		       filename_nbytes + sizeof(tchar));
-	#else
-		utf16le_to_tstr_buf(dentry->file_name,
-				    dentry->file_name_nbytes,
-				    &full_path[parent_full_path_nbytes /
-					       sizeof(tchar) + 1]);
-	#endif
-	}
-	dentry->_full_path = full_path;
-	dentry->full_path_nbytes= full_path_nbytes;
-	return 0;
+	wimlib_assert(p == ubuf);
+
+	return utf16le_to_tstr(ubuf, ulen * sizeof(utf16lechar),
+			       &dentry->_full_path, &dummy);
 }
 
 tchar *
@@ -598,8 +559,8 @@ dir_lookup_ci(const struct wim_inode *dir, const struct wim_dentry *dummy)
 }
 
 /* Given a UTF-16LE filename and a directory, look up the dentry for the file.
- * Return it if found, otherwise NULL.  This is case-sensitive on UNIX and
- * case-insensitive on Windows. */
+ * Return it if found, otherwise NULL.  This has configurable case sensitivity,
+ * and @name need not be null-terminated.  */
 struct wim_dentry *
 get_dentry_child_with_utf16le_name(const struct wim_dentry *dentry,
 				   const utf16lechar *name,
@@ -660,29 +621,22 @@ struct wim_dentry *
 get_dentry_child_with_name(const struct wim_dentry *dentry, const tchar *name,
 			   CASE_SENSITIVITY_TYPE case_type)
 {
-#if TCHAR_IS_UTF16LE
-	return get_dentry_child_with_utf16le_name(dentry, name,
-						  tstrlen(name) * sizeof(tchar),
-						  case_type);
-#else
-	utf16lechar *utf16le_name;
-	size_t utf16le_name_nbytes;
 	int ret;
+	const utf16lechar *name_utf16le;
+	size_t name_utf16le_nbytes;
 	struct wim_dentry *child;
 
-	ret = tstr_to_utf16le(name, tstrlen(name) * sizeof(tchar),
-			      &utf16le_name, &utf16le_name_nbytes);
-	if (ret) {
-		child = NULL;
-	} else {
-		child = get_dentry_child_with_utf16le_name(dentry,
-							   utf16le_name,
-							   utf16le_name_nbytes,
-							   case_type);
-		FREE(utf16le_name);
-	}
+	ret = tstr_get_utf16le_and_len(name, &name_utf16le,
+				       &name_utf16le_nbytes);
+	if (ret)
+		return NULL;
+
+	child = get_dentry_child_with_utf16le_name(dentry,
+						   name_utf16le,
+						   name_utf16le_nbytes,
+						   case_type);
+	tstr_put_utf16le(name_utf16le);
 	return child;
-#endif
 }
 
 static struct wim_dentry *
@@ -789,22 +743,16 @@ get_dentry_utf16le(WIMStruct *wim, const utf16lechar *path,
 struct wim_dentry *
 get_dentry(WIMStruct *wim, const tchar *path, CASE_SENSITIVITY_TYPE case_type)
 {
-#if TCHAR_IS_UTF16LE
-	return get_dentry_utf16le(wim, path, case_type);
-#else
-	utf16lechar *path_utf16le;
-	size_t path_utf16le_nbytes;
 	int ret;
+	const utf16lechar *path_utf16le;
 	struct wim_dentry *dentry;
 
-	ret = tstr_to_utf16le(path, tstrlen(path) * sizeof(tchar),
-			      &path_utf16le, &path_utf16le_nbytes);
+	ret = tstr_get_utf16le(path, &path_utf16le);
 	if (ret)
 		return NULL;
 	dentry = get_dentry_utf16le(wim, path_utf16le, case_type);
-	FREE(path_utf16le);
+	tstr_put_utf16le(path_utf16le);
 	return dentry;
-#endif
 }
 
 /* Takes in a path of length @len in @buf, and transforms it into a string for
@@ -1318,29 +1266,27 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 	/* Read the filename if present.  Note: if the filename is empty, there
 	 * is no null terminator following it.  */
 	if (file_name_nbytes) {
-		dentry->file_name = MALLOC(file_name_nbytes + 2);
+		dentry->file_name = utf16le_dupz((const utf16lechar *)p,
+						 file_name_nbytes);
 		if (dentry->file_name == NULL) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto err_free_dentry;
 		}
 		dentry->file_name_nbytes = file_name_nbytes;
-		memcpy(dentry->file_name, p, file_name_nbytes);
 		p += file_name_nbytes + 2;
-		dentry->file_name[file_name_nbytes / 2] = cpu_to_le16(0);
 	}
 
 	/* Read the short filename if present.  Note: if there is no short
 	 * filename, there is no null terminator following it. */
 	if (short_name_nbytes) {
-		dentry->short_name = MALLOC(short_name_nbytes + 2);
+		dentry->short_name = utf16le_dupz((const utf16lechar *)p,
+						  short_name_nbytes);
 		if (dentry->short_name == NULL) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto err_free_dentry;
 		}
 		dentry->short_name_nbytes = short_name_nbytes;
-		memcpy(dentry->short_name, p, short_name_nbytes);
 		p += short_name_nbytes + 2;
-		dentry->short_name[short_name_nbytes / 2] = cpu_to_le16(0);
 	}
 
 	/* Align the dentry length.  */

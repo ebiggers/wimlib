@@ -386,12 +386,14 @@ journaled_change_name(struct update_command_journal *j,
 		      struct wim_dentry *dentry, const tchar *new_name_tstr)
 {
 	int ret;
-	utf16lechar *new_name = NULL;
-	u16 new_name_nbytes = 0;
+	utf16lechar *new_name;
+	size_t new_name_nbytes;
 	struct update_primitive prim;
 
 	/* Set the long name.  */
-	ret = get_utf16le_string(new_name_tstr, &new_name, &new_name_nbytes);
+	ret = tstr_to_utf16le(new_name_tstr,
+			      tstrlen(new_name_tstr) * sizeof(tchar),
+			      &new_name, &new_name_nbytes);
 	if (ret)
 		return ret;
 
@@ -451,36 +453,6 @@ rollback_update(struct update_command_journal *j)
 	while (i--)
 		rollback_update_command(&j->cmd_prims[i], j->root_p, &j->orphans);
 	free_update_command_journal(j);
-}
-
-/*
- * Set the name of @branch for placing it at @target in the WIM image.  This
- * assumes that @target is in "canonical form", as produced by
- * canonicalize_wim_path().
- *
- * Note: for the root target this produces the empty name.
- */
-static int
-set_branch_name(struct wim_dentry *branch, const utf16lechar *target)
-{
-	const utf16lechar *p;
-
-	/* Find end of string.  (We can assume it contains at least one
-	 * character, the leading slash.)   */
-	wimlib_assert(target[0] == cpu_to_le16(WIM_PATH_SEPARATOR));
-	p = target;
-	do {
-		p++;
-	} while (*p);
-
-	while (*(p - 1) != cpu_to_le16(WIM_PATH_SEPARATOR))
-		p--;
-
-
-	/* We're assuming no trailing slashes.  */
-	wimlib_assert(*p || p == &target[1]);
-
-	return dentry_set_name_utf16le(branch, p);
 }
 
 static int
@@ -569,15 +541,16 @@ handle_conflict(struct wim_dentry *branch, struct wim_dentry *existing,
 }
 
 static int
-do_attach_branch(struct wim_dentry *branch, utf16lechar *target,
+do_attach_branch(struct wim_dentry *branch, const utf16lechar *target,
 		 struct update_command_journal *j,
 		 int add_flags, wimlib_progress_func_t progress_func)
 {
 	struct wim_dentry *parent;
 	struct wim_dentry *existing;
-	utf16lechar empty_name[1] = {0};
-	utf16lechar *cur_component_name;
-	utf16lechar *next_component_name;
+	const utf16lechar empty_name[1] = {0};
+	const utf16lechar *cur_component_name;
+	size_t cur_component_nbytes;
+	const utf16lechar *next_component_name;
 	int ret;
 
 	/* Attempt to create root directory before proceeding to the "real"
@@ -585,6 +558,7 @@ do_attach_branch(struct wim_dentry *branch, utf16lechar *target,
 	parent = NULL;
 	existing = *j->root_p;
 	cur_component_name = empty_name;
+	cur_component_nbytes = 0;
 
 	/* Skip leading slashes  */
 	next_component_name = target;
@@ -592,7 +566,7 @@ do_attach_branch(struct wim_dentry *branch, utf16lechar *target,
 		next_component_name++;
 
 	while (*next_component_name) { /* While not the last component ... */
-		utf16lechar *end;
+		const utf16lechar *end;
 
 		if (existing) {
 			/* Descend into existing directory  */
@@ -611,7 +585,8 @@ do_attach_branch(struct wim_dentry *branch, utf16lechar *target,
 			if (ret)
 				return ret;
 			ret = dentry_set_name_utf16le(filler,
-						      cur_component_name);
+						      cur_component_name,
+						      cur_component_nbytes);
 			if (ret) {
 				free_dentry(filler);
 				return ret;
@@ -634,7 +609,6 @@ do_attach_branch(struct wim_dentry *branch, utf16lechar *target,
 		next_component_name = end;
 		if (*end) {
 			/* There will still be more components after this.  */
-			*end = 0;
 			do {
 			} while (*++next_component_name == cpu_to_le16(WIM_PATH_SEPARATOR));
 			wimlib_assert(*next_component_name);  /* No trailing slashes  */
@@ -643,10 +617,11 @@ do_attach_branch(struct wim_dentry *branch, utf16lechar *target,
 			next_component_name = end;
 		}
 		parent = existing;
+		cur_component_nbytes = (end - cur_component_name) * sizeof(utf16lechar);
 		existing = get_dentry_child_with_utf16le_name(
 					parent,
 					cur_component_name,
-					(end - cur_component_name) * sizeof(utf16lechar),
+					cur_component_nbytes,
 					WIMLIB_CASE_PLATFORM_DEFAULT);
 	}
 
@@ -678,30 +653,18 @@ attach_branch(struct wim_dentry *branch, const tchar *target_tstr,
 	      int add_flags, wimlib_progress_func_t progress_func)
 {
 	int ret;
-	utf16lechar *target;
+	const utf16lechar *target;
 
+	ret = 0;
 	if (unlikely(!branch))
-		return 0;
+		goto out;
 
-#if TCHAR_IS_UTF16LE
-	target = memdup(target_tstr,
-			(tstrlen(target_tstr) + 1) * sizeof(target_tstr[0]));
-	if (!target) {
-		ret = WIMLIB_ERR_NOMEM;
+	ret = tstr_get_utf16le(target_tstr, &target);
+	if (ret)
 		goto out_free_branch;
-	}
-#else
-	{
-		size_t target_nbytes;
-		ret = tstr_to_utf16le(target_tstr,
-				      tstrlen(target_tstr) * sizeof(target_tstr[0]),
-				      &target, &target_nbytes);
-		if (ret)
-			goto out_free_branch;
-	}
-#endif
 
-	ret = set_branch_name(branch, target);
+	BUILD_BUG_ON(WIM_PATH_SEPARATOR != OS_PREFERRED_PATH_SEPARATOR);
+	ret = dentry_set_name(branch, path_basename(target_tstr));
 	if (ret)
 		goto out_free_target;
 
@@ -711,9 +674,10 @@ attach_branch(struct wim_dentry *branch, const tchar *target_tstr,
 	/* branch was successfully committed to the journal  */
 	branch = NULL;
 out_free_target:
-	FREE(target);
+	tstr_put_utf16le(target);
 out_free_branch:
 	free_dentry_tree(branch, j->lookup_table);
+out:
 	return ret;
 }
 

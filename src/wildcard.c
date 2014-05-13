@@ -188,23 +188,18 @@ wildcard_status(const tchar *wildcard)
 static int
 match_dentry(struct wim_dentry *cur_dentry, struct match_dentry_ctx *ctx)
 {
-	tchar *name;
+	const tchar *name;
 	size_t name_len;
 	int ret;
 
 	if (cur_dentry->file_name_nbytes == 0)
 		return 0;
 
-#if TCHAR_IS_UTF16LE
-	name = cur_dentry->file_name;
-	name_len = cur_dentry->file_name_nbytes;
-#else
-	ret = utf16le_to_tstr(cur_dentry->file_name,
-			      cur_dentry->file_name_nbytes,
-			      &name, &name_len);
+	ret = utf16le_get_tstr(cur_dentry->file_name,
+			       cur_dentry->file_name_nbytes,
+			       &name, &name_len);
 	if (ret)
 		return ret;
-#endif
 	name_len /= sizeof(tchar);
 
 	if (match_wildcard(name,
@@ -235,9 +230,8 @@ match_dentry(struct wim_dentry *cur_dentry, struct match_dentry_ctx *ctx)
 		ret = 0;
 	}
 
-#if !TCHAR_IS_UTF16LE
-	FREE(name);
-#endif
+	utf16le_put_tstr(name);
+
 	return ret;
 }
 

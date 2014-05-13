@@ -198,7 +198,8 @@ extern int
 dentry_set_name(struct wim_dentry *dentry, const tchar *new_name);
 
 extern int
-dentry_set_name_utf16le(struct wim_dentry *dentry, const utf16lechar *new_name);
+dentry_set_name_utf16le(struct wim_dentry *dentry, const utf16lechar *new_name,
+			size_t new_name_nbytes);
 
 extern struct wim_dentry *
 get_dentry(struct WIMStruct *wim, const tchar *path,

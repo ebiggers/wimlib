@@ -1858,16 +1858,12 @@ dentry_calculate_extraction_name(struct wim_dentry *dentry,
 	}
 
 	if (file_name_valid(dentry->file_name, dentry->file_name_nbytes / 2, false)) {
-#if TCHAR_IS_UTF16LE
-		dentry->extraction_name = dentry->file_name;
-		dentry->extraction_name_nchars = dentry->file_name_nbytes / 2;
-		return 0;
-#else
-		return utf16le_to_tstr(dentry->file_name,
+		ret = utf16le_get_tstr(dentry->file_name,
 				       dentry->file_name_nbytes,
-				       &dentry->extraction_name,
+				       (const tchar **)&dentry->extraction_name,
 				       &dentry->extraction_name_nchars);
-#endif
+		dentry->extraction_name_nchars /= sizeof(tchar);
+		return ret;
 	} else {
 		if (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_REPLACE_INVALID_FILENAMES)
 		{
@@ -1891,18 +1887,17 @@ out_replace:
 		memcpy(utf16_name_copy, dentry->file_name, dentry->file_name_nbytes);
 		file_name_valid(utf16_name_copy, dentry->file_name_nbytes / 2, true);
 
-		tchar *tchar_name;
+		const tchar *tchar_name;
 		size_t tchar_nchars;
-	#if TCHAR_IS_UTF16LE
-		tchar_name = utf16_name_copy;
-		tchar_nchars = dentry->file_name_nbytes / 2;
-	#else
-		ret = utf16le_to_tstr(utf16_name_copy,
-				      dentry->file_name_nbytes,
-				      &tchar_name, &tchar_nchars);
+
+		ret = utf16le_get_tstr(utf16_name_copy,
+				       dentry->file_name_nbytes,
+				       &tchar_name, &tchar_nchars);
 		if (ret)
 			return ret;
-	#endif
+
+		tchar_nchars /= sizeof(tchar);
+
 		size_t fixed_name_num_chars = tchar_nchars;
 		tchar fixed_name[tchar_nchars + 50];
 
@@ -1910,9 +1905,9 @@ out_replace:
 		fixed_name_num_chars += tsprintf(fixed_name + tchar_nchars,
 						 T(" (invalid filename #%lu)"),
 						 ++ctx->invalid_sequence);
-	#if !TCHAR_IS_UTF16LE
-		FREE(tchar_name);
-	#endif
+
+		utf16le_put_tstr(tchar_name);
+
 		dentry->extraction_name = memdup(fixed_name,
 						 2 * fixed_name_num_chars + 2);
 		if (!dentry->extraction_name)

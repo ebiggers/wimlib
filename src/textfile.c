@@ -131,22 +131,9 @@ translate_text_buffer(const u8 *buf_raw, size_t bufsize_raw,
 				   bufsize_raw - offset_raw,
 				   &buf_tstr, &bufsize_tstr);
 	} else {
-	#if TCHAR_IS_UTF16LE
-		bufsize_tstr = bufsize_raw - offset_raw;
-		buf_tstr = MALLOC(bufsize_tstr + 2);
-		if (buf_tstr) {
-			memcpy(buf_tstr, buf_raw + offset_raw, bufsize_tstr);
-			((u8*)buf_tstr)[bufsize_tstr + 0] = 0;
-			((u8*)buf_tstr)[bufsize_tstr + 1] = 0;
-			ret = 0;
-		} else {
-			ret = WIMLIB_ERR_NOMEM;
-		}
-	#else
 		ret = utf16le_to_tstr((const utf16lechar *)(buf_raw + offset_raw),
 				      bufsize_raw - offset_raw,
 				      &buf_tstr, &bufsize_tstr);
-	#endif
 	}
 	if (ret)
 		return ret;
