@@ -969,13 +969,12 @@ new_dentry_with_inode(const tchar *name, struct wim_dentry **dentry_ret)
 }
 
 int
-new_filler_directory(const tchar *name, struct wim_dentry **dentry_ret)
+new_filler_directory(struct wim_dentry **dentry_ret)
 {
 	int ret;
 	struct wim_dentry *dentry;
 
-	DEBUG("Creating filler directory \"%"TS"\"", name);
-	ret = new_dentry_with_inode(name, &dentry);
+	ret = new_dentry_with_inode(T(""), &dentry);
 	if (ret)
 		return ret;
 	/* Leave the inode number as 0; this is allowed for non

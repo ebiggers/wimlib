@@ -169,7 +169,7 @@ prepare_metadata_resource(WIMStruct *wim, int image,
 
 	if (!root) {
 		/* Empty image; create a dummy root.  */
-		ret = new_filler_directory(T(""), &root);
+		ret = new_filler_directory(&root);
 		if (ret)
 			return ret;
 		imd->root_dentry = root;

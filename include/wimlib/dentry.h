@@ -252,7 +252,7 @@ extern void
 dentry_tree_clear_inode_visited(struct wim_dentry *root);
 
 extern int
-new_filler_directory(const tchar *name, struct wim_dentry **dentry_ret);
+new_filler_directory(struct wim_dentry **dentry_ret);
 
 extern void
 free_dentry(struct wim_dentry *dentry);

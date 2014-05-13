@@ -607,7 +607,7 @@ do_attach_branch(struct wim_dentry *branch, utf16lechar *target,
 			 * the way by creating a filler directory.  */
 			struct wim_dentry *filler;
 
-			ret = new_filler_directory(T(""), &filler);
+			ret = new_filler_directory(&filler);
 			if (ret)
 				return ret;
 			ret = dentry_set_name_utf16le(filler,
