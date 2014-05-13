@@ -7,18 +7,6 @@
 
 #include <stdio.h>
 
-#ifdef __WIN32__
-#  define wimlib_fprintf fwprintf
-#  define wimlib_printf	 wprintf
-#else /* __WIN32__ */
-extern int
-wimlib_fprintf(FILE *fp, const tchar *format, ...) _format_attribute(printf, 2, 3);
-
-extern int
-wimlib_printf(const tchar *format, ...) _format_attribute(printf, 1, 2);
-#endif /* !__WIN32__ */
-
-
 static inline int _format_attribute(printf, 1, 2)
 dummy_tprintf(const tchar *format, ...)
 {

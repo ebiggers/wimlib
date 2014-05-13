@@ -1306,9 +1306,6 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 					    inode,
 					    buf_len - offset - dentry->length)))
 		{
-			ERROR("Failed to read alternate data stream "
-			      "entries of WIM dentry \"%"WS"\"",
-			      dentry->file_name);
 			goto err_free_dentry;
 		}
 	}

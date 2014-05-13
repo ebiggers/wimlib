@@ -119,11 +119,6 @@ put_iconv(iconv_t *cd)
 	errno = errno_save;
 }
 
-/* Prevent printing an error message if a character conversion error occurs
- * while printing an error message.  (This variable is not per-thread but it
- * doesn't matter too much since it's just the error messages.) */
-static bool error_message_being_printed = false;
-
 #define DEFINE_CHAR_CONVERSION_FUNCTIONS(varname1, longname1, chartype1,\
 					 varname2, longname2, chartype2,\
 					 earlyreturn_on_utf8_locale,	\
@@ -167,11 +162,7 @@ varname1##_to_##varname2##_nbytes(const chartype1 *in, size_t in_nbytes,\
 									\
 	len = iconv(*cd, &inbuf, &inbytesleft, &outbuf, &outbytesleft);	\
 	if (len == (size_t)-1) {					\
-		if (!error_message_being_printed) {			\
-			error_message_being_printed = true;		\
-			err_msg;					\
-			error_message_being_printed = false;		\
-		}							\
+		err_msg;						\
 		ret = err_return;					\
 	} else {							\
 		*out_nbytes_ret = bufsize - outbytesleft;		\
@@ -201,11 +192,7 @@ varname1##_to_##varname2##_buf(const chartype1 *in, size_t in_nbytes,	\
 									\
 	len = iconv(*cd, &inbuf, &inbytesleft, &outbuf, &outbytesleft);	\
 	if (len == (size_t)-1) {					\
-		if (!error_message_being_printed) {			\
-			error_message_being_printed = true;		\
-			err_msg;					\
-			error_message_being_printed = false;		\
-		}							\
+		err_msg;						\
 		ret = err_return;					\
 	} else {							\
 		out[(LARGE_NUMBER-outbytesleft)/sizeof(chartype2)] = 0;	\

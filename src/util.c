@@ -63,87 +63,6 @@ utf16le_strlen(const utf16lechar *s)
 	return (p - s) * sizeof(utf16lechar);
 }
 
-#ifdef __WIN32__
-#  define wimlib_vfprintf vfwprintf
-#else
-/* Handle %W for UTF16-LE printing.
- *
- * TODO: this is not yet done properly--- it's assumed that if the format string
- * contains %W, then it contains no other format specifiers.
- */
-static int
-wimlib_vfprintf(FILE *fp, const tchar *format, va_list va)
-{
-	const tchar *p;
-	int n;
-
-	for (p = format; *p; p++)
-		if (*p == T('%') && *(p + 1) == T('W'))
-			goto special;
-	return tvfprintf(fp, format, va);
-special:
-	n = 0;
-	for (p = format; *p; p++) {
-		if (*p == T('%') && (*(p + 1) == T('W'))) {
-			int ret;
-			tchar *tstr;
-			size_t tstr_nbytes;
-			utf16lechar *ucs = va_arg(va, utf16lechar*);
-
-			if (ucs) {
-				size_t ucs_nbytes = utf16le_strlen(ucs);
-
-				ret = utf16le_to_tstr(ucs, ucs_nbytes,
-						      &tstr, &tstr_nbytes);
-				if (ret) {
-					ret = tfprintf(fp, T("??????"));
-				} else {
-					ret = tfprintf(fp, T("%"TS), tstr);
-					FREE(tstr);
-				}
-				if (ret < 0)
-					return -1;
-				else
-					n += ret;
-			} else {
-				n += tfprintf(fp, T("(null)"));
-			}
-			p++;
-		} else {
-			if (tputc(*p, fp) == EOF)
-				return -1;
-			n++;
-		}
-	}
-	return n;
-}
-
-int
-wimlib_printf(const tchar *format, ...)
-{
-	int ret;
-	va_list va;
-
-	va_start(va, format);
-	ret = wimlib_vfprintf(stdout, format, va);
-	va_end(va);
-	return ret;
-}
-
-int
-wimlib_fprintf(FILE *fp, const tchar *format, ...)
-{
-	int ret;
-	va_list va;
-
-	va_start(va, format);
-	ret = wimlib_vfprintf(fp, format, va);
-	va_end(va);
-	return ret;
-}
-
-#endif /* __WIN32__ */
-
 #ifdef ENABLE_ERROR_MESSAGES
 bool wimlib_print_errors = false;
 #endif
@@ -160,7 +79,7 @@ wimlib_vmsg(const tchar *tag, const tchar *format,
 		int errno_save = errno;
 		fflush(stdout);
 		tfputs(tag, stderr);
-		wimlib_vfprintf(stderr, format, va);
+		tvfprintf(stderr, format, va);
 		if (perror && errno_save != 0) {
 			tchar buf[64];
 			int res;

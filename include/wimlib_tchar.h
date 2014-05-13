@@ -15,7 +15,6 @@ typedef wchar_t tchar;
 #  define T(text) _T(text) /* Make a string literal into a wide string */
 #  define TS "ls" /* Format a string of "tchar" */
 #  define TC "lc" /* Format a "tchar" */
-#  define WS "ls" /* Format a UTF-16LE string (same as above) */
 
 /* For Windows builds, the following definitions replace the "tchar" functions
  * with the "wide-character" functions. */
@@ -76,11 +75,6 @@ typedef char tchar;
 #  define TS "s"       /* Similarly, a string of "tchar" is printed just as a
 			  normal string. */
 #  define TC "c"       /* Print a single character */
-#  define WS "W"       /* UTF-16LE strings must be printed using a special
-			  extension implemented by wimlib itself.  Note that
-			  "ls" will not work here because a string of wide
-			  characters on non-Windows systems is typically not
-			  UTF-16LE. */
 /* For non-Windows builds, replace the "tchar" functions with the regular old
  * string functions. */
 #  define tmemchr	memchr

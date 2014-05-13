@@ -314,8 +314,6 @@ inode_remove_ads(struct wim_inode *inode, u16 idx,
 
 	ads_entry = &inode->i_ads_entries[idx];
 
-	DEBUG("Remove alternate data stream \"%"WS"\"", ads_entry->stream_name);
-
 	lte = ads_entry->lte;
 	if (lte)
 		lte_decrement_refcnt(lte, lookup_table);
