@@ -68,8 +68,6 @@ struct WIMStruct {
 
 	u8 wim_locked : 1;
 
-	u8 guid_set_explicitly : 1;
-
 	/* One of WIMLIB_COMPRESSION_TYPE_*, cached from the header flags. */
 	u8 compression_type;
 

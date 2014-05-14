@@ -512,10 +512,8 @@ wimlib_set_wim_info(WIMStruct *wim, const struct wimlib_wim_info *info, int whic
 	if (ret)
 		return ret;
 
-	if (which & WIMLIB_CHANGE_GUID) {
+	if (which & WIMLIB_CHANGE_GUID)
 		memcpy(wim->hdr.guid, info->guid, WIM_GUID_LEN);
-		wim->guid_set_explicitly = 1;
-	}
 
 	if (which & WIMLIB_CHANGE_BOOT_INDEX) {
 		if (info->boot_index > wim->hdr.image_count) {

@@ -2595,6 +2595,9 @@ write_wim_part(WIMStruct *wim,
 	if (write_flags & WIMLIB_WRITE_FLAG_STREAMS_OK)
 		DEBUG("\tSTREAMS_OK");
 
+	if (write_flags & WIMLIB_WRITE_FLAG_RETAIN_GUID)
+		DEBUG("\tRETAIN_GUID");
+
 	if (write_flags & WIMLIB_WRITE_FLAG_PACK_STREAMS)
 		DEBUG("\tPACK_STREAMS");
 
@@ -2613,8 +2616,9 @@ write_wim_part(WIMStruct *wim,
 		DEBUG("Number of threads: %u", num_threads);
 	DEBUG("Progress function: %s", (progress_func ? "yes" : "no"));
 	DEBUG("Stream list:       %s", (stream_list_override ? "specified" : "autodetect"));
-	DEBUG("GUID:              %s", ((guid || wim->guid_set_explicitly) ?
-					"specified" : "generate new"));
+	DEBUG("GUID:              %s", (guid ||
+					(write_flags & WIMLIB_WRITE_FLAG_RETAIN_GUID)) ?
+					"explicit" : "generate new");
 
 	/* Internally, this is always called with a valid part number and total
 	 * parts.  */
@@ -2713,7 +2717,7 @@ write_wim_part(WIMStruct *wim,
 	/* Use GUID if specified; otherwise generate a new one.  */
 	if (guid)
 		memcpy(wim->hdr.guid, guid, WIMLIB_GUID_LEN);
-	else if (!wim->guid_set_explicitly)
+	else if (!(write_flags & WIMLIB_WRITE_FLAG_RETAIN_GUID))
 		randomize_byte_array(wim->hdr.guid, WIMLIB_GUID_LEN);
 
 	/* Clear references to resources that have not been written yet.  */
@@ -3122,7 +3126,9 @@ overwrite_wim_via_tmpfile(WIMStruct *wim, int write_flags,
 	tmpfile[wim_name_len + 9] = T('\0');
 
 	ret = wimlib_write(wim, tmpfile, WIMLIB_ALL_IMAGES,
-			   write_flags | WIMLIB_WRITE_FLAG_FSYNC,
+			   write_flags |
+				WIMLIB_WRITE_FLAG_FSYNC |
+				WIMLIB_WRITE_FLAG_RETAIN_GUID,
 			   num_threads, progress_func);
 	if (ret) {
 		tunlink(tmpfile);

@@ -1737,7 +1737,10 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * already implied for wimlib_overwrite().  */
 #define WIMLIB_WRITE_FLAG_STREAMS_OK			0x00000400
 
-#define WIMLIB_WRITE_FLAG_RESERVED			0x00000800
+/** For wimlib_write() and wimlib_write_to_fd(), retain the same GUID instead of
+ * generating a new one.  This is already the default for wimlib_overwrite().
+ */
+#define WIMLIB_WRITE_FLAG_RETAIN_GUID			0x00000800
 
 /**
  * When writing streams in the resulting WIM file, pack multiple streams into a
