@@ -26,15 +26,22 @@ described above.
 .SS \fBadd\fR [\fIOPTION\fR...] \fISOURCE\fR \fIDESTINATION\fR
 Add a file or directory tree to the WIM image.  \fISOURCE\fR must specify the
 path to a file or directory on your filesystem.  \fIDESTINATION\fR must specify
-the path inside the WIM image at which to add the file or directory tree.  If
-\fIDESTINATION\fR already exists in the WIM image, then an overlay is attempted
-if it is a directory; this feature can be used to add multiple files to an
-existing directory in the WIM image in one command.  If \fIDESTINATION\fR does
-not exist in the WIM image, then any prerequisite directories are created as
-needed to add the \fISOURCE\fR at that location.
+the path inside the WIM image at which to add the file or directory tree.
+.PP
+If \fIDESTINATION\fR names an existing directory in the WIM image, then
+\fISOURCE\fR must also name a directory.  This causes the contents of the
+\fISOURCE\fR directory to be added to the \fIDESTINATION\fR directory.
+.PP
+If \fIDESTINATION\fR names an existing nondirectory file in the WIM image, then
+\fISOURCE\fR must also name a nondirectory file.  By default, this causes the
+\fIDESTINATION\fR file to be replaced with the \fISOURCE\fR file.  Or, with
+\fB--no-replace\fR specified, this generates an error.
+.PP
+If \fIDESTINATION\fR does not exist in the WIM image, then any prerequisite
+directories are created as needed to add the \fISOURCE\fR at that location.
 .PP
 The \fBadd\fR command supports a subset of the options accepted by
-\fB@IMAGEX_PROGNAME@-capture\fR; namely, \fB--dereference\fR,
+\fB@IMAGEX_PROGNAME@ capture\fR; namely, \fB--dereference\fR,
 \fB--unix-data\fR, \fB--no-acls\fR, and \fB--strict-acls\fR.  See
 \fB@IMAGEX_PROGNAME@-capture\fR (1) for explanations of these options.
 .PP
@@ -105,8 +112,12 @@ Number of threads to use for compressing newly added files.  Default: autodetect
 \fB--rebuild\fR
 Rebuild the entire WIM rather than appending the updated data to the end of it.
 Rebuilding the WIM is slower, but will save a little bit of space that would
-otherwise be left as a hole in the WIM.  Also see
-\fB@IMAGEX_PROGNAME@-optimize\fR (1).
+otherwise be left as a hole in the WIM file.
+.IP
+See \fB@IMAGEX_PROGNAME@-optimize\fR (1) for a more customizable way of
+rebuilding (and optionally recompressing) a WIM file.  If running
+\fB@IMAGEX_PROGNAME@ optimize\fR after \fB@IMAGEX_PROGNAME@ update\fR, there is
+no need to specify \fB--rebuild\fR to \fB@IMAGEX_PROGNAME@ update\fR.
 .TP
 \fB--command\fR=\fISTRING\fR
 Instead of reading update commands from standard input, read a single update
@@ -128,6 +139,12 @@ quotes and single quotes for the inner quotes.  Example:
 .RE
 .RE
 .fi
+.IP
+This option is provided for convenience only.  Do not execute
+\fB@IMAGEX_PROGNAME@ update\fR multiple consecutive times, each time passing the
+\fB--command\fR option!  This is inefficient.  Instead, generate an update
+command file and provide it (on standard input) to a single invocation of
+\fB@IMAGEX_PROGNAME@ update\fR, as explained in this document.
 .TP
 \fB--wimboot-config\fR=\fIFILE\fR
 If this option is specified, no commands shall be read from standard input, and
