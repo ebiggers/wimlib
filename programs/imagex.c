@@ -2556,7 +2556,7 @@ imagex_export(int argc, tchar **argv, int cmd)
 {
 	int c;
 	int open_flags = 0;
-	int export_flags = 0;
+	int export_flags = WIMLIB_EXPORT_FLAG_GIFT;
 	int write_flags = 0;
 	int compression_type = WIMLIB_COMPRESSION_TYPE_INVALID;
 	const tchar *src_wimfile;

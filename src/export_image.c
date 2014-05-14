@@ -36,8 +36,9 @@
 
 static int
 inode_export_streams(struct wim_inode *inode,
-		     const struct wim_lookup_table *src_lookup_table,
-		     struct wim_lookup_table *dest_lookup_table)
+		     struct wim_lookup_table *src_lookup_table,
+		     struct wim_lookup_table *dest_lookup_table,
+		     bool gift)
 {
 	unsigned i;
 	const u8 *hash;
@@ -62,9 +63,14 @@ inode_export_streams(struct wim_inode *inode,
 			if (!src_lte)
 				return stream_not_found_error(inode, hash);
 
-			dest_lte = clone_lookup_table_entry(src_lte);
-			if (!dest_lte)
-				return WIMLIB_ERR_NOMEM;
+			if (gift) {
+				dest_lte = src_lte;
+				lookup_table_unlink(src_lookup_table, src_lte);
+			} else {
+				dest_lte = clone_lookup_table_entry(src_lte);
+				if (!dest_lte)
+					return WIMLIB_ERR_NOMEM;
+			}
 			dest_lte->refcnt = 0;
 			dest_lte->out_refcnt = 0;
 			lookup_table_insert(dest_lookup_table, dest_lte);
@@ -117,7 +123,8 @@ wimlib_export_image(WIMStruct *src_wim,
 	/* Check for sane parameters.  */
 	if (export_flags & ~(WIMLIB_EXPORT_FLAG_BOOT |
 			     WIMLIB_EXPORT_FLAG_NO_NAMES |
-			     WIMLIB_EXPORT_FLAG_NO_DESCRIPTIONS))
+			     WIMLIB_EXPORT_FLAG_NO_DESCRIPTIONS |
+			     WIMLIB_EXPORT_FLAG_GIFT))
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (src_wim == NULL || dest_wim == NULL)
@@ -222,7 +229,8 @@ wimlib_export_image(WIMStruct *src_wim,
 		image_for_each_inode(inode, src_imd) {
 			ret = inode_export_streams(inode,
 						   src_wim->lookup_table,
-						   dest_wim->lookup_table);
+						   dest_wim->lookup_table,
+						   export_flags & WIMLIB_EXPORT_FLAG_GIFT);
 			if (ret)
 				goto out_rollback;
 		}
@@ -260,6 +268,11 @@ wimlib_export_image(WIMStruct *src_wim,
 	 * is set on the source WIM. */
 	if (src_wim->hdr.flags & WIM_HDR_FLAG_RP_FIX)
 		dest_wim->hdr.flags |= WIM_HDR_FLAG_RP_FIX;
+
+	if (export_flags & WIMLIB_EXPORT_FLAG_GIFT) {
+		free_lookup_table(src_wim->lookup_table);
+		src_wim->lookup_table = NULL;
+	}
 	DEBUG("Export operation successful.");
 	return 0;
 

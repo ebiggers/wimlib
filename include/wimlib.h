@@ -1435,6 +1435,11 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 /** Give the exported image(s) no descriptions.  */
 #define WIMLIB_EXPORT_FLAG_NO_DESCRIPTIONS		0x00000004
 
+/** This advises the library that the program is finished with the source
+ * WIMStruct and will not attempt to access it after the call to
+ * wimlib_export_image(), with the exception of the call to wimlib_free().  */
+#define WIMLIB_EXPORT_FLAG_GIFT				0x00000008
+
 /** @} */
 /** @ingroup G_extracting_wims
  * @{ */
