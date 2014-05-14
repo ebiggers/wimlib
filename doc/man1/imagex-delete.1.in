@@ -16,12 +16,12 @@ keyword "all" to indicate that all images are to be deleted.  Use the
 contains.
 .SH NOTES
 By default, the WIM file is rebuilt with all unnecessary file data removed.
-This is different from Microsoft's imagex.exe, which only will delete the
+This is different from Microsoft's ImageX and DISM, which only will delete the
 directory tree metadata and XML data for this operation.  (See the \fB--soft\fR
 option for the other kind of delete).
 .PP
-Also, unlike Microsoft's imagex.exe, it is legal to delete all the images from a
-WIM and have a WIM with 0 images, although such a file wouldn't be very useful.
+Also wimlib allows you to delete all the images from a WIM and have a WIM with 0
+images, although such a file wouldn't be very useful.
 .PP
 \fB@IMAGEX_PROGNAME@ delete\fR does not support split WIMs.
 .SH OPTIONS

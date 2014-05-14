@@ -441,7 +441,7 @@ wimlib cannot extract such files until they are first decrypted.
 .PP
 \fIDirectory traversal attacks\fR:  wimlib validates filenames before extracting
 them and is not vulnerable to directory traversal attacks.  This is in contrast
-to Microsoft WIMGAPI/Imagex/Dism which can overwrite arbitrary files on the
+to Microsoft WIMGAPI/ImageX/DISM which can overwrite arbitrary files on the
 target drive when extracting a malicious WIM file containing files named
 \fI..\fR or containing path separators.
 .SH EXAMPLES

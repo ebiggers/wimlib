@@ -127,7 +127,7 @@ subject to the WIM format's compression.)
 .SH DIRECTORY CAPTURE (WINDOWS)
 On Windows, \fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR
 natively support Windows-specific and NTFS-specific data.  They therefore act
-similarly to the corresponding commands of Microsoft's ImageX.  For best
+similarly to the corresponding commands of Microsoft's ImageX or DISM.  For best
 results, the directory being captured should be on an NTFS volume and
 \fB@IMAGEX_PROGNAME@\fR should be run with Administrator privileges; however,
 non-NTFS filesystems and running without Administrator privileges are also
@@ -207,8 +207,8 @@ and "LZX", instead of "fast" and "maximum", respectively.
 .IP ""
 As of wimlib v1.6.0, a third compression type, "recovery" or "LZMS", is also
 available.  Its use is generally not recommended because other than wimlib
-itself, as of Windows 8 it is only compatible with WIMGAPI and Windows Setup
-(not even ImageX or Dism).  However, LZMS is the compression algorithm used in
+itself, it is only compatible with WIMGAPI Windows 8 and later, and DISM Windows
+8.1 and later.  However, LZMS is the compression algorithm used by default in
 packed resources created if the \fB--pack-streams\fR option is specified.
 .TP
 \fB--compress-slow\fR
@@ -240,8 +240,8 @@ together, rather than each unique stream ("file") independently.  This can
 result in a significantly better compression ratio, but this format greatly
 decreases the performance of random access to the data, as may occur on a WIM
 mounted with \fB@IMAGEX_PROGNAME@ mount\fR.  Also, WIMs created using this
-option use a different version number in their header and as of Windows 8 are
-only compatible with Windows Setup and WIMGAPI, not even ImageX and Dism.
+option use a different version number in their header and are only compatible
+with WIMGAPI Windows 8 and later, and DISM Windows 8.1 and later.
 .IP ""
 The default compression type and chunk size in packed resources is LZMS with
 2^25 (33554432) byte chunks.  This is independent of the WIM's main compression
@@ -538,8 +538,8 @@ modified.
 .IP ""
 Note: unlike "pipable" WIMs (created with the \fB--pipable\fR option), "delta"
 WIMs (created with the \fB--delta-from\fR option) are compatible with
-Microsoft's software.  You can use the /ref option of imagex.exe to reference
-the base WIM(s), similar to above.
+Microsoft's software.  For example, you can use the /ref option of ImageX to
+reference the base WIM(s), similar to above.
 .IP ""
 Additional note:  \fB@IMAGEX_PROGNAME@\fR is generalized enough that you can in
 fact combine \fB--pipable\fR and \fB--delta-from\fR to create pipable delta
@@ -567,7 +567,7 @@ fully rebuilt (e.g. with \fB--rebuild\fR), in which case you should delete the
 temporary file left over.
 .PP
 \fB@IMAGEX_PROGNAME@\fR creates WIMs compatible with Microsoft's software
-(imagex.exe, Dism.exe, wimgapi.dll), with some caveats:
+(WIMGAPI, ImageX, DISM), with some caveats:
 .IP \[bu] 4
 With \fB@IMAGEX_PROGNAME@\fR on UNIX-like systems, it is possible to create a
 WIM image containing files with names differing only in case, or files with
@@ -589,9 +589,8 @@ the \fB--pipable\fR flag was specified.
 WIMs captured with a non-default chunk size (with the \fB--chunk-size\fR option)
 or as solid archives (with the \fB--pack-streams\fR option) or with LZMS
 compression (with \fB--compress\fR=LZMS or \fB--compress\fR=recovery) have
-varying levels of compatibility with Microsoft's software.  The best
-compatibility is achieved with WIMGAPI itself (not ImageX or Dism) on Windows 8
-or later.
+varying levels of compatibility with Microsoft's software.  Generally, more
+recent versions of Microsoft's software are more compatible.
 .SH EXAMPLES
 First example:  Create a new WIM 'mywim.wim' with "maximum" (LZX) compression
 that will contain a captured image of the directory tree 'somedir'.  Note that

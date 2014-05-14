@@ -1,6 +1,6 @@
 .TH WIMLIB-IMAGEX 1 "May 2014" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
-@IMAGEX_PROGNAME@ \- Create, modify, extract, mount, or unmount a WIM (Windows Imaging Format) archive
+@IMAGEX_PROGNAME@ \- Extract, create, modify, or mount a WIM (Windows Imaging Format) archive
 .SH SYNOPSIS
 \fB@IMAGEX_PROGNAME@ append\fR \fIarguments...\fR
 .br
@@ -32,17 +32,30 @@
 .br
 \fB@IMAGEX_PROGNAME@ update\fR \fIarguments...\fR
 .SH DESCRIPTION
-\fB@IMAGEX_PROGNAME@\fR deals with archives in the Windows Imaging Format (.wim
-files). Its interface is meant to be similar to Microsoft's "imagex.exe"
-program, but it also provide many useful extensions.
+\fB@IMAGEX_PROGNAME@\fR deals with archives in the Windows Imaging Format (WIM).
+Its interface is similar to Microsoft's ImageX, but \fB@IMAGEX_PROGNAME@\fR is
+cross-platform and has useful improvements and extensions.
 .PP
-To do its work, \fB@IMAGEX_PROGNAME@\fR uses \fBwimlib\fR, a C library which
-provides interfaces for manipulating WIM archives.  You can wimlib in your own
-programs if desired, although \fB@IMAGEX_PROGNAME@\fR already provides access to
-most of wimlib's functionality.  In some cases, however, there are general
-interfaces which are only used by \fB@IMAGEX_PROGNAME@\fR in a specific way, so
-it may be worth taking a look if you're looking to do something beyond what
-\fB@IMAGEX_PROGNAME@\fR directly supports.
+To do its work, \fB@IMAGEX_PROGNAME@\fR uses \fBwimlib\fR, an open source C
+library that provides interfaces for manipulating WIM archives.  wimlib is
+completely independent from the equivalent Microsoft implementation (WIMGAPI, or
+wimgapi.dll).  You can use wimlib in your own programs, although for
+command-line use \fB@IMAGEX_PROGNAME@\fR already provides access to most of
+wimlib's functionality.
+.SH BACKGROUND INFORMATION
+The Windows Imaging Format (WIM) was designed by Microsoft primarily for
+archiving Windows filesystems, such as NTFS.  However, it can be used on other
+platforms as well, with some limitations.  A WIM archive contains one or more
+images, each of which is a logically independent directory tree.  Images are
+indexed starting from 1, and each may also have a name.  File data is stored as
+content-addressable "streams" that are deduplicated across the entire archive.
+Streams may be compressed using one of several compression algorithms, including
+XPRESS and LZX.
+.PP
+An update of the WIM format released with Windows 8 features solid compression
+using the LZMS compression algorithm.  Such files are also called "ESD files"
+and may carry the extension \.esd instead of .wim.  \fB@IMAGEX_PROGNAME@\fR
+v1.6.0 and later supports these new files, unless they are encrypted.
 .SH COMMANDS
 \fB@IMAGEX_PROGNAME@\fR accepts one of a number of commands (listed above in
 \fBSYNOPSYS\fR), and additional arguments depending on the specific command.
@@ -54,132 +67,142 @@ Note: to save typing, if appropriate hard links or batch files have been
 installed, a command \fB@IMAGEX_PROGNAME@ \fICOMMAND\fR can also be accessed as
 simply \fBwim\fICOMMAND\fR; for example, \fBwimapply\fR for \fB@IMAGEX_PROGNAME@
 apply\fR.
-.SH SUPPORTED FEATURES
-The following are some of the main features currently supported by
-\fB@IMAGEX_PROGNAME@\fR, and pointers to the relevant commands:
+.SH GENERAL FEATURES
+The following are some of the general features, or use cases, currently
+supported by \fB@IMAGEX_PROGNAME@\fR, and pointers to the relevant commands:
 .IP \[bu] 4
-Create a standalone WIM from a directory or NTFS volume (\fB@IMAGEX_PROGNAME@ capture\fR)
+Display information about a WIM file
+ (\fB@IMAGEX_PROGNAME@ info\fR)
 .IP \[bu]
-Capture a WIM image directly to standard output in a special pipable format
-(\fB@IMAGEX_PROGNAME@ capture\fR)
+List the files in a WIM image
+ (\fB@IMAGEX_PROGNAME@ dir\fR)
 .IP \[bu]
-Append a directory or NTFS volume onto a standalone WIM as a new image (\fB@IMAGEX_PROGNAME@
-append\fR)
+Extract, or "apply", a full WIM image
+ (\fB@IMAGEX_PROGNAME@ apply\fR)
 .IP \[bu]
-Apply an image from a standalone or split WIM to a directory or NTFS volume
-(\fB@IMAGEX_PROGNAME@ apply\fR)
-.IP \[bu]
-Apply an image from a special pipable WIM format sent over standard input
-(\fB@IMAGEX_PROGNAME@ apply\fR)
-.IP \[bu]
-Mount an image from a standalone or split WIM read-only (\fB@IMAGEX_PROGNAME@
-mount\fR) (not available on Windows)
-.IP \[bu]
-Mount an image from a standalone WIM read-write (\fB@IMAGEX_PROGNAME@
-mountrw\fR) (not available on Windows)
-.IP \[bu]
-Extract individual files or directories from a WIM without mounting it
-(\fB@IMAGEX_PROGNAME@ extract\fR)
-.IP \[bu]
-Make changes to a WIM image without mounting it (\fB@IMAGEX_PROGNAME@ update\fR)
-.IP \[bu]
-Delete image(s) from a standalone WIM (\fB@IMAGEX_PROGNAME@ delete\fR)
-.IP \[bu]
-Export image(s) from a standalone or split WIM (\fB@IMAGEX_PROGNAME@ export\fR)
-.IP \[bu]
-Display information about a WIM file (\fB@IMAGEX_PROGNAME@ info\fR, \fB@IMAGEX_PROGNAME@ dir\fR)
-.IP \[bu]
-Change the name or description of an image in the WIM (\fB@IMAGEX_PROGNAME@ info\fR)
-.IP \[bu]
-Change which image in a WIM is bootable (\fB@IMAGEX_PROGNAME@ info\fR)
-.IP \[bu]
-Combine split WIMs into one standalone WIM (\fB@IMAGEX_PROGNAME@ join\fR)
-.IP \[bu]
-Split a standalone WIM into multiple parts (\fB@IMAGEX_PROGNAME@ split\fR)
-.IP \[bu]
-Easily remove wasted space in a WIM file and optionally recompress it (\fB
-@IMAGEX_PROGNAME@ optimize\fR)
-.IP \[bu]
-Support for all WIM compression types, both compression and decompression
-(XPRESS, LZX, LZMS, and None).
-.IP \[bu]
-WIM integrity table is supported (\fB--check\fR option to many commands)
-.SH DIFFERENCES FROM MICROSOFT IMAGEX
-Although \fB@IMAGEX_PROGNAME@\fR shares some similarities with Microsoft's
-implementation of ImageX, this section lists some of the many noteworthy
-differences between the two programs:
+Extract files or directories from a WIM image
+ (\fB@IMAGEX_PROGNAME@ extract\fR)
 .IP \[bu] 4
-\fB@IMAGEX_PROGNAME@\fR is supported on both UNIX-like systems and Windows;
-thus, some functionality was designed around this.
+Capture a WIM image and save it to a new WIM file
+ (\fB@IMAGEX_PROGNAME@ capture\fR)
 .IP \[bu]
-The command-line syntax of the two programs is similar but not exactly the same.
+Capture a WIM image and append it to an existing WIM file
+ (\fB@IMAGEX_PROGNAME@ append\fR)
 .IP \[bu]
-Because Microsoft designed the WIM file format to accomodate Windows-specific
-and NTFS-specific features, on UNIX-like systems wimlib must have two separate
-image capture and application modes (although the \fB@IMAGEX_PROGNAME@\fR
-commands for the modes are the same): one for image capture and application
-from/to a directory, and one for the capture or application of an image
-specifically from/to an NTFS volume.
-.IP ""
-Note: the above applies to builds of \fB@IMAGEX_PROGNAME@\fR for UNIX-like
-systems.  On the Windows build, there is only one image capture and application
-mode, similar to Microsoft's ImageX.
+Modify a WIM image by adding, deleting, or renaming files
+ (\fB@IMAGEX_PROGNAME@ update\fR)
 .IP \[bu]
-wimlib supports multithreaded compression, which can make it much faster to
-create compressed WIM files.
+(Linux only) Mount a WIM image read-only
+ (\fB@IMAGEX_PROGNAME@ mount\fR)
 .IP \[bu]
-\fB@IMAGEX_PROGNAME@\fR offers the extra commands \fB@IMAGEX_PROGNAME@
-extract\fR and \fB@IMAGEX_PROGNAME@ update\fR, which let you quickly extract
-files from or make changes to a WIM image without mounting it.
+(Linux only) Mount a WIM image read-write
+ (\fB@IMAGEX_PROGNAME@ mountrw\fR)
 .IP \[bu]
-\fB@IMAGEX_PROGNAME@\fR offers the extra command \fB@IMAGEX_PROGNAME@
-optimize\fR, which lets you easily remove wasted space in a WIM (which can arise
-after a WIM image is appended or mounted read-write).  It also makes it easy to
-recompress a WIM file at the highest compression level.
+Delete an image from a WIM file
+ (\fB@IMAGEX_PROGNAME@ delete\fR)
 .IP \[bu]
-\fB@IMAGEX_PROGNAME@\fR also offers the command \fB@IMAGEX_PROGNAME@ join\fR,
-which lets you easily join the parts of a split WIM.
+Export image(s) from a WIM file
+ (\fB@IMAGEX_PROGNAME@ export\fR)
 .IP \[bu]
-For convenience, \fB@IMAGEX_PROGNAME@\fR automatically preserves the integrity
-table in WIMs that have one, even when \fB--check\fR is not specified.
+Change the name or description of a WIM image
+ (\fB@IMAGEX_PROGNAME@ info\fR)
 .IP \[bu]
-wimlib supports a special "pipable" WIM format (not compatible with Microsoft's
-software).  This allows capturing and applying images directly to standard
-output or from standard input, respectively; this can be used to pipe images to
-or from a server over the network to implement fast filesystem imaging and
+Change the bootable image index of a WIM file
+ (\fB@IMAGEX_PROGNAME@ info\fR)
+.IP \[bu]
+Rebuild, and optionally recompress, a WIM file
+ (\fB@IMAGEX_PROGNAME@ optimize\fR)
+.IP \[bu]
+Split a WIM file into multiple parts
+ (\fB@IMAGEX_PROGNAME@ split\fR)
+.IP \[bu]
+Join a split WIM
+ (\fB@IMAGEX_PROGNAME@ join\fR)
+.SH DETAILED FEATURES
+This section presents some of the interesting features of
+\fB@IMAGEX_PROGNAME@\fR in more detail.
+.IP \[bu] 4
+Multi-platform support.  \fB@IMAGEX_PROGNAME@\fR is supported on both UNIX-like
+systems (mainly Linux, but also FreeBSD, Mac OS X, etc.) and Windows, and most
+code is shared among all platforms.  However, platform-specific features are
+supported when possible.
+.IP \[bu]
+On UNIX-like systems, integration with libntfs-3g allows capturing a WIM image
+directly from a block device containing an NTFS volume, or applying a WIM image
+directly to a block device containing an NTFS volume.  This allows saving and
+restoring NTFS-specific data, such as security descriptors and named data
+streams, which is otherwise only supported on Windows.  This feature is
+unavailable if wimlib was was configured using --without-ntfs-3g.
+.IP \[bu]
+Long path support on Windows.  \fB@IMAGEX_PROGNAME@\fR can capture and apply
+files with paths exceeding the MAX_PATH (260 character) limitation of the Win32
+subsystem.
+.IP \[bu]
+Non-Administrator support on Windows.  You can run \fB@IMAGEX_PROGNAME@\fR
+without Administrator rights, subject to some limitations.
+.IP \[bu]
+Support for WIM integrity tables.  An integrity table is a list of SHA-1 message
+digests appended to the end of a WIM file which gives checksums over the WIM
+file itself.  The \fB--check\fR option to several \fB@IMAGEX_PROGNAME@\fR
+commands can be used to verify or add integrity tables.
+.IP \[bu]
+Support for "pipable" WIMs.  This is a wimlib extension and is not compatible
+with the Microsoft implementation.  A pipable WIM, created with
+\fB@IMAGEX_PROGNAME@ capture\fR with the \fB--pipable\fR option, can be written
+to standard output or read from standard input.  This can be used to pipe images
+to or from a server over the network to implement fast filesystem imaging and
 restore.
 .IP \[bu]
-\fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR support
-options to optimize incremental backups and to create "delta" WIM files.
+Multithreaded compression.  By default, data compression is multithreaded and
+will use all available processors.  In most cases, this can be changed by the
+\fB--threads\fR option.
 .IP \[bu]
-wimlib (and \fB@IMAGEX_PROGNAME@\fR via \fB@IMAGEX_PROGNAME@ capture\fR)
-supports combining multiple separate directories and files together in a
-configurable way to create a WIM image.
+XPRESS, LZX, and LZMS decompression and compression.  wimlib contains
+independent implementations of all these compression algorithms.  Sometimes they
+can do better than the equivalent Microsoft implementations.
 .IP \[bu]
-Microsoft's ImageX has some weird limitations, like it won't let you extract a
-WIM on a shared folder, and it requires some commands to be run only from
-Windows PE and not from regular Windows.  \fB@IMAGEX_PROGNAME@\fR does not have
-these unusual limitations.
+"ESD file" support.  As mentioned in \fBBACKGROUND INFORMATION\fR, "ESD files"
+use a new WIM format that features solid blocks and LZMS compression.  This
+support was first present in wimlib v1.6.0, but later v1.6 releases have
+improved compatibility.
 .IP \[bu]
-There are bugs in Microsoft's WIM library and I obviously have not included the
-same bugs in wimlib, although in some cases I have had to work around bugs for
-compatibility purposes.
+Mounting WIM images.  This relies on FUSE (Filesystem in UserSpacE) and is only
+supported on compatible UNIX-like systems, in particular Linux.  FreeBSD may
+work but is untested.
 .IP \[bu]
-wimlib (and \fB@IMAGEX_PROGNAME@\fR via \fB@IMAGEX_PROGNAME@ mount\fR) support
-mounting an image from a split WIM, but Microsoft's software does not.  (Note:
-this functionality is not available in Windows builds of wimlib and
-\fB@IMAGEX_PROGNAME@\fR.)
+Split WIMs.  A split WIM is a WIM archive split into multiple parts.
+\fB@IMAGEX_PROGNAME@ split\fR can create a split WIM from a standalone WIM, and
+\fB@IMAGEX_PROGNAME@ join\fR can create a standalone WIM from a split WIM.
+.IP \[bu]
+Delta WIMs.  A delta WIM contains image metadata but excludes file data already
+present in another WIM file.  A delta WIM can be created using
+\fB@IMAGEX_PROGNAME@ capture\fR with the \fB--delta-from\fR option.
+.IP \[bu]
+WIMBoot support.  On Windows 8.1 and later, files on a NTFS volume can be
+externally backed by a WIM archive with the help of Microsoft's Windows Overlay
+FileSystem Filter Driver (WOF).  With the \fB--wimboot\fR flag,
+\fB@IMAGEX_PROGNAME@ apply\fR will extract "pointer files" (actually NTFS
+reparse points handled by the WOF driver) to the WIM archive rather than the
+files themselves.
+.IP \[bu]
+Fast incremental backups.  Using the \fB--update-of\fR option of
+\fB@IMAGEX_PROGNAME@ capture\fR or \fB@IMAGEX_PROGNAME@ append\fR, you can
+optimize an image capture so that files that are unmodified based on timestamps
+are not be read from disk.  But even without this option, since the WIM format
+features single-instance files, a file identical to any already present in the
+WIM archive (in any image) will not be written, but rather a reference to the
+stored file will be used.
 .SH LOCALES AND CHARACTER ENCODINGS
-WIM files themselves store file and stream names using UTF-16LE.  On Windows,
-wimlib works in UTF-16LE, so conversions are usually not necessary and there
-should be no problems with character encodings.
+WIM files themselves store file and stream names using Windows native "wide
+character strings", which are UTF-16.  On Windows, wimlib works using these same
+strings, so conversions are usually not necessary and there should be no
+problems with character encodings.
 .PP
 On UNIX-like systems, wimlib works primarily in the locale-dependent multibyte
 encoding, which you are strongly recommended to set to UTF-8 to avoid any
 problems.  You can alternatively set the environmental variable
 \fBWIMLIB_IMAGEX_USE_UTF8\fR to force \fB@IMAGEX_PROGNAME@\fR to use UTF-8
-character encoding internally, even if the current locale is not UTF-8
-compatible.
+internally, even if the current locale is not UTF-8 compatible.
 .SH CASE SENSITIVITY
 By default, the case sensitivity of \fB@IMAGEX_PROGNAME@\fR differs somewhat
 between UNIX-like systems and Windows.  WIM images may (but usually do not) have
@@ -189,25 +212,27 @@ actually provided by the user for use in a WIM image (e.g. for extracting,
 adding, renaming, or deleting files) will by default be treated as
 case-insensitive in order to get the "expected" behavior. This differs from the
 default behavior on UNIX-like systems, where such paths will be treated as
-case-sensitive.  Note that with case insensitivity, a path component may in
-general be ambiguous due to multiple files or directories having the same
-case-insensitive name.  In such cases, if there is a file or directory with an
-exactly matching name, it is chosen; otherwise, one of the case-insensitively
-matching file or directories is chosen arbitrarily.
+case-sensitive.
 .PP
-The default behavior can be overridden by explicitly setting the environmental
-variable \fBWIMLIB_IMAGEX_IGNORE_CASE\fR to 1, in which case such paths will be
-treated case insensitively, or 0, in which such paths will be treated case
-sensitively.
+Note that with case insensitivity, a path component may in general be ambiguous
+due to multiple files or directories having the same case-insensitive name.  In
+such cases, if there is a file or directory with an exactly matching name, it is
+chosen; otherwise, one of the case-insensitively matching file or directories is
+chosen arbitrarily.
+.PP
+The default case sensitivity of \fB@IMAGEX_PROGNAME@\fR can be overridden by
+explicitly setting the environmental variable \fBWIMLIB_IMAGEX_IGNORE_CASE\fR to
+1, in which case such paths will be treated case insensitively, or 0, in which
+such paths will be treated case sensitively.
 .PP
 Regardless of these settings, options and non-path arguments must be specified
 in lower case.
 .SH LICENSE
-wimlib and \fB@IMAGEX_PROGNAME@\fR are distributed under the GNU General Public
+wimlib and @IMAGEX_PROGNAME@ are distributed under the GNU General Public
 License version 3 or later.  Be aware this means this software is provided as-is
 and has no warranty; see COPYING for details.
 .SH REPORTING BUGS
-Report bugs to ebiggers3@gmail.com.
+Report bugs to ebiggers3@gmail.com.  Feedback and suggestions are also welcome.
 .SH SEE ALSO
 .BR @IMAGEX_PROGNAME@-append (1),
 .BR @IMAGEX_PROGNAME@-apply (1),
