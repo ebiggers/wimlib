@@ -2565,8 +2565,14 @@ write_wim_part(WIMStruct *wim,
 	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY)
 		DEBUG("\tCHECK_INTEGRITY");
 
-	if (write_flags & WIMLIB_WRITE_FLAG_REBUILD)
-		DEBUG("\tREBUILD");
+	if (write_flags & WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY)
+		DEBUG("\tNO_CHECK_INTEGRITY");
+
+	if (write_flags & WIMLIB_WRITE_FLAG_PIPABLE)
+		DEBUG("\tPIPABLE");
+
+	if (write_flags & WIMLIB_WRITE_FLAG_NOT_PIPABLE)
+		DEBUG("\tNOT_PIPABLE");
 
 	if (write_flags & WIMLIB_WRITE_FLAG_RECOMPRESS)
 		DEBUG("\tRECOMPRESS");
@@ -2574,17 +2580,20 @@ write_wim_part(WIMStruct *wim,
 	if (write_flags & WIMLIB_WRITE_FLAG_FSYNC)
 		DEBUG("\tFSYNC");
 
+	if (write_flags & WIMLIB_WRITE_FLAG_REBUILD)
+		DEBUG("\tREBUILD");
+
 	if (write_flags & WIMLIB_WRITE_FLAG_SOFT_DELETE)
-		DEBUG("\tFSYNC");
+		DEBUG("\tSOFT_DELETE");
 
 	if (write_flags & WIMLIB_WRITE_FLAG_IGNORE_READONLY_FLAG)
 		DEBUG("\tIGNORE_READONLY_FLAG");
 
-	if (write_flags & WIMLIB_WRITE_FLAG_PIPABLE)
-		DEBUG("\tPIPABLE");
+	if (write_flags & WIMLIB_WRITE_FLAG_SKIP_EXTERNAL_WIMS)
+		DEBUG("\tSKIP_EXTERNAL_WIMS");
 
-	if (write_flags & WIMLIB_WRITE_FLAG_NOT_PIPABLE)
-		DEBUG("\tNOT_PIPABLE");
+	if (write_flags & WIMLIB_WRITE_FLAG_STREAMS_OK)
+		DEBUG("\tSTREAMS_OK");
 
 	if (write_flags & WIMLIB_WRITE_FLAG_PACK_STREAMS)
 		DEBUG("\tPACK_STREAMS");
