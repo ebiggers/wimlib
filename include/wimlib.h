@@ -170,7 +170,7 @@
  * documented in the man page for @b wimlib-imagex.
  *
  * - The old WIM format from Vista pre-releases is not supported.
- * - wimlib does not provide a clone of the @b PEImg tool, or the @b Dism
+ * - wimlib does not provide a clone of the @b PEImg tool, or the @b DISM
  *   functionality other than that already present in @b ImageX, that allows you
  *   to make certain Windows-specific modifications to a Windows PE image, such
  *   as adding a driver or Windows component.  Such a tool could be implemented
@@ -1664,97 +1664,175 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 /** @ingroup G_writing_and_overwriting_wims
  * @{ */
 
-/** Include an integrity table in the WIM.
+/**
+ * Include an integrity table in the resulting WIM file.
  *
- * For WIMs created with wimlib_open_wim(), the default behavior is to include
- * an integrity table if and only if one was present before.  For WIMs created
- * with wimlib_create_new_wim(), the default behavior is to not include an
- * integrity table.  */
+ * For ::WIMStruct's created with wimlib_open_wim(), the default behavior is to
+ * include an integrity table if and only if one was present before.  For
+ * ::WIMStruct's created with wimlib_create_new_wim(), the default behavior is
+ * to not include an integrity table.
+ */
 #define WIMLIB_WRITE_FLAG_CHECK_INTEGRITY		0x00000001
 
-/** Do not include an integrity table in the new WIM file.  This is the default
- * behavior, unless the WIM already included an integrity table.  */
+/**
+ * Do not include an integrity table in the resulting WIM file.  This is the
+ * default behavior, unless the ::WIMStruct was created by opening a WIM with an
+ * integrity table.
+ */
 #define WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY		0x00000002
 
-/** Write the WIM as "pipable".  After writing a WIM with this flag specified,
+/**
+ * Write the WIM as "pipable".  After writing a WIM with this flag specified,
  * images from it can be applied directly from a pipe using
  * wimlib_extract_image_from_pipe().  See the documentation for the --pipable
  * flag of `wimlib-imagex capture' for more information.  Beware: WIMs written
  * with this flag will not be compatible with Microsoft's software.
  *
- * For WIMs created with wimlib_open_wim(), the default behavior is to write the
- * WIM as pipable if and only if it was pipable before.  For WIMs created with
- * wimlib_create_new_wim(), the default behavior is to write the WIM as
- * non-pipable.  */
+ * For ::WIMStruct's created with wimlib_open_wim(), the default behavior is to
+ * write the WIM as pipable if and only if it was pipable before.  For
+ * ::WIMStruct's created with wimlib_create_new_wim(), the default behavior is
+ * to write the WIM as non-pipable.
+ */
 #define WIMLIB_WRITE_FLAG_PIPABLE			0x00000004
 
-/** Do not write the WIM as "pipable".  This is the default behavior, unless the
- * WIM was pipable already.  */
+/**
+ * Do not write the WIM as "pipable".  This is the default behavior, unless the
+ * ::WIMStruct was created by opening a pipable WIM.
+ */
 #define WIMLIB_WRITE_FLAG_NOT_PIPABLE			0x00000008
 
-/** Recompress all resources, even if they could otherwise be copied from a
- * different WIM with the same compression type (in the case of
- * wimlib_export_image() being called previously).  This flag is also valid in
- * the @p wim_write_flags of wimlib_join(), in which case all resources included
- * in the joined WIM file will be recompressed.  */
+/**
+ * When writing streams to the WIM file, recompress them, even if their data is
+ * already available in the desired compressed form (for example, in a WIM file
+ * from which an image has been exported using wimlib_export_image()).
+ *
+ * ::WIMLIB_WRITE_FLAG_RECOMPRESS can be used to recompress with a higher
+ * compression ratio for the same compression type and chunk size.  wimlib's LZX
+ * compressor currently can be given different parameters in order to achieve
+ * different balances between compression ratio and time.  In its default mode
+ * as of v1.5.3, it usually compresses slightly better than the competing
+ * Microsoft implementation.
+ *
+ * ::WIMLIB_WRITE_FLAG_RECOMPRESS can also be used in combination with
+ * ::WIMLIB_WRITE_FLAG_PACK_STREAMS to prevent any solid blocks from being
+ * re-used.  (Otherwise, solid blocks are re-used somewhat more liberally than
+ * normal compressed blocks.)
+ *
+ * ::WIMLIB_WRITE_FLAG_RECOMPRESS does <b>not</b> cause recompression of streams
+ * that would not otherwise be written.  For example, a call to
+ * wimlib_overwrite() with ::WIMLIB_WRITE_FLAG_RECOMPRESS will not, by itself,
+ * cause already-existing streams in the WIM file to be recompressed.  To force
+ * the WIM file to be fully rebuilt and recompressed, combine
+ * ::WIMLIB_WRITE_FLAG_RECOMPRESS with ::WIMLIB_WRITE_FLAG_REBUILD.
+ */
 #define WIMLIB_WRITE_FLAG_RECOMPRESS			0x00000010
 
-/** Call fsync() just before the WIM file is closed.  */
+/**
+ * Immediately before closing the WIM file, sync its data to disk.
+ *
+ * wimlib_overwrite() will set this flag automatically if it decides to
+ * overwrite the WIM file via a temporary file instead of in-place.
+ */
 #define WIMLIB_WRITE_FLAG_FSYNC				0x00000020
 
-/** wimlib_overwrite() only:  Re-build the entire WIM file rather than appending
- * data to it if possible.  */
+/**
+ * For wimlib_overwrite(), rebuild the entire WIM file, even if it otherwise
+ * could be updated merely be appending to it.
+ *
+ * When rebuilding the WIM file, stream reference counts will be recomputed, and
+ * any streams with 0 reference count (e.g. from deleted files or images) will
+ * not be included in the resulting WIM file.
+ *
+ * This flag can be combined with ::WIMLIB_WRITE_FLAG_RECOMPRESS to force all
+ * data to be recompressed.  Otherwise, compressed data is re-used if possible.
+ *
+ * wimlib_write() ignores this flag.
+ */
 #define WIMLIB_WRITE_FLAG_REBUILD			0x00000040
 
-/** wimlib_overwrite() only:  Specifying this flag overrides the default
- * behavior of wimlib_overwrite() after one or more calls to
- * wimlib_delete_image(), which is to rebuild the entire WIM.  With this flag,
- * only minimal changes to correctly remove the image from the WIM will be
- * taken.  In particular, all streams will be left alone, even if they are no
- * longer referenced.  This is probably not what you want, because almost no
- * space will be saved by deleting an image in this way.  */
+/**
+ * For wimlib_overwrite(), override the default behavior after one or more calls
+ * to wimlib_delete_image(), which is to rebuild the entire WIM file.  With this
+ * flag, only minimal changes to correctly remove the image from the WIM file
+ * will be taken.  In particular, all streams will be retained, even if they are
+ * no longer referenced.  This may not be what you want, because no space will
+ * be saved by deleting an image in this way.
+ *
+ * wimlib_write() ignores this flag.
+ */
 #define WIMLIB_WRITE_FLAG_SOFT_DELETE			0x00000080
 
-/** wimlib_overwrite() only:  Allow overwriting the WIM even if the readonly
- * flag is set in the WIM header.  This can be used in combination with
- * wimlib_set_wim_info() with the ::WIMLIB_CHANGE_READONLY_FLAG flag to actually
- * set the readonly flag on the on-disk WIM file.  */
+/**
+ * For wimlib_overwrite(), allow overwriting the WIM file even if the readonly
+ * flag (WIM_HDR_FLAG_READONLY) is set in the WIM header.  This can be used
+ * following a call to wimlib_set_wim_info() with the
+ * ::WIMLIB_CHANGE_READONLY_FLAG flag to actually set the readonly flag on the
+ * on-disk WIM file.
+ *
+ * wimlib_write() ignores this flag.
+ */
 #define WIMLIB_WRITE_FLAG_IGNORE_READONLY_FLAG		0x00000100
 
-/** Do not include non-metadata resources already present in other WIMs.  This
- * flag can be used to write a "delta" WIM after resources from the WIM on which
- * the delta is to be based were referenced with
- * wimlib_reference_resource_files() or wimlib_reference_resources().  */
+/**
+ * Do not include streams already present in other WIMs.  This flag can be used
+ * to write a "delta" WIM after resources from the WIM on which the delta is to
+ * be based were referenced with wimlib_reference_resource_files() or
+ * wimlib_reference_resources().
+ */
 #define WIMLIB_WRITE_FLAG_SKIP_EXTERNAL_WIMS		0x00000200
 
-/** Asserts that for writes of all WIM images, all streams needed for the WIM
- * are already present (not in external resource WIMs) and their reference
- * counts are correct, so the code does not need to recalculate which streams
- * are referenced.  This is for optimization purposes only, since with this flag
- * specified, the metadata resources may not need to be decompressed and parsed.
+/**
+ * Advises the library that for writes of all WIM images, all streams needed for
+ * the WIM are already present (not in external resource WIMs) and their
+ * reference counts are correct, so the code does not need to recalculate which
+ * streams are referenced.  This is for optimization purposes only, since with
+ * this flag specified, the metadata resources may not need to be decompressed
+ * and parsed.
  *
- * This flag can be passed to wimlib_write() and wimlib_write_to_fd(), but is
- * already implied for wimlib_overwrite().  */
+ * wimlib_overwrite() will set this flag automatically.
+ */
 #define WIMLIB_WRITE_FLAG_STREAMS_OK			0x00000400
 
-/** For wimlib_write() and wimlib_write_to_fd(), retain the same GUID instead of
- * generating a new one.  This is already the default for wimlib_overwrite().
+/**
+ * For wimlib_write(), retain the WIM's GUID instead of generating a new one.
+ *
+ * wimlib_overwrite() sets this by default, since the WIM remains, logically,
+ * the same file.
  */
 #define WIMLIB_WRITE_FLAG_RETAIN_GUID			0x00000800
 
 /**
  * When writing streams in the resulting WIM file, pack multiple streams into a
- * single WIM resource instead of compressing them independently.  This tends to
- * produce a better compression ratio at the cost of less random access.
- * However, WIMs created with this flag are only compatible with wimlib v1.6.0
- * or later and WIMGAPI Windows 8 or later, seemingly for Windows Setup only and
- * <b>not including ImageX and Dism</b>.  WIMs created with this flag must use
- * version number 3584 in their header instead of 68864.
+ * single compressed resource instead of compressing them independently.  This
+ * is also known as creating a "solid archive".  This tends to produce a better
+ * compression ratio at the cost of much slower random access.
  *
- * If this flag is passed to wimlib_overwrite() and the WIM did not previously
- * contain packed streams, the WIM's version number will be changed to 3584 and
- * the new streams will be written packed.  Use ::WIMLIB_WRITE_FLAG_REBUILD to
- * force the WIM to be fully rebuilt.  */
+ * WIM files created with this flag are only compatible with wimlib v1.6.0 or
+ * later, WIMGAPI Windows 8 or later, and DISM Windows 8.1 or later.  WIM files
+ * created with this flag use a different version number in their header (3584
+ * instead of 68864) and are also called "ESD files".
+ *
+ * If this flag is passed to wimlib_overwrite(), any new data streams will be
+ * written in solid mode.  Use both ::WIMLIB_WRITE_FLAG_REBUILD and
+ * ::WIMLIB_WRITE_FLAG_RECOMPRESS to force the entire WIM file be rebuilt with
+ * all streams recompressed in solid mode.
+ *
+ * Currently, new solid blocks will, by default, be written using LZMS
+ * compression with 32 MiB (33554432 byte) chunks.  Use
+ * wimlib_set_output_pack_compression_type() and/or
+ * wimlib_set_output_pack_chunk_size() to change this.  This is independent of
+ * the WIM's main compression type and chunk size; you can have a WIM that
+ * nominally uses LZX compression and 32768 byte chunks but actually contains
+ * LZMS-compressed solid blocks, for example.  However, if including solid
+ * blocks, I suggest that you set the WIM's main compression type to LZMS as
+ * well, either by creating the WIM with
+ * ::wimlib_create_new_wim(::WIMLIB_COMPRESSION_TYPE_LZMS, ...) or by calling
+ * ::wimlib_set_output_compression_type(..., ::WIMLIB_COMPRESSION_TYPE_LZMS).
+ *
+ * This flag will be set by default when writing or overwriting a WIM file that
+ * either already contains packed streams, or has had packed streams exported
+ * into it and the WIM's main compression type is LZMS.
+ */
 #define WIMLIB_WRITE_FLAG_PACK_STREAMS			0x00001000
 
 /** @} */
@@ -3494,7 +3572,7 @@ wimlib_set_output_chunk_size(WIMStruct *wim, uint32_t chunk_size);
  * @ingroup G_writing_and_overwriting_wims
  *
  * Similar to wimlib_set_output_chunk_size(), but set the chunk size for writing
- * packed streams.
+ * packed streams (solid blocks).
  */
 extern int
 wimlib_set_output_pack_chunk_size(WIMStruct *wim, uint32_t chunk_size);
