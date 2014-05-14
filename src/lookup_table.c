@@ -135,6 +135,7 @@ clone_lookup_table_entry(const struct wim_lookup_table_entry *old)
 
 	case RESOURCE_IN_FILE_ON_DISK:
 #ifdef __WIN32__
+	case RESOURCE_IN_WINNT_FILE_ON_DISK:
 	case RESOURCE_WIN32_ENCRYPTED:
 #endif
 #ifdef WITH_FUSE
@@ -194,6 +195,7 @@ lte_put_resource(struct wim_lookup_table_entry *lte)
 		break;
 	case RESOURCE_IN_FILE_ON_DISK:
 #ifdef __WIN32__
+	case RESOURCE_IN_WINNT_FILE_ON_DISK:
 	case RESOURCE_WIN32_ENCRYPTED:
 #endif
 #ifdef WITH_FUSE
@@ -444,6 +446,7 @@ cmp_streams_by_sequential_order(const void *p1, const void *p2)
 	case RESOURCE_IN_STAGING_FILE:
 #endif
 #ifdef __WIN32__
+	case RESOURCE_IN_WINNT_FILE_ON_DISK:
 	case RESOURCE_WIN32_ENCRYPTED:
 #endif
 		/* Compare files by path: just a heuristic that will place files

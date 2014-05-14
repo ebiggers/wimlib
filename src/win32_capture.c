@@ -1,5 +1,7 @@
 /*
  * win32_capture.c - Windows-specific code for capturing files into a WIM image.
+ *
+ * This now uses the native Windows NT API a lot and not just Win32.
  */
 
 /*
@@ -40,12 +42,26 @@
 
 #include <errno.h>
 
-struct win32_capture_state {
+struct winnt_scan_stats {
 	unsigned long num_get_sd_access_denied;
 	unsigned long num_get_sacl_priv_notheld;
 	unsigned long num_long_path_warnings;
 };
 
+static inline const wchar_t *
+printable_path(const wchar_t *full_path)
+{
+	/* Skip over \\?\ or \??\  */
+	return full_path + 4;
+}
+
+/*
+ * If cur_dir is not NULL, open an existing file relative to the already-open
+ * directory cur_dir.
+ *
+ * Otherwise, open the file specified by @path, which must be a Windows NT
+ * namespace path.
+ */
 static NTSTATUS
 winnt_openat(HANDLE cur_dir, const wchar_t *path, size_t path_nchars,
 	     ACCESS_MASK perms, HANDLE *h_ret)
@@ -73,8 +89,10 @@ retry:
 					    FILE_SHARE_DELETE,
 				    FILE_OPEN_REPARSE_POINT |
 					    FILE_OPEN_FOR_BACKUP_INTENT |
-					    FILE_SYNCHRONOUS_IO_NONALERT);
+					    FILE_SYNCHRONOUS_IO_NONALERT |
+					    FILE_SEQUENTIAL_ONLY);
 	if (!NT_SUCCESS(status)) {
+		/* Try requesting fewer permissions  */
 		if (status == STATUS_ACCESS_DENIED ||
 		    status == STATUS_PRIVILEGE_NOT_HELD) {
 			if (perms & ACCESS_SYSTEM_SECURITY) {
@@ -90,11 +108,11 @@ retry:
 	return status;
 }
 
+/* Read the first @size bytes from the file, or named data stream of a file,
+ * from which the stream entry @lte was created.  */
 int
-read_win32_file_prefix(const struct wim_lookup_table_entry *lte,
-		       u64 size,
-		       consume_data_callback_t cb,
-		       void *cb_ctx)
+read_winnt_file_prefix(const struct wim_lookup_table_entry *lte, u64 size,
+		       consume_data_callback_t cb, void *cb_ctx)
 {
 	const wchar_t *path;
 	HANDLE h;
@@ -103,12 +121,16 @@ read_win32_file_prefix(const struct wim_lookup_table_entry *lte,
 	u64 bytes_remaining;
 	int ret;
 
+	/* This is an NT namespace path.  */
 	path = lte->file_on_disk;
+
 	status = winnt_openat(NULL, path, wcslen(path),
 			      FILE_READ_DATA | SYNCHRONIZE, &h);
 	if (!NT_SUCCESS(status)) {
 		set_errno_from_nt_status(status);
-		ERROR_WITH_ERRNO("\"%ls\": Can't open for reading", path);
+		ERROR_WITH_ERRNO("\"%ls\": Can't open for reading "
+				 "(status=0x%08"PRIx32")",
+				 printable_path(path), (u32)status);
 		return WIMLIB_ERR_OPEN;
 	}
 
@@ -117,20 +139,25 @@ read_win32_file_prefix(const struct wim_lookup_table_entry *lte,
 	while (bytes_remaining) {
 		IO_STATUS_BLOCK iosb;
 		ULONG count;
+		ULONG bytes_read;
 
 		count = min(sizeof(buf), bytes_remaining);
 
 		status = (*func_NtReadFile)(h, NULL, NULL, NULL,
 					    &iosb, buf, count, NULL, NULL);
-		if (!NT_SUCCESS(status) || iosb.Information != count) {
+		if (!NT_SUCCESS(status)) {
 			set_errno_from_nt_status(status);
-			ERROR_WITH_ERRNO("\"%ls\": Error reading data", path);
+			ERROR_WITH_ERRNO("\"%ls\": Error reading data "
+					 "(status=0x%08"PRIx32")",
+					 printable_path(path), (u32)status);
 			ret = WIMLIB_ERR_READ;
 			break;
 		}
 
-		bytes_remaining -= count;
-		ret = (*cb)(buf, count, cb_ctx);
+		bytes_read = iosb.Information;
+
+		bytes_remaining -= bytes_read;
+		ret = (*cb)(buf, bytes_read, cb_ctx);
 		if (ret)
 			break;
 	}
@@ -169,16 +196,12 @@ win32_encrypted_export_cb(unsigned char *data, void *_ctx, unsigned long len)
 int
 read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 				 u64 size,
-				 consume_data_callback_t cb,
-				 void *cb_ctx)
+				 consume_data_callback_t cb, void *cb_ctx)
 {
 	struct win32_encrypted_read_ctx export_ctx;
 	DWORD err;
 	void *file_ctx;
 	int ret;
-
-	DEBUG("Reading %"PRIu64" bytes from encrypted file \"%ls\"",
-	      size, lte->file_on_disk);
 
 	export_ctx.read_prefix_cb = cb;
 	export_ctx.read_prefix_ctx = cb_ctx;
@@ -189,7 +212,8 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 	if (err != ERROR_SUCCESS) {
 		set_errno_from_win32_error(err);
 		ERROR_WITH_ERRNO("Failed to open encrypted file \"%ls\" "
-				 "for raw read", lte->file_on_disk);
+				 "for raw read",
+				 printable_path(lte->file_on_disk));
 		return WIMLIB_ERR_OPEN;
 	}
 	err = ReadEncryptedFileRaw(win32_encrypted_export_cb,
@@ -197,7 +221,7 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 	if (err != ERROR_SUCCESS) {
 		set_errno_from_win32_error(err);
 		ERROR_WITH_ERRNO("Failed to read encrypted file \"%ls\"",
-				 lte->file_on_disk);
+				 printable_path(lte->file_on_disk));
 		ret = export_ctx.wimlib_err_code;
 		if (ret == 0)
 			ret = WIMLIB_ERR_READ;
@@ -205,7 +229,7 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 		ERROR("Only could read %"PRIu64" of %"PRIu64" bytes from "
 		      "encryted file \"%ls\"",
 		      size - export_ctx.bytes_remaining, size,
-		      lte->file_on_disk);
+		      printable_path(lte->file_on_disk));
 		ret = WIMLIB_ERR_READ;
 	} else {
 		ret = 0;
@@ -214,49 +238,47 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 	return ret;
 }
 
-/* Load the short name of a file into a WIM dentry.
- *
- * If we can't read the short filename for some reason, we just ignore the error
- * and assume the file has no short name.  This shouldn't be an issue, since the
- * short names are essentially obsolete anyway.
+/*
+ * Load the short name of a file into a WIM dentry.
  */
-static int
-win32_get_short_name(HANDLE hFile, struct wim_dentry *dentry)
+static NTSTATUS
+winnt_get_short_name(HANDLE h, struct wim_dentry *dentry)
 {
-
 	/* It's not any harder to just make the NtQueryInformationFile() system
 	 * call ourselves, and it saves a dumb call to FindFirstFile() which of
 	 * course has to create its own handle.  */
 	NTSTATUS status;
-	IO_STATUS_BLOCK io_status;
+	IO_STATUS_BLOCK iosb;
 	u8 buf[128] _aligned_attribute(8);
 	const FILE_NAME_INFORMATION *info;
 
-	status = (*func_NtQueryInformationFile)(hFile, &io_status, buf, sizeof(buf),
+	status = (*func_NtQueryInformationFile)(h, &iosb, buf, sizeof(buf),
 						FileAlternateNameInformation);
-	info = (const FILE_NAME_INFORMATION*)buf;
+	info = (const FILE_NAME_INFORMATION *)buf;
 	if (NT_SUCCESS(status) && info->FileNameLength != 0) {
 		dentry->short_name = utf16le_dupz(info->FileName,
 						  info->FileNameLength);
 		if (!dentry->short_name)
-			return WIMLIB_ERR_NOMEM;
+			return STATUS_NO_MEMORY;
 		dentry->short_name_nbytes = info->FileNameLength;
 	}
-	return 0;
+	return status;
 }
 
-static int
-win32_get_security_descriptor(HANDLE h,
-			      struct wim_inode *inode,
+/*
+ * Load the security descriptor of a file into the corresponding inode, and the
+ * WIM image's security descriptor set.
+ */
+static NTSTATUS
+winnt_get_security_descriptor(HANDLE h, struct wim_inode *inode,
 			      struct wim_sd_set *sd_set,
-			      struct win32_capture_state *state,
-			      int add_flags)
+			      struct winnt_scan_stats *stats, int add_flags)
 {
 	SECURITY_INFORMATION requestedInformation;
-	u8 _buf[4096];
+	u8 _buf[4096] _aligned_attribute(8);
 	u8 *buf;
-	size_t bufsize;
-	DWORD lenNeeded;
+	ULONG bufsize;
+	ULONG len_needed;
 	NTSTATUS status;
 	int ret;
 
@@ -268,112 +290,116 @@ win32_get_security_descriptor(HANDLE h,
 	bufsize = sizeof(_buf);
 
 	/*
-	 * We need the file's security descriptor in SECURITY_DESCRIPTOR_RELATIVE
-	 * format, and we currently have a handle opened with as many relevant
-	 * permissions as possible.  At this point, on Windows there are a number of
-	 * options for reading a file's security descriptor:
+	 * We need the file's security descriptor in
+	 * SECURITY_DESCRIPTOR_RELATIVE format, and we currently have a handle
+	 * opened with as many relevant permissions as possible.  At this point,
+	 * on Windows there are a number of options for reading a file's
+	 * security descriptor:
 	 *
 	 * GetFileSecurity():  This takes in a path and returns the
-	 * SECURITY_DESCRIPTOR_RELATIVE.  Problem: this uses an internal handle, not
-	 * ours, and the handle created internally doesn't specify
-	 * FILE_FLAG_BACKUP_SEMANTICS.  Therefore there can be access denied errors on
-	 * some files and directories, even when running as the Administrator.
+	 * SECURITY_DESCRIPTOR_RELATIVE.  Problem: this uses an internal handle,
+	 * not ours, and the handle created internally doesn't specify
+	 * FILE_FLAG_BACKUP_SEMANTICS.  Therefore there can be access denied
+	 * errors on some files and directories, even when running as the
+	 * Administrator.
 	 *
 	 * GetSecurityInfo():  This takes in a handle and returns the security
-	 * descriptor split into a bunch of different parts.  This should work, but it's
-	 * dumb because we have to put the security descriptor back together again.
+	 * descriptor split into a bunch of different parts.  This should work,
+	 * but it's dumb because we have to put the security descriptor back
+	 * together again.
 	 *
 	 * BackupRead():  This can read the security descriptor, but this is a
-	 * difficult-to-use API, probably only works as the Administrator, and the
-	 * format of the returned data is not well documented.
+	 * difficult-to-use API, probably only works as the Administrator, and
+	 * the format of the returned data is not well documented.
 	 *
-	 * NtQuerySecurityObject():  This is exactly what we need, as it takes in a
-	 * handle and returns the security descriptor in SECURITY_DESCRIPTOR_RELATIVE
-	 * format.  Only problem is that it's a ntdll function and therefore not
-	 * officially part of the Win32 API.  Oh well.
+	 * NtQuerySecurityObject():  This is exactly what we need, as it takes
+	 * in a handle and returns the security descriptor in
+	 * SECURITY_DESCRIPTOR_RELATIVE format.  Only problem is that it's a
+	 * ntdll function and therefore not officially part of the Win32 API.
+	 * Oh well.
 	 */
 	while (!(NT_SUCCESS(status = (*func_NtQuerySecurityObject)(h,
 								   requestedInformation,
 								   (PSECURITY_DESCRIPTOR)buf,
 								   bufsize,
-								   &lenNeeded))))
+								   &len_needed))))
 	{
 		switch (status) {
 		case STATUS_BUFFER_TOO_SMALL:
 			wimlib_assert(buf == _buf);
-			buf = MALLOC(lenNeeded);
+			buf = MALLOC(len_needed);
 			if (!buf)
-				return WIMLIB_ERR_NOMEM;
-			bufsize = lenNeeded;
+				return STATUS_NO_MEMORY;
+			bufsize = len_needed;
 			break;
 		case STATUS_PRIVILEGE_NOT_HELD:
 		case STATUS_ACCESS_DENIED:
 			if (add_flags & WIMLIB_ADD_FLAG_STRICT_ACLS) {
 		default:
-				set_errno_from_nt_status(status);
-				ret = WIMLIB_ERR_READ;
+				/* Permission denied in STRICT_ACLS mode, or
+				 * unknown error.  */
 				goto out_free_buf;
 			}
 			if (requestedInformation & SACL_SECURITY_INFORMATION) {
-				state->num_get_sacl_priv_notheld++;
+				/* Try again without the SACL.  */
+				stats->num_get_sacl_priv_notheld++;
 				requestedInformation &= ~SACL_SECURITY_INFORMATION;
 				break;
 			}
-			state->num_get_sd_access_denied++;
-			ret = 0;
+			/* Fake success (useful when capturing as
+			 * non-Administrator).  */
+			stats->num_get_sd_access_denied++;
+			status = STATUS_SUCCESS;
 			goto out_free_buf;
 		}
 	}
 
-	inode->i_security_id = sd_set_add_sd(sd_set, buf, lenNeeded);
-	if (inode->i_security_id < 0)
-		ret = WIMLIB_ERR_NOMEM;
-	else
-		ret = 0;
+	/* Add the security descriptor to the WIM image, and save its ID in
+	 * file's inode.  */
+	inode->i_security_id = sd_set_add_sd(sd_set, buf, len_needed);
+	if (unlikely(inode->i_security_id < 0))
+		status = STATUS_NO_MEMORY;
 out_free_buf:
-	if (buf != _buf)
+	if (unlikely(buf != _buf))
 		FREE(buf);
-	return ret;
+	return status;
 }
 
 static int
-win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
+winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				  HANDLE cur_dir,
 				  wchar_t *full_path,
 				  size_t full_path_nchars,
 				  const wchar_t *filename,
 				  size_t filename_nchars,
 				  struct add_image_params *params,
-				  struct win32_capture_state *state,
-				  DWORD vol_flags);
+				  struct winnt_scan_stats *stats,
+				  u32 vol_flags);
 
-/* Reads the directory entries of directory and recursively calls
- * win32_build_dentry_tree() on them.  */
 static int
-win32_recurse_directory(HANDLE h,
+winnt_recurse_directory(HANDLE h,
 			wchar_t *full_path,
 			size_t full_path_nchars,
-			struct wim_dentry *root,
+			struct wim_dentry *parent,
 			struct add_image_params *params,
-			struct win32_capture_state *state,
-			DWORD vol_flags)
+			struct winnt_scan_stats *stats,
+			u32 vol_flags)
 {
-	int ret;
-
-	/* Using NtQueryDirectoryFile() we can re-use the same open handle,
-	 * which we opened with FILE_FLAG_BACKUP_SEMANTICS.  */
-
-	NTSTATUS status;
-	IO_STATUS_BLOCK io_status;
-	const size_t bufsize = 8192;
 	void *buf;
+	const size_t bufsize = 8192;
+	IO_STATUS_BLOCK iosb;
+	NTSTATUS status;
+	int ret;
 
 	buf = MALLOC(bufsize);
 	if (!buf)
 		return WIMLIB_ERR_NOMEM;
 
+	/* Using NtQueryDirectoryFile() we can re-use the same open handle,
+	 * which we opened with FILE_FLAG_BACKUP_SEMANTICS.  */
+
 	while (NT_SUCCESS(status = (*func_NtQueryDirectoryFile)(h, NULL, NULL, NULL,
-								&io_status, buf, bufsize,
+								&iosb, buf, bufsize,
 								FileNamesInformation,
 								FALSE, NULL, FALSE)))
 	{
@@ -392,23 +418,23 @@ win32_recurse_directory(HANDLE h,
 					     info->FileNameLength / 2);
 				*p = '\0';
 
-				ret = win32_build_dentry_tree_recursive(
-								&child,
-								h,
-								full_path,
-								p - full_path,
-								full_path + full_path_nchars + 1,
-								info->FileNameLength / 2,
-								params,
-								state,
-								vol_flags);
+				ret = winnt_build_dentry_tree_recursive(
+							&child,
+							h,
+							full_path,
+							p - full_path,
+							full_path + full_path_nchars + 1,
+							info->FileNameLength / 2,
+							params,
+							stats,
+							vol_flags);
 
 				full_path[full_path_nchars] = L'\0';
 
 				if (ret)
 					goto out_free_buf;
 				if (child)
-					dentry_add_child(root, child);
+					dentry_add_child(parent, child);
 			}
 			if (info->NextEntryOffset == 0)
 				break;
@@ -417,9 +443,11 @@ win32_recurse_directory(HANDLE h,
 		}
 	}
 
-	if (status != STATUS_NO_MORE_FILES) {
+	if (unlikely(status != STATUS_NO_MORE_FILES)) {
 		set_errno_from_nt_status(status);
-		ERROR_WITH_ERRNO("\"%ls\": Can't read directory", full_path);
+		ERROR_WITH_ERRNO("\"%ls\": Can't read directory "
+				 "(status=0x%08"PRIx32")",
+				 printable_path(full_path), (u32)status);
 		ret = WIMLIB_ERR_READ;
 	}
 out_free_buf:
@@ -470,7 +498,7 @@ enum rp_status {
  * wouldn't even be called anyway.
  */
 static enum rp_status
-win32_capture_maybe_rpfix_target(wchar_t *target, u16 *target_nbytes_p,
+winnt_capture_maybe_rpfix_target(wchar_t *target, u16 *target_nbytes_p,
 				 u64 capture_root_ino, u64 capture_root_dev,
 				 u32 rptag)
 {
@@ -494,7 +522,6 @@ win32_capture_maybe_rpfix_target(wchar_t *target, u16 *target_nbytes_p,
 	target_nchars = wcslen(target);
 	wmemmove(orig_target + stripped_chars, target, target_nchars + 1);
 	*target_nbytes_p = (target_nchars + stripped_chars) * sizeof(wchar_t);
-	DEBUG("Fixed reparse point (new target: \"%ls\")", orig_target);
 	if (stripped_chars)
 		return RP_FIXED_FULLPATH;
 	else
@@ -504,7 +531,7 @@ win32_capture_maybe_rpfix_target(wchar_t *target, u16 *target_nbytes_p,
 /* Returns: `enum rp_status' value on success; negative WIMLIB_ERR_* value on
  * failure. */
 static int
-win32_capture_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
+winnt_capture_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
 			u64 capture_root_ino, u64 capture_root_dev,
 			const wchar_t *path, struct add_image_params *params)
 {
@@ -516,7 +543,7 @@ win32_capture_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
 	if (ret)
 		return -ret;
 
-	rp_status = win32_capture_maybe_rpfix_target(rpdata.substitute_name,
+	rp_status = winnt_capture_maybe_rpfix_target(rpdata.substitute_name,
 						     &rpdata.substitute_name_nbytes,
 						     capture_root_ino,
 						     capture_root_dev,
@@ -550,7 +577,7 @@ win32_capture_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
 			print_name0[print_name_nchars] = L'\0';
 			wmemcpy(print_name0, rpdata.print_name, print_name_nchars);
 
-			params->progress.scan.cur_path = path;
+			params->progress.scan.cur_path = printable_path(path);
 			params->progress.scan.symlink_target = print_name0;
 			do_capture_progress(params,
 					    WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK,
@@ -583,7 +610,7 @@ win32_capture_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
  *	code.
  */
 static int
-win32_get_reparse_data(HANDLE h, const wchar_t *path,
+winnt_get_reparse_data(HANDLE h, const wchar_t *path,
 		       struct add_image_params *params,
 		       u8 *rpbuf, u16 *rpbuflen_ret)
 {
@@ -618,7 +645,7 @@ win32_get_reparse_data(HANDLE h, const wchar_t *path,
 	     reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT))
 	{
 		/* Try doing reparse point fixup */
-		ret = win32_capture_try_rpfix(rpbuf,
+		ret = winnt_capture_try_rpfix(rpbuf,
 					      &rpbuflen,
 					      params->capture_root_ino,
 					      params->capture_root_dev,
@@ -650,7 +677,7 @@ win32_get_encrypted_file_size(const wchar_t *path, u64 *size_ret)
 	if (err != ERROR_SUCCESS) {
 		set_errno_from_win32_error(err);
 		ERROR_WITH_ERRNO("Failed to open encrypted file \"%ls\" "
-				 "for raw read", path);
+				 "for raw read", printable_path(path));
 		return WIMLIB_ERR_OPEN;
 	}
 	*size_ret = 0;
@@ -659,7 +686,7 @@ win32_get_encrypted_file_size(const wchar_t *path, u64 *size_ret)
 	if (err != ERROR_SUCCESS) {
 		set_errno_from_win32_error(err);
 		ERROR_WITH_ERRNO("Failed to read raw encrypted data from "
-				 "\"%ls\"", path);
+				 "\"%ls\"", printable_path(path));
 		ret = WIMLIB_ERR_READ;
 	} else {
 		ret = 0;
@@ -726,11 +753,10 @@ build_stream_path(const wchar_t *path, size_t path_nchars,
 }
 
 static int
-win32_capture_stream(const wchar_t *path, size_t path_nchars,
-		     const wchar_t *raw_stream_name, size_t raw_stream_name_nchars,
-		     u64 stream_size,
-		     struct wim_inode *inode,
-		     struct list_head *unhashed_streams)
+winnt_scan_stream(const wchar_t *path, size_t path_nchars,
+		  const wchar_t *raw_stream_name, size_t raw_stream_name_nchars,
+		  u64 stream_size,
+		  struct wim_inode *inode, struct list_head *unhashed_streams)
 {
 	const wchar_t *stream_name;
 	size_t stream_name_nchars;
@@ -740,15 +766,17 @@ win32_capture_stream(const wchar_t *path, size_t path_nchars,
 	u32 stream_id;
 
 	/* Given the raw stream name (which is something like
-	 * L":streamname:$DATA", extract just the stream name part.  */
+	 * :streamname:$DATA), extract just the stream name part.
+	 * Ignore any non-$DATA streams.  */
 	if (!get_data_stream_name(raw_stream_name, raw_stream_name_nchars,
 				  &stream_name, &stream_name_nchars))
 		return 0;
 
-	/* If this is a named stream, allocate an ADS entry.  */
+	/* If this is a named stream, allocate an ADS entry for it.  */
 	if (stream_name_nchars) {
 		ads_entry = inode_add_ads_utf16le(inode, stream_name,
-						  stream_name_nchars * sizeof(wchar_t));
+						  stream_name_nchars *
+							sizeof(wchar_t));
 		if (!ads_entry)
 			return WIMLIB_ERR_NOMEM;
 	} else {
@@ -774,12 +802,13 @@ win32_capture_stream(const wchar_t *path, size_t path_nchars,
 		return WIMLIB_ERR_NOMEM;
 	}
 	lte->file_on_disk = stream_path;
-	lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
+	lte->resource_location = RESOURCE_IN_WINNT_FILE_ON_DISK;
 	lte->size = stream_size;
 	if ((inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED) && !ads_entry) {
 		/* Special case for encrypted file.  */
 
-		/* OpenEncryptedFileRaw() expects Win32 name, not NT name.  */
+		/* OpenEncryptedFileRaw() expects Win32 name, not NT name.
+		 * Change \??\ into \\?\  */
 		lte->file_on_disk[1] = L'\\';
 		wimlib_assert(!wmemcmp(lte->file_on_disk, L"\\\\?\\", 4));
 
@@ -807,7 +836,8 @@ win32_capture_stream(const wchar_t *path, size_t path_nchars,
 	return 0;
 }
 
-/* Load information about the streams of an open file into a WIM inode.
+/*
+ * Load information about the streams of an open file into a WIM inode.
  *
  * We use the NtQueryInformationFile() system call instead of FindFirstStream()
  * and FindNextStream().  This is done for two reasons:
@@ -821,23 +851,17 @@ win32_capture_stream(const wchar_t *path, size_t path_nchars,
  *   already present in Windows XP.
  */
 static int
-win32_capture_streams(HANDLE *hFile_p,
-		      const wchar_t *path,
-		      size_t path_nchars,
-		      struct wim_inode *inode,
-		      struct list_head *unhashed_streams,
-		      u64 file_size,
-		      DWORD vol_flags)
+winnt_scan_streams(HANDLE *hFile_p, const wchar_t *path, size_t path_nchars,
+		   struct wim_inode *inode, struct list_head *unhashed_streams,
+		   u64 file_size, u32 vol_flags)
 {
 	int ret;
 	u8 _buf[1024] _aligned_attribute(8);
 	u8 *buf;
 	size_t bufsize;
-	IO_STATUS_BLOCK io_status;
+	IO_STATUS_BLOCK iosb;
 	NTSTATUS status;
 	const FILE_STREAM_INFORMATION *info;
-
-	DEBUG("Capturing streams from \"%ls\"", path);
 
 	buf = _buf;
 	bufsize = sizeof(_buf);
@@ -847,7 +871,7 @@ win32_capture_streams(HANDLE *hFile_p,
 
 	/* Get a buffer containing the stream information.  */
 	while (!NT_SUCCESS(status = (*func_NtQueryInformationFile)(*hFile_p,
-								   &io_status,
+								   &iosb,
 								   buf,
 								   bufsize,
 								   FileStreamInformation)))
@@ -876,20 +900,21 @@ win32_capture_streams(HANDLE *hFile_p,
 			goto unnamed_only;
 		default:
 			set_errno_from_nt_status(status);
-			ERROR_WITH_ERRNO("\"%ls\": Failed to query "
-					 "stream information", path);
+			ERROR_WITH_ERRNO("\"%ls\": Failed to query stream "
+					 "information (status=0x%08"PRIx32")",
+					 printable_path(path), (u32)status);
 			ret = WIMLIB_ERR_READ;
 			goto out_free_buf;
 		}
 	}
 
-	if (io_status.Information == 0) {
+	if (iosb.Information == 0) {
 		/* No stream information.  */
 		ret = 0;
 		goto out_free_buf;
 	}
 
-	if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED) {
+	if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED)) {
 		/* OpenEncryptedFileRaw() seems to fail with
 		 * ERROR_SHARING_VIOLATION if there are any handles opened to
 		 * the file.  */
@@ -900,12 +925,12 @@ win32_capture_streams(HANDLE *hFile_p,
 	/* Parse one or more stream information structures.  */
 	info = (const FILE_STREAM_INFORMATION *)buf;
 	for (;;) {
-		/* Capture the stream.  */
-		ret = win32_capture_stream(path, path_nchars,
-					   info->StreamName,
-					   info->StreamNameLength / 2,
-					   info->StreamSize.QuadPart,
-					   inode, unhashed_streams);
+		/* Load the stream information.  */
+		ret = winnt_scan_stream(path, path_nchars,
+					info->StreamName,
+					info->StreamNameLength / 2,
+					info->StreamSize.QuadPart,
+					inode, unhashed_streams);
 		if (ret)
 			goto out_free_buf;
 
@@ -922,8 +947,7 @@ win32_capture_streams(HANDLE *hFile_p,
 
 unnamed_only:
 	/* The volume does not support named streams.  Only capture the unnamed
-	 * data stream. */
-	DEBUG("Only capturing unnamed data stream");
+	 * data stream.  */
 	if (inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
 				   FILE_ATTRIBUTE_REPARSE_POINT))
 	{
@@ -931,26 +955,25 @@ unnamed_only:
 		goto out_free_buf;
 	}
 
-	ret = win32_capture_stream(path, path_nchars,
-				   L"::$DATA", 7, file_size,
-				   inode, unhashed_streams);
+	ret = winnt_scan_stream(path, path_nchars, L"::$DATA", 7,
+				file_size, inode, unhashed_streams);
 out_free_buf:
 	/* Free buffer if allocated on heap.  */
-	if (buf != _buf)
+	if (unlikely(buf != _buf))
 		FREE(buf);
 	return ret;
 }
 
 static int
-win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
+winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				  HANDLE cur_dir,
 				  wchar_t *full_path,
 				  size_t full_path_nchars,
 				  const wchar_t *filename,
 				  size_t filename_nchars,
 				  struct add_image_params *params,
-				  struct win32_capture_state *state,
-				  DWORD vol_flags)
+				  struct winnt_scan_stats *stats,
+				  u32 vol_flags)
 {
 	struct wim_dentry *root = NULL;
 	struct wim_inode *inode = NULL;
@@ -970,6 +993,7 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		goto out_progress;
 	}
 
+	/* Open the file.  */
 	status = winnt_openat(cur_dir,
 			      (cur_dir ? filename : full_path),
 			      (cur_dir ? filename_nchars : full_path_nchars),
@@ -979,80 +1003,105 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 					ACCESS_SYSTEM_SECURITY |
 					SYNCHRONIZE,
 			      &h);
-	if (!NT_SUCCESS(status)) {
+	if (unlikely(!NT_SUCCESS(status))) {
 		set_errno_from_nt_status(status);
-		ERROR_WITH_ERRNO("\"%ls\": Can't open file", full_path);
+		ERROR_WITH_ERRNO("\"%ls\": Can't open file "
+				 "(status=0x%08"PRIx32")",
+				 printable_path(full_path), (u32)status);
 		ret = WIMLIB_ERR_OPEN;
 		goto out;
 	}
 
+	/* Get information about the file.  */
 	{
 		IO_STATUS_BLOCK iosb;
 
 		status = (*func_NtQueryInformationFile)(h, &iosb,
-							&file_info, sizeof(file_info),
+							&file_info,
+							sizeof(file_info),
 							FileAllInformation);
-		if (!NT_SUCCESS(status) && status != STATUS_BUFFER_OVERFLOW) {
-			set_errno_from_GetLastError();
-			ERROR_WITH_ERRNO("\"%ls\": Can't get file information", full_path);
+
+		if (unlikely(!NT_SUCCESS(status) &&
+			     status != STATUS_BUFFER_OVERFLOW))
+		{
+			set_errno_from_nt_status(status);
+			ERROR_WITH_ERRNO("\"%ls\": Can't get file information "
+					 "(status=0x%08"PRIx32")",
+					 printable_path(full_path), (u32)status);
 			ret = WIMLIB_ERR_STAT;
 			goto out;
 		}
 	}
 
-	if (!cur_dir) {
-		/* Root directory; get volume information.  */
+	if (unlikely(!cur_dir)) {
+
+		/* Root of tree being captured; get volume information.  */
+
 		FILE_FS_ATTRIBUTE_INFORMATION attr_info;
 		FILE_FS_VOLUME_INFORMATION vol_info;
 		IO_STATUS_BLOCK iosb;
 
 		/* Get volume flags  */
 		status = (*func_NtQueryVolumeInformationFile)(h, &iosb,
-							      &attr_info, sizeof(attr_info),
+							      &attr_info,
+							      sizeof(attr_info),
 							      FileFsAttributeInformation);
-		if ((NT_SUCCESS(status) || (status == STATUS_BUFFER_OVERFLOW)) &&
-		    iosb.Information >= offsetof(FILE_FS_ATTRIBUTE_INFORMATION,
-						 FileSystemAttributes) +
-					sizeof(attr_info.FileSystemAttributes))
+		if (likely((NT_SUCCESS(status) ||
+			    (status == STATUS_BUFFER_OVERFLOW)) &&
+			   (iosb.Information >=
+				offsetof(FILE_FS_ATTRIBUTE_INFORMATION,
+					 FileSystemAttributes) +
+				sizeof(attr_info.FileSystemAttributes))))
 		{
 			vol_flags = attr_info.FileSystemAttributes;
 		} else {
 			set_errno_from_nt_status(status);
-			WARNING_WITH_ERRNO("\"%ls\": Can't get volume attributes",
-					   full_path);
+			WARNING_WITH_ERRNO("\"%ls\": Can't get volume attributes "
+					   "(status=0x%"PRIx32")",
+					   printable_path(full_path),
+					   (u32)status);
 			vol_flags = 0;
 		}
 
 		/* Set inode number of root directory  */
-		params->capture_root_ino = file_info.InternalInformation.IndexNumber.QuadPart;
+		params->capture_root_ino =
+			file_info.InternalInformation.IndexNumber.QuadPart;
 
-		/* Get volume ID  */
+		/* Get volume ID.  */
 		status = (*func_NtQueryVolumeInformationFile)(h, &iosb,
-							      &vol_info, sizeof(vol_info),
+							      &vol_info,
+							      sizeof(vol_info),
 							      FileFsVolumeInformation);
-		if ((NT_SUCCESS(status) || (status == STATUS_BUFFER_OVERFLOW)) &&
-		    iosb.Information >= offsetof(FILE_FS_VOLUME_INFORMATION,
-						 VolumeSerialNumber) +
-					sizeof(vol_info.VolumeSerialNumber))
+		if (likely((NT_SUCCESS(status) ||
+			    (status == STATUS_BUFFER_OVERFLOW)) &&
+			   (iosb.Information >=
+				offsetof(FILE_FS_VOLUME_INFORMATION,
+					 VolumeSerialNumber) +
+				sizeof(vol_info.VolumeSerialNumber))))
 		{
 			params->capture_root_dev = vol_info.VolumeSerialNumber;
 		} else {
 			set_errno_from_nt_status(status);
-			WARNING_WITH_ERRNO("\"%ls\": Can't get volume ID",
-					   full_path);
+			WARNING_WITH_ERRNO("\"%ls\": Can't get volume ID "
+					   "(status=0x%08"PRIx32")",
+					   printable_path(full_path),
+					   (u32)status);
 			params->capture_root_dev = 0;
 		}
 	}
 
-	if (file_info.BasicInformation.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+	/* If this is a reparse point, read the reparse data.  */
+	if (unlikely(file_info.BasicInformation.FileAttributes &
+		     FILE_ATTRIBUTE_REPARSE_POINT))
+	{
 		rpbuf = alloca(REPARSE_POINT_MAX_SIZE);
-		ret = win32_get_reparse_data(h, full_path,
-					     params, rpbuf, &rpbuflen);
+		ret = winnt_get_reparse_data(h, full_path, params,
+					     rpbuf, &rpbuflen);
 		if (ret < 0) {
 			/* WIMLIB_ERR_* (inverted) */
 			ret = -ret;
 			ERROR_WITH_ERRNO("\"%ls\": Can't get reparse data",
-					 full_path);
+					 printable_path(full_path));
 			goto out;
 		} else if (ret & RP_FIXED) {
 			not_rpfixed = 0;
@@ -1083,16 +1132,23 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	if (ret)
 		goto out;
 
-	ret = win32_get_short_name(h, root);
-	if (ret) {
-		ERROR_WITH_ERRNO("\"%ls\": Can't get short name", full_path);
+	/* Get the short (DOS) name of the file.  */
+	status = winnt_get_short_name(h, root);
+
+	/* If we can't read the short filename for any reason other than
+	 * out-of-memory, just ignore the error and assume the file has no short
+	 * name.  This shouldn't be an issue, since the short names are
+	 * essentially obsolete anyway.  */
+	if (unlikely(status == STATUS_NO_MEMORY)) {
+		ret = WIMLIB_ERR_NOMEM;
 		goto out;
 	}
 
 	inode = root->d_inode;
 
 	if (inode->i_nlink > 1) {
-		/* Shared inode; nothing more to do */
+		/* Shared inode (hard link); skip reading per-inode information.
+		 */
 		ret = 0;
 		goto out_progress;
 	}
@@ -1103,44 +1159,52 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	inode->i_last_access_time = file_info.BasicInformation.LastAccessTime.QuadPart;
 	inode->i_resolved = 1;
 
-	params->add_flags &= ~WIMLIB_ADD_FLAG_ROOT;
-
+	/* Get the file's security descriptor, unless we are capturing in
+	 * NO_ACLS mode or the volume does not support security descriptors.  */
 	if (!(params->add_flags & WIMLIB_ADD_FLAG_NO_ACLS)
 	    && (vol_flags & FILE_PERSISTENT_ACLS))
 	{
-		ret = win32_get_security_descriptor(h, inode,
-						    params->sd_set, state,
-						    params->add_flags);
-		if (ret) {
-			ERROR_WITH_ERRNO("\"%ls\": Can't "
-					 "read security descriptor", full_path);
+		status = winnt_get_security_descriptor(h, inode,
+						       params->sd_set, stats,
+						       params->add_flags);
+		if (!NT_SUCCESS(status)) {
+			set_errno_from_nt_status(status);
+			ERROR_WITH_ERRNO("\"%ls\": Can't read security "
+					 "descriptor (status=0x%08"PRIu32")",
+					 printable_path(full_path),
+					 (u32)status);
+			ret = WIMLIB_ERR_STAT;
 			goto out;
 		}
 	}
 
-	/* Capture the unnamed data stream (only should be present for regular
-	 * files) and any alternate data streams. */
-	ret = win32_capture_streams(&h,
-				    full_path,
-				    full_path_nchars,
-				    inode,
-				    params->unhashed_streams,
-				    file_info.StandardInformation.EndOfFile.QuadPart,
-				    vol_flags);
+	/* Load information about the unnamed data stream and any named data
+	 * streams.  */
+	ret = winnt_scan_streams(&h,
+				 full_path,
+				 full_path_nchars,
+				 inode,
+				 params->unhashed_streams,
+				 file_info.StandardInformation.EndOfFile.QuadPart,
+				 vol_flags);
 	if (ret)
 		goto out;
 
-	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-		/* Reparse point: set the reparse data (which we read already)
-		 * */
+	if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+
+		/* Reparse point: set the reparse data (already read).  */
+
 		inode->i_not_rpfixed = not_rpfixed;
 		inode->i_reparse_tag = le32_to_cpu(*(le32*)rpbuf);
 		ret = inode_set_unnamed_stream(inode, rpbuf + 8, rpbuflen - 8,
 					       params->lookup_table);
+		if (ret)
+			goto out;
 	} else if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
-		/* Directory (not a reparse point) --- recurse to children */
 
-		if (h == INVALID_HANDLE_VALUE) {
+		/* Directory: recurse to children.  */
+
+		if (unlikely(h == INVALID_HANDLE_VALUE)) {
 			/* Re-open handle that was closed to read raw encrypted
 			 * data.  */
 			status = winnt_openat(cur_dir,
@@ -1152,33 +1216,35 @@ win32_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 					      &h);
 			if (!NT_SUCCESS(status)) {
 				set_errno_from_nt_status(status);
-				ERROR_WITH_ERRNO("\"%ls\": Can't open file",
-						 full_path);
+				ERROR_WITH_ERRNO("\"%ls\": Can't re-open file "
+						 "(status=0x%08"PRIx32")",
+						 printable_path(full_path),
+						 (u32)status);
 				ret = WIMLIB_ERR_OPEN;
 				goto out;
 			}
 		}
-		ret = win32_recurse_directory(h,
+		ret = winnt_recurse_directory(h,
 					      full_path,
 					      full_path_nchars,
 					      root,
 					      params,
-					      state,
+					      stats,
 					      vol_flags);
+		if (ret)
+			goto out;
 	}
-	if (ret)
-		goto out;
 
 out_progress:
-	params->progress.scan.cur_path = full_path;
-	if (root)
+	params->progress.scan.cur_path = printable_path(full_path);
+	if (likely(root))
 		do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
 	else
 		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
 out:
-	if (h != INVALID_HANDLE_VALUE)
+	if (likely(h != INVALID_HANDLE_VALUE))
 		(*func_NtClose)(h);
-	if (ret == 0)
+	if (likely(ret == 0))
 		*root_ret = root;
 	else
 		free_dentry_tree(root, params->lookup_table);
@@ -1186,24 +1252,22 @@ out:
 }
 
 static void
-win32_do_capture_warnings(const wchar_t *path,
-			  const struct win32_capture_state *state,
-			  int add_flags)
+winnt_do_scan_warnings(const wchar_t *path, const struct winnt_scan_stats *stats)
 {
-	if (state->num_get_sacl_priv_notheld == 0 &&
-	    state->num_get_sd_access_denied == 0)
+	if (likely(stats->num_get_sacl_priv_notheld == 0 &&
+		   stats->num_get_sd_access_denied == 0))
 		return;
 
 	WARNING("Scan of \"%ls\" complete, but with one or more warnings:", path);
-	if (state->num_get_sacl_priv_notheld != 0) {
+	if (stats->num_get_sacl_priv_notheld != 0) {
 		WARNING("- Could not capture SACL (System Access Control List)\n"
 			"            on %lu files or directories.",
-			state->num_get_sacl_priv_notheld);
+			stats->num_get_sacl_priv_notheld);
 	}
-	if (state->num_get_sd_access_denied != 0) {
+	if (stats->num_get_sd_access_denied != 0) {
 		WARNING("- Could not capture security descriptor at all\n"
 			"            on %lu files or directories.",
-			state->num_get_sd_access_denied);
+			stats->num_get_sd_access_denied);
 	}
 	WARNING("To fully capture all security descriptors, run the program\n"
 		"          with Administrator rights.");
@@ -1211,7 +1275,7 @@ win32_do_capture_warnings(const wchar_t *path,
 
 #define WINDOWS_NT_MAX_PATH 32768
 
-/* Win32 version of capturing a directory tree */
+/* Win32 version of capturing a directory tree.  */
 int
 win32_build_dentry_tree(struct wim_dentry **root_ret,
 			const wchar_t *root_disk_path,
@@ -1221,7 +1285,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	DWORD dret;
 	size_t path_nchars;
 	int ret;
-	struct win32_capture_state state;
+	struct winnt_scan_stats stats;
 
 	/* WARNING: There is no check for overflow later when this buffer is
 	 * being used!  But it's as long as the maximum path length understood
@@ -1234,7 +1298,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	dret = GetFullPathName(root_disk_path, WINDOWS_NT_MAX_PATH - 3,
 			       &path[4], NULL);
 
-	if (dret == 0 || dret >= WINDOWS_NT_MAX_PATH - 3) {
+	if (unlikely(dret == 0 || dret >= WINDOWS_NT_MAX_PATH - 3)) {
 		ERROR("Can't get full path name for \"%ls\"", root_disk_path);
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
@@ -1246,22 +1310,20 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
        /* Strip trailing slashes.  If we don't do this, we may create a path
 	* with multiple consecutive backslashes, which for some reason causes
 	* Windows to report that the file cannot be found.  */
-	while (path_nchars >= 2 &&
-	       path[path_nchars - 1] == L'\\' &&
-	       path[path_nchars - 2] != L':')
-	{
+	while (unlikely(path[path_nchars - 1] == L'\\' &&
+			path[path_nchars - 2] != L':'))
 		path[--path_nchars] = L'\0';
-	}
 
 	params->capture_root_nchars = path_nchars;
 
-	memset(&state, 0, sizeof(state));
-	ret = win32_build_dentry_tree_recursive(root_ret, NULL,
+	memset(&stats, 0, sizeof(stats));
+
+	ret = winnt_build_dentry_tree_recursive(root_ret, NULL,
 						path, path_nchars, L"", 0,
-						params, &state, 0);
+						params, &stats, 0);
 	FREE(path);
 	if (ret == 0)
-		win32_do_capture_warnings(root_disk_path, &state, params->add_flags);
+		winnt_do_scan_warnings(root_disk_path, &stats);
 	return ret;
 }
 

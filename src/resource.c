@@ -758,7 +758,6 @@ read_wim_stream_prefix(const struct wim_lookup_table_entry *lte, u64 size,
 					 cb, cb_ctx);
 }
 
-#ifndef __WIN32__
 /* This function handles reading stream data that is located in an external
  * file,  such as a file that has been added to the WIM image through execution
  * of a wimlib_add_command.
@@ -779,7 +778,7 @@ read_file_on_disk_prefix(const struct wim_lookup_table_entry *lte, u64 size,
 
 	DEBUG("Reading %"PRIu64" bytes from \"%"TS"\"", size, lte->file_on_disk);
 
-	raw_fd = open(lte->file_on_disk, O_BINARY | O_RDONLY);
+	raw_fd = topen(lte->file_on_disk, O_BINARY | O_RDONLY);
 	if (raw_fd < 0) {
 		ERROR_WITH_ERRNO("Can't open \"%"TS"\"", lte->file_on_disk);
 		return WIMLIB_ERR_OPEN;
@@ -789,7 +788,6 @@ read_file_on_disk_prefix(const struct wim_lookup_table_entry *lte, u64 size,
 	filedes_close(&fd);
 	return ret;
 }
-#endif /* !__WIN32__ */
 
 /* This function handles the trivial case of reading stream data that is, in
  * fact, already located in an in-memory buffer.  */
@@ -827,11 +825,7 @@ read_stream_prefix(const struct wim_lookup_table_entry *lte, u64 size,
 {
 	static const read_stream_prefix_handler_t handlers[] = {
 		[RESOURCE_IN_WIM]             = read_wim_stream_prefix,
-	#ifdef __WIN32__
-		[RESOURCE_IN_FILE_ON_DISK]    = read_win32_file_prefix,
-	#else
 		[RESOURCE_IN_FILE_ON_DISK]    = read_file_on_disk_prefix,
-	#endif
 		[RESOURCE_IN_ATTACHED_BUFFER] = read_buffer_prefix,
 	#ifdef WITH_FUSE
 		[RESOURCE_IN_STAGING_FILE]    = read_file_on_disk_prefix,
@@ -840,6 +834,7 @@ read_stream_prefix(const struct wim_lookup_table_entry *lte, u64 size,
 		[RESOURCE_IN_NTFS_VOLUME]     = read_ntfs_file_prefix,
 	#endif
 	#ifdef __WIN32__
+		[RESOURCE_IN_WINNT_FILE_ON_DISK] = read_winnt_file_prefix,
 		[RESOURCE_WIN32_ENCRYPTED]    = read_win32_encrypted_file_prefix,
 	#endif
 	};

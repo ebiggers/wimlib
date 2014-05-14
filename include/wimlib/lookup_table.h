@@ -28,8 +28,7 @@ enum resource_location {
 	RESOURCE_IN_WIM,
 
 	/* The stream is located in the external file named by @file_on_disk.
-	 * On Windows, @file_on_disk may actually specify a named data stream
-	 * (file path, then colon, then name of the stream).  */
+	 */
 	RESOURCE_IN_FILE_ON_DISK,
 
 	/* The stream is directly attached in the in-memory buffer pointed to by
@@ -52,6 +51,11 @@ enum resource_location {
 #endif
 
 #ifdef __WIN32__
+	/* Windows only: the stream is located in the external file named by
+	 * @file_on_disk, which is in the Windows NT namespace and may specify a
+	 * named data stream.  */
+	RESOURCE_IN_WINNT_FILE_ON_DISK,
+
 	/* Windows only: the stream is located in the external file named by
 	 * @file_on_disk, but the file is encrypted and must be read using the
 	 * appropriate Windows API.  */
