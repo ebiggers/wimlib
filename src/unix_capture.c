@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013 Eric Biggers
+ * Copyright (C) 2012, 2013, 2014 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
  *
@@ -29,7 +29,8 @@
 
 #include <dirent.h>
 #include <errno.h>
-#include <limits.h>
+#include <fcntl.h>
+#include <limits.h> /* for PATH_MAX */
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -37,107 +38,173 @@
 #include "wimlib/dentry.h"
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
-#include "wimlib/paths.h"
 #include "wimlib/reparse.h"
 #include "wimlib/timestamp.h"
 
-static int
-unix_capture_regular_file(const char *path,
-			  u64 size,
-			  struct wim_inode *inode,
-			  struct list_head *unhashed_streams)
+#ifdef HAVE_FDOPENDIR
+#  define my_fdopendir(dirfd_p) fdopendir(*(dirfd_p))
+#else
+static DIR *
+my_fdopendir(int *dirfd_p)
 {
+	DIR *dir = NULL;
+	int old_pwd;
+
+	old_pwd = open(".", O_RDONLY);
+	if (old_pwd >= 0) {
+		if (!fchdir(*dirfd_p)) {
+			dir = opendir(".");
+			if (dir) {
+				close(*dirfd_p);
+				*dirfd_p = dirfd(dir);
+			}
+			fchdir(old_pwd);
+		}
+		close(old_pwd);
+	}
+	return dir;
+}
+#endif
+
+#ifdef HAVE_OPENAT
+#  define my_openat(full_path, dirfd, relpath, flags) \
+		openat((dirfd), (relpath), (flags))
+#else
+#  define my_openat(full_path, dirfd, relpath, flags) \
+		open((full_path), (flags))
+#endif
+
+#ifdef HAVE_READLINKAT
+#  define my_readlinkat(full_path, dirfd, relpath, buf, bufsize) \
+		readlinkat((dirfd), (relpath), (buf), (bufsize))
+#else
+#  define my_readlinkat(full_path, dirfd, relpath, buf, bufsize) \
+		readlink((full_path), (buf), (bufsize))
+#endif
+
+#ifdef HAVE_FSTATAT
+#  define my_fstatat(full_path, dirfd, relpath, stbuf, flags)	\
+	fstatat((dirfd), (relpath), (stbuf), (flags))
+#else
+#  define my_fstatat(full_path, dirfd, relpath, stbuf, flags)	\
+	((flags) & AT_SYMLINK_NOFOLLOW) ? \
+		lstat((full_path), (stbuf)) : \
+		stat((full_path), (stbuf))
+#endif
+
+#ifndef AT_FDCWD
+#  define AT_FDCWD	-100
+#endif
+
+#ifndef AT_SYMLINK_NOFOLLOW
+#  define AT_SYMLINK_NOFOLLOW	0x100
+#endif
+
+static int
+unix_scan_regular_file(const char *path, u64 size, struct wim_inode *inode,
+		       struct list_head *unhashed_streams)
+{
+	struct wim_lookup_table_entry *lte;
+	char *file_on_disk;
+
 	inode->i_attributes = FILE_ATTRIBUTE_NORMAL;
 
 	/* Empty files do not have to have a lookup table entry. */
-	if (size != 0) {
-		struct wim_lookup_table_entry *lte;
-		char *file_on_disk;
+	if (!size)
+		return 0;
 
-		file_on_disk = STRDUP(path);
-		if (!file_on_disk)
-			return WIMLIB_ERR_NOMEM;
-		lte = new_lookup_table_entry();
-		if (!lte) {
-			FREE(file_on_disk);
-			return WIMLIB_ERR_NOMEM;
-		}
-		lte->file_on_disk = file_on_disk;
-		lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
-		lte->size = size;
-		add_unhashed_stream(lte, inode, 0, unhashed_streams);
-		inode->i_lte = lte;
+	file_on_disk = STRDUP(path);
+	if (!file_on_disk)
+		return WIMLIB_ERR_NOMEM;
+	lte = new_lookup_table_entry();
+	if (!lte) {
+		FREE(file_on_disk);
+		return WIMLIB_ERR_NOMEM;
 	}
+	lte->file_on_disk = file_on_disk;
+	lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
+	lte->size = size;
+	add_unhashed_stream(lte, inode, 0, unhashed_streams);
+	inode->i_lte = lte;
 	return 0;
 }
 
 static int
-unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
-				 char *path,
-				 size_t path_len,
+unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
+				 char *path, size_t path_len,
+				 int dirfd, const char *relpath,
 				 struct add_image_params *params);
 
 static int
-unix_capture_directory(struct wim_dentry *dir_dentry,
-		       char *path,
-		       size_t path_len,
-		       struct add_image_params *params)
+unix_scan_directory(struct wim_dentry *dir_dentry,
+		    char *full_path, size_t full_path_len,
+		    int parent_dirfd, const char *dir_relpath,
+		    struct add_image_params *params)
 {
 
+	int dirfd;
 	DIR *dir;
-	struct dirent *entry;
-	struct wim_dentry *child;
 	int ret;
 
-	dir_dentry->d_inode->i_attributes = FILE_ATTRIBUTE_DIRECTORY;
-	dir = opendir(path);
-	if (!dir) {
-		ERROR_WITH_ERRNO("Failed to open the directory `%s'",
-				 path);
+	dirfd = my_openat(full_path, parent_dirfd, dir_relpath, O_RDONLY);
+	if (dirfd < 0) {
+		ERROR_WITH_ERRNO("\"%s\": Can't open directory", full_path);
 		return WIMLIB_ERR_OPENDIR;
 	}
 
-	/* Recurse on directory contents */
+	dir_dentry->d_inode->i_attributes = FILE_ATTRIBUTE_DIRECTORY;
+	dir = my_fdopendir(&dirfd);
+	if (!dir) {
+		ERROR_WITH_ERRNO("\"%s\": Can't open directory", full_path);
+		close(dirfd);
+		return WIMLIB_ERR_OPENDIR;
+	}
+
 	ret = 0;
 	for (;;) {
+		struct dirent *entry;
+		struct wim_dentry *child;
+		size_t name_len;
+
 		errno = 0;
 		entry = readdir(dir);
 		if (!entry) {
 			if (errno) {
 				ret = WIMLIB_ERR_READ;
-				ERROR_WITH_ERRNO("Error reading the "
-						 "directory `%s'", path);
+				ERROR_WITH_ERRNO("\"%s\": Error reading directory",
+						 full_path);
 			}
 			break;
 		}
 
-		if (entry->d_name[0] == '.' && (entry->d_name[1] == '\0'
-		      || (entry->d_name[1] == '.' && entry->d_name[2] == '\0')))
-				continue;
+		if (entry->d_name[0] == '.' &&
+		    (entry->d_name[1] == '\0' ||
+		     (entry->d_name[1] == '.' && entry->d_name[2] == '\0')))
+			continue;
 
-		size_t name_len = strlen(entry->d_name);
-
-		path[path_len] = '/';
-		memcpy(&path[path_len + 1], entry->d_name, name_len + 1);
+		full_path[full_path_len] = '/';
+		name_len = strlen(entry->d_name);
+		memcpy(&full_path[full_path_len + 1], entry->d_name, name_len + 1);
 		ret = unix_build_dentry_tree_recursive(&child,
-						       path,
-						       path_len + 1 + name_len,
+						       full_path,
+						       full_path_len + 1 + name_len,
+						       dirfd,
+						       &full_path[full_path_len + 1],
 						       params);
+		full_path[full_path_len] = '\0';
 		if (ret)
 			break;
 		if (child)
 			dentry_add_child(dir_dentry, child);
 	}
-	path[path_len] = '\0';
 	closedir(dir);
 	return ret;
 }
 
 static int
-unix_capture_symlink(struct wim_dentry **root_p,
-		     const char *path,
-		     struct wim_inode *inode,
-		     struct add_image_params *params)
+unix_scan_symlink(struct wim_dentry **root_p, const char *full_path,
+		  int dirfd, const char *relpath,
+		  struct wim_inode *inode, struct add_image_params *params)
 {
 	char deref_name_buf[4096];
 	ssize_t deref_name_len;
@@ -150,18 +217,17 @@ unix_capture_symlink(struct wim_dentry **root_p,
 	/* The idea here is to call readlink() to get the UNIX target of the
 	 * symbolic link, then turn the target into a reparse point data buffer
 	 * that contains a relative or absolute symbolic link. */
-	deref_name_len = readlink(path, deref_name_buf,
-				  sizeof(deref_name_buf) - 1);
+	deref_name_len = my_readlinkat(full_path, dirfd, relpath,
+				       deref_name_buf, sizeof(deref_name_buf) - 1);
 	if (deref_name_len < 0) {
-		ERROR_WITH_ERRNO("Failed to read target of "
-				 "symbolic link `%s'", path);
+		ERROR_WITH_ERRNO("\"%s\": Can't read target of symbolic link",
+				 full_path);
 		return WIMLIB_ERR_READLINK;
 	}
 
 	dest = deref_name_buf;
 
 	dest[deref_name_len] = '\0';
-	DEBUG("Read symlink `%s'", dest);
 
 	if ((params->add_flags & WIMLIB_ADD_FLAG_RPFIX) &&
 	     dest[0] == '/')
@@ -169,13 +235,13 @@ unix_capture_symlink(struct wim_dentry **root_p,
 		dest = capture_fixup_absolute_symlink(dest,
 						      params->capture_root_ino,
 						      params->capture_root_dev);
-		if (dest == NULL) {
+		if (!dest) {
 			/* RPFIX (reparse point fixup) mode:  Ignore
 			 * absolute symbolic link that points out of the
 			 * tree to be captured.  */
 			free_dentry(*root_p);
 			*root_p = NULL;
-			params->progress.scan.cur_path = path;
+			params->progress.scan.cur_path = full_path;
 			params->progress.scan.symlink_target = deref_name_buf;
 			do_capture_progress(params,
 					    WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK,
@@ -193,69 +259,72 @@ unix_capture_symlink(struct wim_dentry **root_p,
 	 * FILE_ATTRIBUTE_DIRECTORY needs to be set on the symbolic link if the
 	 * *target* of the symbolic link is a directory.  */
 	struct stat stbuf;
-	if (stat(path, &stbuf) == 0 && S_ISDIR(stbuf.st_mode))
+	if (my_fstatat(full_path, dirfd, relpath, &stbuf, 0) == 0 &&
+	    S_ISDIR(stbuf.st_mode))
 		inode->i_attributes |= FILE_ATTRIBUTE_DIRECTORY;
 	return 0;
 }
 
 static int
-unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
-				 char *path,
-				 size_t path_len,
+unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
+				 char *full_path, size_t full_path_len,
+				 int dirfd, const char *relpath,
 				 struct add_image_params *params)
 {
-	struct wim_dentry *root = NULL;
-	int ret;
+	struct wim_dentry *tree = NULL;
 	struct wim_inode *inode = NULL;
+	int ret;
 	struct stat stbuf;
+	int stat_flags;
 
-	if (should_exclude_path(path + params->capture_root_nchars,
-				path_len - params->capture_root_nchars,
+	if (should_exclude_path(full_path + params->capture_root_nchars,
+				full_path_len - params->capture_root_nchars,
 				params->config))
 	{
 		ret = 0;
 		goto out_progress;
 	}
 
-	if ((params->add_flags & WIMLIB_ADD_FLAG_DEREFERENCE) ||
-	    (params->add_flags & WIMLIB_ADD_FLAG_ROOT))
-		ret = stat(path, &stbuf);
+	if (params->add_flags & (WIMLIB_ADD_FLAG_DEREFERENCE |
+				 WIMLIB_ADD_FLAG_ROOT))
+		stat_flags = 0;
 	else
-		ret = lstat(path, &stbuf);
+		stat_flags = AT_SYMLINK_NOFOLLOW;
+
+	ret = my_fstatat(full_path, dirfd, relpath, &stbuf, stat_flags);
 
 	if (ret) {
-		ERROR_WITH_ERRNO("Failed to stat \"%s\"", path);
+		ERROR_WITH_ERRNO("\"%s\": Can't read metadata", full_path);
 		ret = WIMLIB_ERR_STAT;
 		goto out;
 	}
 
-	if (!S_ISREG(stbuf.st_mode) &&
-	    !S_ISDIR(stbuf.st_mode) &&
-	    !S_ISLNK(stbuf.st_mode))
+	if (unlikely(!S_ISREG(stbuf.st_mode) &&
+		     !S_ISDIR(stbuf.st_mode) &&
+		     !S_ISLNK(stbuf.st_mode)))
 	{
 		if (params->add_flags & WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE)
 		{
-			ERROR("Can't archive unsupported file \"%s\"", path);
+			ERROR("\"%s\": File type is unsupported", full_path);
 			ret = WIMLIB_ERR_UNSUPPORTED_FILE;
 			goto out;
 		}
-		params->progress.scan.cur_path = path;
+		params->progress.scan.cur_path = full_path;
 		do_capture_progress(params, WIMLIB_SCAN_DENTRY_UNSUPPORTED, NULL);
 		ret = 0;
 		goto out;
 	}
 
-	ret = inode_table_new_dentry(params->inode_table,
-				     path_basename_with_len(path, path_len),
+	ret = inode_table_new_dentry(params->inode_table, relpath,
 				     stbuf.st_ino, stbuf.st_dev,
-				     S_ISDIR(stbuf.st_mode), &root);
+				     S_ISDIR(stbuf.st_mode), &tree);
 	if (ret)
 		goto out;
 
-	inode = root->d_inode;
+	inode = tree->d_inode;
 
 	if (inode->i_nlink > 1) {
-		/* Already captured this inode? */
+		/* Already seen this inode?  */
 		ret = 0;
 		goto out_progress;
 	}
@@ -279,15 +348,23 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		if (ret)
 			goto out;
 	}
-	params->add_flags &= ~WIMLIB_ADD_FLAG_ROOT;
-	if (S_ISREG(stbuf.st_mode))
-		ret = unix_capture_regular_file(path, stbuf.st_size,
-						inode, params->unhashed_streams);
-	else if (S_ISDIR(stbuf.st_mode))
-		ret = unix_capture_directory(root, path, path_len, params);
-	else {
-		ret = unix_capture_symlink(&root, path, inode, params);
-		if (root == NULL)
+
+	if (params->add_flags & WIMLIB_ADD_FLAG_ROOT) {
+		params->capture_root_ino = stbuf.st_ino;
+		params->capture_root_dev = stbuf.st_dev;
+		params->add_flags &= ~WIMLIB_ADD_FLAG_ROOT;
+	}
+
+	if (S_ISREG(stbuf.st_mode)) {
+		ret = unix_scan_regular_file(full_path, stbuf.st_size,
+					     inode, params->unhashed_streams);
+	} else if (S_ISDIR(stbuf.st_mode)) {
+		ret = unix_scan_directory(tree, full_path, full_path_len,
+					  dirfd, relpath, params);
+	} else {
+		ret = unix_scan_symlink(&tree, full_path, dirfd, relpath,
+					inode, params);
+		if (!tree)
 			goto out;
 	}
 
@@ -295,16 +372,16 @@ unix_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		goto out;
 
 out_progress:
-	params->progress.scan.cur_path = path;
-	if (root == NULL)
-		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
-	else
+	params->progress.scan.cur_path = full_path;
+	if (likely(tree))
 		do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
-out:
-	if (ret)
-		free_dentry_tree(root, params->lookup_table);
 	else
-		*root_ret = root;
+		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
+out:
+	if (likely(ret == 0))
+		*tree_ret = tree;
+	else
+		free_dentry_tree(tree, params->lookup_table);
 	return ret;
 }
 
@@ -333,24 +410,13 @@ unix_build_dentry_tree(struct wim_dentry **root_ret,
 		       const char *root_disk_path,
 		       struct add_image_params *params)
 {
-	char *path_buf;
-	int ret;
 	size_t path_len;
 	size_t path_bufsz;
+	char *path_buf;
+	int ret;
 
-	{
-		struct stat root_stbuf;
-		if (stat(root_disk_path, &root_stbuf)) {
-			ERROR_WITH_ERRNO("Failed to stat \"%s\"", root_disk_path);
-			return WIMLIB_ERR_STAT;
-		}
-
-		params->capture_root_ino = root_stbuf.st_ino;
-		params->capture_root_dev = root_stbuf.st_dev;
-	}
-
-	path_bufsz = min(32790, PATH_MAX + 1);
 	path_len = strlen(root_disk_path);
+	path_bufsz = min(32790, PATH_MAX + 1);
 
 	if (path_len >= path_bufsz)
 		return WIMLIB_ERR_INVALID_PARAM;
@@ -362,8 +428,8 @@ unix_build_dentry_tree(struct wim_dentry **root_ret,
 
 	params->capture_root_nchars = path_len;
 
-	ret = unix_build_dentry_tree_recursive(root_ret, path_buf,
-					       path_len, params);
+	ret = unix_build_dentry_tree_recursive(root_ret, path_buf, path_len,
+					       AT_FDCWD, path_buf, params);
 	FREE(path_buf);
 	return ret;
 }
