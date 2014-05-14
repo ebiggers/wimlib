@@ -36,6 +36,30 @@
 #define WIMLIB_REF_MASK_PUBLIC (WIMLIB_REF_FLAG_GLOB_ENABLE | \
 				WIMLIB_REF_FLAG_GLOB_ERR_ON_NOMATCH)
 
+#define WIMLIB_REF_FLAG_GIFT 0x80000000
+
+struct lookup_tables {
+	struct wim_lookup_table *src_table;
+	struct wim_lookup_table *dest_table;
+};
+
+static int
+lte_gift(struct wim_lookup_table_entry *lte, void *_tables)
+{
+	struct lookup_tables *tables = _tables;
+	struct wim_lookup_table *src_table = tables->src_table;
+	struct wim_lookup_table *dest_table = tables->dest_table;
+
+	lookup_table_unlink(src_table, lte);
+	if (lookup_stream(dest_table, lte->hash)) {
+		free_lookup_table_entry(lte);
+	} else {
+		lte->out_refcnt = 1;
+		lookup_table_insert(dest_table, lte);
+	}
+	return 0;
+}
+
 static int
 lte_clone_if_new(struct wim_lookup_table_entry *lte, void *_lookup_table)
 {
@@ -64,13 +88,49 @@ lte_delete_if_new(struct wim_lookup_table_entry *lte, void *_lookup_table)
 	return 0;
 }
 
+static int
+do_wimlib_reference_resources(WIMStruct *wim, WIMStruct **resource_wims,
+			      unsigned num_resource_wims, int ref_flags)
+{
+	unsigned i;
+	int ret;
+
+	if (ref_flags & WIMLIB_REF_FLAG_GIFT) {
+		struct lookup_tables tables;
+
+		tables.dest_table = wim->lookup_table;
+
+		for (i = 0; i < num_resource_wims; i++) {
+
+			tables.src_table = resource_wims[i]->lookup_table;
+
+			ret = for_lookup_table_entry(resource_wims[i]->lookup_table,
+						     lte_gift, &tables);
+			if (ret)
+				goto out_rollback;
+		}
+	} else {
+		for (i = 0; i < num_resource_wims; i++) {
+			ret = for_lookup_table_entry(resource_wims[i]->lookup_table,
+						     lte_clone_if_new, wim->lookup_table);
+			if (ret)
+				goto out_rollback;
+		}
+	}
+	return 0;
+
+out_rollback:
+	for_lookup_table_entry(wim->lookup_table, lte_delete_if_new,
+			       wim->lookup_table);
+	return ret;
+}
+
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_reference_resources(WIMStruct *wim,
 			   WIMStruct **resource_wims, unsigned num_resource_wims,
 			   int ref_flags)
 {
-	int ret;
 	unsigned i;
 
 	if (wim == NULL)
@@ -86,21 +146,8 @@ wimlib_reference_resources(WIMStruct *wim,
 		if (resource_wims[i] == NULL)
 			return WIMLIB_ERR_INVALID_PARAM;
 
-	for_lookup_table_entry(wim->lookup_table, lte_zero_out_refcnt, NULL);
-
-	for (i = 0; i < num_resource_wims; i++) {
-		ret = for_lookup_table_entry(resource_wims[i]->lookup_table,
-					     lte_clone_if_new,
-					     wim->lookup_table);
-		if (ret)
-			goto out_rollback;
-	}
-	return 0;
-
-out_rollback:
-	for_lookup_table_entry(wim->lookup_table, lte_delete_if_new,
-			       wim->lookup_table);
-	return ret;
+	return do_wimlib_reference_resources(wim, resource_wims,
+					     num_resource_wims, ref_flags);
 }
 
 static int
@@ -128,8 +175,9 @@ reference_resource_paths(WIMStruct *wim,
 			goto out_free_resource_wims;
 	}
 
-	ret = wimlib_reference_resources(wim, resource_wims,
-					 num_resource_wimfiles, ref_flags);
+	ret = do_wimlib_reference_resources(wim, resource_wims,
+					    num_resource_wimfiles,
+					    ref_flags | WIMLIB_REF_FLAG_GIFT);
 	if (ret)
 		goto out_free_resource_wims;
 
