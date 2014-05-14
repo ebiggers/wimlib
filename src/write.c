@@ -1537,6 +1537,18 @@ out_destroy_context:
 }
 
 static int
+is_stream_packed(struct wim_lookup_table_entry *lte, void *_ignore)
+{
+	return lte_is_partial(lte);
+}
+
+static bool
+wim_has_packed_streams(WIMStruct *wim)
+{
+	return for_lookup_table_entry(wim->lookup_table, is_stream_packed, NULL);
+}
+
+static int
 wim_write_stream_list(WIMStruct *wim,
 		      struct list_head *stream_list,
 		      int write_flags,
@@ -1550,10 +1562,15 @@ wim_write_stream_list(WIMStruct *wim,
 
 	write_resource_flags = write_flags_to_resource_flags(write_flags);
 
-	/* wimlib v1.6.3: pack streams by default if the WIM version number is
-	 * that usually used in solid archives.  */
-	if (wim->hdr.wim_version == WIM_VERSION_PACKED_STREAMS)
+	/* wimlib v1.6.3: pack streams by default if the WIM version has been
+	 * set to WIM_VERSION_PACKED_STREAMS and at least one stream in the
+	 * WIM's lookup table is located in a packed resource (may be the same
+	 * WIM, or a different one in the case of export).  */
+	if (wim->hdr.wim_version == WIM_VERSION_PACKED_STREAMS &&
+	    wim_has_packed_streams(wim))
+	{
 		write_resource_flags |= WRITE_RESOURCE_FLAG_PACK_STREAMS;
+	}
 
 	if (write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS) {
 		out_chunk_size = wim->out_pack_chunk_size;
