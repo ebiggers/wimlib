@@ -2633,9 +2633,9 @@ write_wim_part(WIMStruct *wim,
 		DEBUG("Number of threads: %u", num_threads);
 	DEBUG("Progress function: %s", (progress_func ? "yes" : "no"));
 	DEBUG("Stream list:       %s", (stream_list_override ? "specified" : "autodetect"));
-	DEBUG("GUID:              %s", (guid ||
-					(write_flags & WIMLIB_WRITE_FLAG_RETAIN_GUID)) ?
-					"explicit" : "generate new");
+	DEBUG("GUID:              %s", (write_flags &
+					WIMLIB_WRITE_FLAG_RETAIN_GUID) ? "retain"
+						: guid ? "explicit" : "generate new");
 
 	/* Internally, this is always called with a valid part number and total
 	 * parts.  */
@@ -2731,11 +2731,13 @@ write_wim_part(WIMStruct *wim,
 	/* Set chunk size if different.  */
 	wim->hdr.chunk_size = wim->out_chunk_size;
 
-	/* Use GUID if specified; otherwise generate a new one.  */
-	if (guid)
-		memcpy(wim->hdr.guid, guid, WIMLIB_GUID_LEN);
-	else if (!(write_flags & WIMLIB_WRITE_FLAG_RETAIN_GUID))
-		randomize_byte_array(wim->hdr.guid, WIMLIB_GUID_LEN);
+	/* Set GUID.  */
+	if (!(write_flags & WIMLIB_WRITE_FLAG_RETAIN_GUID)) {
+		if (guid)
+			memcpy(wim->hdr.guid, guid, WIMLIB_GUID_LEN);
+		else
+			randomize_byte_array(wim->hdr.guid, WIMLIB_GUID_LEN);
+	}
 
 	/* Clear references to resources that have not been written yet.  */
 	zero_reshdr(&wim->hdr.lookup_table_reshdr);
