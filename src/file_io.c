@@ -30,8 +30,6 @@
 #include "wimlib/util.h"
 #ifdef __WIN32__
 #  include "wimlib/win32.h" /* For pread(), pwrite() replacements */
-#else
-#  include <sys/uio.h> /* for writev() and `struct iovec' */
 #endif
 
 #include <errno.h>
