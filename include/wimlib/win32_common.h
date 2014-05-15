@@ -21,13 +21,6 @@ set_errno_from_win32_error(DWORD err);
 extern void
 set_errno_from_nt_status(NTSTATUS status);
 
-extern bool
-win32_path_is_root_of_drive(const wchar_t *path);
-
-extern int
-win32_get_vol_flags(const wchar_t *path, unsigned *vol_flags_ret,
-		    bool *supports_SetFileShortName_ret);
-
 extern HANDLE
 win32_open_existing_file(const wchar_t *path, DWORD dwDesiredAccess);
 

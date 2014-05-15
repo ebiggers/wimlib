@@ -147,6 +147,125 @@ hash_lookup_table(WIMStruct *wim, u8 hash[SHA1_HASH_SIZE])
 	return wim_reshdr_to_hash(&wim->hdr.lookup_table_reshdr, wim, hash);
 }
 
+/* Given a Windows-style path, return the number of characters of the prefix
+ * that specify the path to the root directory of a drive, or return 0 if the
+ * drive is relative (or at least on the current drive, in the case of
+ * absolute-but-not-really-absolute paths like \Windows\System32) */
+static size_t
+win32_path_drive_spec_len(const wchar_t *path)
+{
+	size_t n = 0;
+
+	if (!wcsncmp(path, L"\\\\?\\", 4)) {
+		/* \\?\-prefixed path.  Check for following drive letter and
+		 * path separator. */
+		if (path[4] != L'\0' && path[5] == L':' &&
+		    is_any_path_separator(path[6]))
+			n = 7;
+	} else {
+		/* Not a \\?\-prefixed path.  Check for an initial drive letter
+		 * and path separator. */
+		if (path[0] != L'\0' && path[1] == L':' &&
+		    is_any_path_separator(path[2]))
+			n = 3;
+	}
+	/* Include any additional path separators.*/
+	if (n > 0)
+		while (is_any_path_separator(path[n]))
+			n++;
+	return n;
+}
+
+static bool
+win32_path_is_root_of_drive(const wchar_t *path)
+{
+	size_t drive_spec_len;
+	wchar_t full_path[32768];
+	DWORD ret;
+
+	ret = GetFullPathName(path, ARRAY_LEN(full_path), full_path, NULL);
+	if (ret > 0 && ret < ARRAY_LEN(full_path))
+		path = full_path;
+
+	/* Explicit drive letter and path separator? */
+	drive_spec_len = win32_path_drive_spec_len(path);
+	if (drive_spec_len > 0 && path[drive_spec_len] == L'\0')
+		return true;
+
+	/* All path separators? */
+	for (const wchar_t *p = path; *p != L'\0'; p++)
+		if (!is_any_path_separator(*p))
+			return false;
+	return true;
+}
+
+/* Given a path, which may not yet exist, get a set of flags that describe the
+ * features of the volume the path is on. */
+static int
+win32_get_vol_flags(const wchar_t *path, unsigned *vol_flags_ret,
+		    bool *supports_SetFileShortName_ret)
+{
+	wchar_t *volume;
+	BOOL bret;
+	DWORD vol_flags;
+	size_t drive_spec_len;
+	wchar_t filesystem_name[MAX_PATH + 1];
+
+	if (supports_SetFileShortName_ret)
+		*supports_SetFileShortName_ret = false;
+
+	drive_spec_len = win32_path_drive_spec_len(path);
+
+	if (drive_spec_len == 0)
+		if (path[0] != L'\0' && path[1] == L':') /* Drive-relative path? */
+			drive_spec_len = 2;
+
+	if (drive_spec_len == 0) {
+		/* Path does not start with a drive letter; use the volume of
+		 * the current working directory. */
+		volume = NULL;
+	} else {
+		/* Path starts with a drive letter (or \\?\ followed by a drive
+		 * letter); use it. */
+		volume = alloca((drive_spec_len + 2) * sizeof(wchar_t));
+		wmemcpy(volume, path, drive_spec_len);
+		/* Add trailing backslash in case this was a drive-relative
+		 * path. */
+		volume[drive_spec_len] = L'\\';
+		volume[drive_spec_len + 1] = L'\0';
+	}
+	bret = GetVolumeInformation(
+			volume,				/* lpRootPathName */
+			NULL,				/* lpVolumeNameBuffer */
+			0,				/* nVolumeNameSize */
+			NULL,				/* lpVolumeSerialNumber */
+			NULL,				/* lpMaximumComponentLength */
+			&vol_flags,			/* lpFileSystemFlags */
+			filesystem_name,		/* lpFileSystemNameBuffer */
+			ARRAY_LEN(filesystem_name));    /* nFileSystemNameSize */
+	if (!bret) {
+		set_errno_from_GetLastError();
+		WARNING_WITH_ERRNO("Failed to get volume information for "
+				   "path \"%ls\"", path);
+		vol_flags = 0xffffffff;
+		goto out;
+	}
+
+	if (wcsstr(filesystem_name, L"NTFS")) {
+		/* FILE_SUPPORTS_HARD_LINKS is only supported on Windows 7 and later.
+		 * Force it on anyway if filesystem is NTFS.  */
+		vol_flags |= FILE_SUPPORTS_HARD_LINKS;
+
+		if (supports_SetFileShortName_ret)
+			*supports_SetFileShortName_ret = true;
+	}
+
+out:
+	DEBUG("using vol_flags = %x", vol_flags);
+	*vol_flags_ret = vol_flags;
+	return 0;
+}
+
 static int
 win32_start_extract(const wchar_t *path, struct apply_ctx *ctx)
 {
