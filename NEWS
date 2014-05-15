@@ -1,17 +1,21 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
 Version 1.6.3-BETA:
+	'add' commands passed to wimupdate will now replace existing
+	nondirectory files by default.  Use the --no-replace option to get the
+	old behavior.
+
+	Improved compatibility with version 3584 WIM / ESD files.
+
+	Improved extraction performance on Windows, especially for ESD files.
+
 	Added support for "WIMBoot".  On any platform, you can now capture a WIM
 	as WIMBoot-compatible.  In addition, on Windows, you can now apply a WIM
 	archive in a special mode that causes extracted files to be externally
 	backed by the WIM archive.  See the documentation for the new
 	'--wimboot' option to wimcapture and wimapply for more information.
 
-	'add' commands passed to wimupdate will now replace existing
-	nondirectory files by default.  Use the --no-replace option to get the
-	old behavior.
-
-	Improved compatibility with version 3584 WIM / ESD files.
+	WIMs will now retain their GUIDs when rebuilt (e.g. with wimoptimize).
 
 	The 'mkwinpeimg' script now supports writing the ISO image to standard
 	output.
@@ -34,6 +38,8 @@ Version 1.6.3-BETA:
 
 		- WIM paths passed to progress functions now have a leading
 		  slash.
+
+	Made some documentation improvements.
 
 Version 1.6.2:
 	Case-insensitive comparisons of strings (e.g. filenames) containing
