@@ -29,10 +29,7 @@
 
 #include <errno.h>
 
-#include <winternl.h>
-
 #include "wimlib/win32_common.h"
-#include "wimlib/assert.h"
 #include "wimlib/error.h"
 #include "wimlib/util.h"
 
