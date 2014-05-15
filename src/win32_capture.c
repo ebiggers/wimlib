@@ -280,7 +280,6 @@ winnt_get_security_descriptor(HANDLE h, struct wim_inode *inode,
 	ULONG bufsize;
 	ULONG len_needed;
 	NTSTATUS status;
-	int ret;
 
 	requestedInformation = DACL_SECURITY_INFORMATION |
 			       SACL_SECURITY_INFORMATION |
