@@ -68,7 +68,7 @@ struct reparse_buffer_disk {
 
 static const utf16lechar volume_junction_prefix[11] = {
 	cpu_to_le16('\\'),
-	cpu_to_le16('\\'),
+	cpu_to_le16('?'),
 	cpu_to_le16('?'),
 	cpu_to_le16('\\'),
 	cpu_to_le16('V'),
