@@ -401,8 +401,10 @@ journaled_change_name(struct update_command_journal *j,
 	prim.name.subject = dentry;
 	prim.name.old_name = dentry->file_name;
 	ret = record_update_primitive(j, prim);
-	if (ret)
+	if (ret) {
+		FREE(new_name);
 		return ret;
+	}
 
 	dentry->file_name = new_name;
 	dentry->file_name_nbytes = new_name_nbytes;
