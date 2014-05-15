@@ -54,11 +54,6 @@ static inline void filedes_invalidate(struct filedes *fd)
 	fd->fd = -1;
 }
 
-static inline void filedes_copy(struct filedes *dst, const struct filedes *src)
-{
-	*dst = *src;
-}
-
 #define filedes_close(f) close((f)->fd)
 
 static inline bool
