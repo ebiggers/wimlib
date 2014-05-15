@@ -30,14 +30,13 @@
 #include "wimlib/win32_common.h"
 
 #include "wimlib/apply.h"
-#include "wimlib/capture.h" /* for mangle_pat()  */
+#include "wimlib/capture.h" /* for mangle_pat() and match_pattern_list()  */
 #include "wimlib/dentry.h"
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/resource.h"
 #include "wimlib/textfile.h"
 #include "wimlib/xml.h"
-#include "wimlib/wildcard.h"
 #include "wimlib/wim.h"
 #include "wimlib/wimboot.h"
 
@@ -130,7 +129,6 @@ in_prepopulate_list(struct wim_dentry *dentry, struct apply_ctx *ctx)
 {
 	struct string_set *pats;
 	const tchar *path;
-	size_t path_nchars;
 
 	pats = get_private_data(ctx)->prepopulate_pats;
 	if (!pats || !pats->num_strings)
@@ -140,14 +138,7 @@ in_prepopulate_list(struct wim_dentry *dentry, struct apply_ctx *ctx)
 	if (!path)
 		return false;
 
-	path_nchars = tstrlen(path);
-
-	for (size_t i = 0; i < pats->num_strings; i++)
-		if (match_path(path, path_nchars, pats->strings[i],
-			       OS_PREFERRED_PATH_SEPARATOR, true))
-			return true;
-
-	return false;
+	return match_pattern_list(path, tstrlen(path), pats);
 }
 
 static int
