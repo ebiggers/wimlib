@@ -32,15 +32,6 @@ raw_pread(struct filedes *fd, void *buf, size_t nbyte, off_t offset);
 extern ssize_t
 raw_pwrite(struct filedes *fd, const void *buf, size_t count, off_t offset);
 
-#ifdef __WIN32__
-struct iovec {
-	void *iov_base;
-	size_t iov_len;
-};
-#else
-struct iovec;
-#endif
-
 #ifndef __WIN32__
 #  define O_BINARY 0
 #endif
