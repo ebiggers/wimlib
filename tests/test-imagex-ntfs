@@ -43,12 +43,12 @@ __do_mount() {
 	if ! ntfs-3g -o "no_def_opts,silent" $1 $2; then
 		if [ $UID -ne 0 ] && [ "$3" = "nofail" ]; then
 			echo "WARNING: skipping NTFS tests because we aren't able to "
-			echo "mount a NTFS volume (perhaps ntfs-3g is not installed setuid root?)"
+			echo "mount an NTFS volume (perhaps ntfs-3g is not installed setuid root?)"
 			skip_test
 		else
 			error "Could not mount NTFS volume \"$1\" on \"$2\"!  Make sure ntfs-3g is "\
 			      "installed, and that you are either running the tests as root or have ntfs-3g "\
-			      "installed setuid root, so that we can mount a NTFS volume."
+			      "installed setuid root, so that we can mount an NTFS volume."
 		fi
 	fi
 }
@@ -101,7 +101,7 @@ do_test() {
 			echo "Dumping tree of applied image"
 			tree out.mnt --inodes -F -s --noreport
 			error 'Information was lost or corrupted while capturing
-				and then applying a NTFS volume'
+				and then applying an NTFS volume'
 		fi
 	fi
 	rm -rf out.mnt/* in.mnt/*

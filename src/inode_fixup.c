@@ -474,7 +474,7 @@ dentry_tree_fix_inodes(struct wim_dentry *root, struct list_head *inode_list)
 		}
 	}
 	/* On success, all the inodes have been moved to the image inode list,
-	 * so there's no need to delete from from the hash lists in the inode
+	 * so there's no need to delete from the hash lists in the inode
 	 * table before freeing the hash buckets array directly. */
 	ret = 0;
 	goto out_destroy_inode_table_raw;

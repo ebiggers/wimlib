@@ -8,7 +8,7 @@
 .SH DESCRIPTION
 Copies the specified image in \fISRC_WIMFILE\fR to \fIDEST_WIMFILE\fR,
 optionally changing its name and/or description and/or compression type.
-If \fIDEST_WIMFILE\fR exists, it is taken be be a WIM archive to which the image
+If \fIDEST_WIMFILE\fR exists, it is taken be a WIM archive to which the image
 will be appended.  Otherwise, it is created as a new WIM archive containing only
 the exported image.
 This command is also available as simply \fBwimexport\fR if the appropriate hard

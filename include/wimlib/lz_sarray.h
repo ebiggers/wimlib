@@ -136,7 +136,7 @@ struct salink {
 		struct {
 			/* Intially, the length, in bytes, of the longest common
 			 * prefix (LCP) between the suffix having this rank and
-			 * the suffix with the the smallest larger rank that
+			 * the suffix with the smallest larger rank that
 			 * starts earlier in the window than the suffix having
 			 * this rank.  If no such suffix exists, this will be 0.
 			 *
@@ -150,7 +150,7 @@ struct salink {
 
 			/* Initially, the length, in bytes, of the longest
 			 * common prefix (LCP) between the suffix having this
-			 * rank and the suffix with the the largest smaller rank
+			 * rank and the suffix with the largest smaller rank
 			 * that starts earlier in the window than the suffix
 			 * having this rank.  If no such suffix exists, this
 			 * will be 0.
@@ -170,7 +170,7 @@ struct salink {
 			 * distance to the rank of a suffix that is
 			 * lexicographically closer to the current suffix than
 			 * the desired suffix, but appears *later* in the window
-			 * and hence cannot be used as the basis for a LZ77
+			 * and hence cannot be used as the basis for an LZ77
 			 * match.  */
 			lz_sarray_delta_t dist_to_next;
 
@@ -181,7 +181,7 @@ struct salink {
 			 * distance to the rank of a suffix that is
 			 * lexicographically closer to the current suffix than
 			 * the desired suffix, but appears *later* in the window
-			 * and hence cannot be used as the basis for a LZ77
+			 * and hence cannot be used as the basis for an LZ77
 			 * match.  */
 			lz_sarray_delta_t dist_to_prev;
 		};

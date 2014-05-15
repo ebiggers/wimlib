@@ -35,7 +35,7 @@
  * is a container format from which the locations and sizes (both compressed and
  * uncompressed) of the constituent blocks can be determined.
  *
- * A LZMS-compressed block must be read in 16-bit little endian units from both
+ * An LZMS-compressed block must be read in 16-bit little endian units from both
  * directions.  One logical bitstream starts at the front of the block and
  * proceeds forwards.  Another logical bitstream starts at the end of the block
  * and proceeds backwards.  Bits read from the forwards bitstream constitute
@@ -65,7 +65,7 @@
  * offset is 1, regardless of match length.
  *
  * For LZ matches, up to 3 repeat offsets are allowed, similar to some other
- * LZ-based formats such as LZX and LZMA.  They must updated in a LRU fashion,
+ * LZ-based formats such as LZX and LZMA.  They must updated in an LRU fashion,
  * except for a quirk: updates to the queue must be delayed by one LZMS item,
  * except for the removal of a repeat match.  As a result, 4 entries are
  * actually needed in the queue, even though it is only possible to decode
@@ -173,7 +173,7 @@
  * than 15 bits, then all frequencies must be divided by 2, rounding up, and the
  * code construction must be attempted again.
  *
- * A LZMS-compressed block seemingly cannot have a compressed size greater than
+ * An LZMS-compressed block seemingly cannot have a compressed size greater than
  * or equal to the uncompressed size.  In such cases the block must be stored
  * uncompressed.
  *
@@ -232,7 +232,7 @@ struct lzms_input_bitstream {
 	 * at a time, this needs to be 64 bits rather than 32 bits.  */
 	u64 bitbuf;
 
-	/* Number of bits in @bitbuf that are are used.  */
+	/* Number of bits in @bitbuf that are used.  */
 	unsigned num_filled_bits;
 
 	/* Pointer to the one past the next little-endian 16-bit integer in the
@@ -796,7 +796,7 @@ lzms_decode_delta_match(struct lzms_decompressor *ctx)
 	return lzms_copy_delta_match(ctx, length, power, raw_offset);
 }
 
-/* Decode a LZ or delta match.  */
+/* Decode an LZ or delta match.  */
 static int
 lzms_decode_match(struct lzms_decompressor *ctx)
 {
@@ -985,7 +985,7 @@ lzms_decompress(const void *compressed_data, size_t compressed_size,
 		return -1;
 	}
 
-	/* A LZMS-compressed data block should be evenly divisible into 16-bit
+	/* An LZMS-compressed data block should be evenly divisible into 16-bit
 	 * integers.  */
 	if (compressed_size % 2 != 0) {
 		LZMS_DEBUG("Compressed size not divisible by 2 (got %zu)",

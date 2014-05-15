@@ -1,7 +1,7 @@
 /*
  * ntfs-3g_capture.c
  *
- * Capture a WIM image directly from a NTFS volume using libntfs-3g.  We capture
+ * Capture a WIM image directly from an NTFS volume using libntfs-3g.  We capture
  * everything we can, including security data and alternate data streams.
  */
 
@@ -357,7 +357,7 @@ insert_dos_name(struct dos_name_map *map, const ntfschar *dos_name,
 	if (avl_tree_insert(&map->root, &new_node->index_node,
 			    _avl_cmp_by_ntfs_ino))
 	{
-		/* This should be impossible since a NTFS inode cannot
+		/* This should be impossible since an NTFS inode cannot
 		 * have multiple DOS names, and we only should get each
 		 * DOS name entry once from the ntfs_readdir() calls. */
 		ERROR("NTFS inode %"PRIu64" has multiple DOS names",
@@ -369,7 +369,7 @@ insert_dos_name(struct dos_name_map *map, const ntfschar *dos_name,
 	return 0;
 }
 
-/* Returns a structure that contains the DOS name and its length for a NTFS
+/* Returns a structure that contains the DOS name and its length for an NTFS
  * inode, or NULL if the inode has no DOS name. */
 static struct dos_name_node *
 lookup_dos_name(const struct dos_name_map *map, u64 ntfs_ino)
@@ -516,7 +516,7 @@ out:
 	return ret;
 }
 
-/* Recursively build a WIM dentry tree corresponding to a NTFS volume.
+/* Recursively build a WIM dentry tree corresponding to an NTFS volume.
  * At the same time, update the WIM lookup table with lookup table entries for
  * the NTFS streams, and build an array of security descriptors.
  */

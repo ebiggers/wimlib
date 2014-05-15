@@ -2775,7 +2775,7 @@ check_extract_flags(const WIMStruct *wim, int *extract_flags_p)
 #ifndef WITH_NTFS_3G
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
 		ERROR("wimlib was compiled without support for NTFS-3g, so\n"
-		      "        it cannot apply a WIM image directly to a NTFS volume.");
+		      "        it cannot apply a WIM image directly to an NTFS volume.");
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 #endif

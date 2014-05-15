@@ -534,7 +534,7 @@ lzms_encode_lz_match(struct lzms_compressor *ctx, u32 length, u32 offset)
 	/* Main bit: 1 = a match, not a literal.  */
 	lzms_range_encode_bit(&ctx->main_range_encoder, 1);
 
-	/* Match bit: 0 = a LZ match, not a delta match.  */
+	/* Match bit: 0 = an LZ match, not a delta match.  */
 	lzms_range_encode_bit(&ctx->match_range_encoder, 0);
 
 	/* Determine if the offset can be represented as a recent offset.  */

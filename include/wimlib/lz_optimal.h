@@ -256,7 +256,7 @@ typedef lz_mc_cost_t (*lz_get_match_cost_t)(LZ_COMPRESSOR *ctx,
  *
  * This is based on the algorithm used in 7-Zip's DEFLATE encoder, written by
  * Igor Pavlov.  However it also attempts to account for adaptive state, such as
- * a LRU queue of recent match offsets.
+ * an LRU queue of recent match offsets.
  *
  * Unlike a greedy parser that always takes the longest match, or even a "lazy"
  * parser with one match/literal look-ahead like zlib, the algorithm used here

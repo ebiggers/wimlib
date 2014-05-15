@@ -182,7 +182,7 @@ platform-dependent way:
 
 For both platforms the code for NTFS capture and extraction is complete enough
 that it is possible to apply an image from the "install.wim" contained in recent
-Windows installation media (Vista, Windows 7, or Windows 8) directly to a NTFS
+Windows installation media (Vista, Windows 7, or Windows 8) directly to an NTFS
 filesystem, and then boot Windows from it after preparing the Boot Configuration
 Data.  In addition, a Windows installation can be captured (or backed up) into a
 WIM file, and then re-applied later.

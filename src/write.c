@@ -1925,7 +1925,7 @@ filter_stream_list_for_write(struct list_head *stream_list,
  *	@stream_list_ret.
  *
  *	SKIP_EXTERNAL_WIMS:  Streams already present in a WIM file, but not
- *	@wim, shall be be returned in neither @stream_list_ret nor
+ *	@wim, shall be returned in neither @stream_list_ret nor
  *	@lookup_table_list_ret.
  *
  * @stream_list_ret
@@ -2968,7 +2968,7 @@ check_resource_offsets(WIMStruct *wim, off_t end_offset)
  *                   Integrity table (optional) (variable size)
  *
  * This method allows an image to be appended to a large WIM very quickly, and
- * is is crash-safe except in the case of write re-ordering, but the
+ * is crash-safe except in the case of write re-ordering, but the
  * disadvantage is that a small hole is left in the WIM where the old lookup
  * table, xml data, and integrity table were.  (These usually only take up a
  * small amount of space compared to the streams, however.)

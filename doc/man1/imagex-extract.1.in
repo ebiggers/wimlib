@@ -159,7 +159,7 @@ point within the extraction location) are never done by \fB@IMAGEX_PROGNAME@
 extract\fR.  Use \fB@IMAGEX_PROGNAME@ apply\fR if you want this behavior.
 .PP
 Unlike \fB@IMAGEX_PROGNAME@ apply\fR, \fB@IMAGEX_PROGNAME@ extract\fR does not
-support extracting files directly to a NTFS volume using libntfs-3g.
+support extracting files directly to an NTFS volume using libntfs-3g.
 .PP
 wimlib v1.6.0 and later can extract files from version 3584 WIMs, which usually
 use packed, LZMS-compressed streams and may carry the \fI.esd\fR file extension

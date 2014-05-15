@@ -237,7 +237,7 @@ struct wim_ads_entry_on_disk {
 	le16 stream_name_nbytes;
 
 	/* Stream name in UTF-16LE.  It is @stream_name_nbytes bytes long,
-	 * excluding the the null terminator.  There is a null terminator
+	 * excluding the null terminator.  There is a null terminator
 	 * character if @stream_name_nbytes != 0; i.e., if this stream is named.
 	 * */
 	utf16lechar stream_name[];

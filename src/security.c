@@ -275,7 +275,7 @@ _avl_cmp_nodes_by_hash(const struct avl_tree_node *n1,
 	return hashes_cmp(SD_NODE(n1)->hash, SD_NODE(n2)->hash);
 }
 
-/* Inserts a a new node into the security descriptor index tree.  Returns true
+/* Inserts a new node into the security descriptor index tree.  Returns true
  * if successful (not a duplicate).  */
 static bool
 insert_sd_node(struct wim_sd_set *set, struct sd_node *new)

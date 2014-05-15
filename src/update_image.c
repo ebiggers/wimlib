@@ -1266,7 +1266,7 @@ check_add_command(struct wimlib_update_command *cmd,
 
 	if (!is_entire_image) {
 		if (add_flags & WIMLIB_ADD_FLAG_NTFS) {
-			ERROR("Cannot add directly from a NTFS volume "
+			ERROR("Cannot add directly from an NTFS volume "
 			      "when not capturing a full image!");
 			return WIMLIB_ERR_INVALID_PARAM;
 		}

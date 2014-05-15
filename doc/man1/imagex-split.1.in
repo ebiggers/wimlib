@@ -26,7 +26,7 @@ etc. where each part is at most 100 MiB:
 @IMAGEX_PROGNAME@ split windows.wim windows.swm 100
 .RE
 .SH LIMITATIONS
-It it possible for the size of the parts to exceed the \fIPART_SIZE\fR given.
+It is possible for the size of the parts to exceed the \fIPART_SIZE\fR given.
 This is impossible to avoid
 because the WIM file format provides no way to divide a single file resource in
 the WIM among multiple split WIM parts.  So if you, for example, have a file

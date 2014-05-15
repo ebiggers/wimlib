@@ -132,7 +132,7 @@ directly from a block device containing an NTFS volume, or applying a WIM image
 directly to a block device containing an NTFS volume.  This allows saving and
 restoring NTFS-specific data, such as security descriptors and named data
 streams, which is otherwise only supported on Windows.  This feature is
-unavailable if wimlib was was configured using --without-ntfs-3g.
+unavailable if wimlib was configured using --without-ntfs-3g.
 .IP \[bu]
 Long path support on Windows.  \fB@IMAGEX_PROGNAME@\fR can capture and apply
 files with paths exceeding the MAX_PATH (260 character) limitation of the Win32
@@ -178,7 +178,7 @@ Delta WIMs.  A delta WIM contains image metadata but excludes file data already
 present in another WIM file.  A delta WIM can be created using
 \fB@IMAGEX_PROGNAME@ capture\fR with the \fB--delta-from\fR option.
 .IP \[bu]
-WIMBoot support.  On Windows 8.1 and later, files on a NTFS volume can be
+WIMBoot support.  On Windows 8.1 and later, files on an NTFS volume can be
 externally backed by a WIM archive with the help of Microsoft's Windows Overlay
 FileSystem Filter Driver (WOF).  With the \fB--wimboot\fR flag,
 \fB@IMAGEX_PROGNAME@ apply\fR will extract "pointer files" (actually NTFS

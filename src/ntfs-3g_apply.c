@@ -1,7 +1,7 @@
 /*
  * ntfs-3g_apply.c
  *
- * Apply a WIM image directly to a NTFS volume using libntfs-3g.  Restore as
+ * Apply a WIM image directly to an NTFS volume using libntfs-3g.  Restore as
  * much information as possible, including security data, file attributes, DOS
  * names, and alternate data streams.
  */
@@ -199,7 +199,7 @@ out:
 }
 
 /*
- * Extract a stream (default or alternate data) to an attribute of a NTFS file.
+ * Extract a stream (default or alternate data) to an attribute of an NTFS file.
  */
 static int
 ntfs_3g_extract_stream(file_spec_t file, const utf16lechar *raw_stream_name,

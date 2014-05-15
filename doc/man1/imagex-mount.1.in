@@ -125,7 +125,7 @@ Only valid for \fB@IMAGEX_PROGNAME@ mountrw\fR.
 \fB--unix-data\fR
 By default, \fB@IMAGEX_PROGNAME@ mount\fR and \fB@IMAGEX_PROGNAME@ mountrw\fR will ignore both
 Windows-style security descriptors (which may have been set either from Windows or by
-\fB@IMAGEX_PROGNAME@ capture\fR from a NTFS-volume) and UNIX-specific data (which is from using
+\fB@IMAGEX_PROGNAME@ capture\fR from an NTFS-volume) and UNIX-specific data (which is from using
 \fB@IMAGEX_PROGNAME@ capture\fR with the \fB--unix-data\fR flag).  In this default mode,
 all files will simply be owned by the user running \fB@IMAGEX_PROGNAME@\fR and will have mode 0777.
 (Note: they will still not be accessible to other users unless you also specify

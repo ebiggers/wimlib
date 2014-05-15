@@ -1458,7 +1458,7 @@ parse_update_command_file(tchar **cmd_file_contents_p, size_t cmd_file_nchars,
 }
 
 /* Apply one image, or all images, from a WIM file to a directory, OR apply
- * one image from a WIM file to a NTFS volume.  */
+ * one image from a WIM file to an NTFS volume.  */
 static int
 imagex_apply(int argc, tchar **argv, int cmd)
 {
@@ -1588,7 +1588,7 @@ imagex_apply(int argc, tchar **argv, int cmd)
 
 #ifndef __WIN32__
 	{
-		/* Interpret a regular file or block device target as a NTFS
+		/* Interpret a regular file or block device target as an NTFS
 		 * volume.  */
 		struct stat stbuf;
 
@@ -4149,7 +4149,7 @@ usage_all(FILE *fp)
 
 /* Entry point for wimlib's ImageX implementation.  On UNIX the command
  * arguments will just be 'char' strings (ideally UTF-8 encoded, but could be
- * something else), while an Windows the command arguments will be UTF-16LE
+ * something else), while on Windows the command arguments will be UTF-16LE
  * encoded 'wchar_t' strings. */
 int
 #ifdef __WIN32__

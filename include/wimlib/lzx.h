@@ -95,7 +95,7 @@
 extern const u8 lzx_extra_bits[LZX_MAX_POSITION_SLOTS];
 #endif
 
-/* Given the number of a LZX position slot, return the number of extra bits that
+/* Given the number of an LZX position slot, return the number of extra bits that
  * are needed to encode the match offset. */
 static inline unsigned
 lzx_get_num_extra_bits(unsigned position_slot)

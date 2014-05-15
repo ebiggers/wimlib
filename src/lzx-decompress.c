@@ -26,7 +26,7 @@
  */
 
 /*
- * LZX is a LZ77 and Huffman-code based compression format that has many
+ * LZX is an LZ77 and Huffman-code based compression format that has many
  * similarities to the DEFLATE format used in zlib.  The compression ratio is as
  * good or better than DEFLATE.
  *
@@ -38,12 +38,12 @@
  * last decompress to a fixed number of bytes, by default 32768.  This is quite
  * similar to the cabinet (.cab) file format, but they are not the same.
  * According to the cabinet format documentation, the LZX block size is
- * independent from the CFDATA blocks, and a LZX block may span several CFDATA
+ * independent from the CFDATA blocks, and an LZX block may span several CFDATA
  * blocks.  However, in WIMs, LZX blocks do not appear to ever span multiple WIM
  * chunks.  Note that this means any WIM chunk may be decompressed or compressed
  * independently from any other chunk, which allows random access.
  *
- * A LZX compressed WIM chunk contains one or more LZX blocks of the aligned,
+ * An LZX compressed WIM chunk contains one or more LZX blocks of the aligned,
  * verbatim, or uncompressed block types.  For aligned and verbatim blocks, the
  * size of the block in uncompressed bytes is specified by a bit following the 3
  * bits that specify the block type, possibly followed by an additional 16 bits.
@@ -319,7 +319,7 @@ lzx_read_code_lens(struct input_bitstream *istream, u8 lens[],
  *				in bytes, will be returned.
  * @block_type_ret:	A pointer to an int into which the type of the block
  *				(LZX_BLOCKTYPE_*) will be returned.
- * @tables:		A pointer to a lzx_tables structure in which the
+ * @tables:		A pointer to an lzx_tables structure in which the
  *				main tree, the length tree, and possibly the
  *				aligned offset tree will be constructed.
  * @queue:	A pointer to the least-recently-used queue into which
@@ -766,7 +766,7 @@ undo_call_insn_preprocessing(u8 *uncompressed_data, s32 uncompressed_size)
 }
 
 /*
- * Decompresses a LZX-compressed block of data from which the header has already
+ * Decompresses an LZX-compressed block of data from which the header has already
  * been read.
  *
  * @block_type:	The type of the block (LZX_BLOCKTYPE_VERBATIM or

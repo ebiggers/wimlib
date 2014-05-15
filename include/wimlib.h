@@ -682,14 +682,14 @@ union wimlib_progress_info {
 	 * ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY, and
 	 * ::WIMLIB_PROGRESS_MSG_SCAN_END.  */
 	struct wimlib_progress_info_scan {
-		/** Top-level directory being scanned; or, when capturing a NTFS
+		/** Top-level directory being scanned; or, when capturing an NTFS
 		 * volume with ::WIMLIB_ADD_FLAG_NTFS, this is instead the path
 		 * to the file or block device that contains the NTFS volume
 		 * being scanned.  */
 		const wimlib_tchar *source;
 
 		/** Path to the file (or directory) that has been scanned, valid
-		 * on ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY.  When capturing a NTFS
+		 * on ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY.  When capturing an NTFS
 		 * volume with ::WIMLIB_ADD_FLAG_NTFS, this path will be
 		 * relative to the root of the NTFS volume.  */
 		const wimlib_tchar *cur_path;
@@ -1280,7 +1280,7 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 /** @ingroup G_modifying_wims
  * @{ */
 
-/** Directly capture a NTFS volume rather than a generic directory.  This flag
+/** Directly capture an NTFS volume rather than a generic directory.  This flag
  * cannot be combined with ::WIMLIB_ADD_FLAG_DEREFERENCE or
  * ::WIMLIB_ADD_FLAG_UNIX_DATA.   */
 #define WIMLIB_ADD_FLAG_NTFS			0x00000001
@@ -1444,10 +1444,10 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 /** @ingroup G_extracting_wims
  * @{ */
 
-/** Extract the image directly to a NTFS volume rather than a generic directory.
+/** Extract the image directly to an NTFS volume rather than a generic directory.
  * This mode is only available if wimlib was compiled with libntfs-3g support;
  * if not, ::WIMLIB_ERR_UNSUPPORTED will be returned.  In this mode, the
- * extraction target will be interpreted as the path to a NTFS volume image (as
+ * extraction target will be interpreted as the path to an NTFS volume image (as
  * a regular file or block device) rather than a directory.  It will be opened
  * using libntfs-3g, and the image will be extracted to the NTFS filesystem's
  * root directory.  Note: this flag cannot be used when wimlib_extract_image()
@@ -3069,7 +3069,7 @@ wimlib_join(const wimlib_tchar * const *swms,
  * @return 0 on success; nonzero on error.
  *
  * @retval ::WIMLIB_ERR_ALREADY_LOCKED
- * 	A read-write mount was requested, but an an exclusive advisory lock on
+ * 	A read-write mount was requested, but an exclusive advisory lock on
  * 	the on-disk WIM file could not be acquired because another thread or
  * 	process has mounted an image from the WIM read-write or is currently
  * 	modifying the WIM in-place.
@@ -3905,7 +3905,7 @@ wimlib_unmount_image(const wimlib_tchar *dir,
  *	An unknown operation type was specified in the update commands; or,
  *	attempted to execute an add command where ::WIMLIB_ADD_FLAG_NTFS was set
  *	in the @p add_flags, but the same image had previously already been
- *	added from a NTFS volume; or, both ::WIMLIB_ADD_FLAG_RPFIX and
+ *	added from an NTFS volume; or, both ::WIMLIB_ADD_FLAG_RPFIX and
  *	::WIMLIB_ADD_FLAG_NORPFIX were specified in the @p add_flags for one add
  *	command; or, ::WIMLIB_ADD_FLAG_NTFS or ::WIMLIB_ADD_FLAG_RPFIX were
  *	specified in the @p add_flags for an add command in which @p

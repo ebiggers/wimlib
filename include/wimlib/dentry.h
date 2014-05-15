@@ -23,7 +23,7 @@ struct wim_security_data;
  * tree for each image in the WIM.
  *
  * Note that this is a directory entry and not an inode.  Since NTFS allows hard
- * links, it's possible for a NTFS inode to correspond to multiple WIM dentries.
+ * links, it's possible for an NTFS inode to correspond to multiple WIM dentries.
  * The hard link group ID field of the on-disk WIM dentry tells us the number of
  * the NTFS inode that the dentry corresponds to (and this gets placed in
  * d_inode->i_ino).
@@ -80,7 +80,7 @@ struct wim_dentry {
 	 * "skeleton" of the dentry has been extracted.  */
 	u8 skeleton_extracted : 1;
 
-	/* When capturing from a NTFS volume using NTFS-3g, this flag is set on
+	/* When capturing from an NTFS volume using NTFS-3g, this flag is set on
 	 * dentries that were created from a filename in the WIN32 or WIN32+DOS
 	 * namespaces rather than the POSIX namespace.  Otherwise this will
 	 * always be 0.  */

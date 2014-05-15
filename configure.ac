@@ -241,7 +241,7 @@ if test "x$WITH_NTFS_3G" = "xyes"; then
 	PKG_CHECK_MODULES([LIBNTFS_3G], [libntfs-3g])
 	PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES libntfs-3g"
 
-	dnl This checks for a NTFS-3g interface that was changed in the
+	dnl This checks for an NTFS-3g interface that was changed in the
 	dnl 2013.1.13 release
 	AC_CHECK_DECL([NTFS_MNT_RDONLY],
 		      [AC_DEFINE([HAVE_NTFS_MNT_RDONLY],

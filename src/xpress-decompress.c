@@ -133,7 +133,7 @@ xpress_decode_match(unsigned sym, input_idx_t window_pos,
 	match_len += XPRESS_MIN_MATCH_LEN;
 
 
-	/* Verify the match is in bounds, then copy its data to the the current
+	/* Verify the match is in bounds, then copy its data to the current
 	 * position.  */
 
 	if (window_pos + match_len > window_len)
