@@ -188,37 +188,6 @@ err_set_errno:
 	return -1;
 }
 
-/* truncate() replacement */
-int
-win32_truncate_replacement(const wchar_t *path, off_t size)
-{
-	DWORD err = NO_ERROR;
-	LARGE_INTEGER liOffset;
-
-	HANDLE h = win32_open_existing_file(path, GENERIC_WRITE);
-	if (h == INVALID_HANDLE_VALUE)
-		goto fail;
-
-	liOffset.QuadPart = size;
-	if (!SetFilePointerEx(h, liOffset, NULL, FILE_BEGIN))
-		goto fail_close_handle;
-
-	if (!SetEndOfFile(h))
-		goto fail_close_handle;
-	CloseHandle(h);
-	return 0;
-
-fail_close_handle:
-	err = GetLastError();
-	CloseHandle(h);
-fail:
-	if (err == NO_ERROR)
-		err = GetLastError();
-	set_errno_from_win32_error(err);
-	return -1;
-}
-
-
 /* This really could be replaced with _wcserror_s, but this doesn't seem to
  * actually be available in MSVCRT.DLL on Windows XP (perhaps it's statically
  * linked in by Visual Studio...?). */

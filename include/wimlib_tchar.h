@@ -62,7 +62,6 @@ typedef wchar_t tchar;
 #  define tmkdir(path, mode) _wmkdir(path)
 #  define tstrerror_r   win32_strerror_r_replacement
 #  define trename	win32_rename_replacement
-#  define ttruncate	win32_truncate_replacement
 #  define tglob		win32_wglob
 #else /* __WIN32__ */
 /* For non-Windows builds, the "tchar" type will be one byte and will specify a
@@ -117,7 +116,6 @@ typedef char tchar;
 #  define TSTRDUP	STRDUP
 #  define tstrerror_r	strerror_r
 #  define trename	rename
-#  define ttruncate	truncate
 #  define taccess	access
 #  define tglob		glob
 #endif /* !__WIN32__ */
