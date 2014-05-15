@@ -1,15 +1,14 @@
 #ifndef _WIMLIB_WIN32_H
 #define _WIMLIB_WIN32_H
 
-#ifdef __WIN32__
+#ifndef __WIN32__
+#  error "This header is for Win32 only"
+#endif
 
 #include "wimlib/callback.h"
 #include "wimlib/types.h"
-#include <direct.h>
-#include <windef.h>
 
 struct wim_lookup_table_entry;
-struct iovec;
 
 extern int
 read_winnt_file_prefix(const struct wim_lookup_table_entry *lte, u64 size,
@@ -20,7 +19,6 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 				 u64 size,
 				 consume_data_callback_t cb,
 				 void *cb_ctx);
-
 
 extern int
 win32_global_init(int init_flags);
@@ -40,10 +38,6 @@ win32_get_avail_memory(void);
 extern tchar *
 realpath(const tchar *path, tchar *resolved_path);
 
-typedef enum {
-	CODESET
-} nl_item;
-
 extern int
 win32_rename_replacement(const tchar *oldpath, const tchar *newpath);
 
@@ -61,10 +55,5 @@ pread(int fd, void *buf, size_t count, off_t offset);
 
 extern ssize_t
 pwrite(int fd, const void *buf, size_t count, off_t offset);
-
-extern ssize_t
-writev(int fd, const struct iovec *iov, int iovcnt);
-
-#endif /* __WIN32__ */
 
 #endif /* _WIMLIB_WIN32_H */

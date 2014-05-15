@@ -30,7 +30,9 @@
 
 #include <errno.h>
 #include <pthread.h>
+#include <io.h>	/* for _get_osfhandle()  */
 #include <shlwapi.h> /* for PathMatchSpecW() */
+
 #include "wimlib/win32_common.h"
 
 #include "wimlib/assert.h"
