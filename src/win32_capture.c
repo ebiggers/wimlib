@@ -1056,7 +1056,7 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		} else {
 			set_errno_from_nt_status(status);
 			WARNING_WITH_ERRNO("\"%ls\": Can't get volume attributes "
-					   "(status=0x%"PRIx32")",
+					   "(status=0x%08"PRIx32")",
 					   printable_path(full_path),
 					   (u32)status);
 			vol_flags = 0;
