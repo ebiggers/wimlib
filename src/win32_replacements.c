@@ -191,7 +191,7 @@ err_set_errno:
 /* This really could be replaced with _wcserror_s, but this doesn't seem to
  * actually be available in MSVCRT.DLL on Windows XP (perhaps it's statically
  * linked in by Visual Studio...?). */
-extern int
+int
 win32_strerror_r_replacement(int errnum, wchar_t *buf, size_t buflen)
 {
 	static pthread_mutex_t strerror_lock = PTHREAD_MUTEX_INITIALIZER;
