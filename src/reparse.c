@@ -28,16 +28,12 @@
 #include "wimlib/assert.h"
 #include "wimlib/compiler.h"
 #include "wimlib/endianness.h"
-#include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/error.h"
+#include "wimlib/inode.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/reparse.h"
 #include "wimlib/resource.h"
-
-#ifdef __WIN32__
-#  include "wimlib/win32.h" /* for win32_get_file_and_vol_ids() */
-#endif
 
 #ifdef HAVE_ALLOCA_H
 #  include <alloca.h>
@@ -321,7 +317,7 @@ wim_inode_get_reparse_data(const struct wim_inode * restrict inode,
 }
 
 /* UNIX version of getting and setting the data in reparse points */
-#if !defined(__WIN32__)
+#ifndef __WIN32__
 
 /*
  * Get the UNIX-style symlink target from the WIM inode for a reparse point.
@@ -523,95 +519,4 @@ wim_inode_set_symlink(struct wim_inode *inode,
 	return ret;
 }
 
-#include <sys/stat.h>
-
-static int
-unix_get_ino_and_dev(const char *path, u64 *ino_ret, u64 *dev_ret)
-{
-	struct stat stbuf;
-	if (stat(path, &stbuf)) {
-		if (errno != ENOENT)
-			WARNING_WITH_ERRNO("Failed to stat \"%s\"", path);
-		/* Treat as a link pointing outside the capture root (it
-		 * most likely is). */
-		return WIMLIB_ERR_STAT;
-	} else {
-		*ino_ret = stbuf.st_ino;
-		*dev_ret = stbuf.st_dev;
-		return 0;
-	}
-}
-
-#endif /* !defined(__WIN32__) */
-
-/* is_rp_path_separator() - characters treated as path separators in absolute
- * symbolic link targets */
-
-#ifdef __WIN32__
-#  define is_rp_path_separator(c) ((c) == L'\\' || (c) == L'/')
-#  define os_get_ino_and_dev win32_get_file_and_vol_ids
-#else
-#  define is_rp_path_separator(c) ((c) == '/')
-#  define os_get_ino_and_dev unix_get_ino_and_dev
-#endif
-
-/* Fix up absolute symbolic link targets--- mostly shared between UNIX and
- * Windows */
-tchar *
-capture_fixup_absolute_symlink(tchar *dest,
-			       u64 capture_root_ino, u64 capture_root_dev)
-{
-	tchar *p = dest;
-
-#ifdef __WIN32__
-	/* Skip drive letter */
-	if (!is_rp_path_separator(*dest))
-		p += 2;
-#endif
-
-	DEBUG("Fixing symlink or junction \"%"TS"\"", dest);
-	for (;;) {
-		tchar save;
-		int ret;
-		u64 ino;
-		u64 dev;
-
-		while (is_rp_path_separator(*p))
-			p++;
-
-		save = *p;
-		*p = T('\0');
-		ret = os_get_ino_and_dev(dest, &ino, &dev);
-		*p = save;
-
-		if (ret) /* stat() failed before we got to the capture root---
-			    assume the link points outside it. */
-			return NULL;
-
-		if (ino == capture_root_ino && dev == capture_root_dev) {
-			/* Link points inside capture root.  Return abbreviated
-			 * path. */
-			if (*p == T('\0'))
-				*(p - 1) = OS_PREFERRED_PATH_SEPARATOR;
-			while (p - 1 >= dest && is_rp_path_separator(*(p - 1)))
-				p--;
-		#ifdef __WIN32__
-			if (!is_rp_path_separator(dest[0])) {
-				*--p = dest[1];
-				*--p = dest[0];
-			}
-		#endif
-			wimlib_assert(p >= dest);
-			return p;
-		}
-
-		if (*p == T('\0')) {
-			/* Link points outside capture root. */
-			return NULL;
-		}
-
-		do {
-			p++;
-		} while (!is_rp_path_separator(*p) && *p != T('\0'));
-	}
-}
+#endif /* !__WIN32__ */

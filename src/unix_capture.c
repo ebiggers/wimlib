@@ -201,6 +201,54 @@ unix_scan_directory(struct wim_dentry *dir_dentry,
 	return ret;
 }
 
+/* Given an absolute symbolic link target @dest (UNIX-style, beginning
+ * with '/'), determine whether it points into the directory specified by
+ * @ino and @dev.  If so, return the target modified to be "absolute"
+ * relative to this directory.  Otherwise, return NULL.  */
+static char *
+unix_fixup_abslink(char *dest, u64 ino, u64 dev)
+{
+	char *p = dest;
+
+	do {
+		char save;
+		struct stat stbuf;
+		int ret;
+
+		/* Skip non-slashes.  */
+		while (*p && *p != '/')
+			p++;
+
+		/* Skip slashes.  */
+		while (*p && *p == '/')
+			p++;
+
+		/* Get inode and device for this prefix.  */
+		save = *p;
+		*p = '\0';
+		ret = stat(dest, &stbuf);
+		*p = save;
+
+		if (ret) {
+			/* stat() failed.  Assume the link points outside the
+			 * directory tree being captured.  */
+			break;
+		}
+
+		if (stbuf.st_ino == ino && stbuf.st_dev == dev) {
+			/* Link points inside directory tree being captured.
+			 * Return abbreviated path.  */
+			*--p = '/';
+			while (p > dest && *(p - 1) == '/')
+				p--;
+			return p;
+		}
+	} while (*p);
+
+	/* Link does not point inside directory tree being captured.  */
+	return NULL;
+}
+
 static int
 unix_scan_symlink(struct wim_dentry **root_p, const char *full_path,
 		  int dirfd, const char *relpath,
@@ -232,9 +280,9 @@ unix_scan_symlink(struct wim_dentry **root_p, const char *full_path,
 	if ((params->add_flags & WIMLIB_ADD_FLAG_RPFIX) &&
 	     dest[0] == '/')
 	{
-		dest = capture_fixup_absolute_symlink(dest,
-						      params->capture_root_ino,
-						      params->capture_root_dev);
+		dest = unix_fixup_abslink(dest,
+					  params->capture_root_ino,
+					  params->capture_root_dev);
 		if (!dest) {
 			/* RPFIX (reparse point fixup) mode:  Ignore
 			 * absolute symbolic link that points out of the

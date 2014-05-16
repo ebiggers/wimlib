@@ -454,137 +454,239 @@ out_free_buf:
 	return ret;
 }
 
-/* Reparse point fixup status code */
+/* Reparse point fixup status code  */
 enum rp_status {
-	/* Reparse point corresponded to an absolute symbolic link or junction
-	 * point that pointed outside the directory tree being captured, and
-	 * therefore was excluded. */
-	RP_EXCLUDED       = 0x0,
+	/* Reparse point should be excluded from capture  */
+	RP_EXCLUDED	= -0,
 
-	/* Reparse point was not fixed as it was either a relative symbolic
-	 * link, a mount point, or something else we could not understand. */
-	RP_NOT_FIXED      = 0x1,
+	/* Reparse point will be captured literally (no fixup)  */
+	RP_NOT_FIXED	= -1,
 
-	/* Reparse point corresponded to an absolute symbolic link or junction
-	 * point that pointed inside the directory tree being captured, where
-	 * the target was specified by a "full" \??\ prefixed path, and
-	 * therefore was fixed to be relative to the root of the directory tree
-	 * being captured. */
-	RP_FIXED_FULLPATH = 0x2,
-
-	/* Same as RP_FIXED_FULLPATH, except the absolute link target did not
-	 * have the \??\ prefix.  It may have begun with a drive letter though.
-	 * */
-	RP_FIXED_ABSPATH  = 0x4,
-
-	/* Either RP_FIXED_FULLPATH or RP_FIXED_ABSPATH. */
-	RP_FIXED          = RP_FIXED_FULLPATH | RP_FIXED_ABSPATH,
+	/* Reparse point will be captured with fixup  */
+	RP_FIXED	= -2,
 };
 
-/* Given the "substitute name" target of a Windows reparse point, try doing a
- * fixup where we change it to be absolute relative to the root of the directory
- * tree being captured.
- *
- * Note that this is only executed when WIMLIB_ADD_FLAG_RPFIX has been
- * set.
- *
- * @capture_root_ino and @capture_root_dev indicate the inode number and device
- * of the root of the directory tree being captured.  They are meant to identify
- * this directory (as an alternative to its actual path, which could potentially
- * be reached via multiple destinations due to other symbolic links).  This may
- * not work properly on FAT, which doesn't seem to supply proper inode numbers
- * or file IDs.  However, FAT doesn't support reparse points so this function
- * wouldn't even be called anyway.
- */
-static enum rp_status
-winnt_capture_maybe_rpfix_target(wchar_t *target, u16 *target_nbytes_p,
-				 u64 capture_root_ino, u64 capture_root_dev,
-				 u32 rptag)
+static bool
+file_has_ino_and_dev(HANDLE h, u64 ino, u64 dev)
 {
-	u16 target_nchars = *target_nbytes_p / 2;
-	size_t stripped_chars;
-	wchar_t *orig_target;
-	int ret;
+	NTSTATUS status;
+	IO_STATUS_BLOCK iosb;
+	FILE_INTERNAL_INFORMATION int_info;
+	FILE_FS_VOLUME_INFORMATION vol_info;
 
-	ret = parse_substitute_name(target, *target_nbytes_p, rptag);
-	if (ret < 0)
-		return RP_NOT_FIXED;
-	stripped_chars = ret;
-	if (stripped_chars)
-		stripped_chars -= 2;
-	target[target_nchars] = L'\0';
-	orig_target = target;
-	target = capture_fixup_absolute_symlink(target + stripped_chars,
-						capture_root_ino, capture_root_dev);
-	if (!target)
-		return RP_EXCLUDED;
-	target_nchars = wcslen(target);
-	wmemmove(orig_target + stripped_chars, target, target_nchars + 1);
-	*target_nbytes_p = (target_nchars + stripped_chars) * sizeof(wchar_t);
-	if (stripped_chars)
-		return RP_FIXED_FULLPATH;
-	else
-		return RP_FIXED_ABSPATH;
+	status = (*func_NtQueryInformationFile)(h, &iosb,
+						&int_info, sizeof(int_info),
+						FileInternalInformation);
+	if (!NT_SUCCESS(status))
+		return false;
+
+	if (int_info.IndexNumber.QuadPart != ino)
+		return false;
+
+	status = (*func_NtQueryVolumeInformationFile)(h, &iosb,
+						      &vol_info, sizeof(vol_info),
+						      FileFsVolumeInformation);
+	if (!(NT_SUCCESS(status) || status == STATUS_BUFFER_OVERFLOW))
+		return false;
+
+	if (iosb.Information <
+	     offsetof(FILE_FS_VOLUME_INFORMATION, VolumeSerialNumber) +
+	     sizeof(vol_info.VolumeSerialNumber))
+		return false;
+
+	return (vol_info.VolumeSerialNumber == dev);
 }
 
-/* Returns: `enum rp_status' value on success; negative WIMLIB_ERR_* value on
- * failure. */
-static int
-winnt_capture_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
-			u64 capture_root_ino, u64 capture_root_dev,
-			const wchar_t *path, struct add_image_params *params)
+/*
+ * Given an (expected) NT namespace symbolic link or junction target @target of
+ * length @target_nbytes, determine if a prefix of the target points to a file
+ * identified by @capture_root_ino and @capture_root_dev.
+ *
+ * If yes, return a pointer to the portion of the link following this prefix.
+ *
+ * If no, return NULL.
+ *
+ * If the link target does not appear to be a valid NT namespace path, return
+ * @target itself.
+ */
+static const wchar_t *
+winnt_get_root_relative_target(const wchar_t *target, size_t target_nbytes,
+			       u64 capture_root_ino, u64 capture_root_dev)
+{
+	UNICODE_STRING name;
+	OBJECT_ATTRIBUTES attr;
+	IO_STATUS_BLOCK iosb;
+	NTSTATUS status;
+	const wchar_t *target_end;
+	const wchar_t *p;
+
+	target_end = target + (target_nbytes / sizeof(wchar_t));
+
+	/* Empty path??? */
+	if (target_end == target)
+		return target;
+
+	/* No leading slash???  */
+	if (target[0] != L'\\')
+		return target;
+
+	/* UNC path???  */
+	if ((target_end - target) >= 2 &&
+	    target[0] == L'\\' && target[1] == L'\\')
+		return target;
+
+	attr.Length = sizeof(attr);
+	attr.RootDirectory = NULL;
+	attr.ObjectName = &name;
+	attr.Attributes = 0;
+	attr.SecurityDescriptor = NULL;
+	attr.SecurityQualityOfService = NULL;
+
+	name.Buffer = (wchar_t *)target;
+	name.Length = 0;
+	p = target;
+	do {
+		HANDLE h;
+		const wchar_t *orig_p = p;
+
+		/* Skip non-backslashes  */
+		while (p != target_end && *p != L'\\')
+			p++;
+
+		/* Skip backslashes  */
+		while (p != target_end && *p == L'\\')
+			p++;
+
+		/* Append path component  */
+		name.Length += (p - orig_p) * sizeof(wchar_t);
+		name.MaximumLength = name.Length;
+
+		/* Try opening the file  */
+		status = (*func_NtOpenFile) (&h,
+					     FILE_READ_ATTRIBUTES | FILE_TRAVERSE,
+					     &attr,
+					     &iosb,
+					     FILE_SHARE_VALID_FLAGS,
+					     FILE_OPEN_FOR_BACKUP_INTENT);
+
+		if (NT_SUCCESS(status)) {
+			/* Reset root directory  */
+			if (attr.RootDirectory)
+				(*func_NtClose)(attr.RootDirectory);
+			attr.RootDirectory = h;
+			name.Buffer = (wchar_t *)p;
+			name.Length = 0;
+
+			if (file_has_ino_and_dev(h, capture_root_ino,
+						 capture_root_dev))
+				goto out_close_root_dir;
+		}
+	} while (p != target_end);
+
+	p = NULL;
+
+out_close_root_dir:
+	if (attr.RootDirectory)
+		(*func_NtClose)(attr.RootDirectory);
+	return p;
+}
+
+static enum rp_status
+winnt_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
+		u64 capture_root_ino, u64 capture_root_dev,
+		const wchar_t *path, struct add_image_params *params)
 {
 	struct reparse_data rpdata;
-	int ret;
-	enum rp_status rp_status;
+	const wchar_t *rel_target;
 
-	ret = parse_reparse_data(rpbuf, *rpbuflen_p, &rpdata);
-	if (ret)
-		return -ret;
-
-	rp_status = winnt_capture_maybe_rpfix_target(rpdata.substitute_name,
-						     &rpdata.substitute_name_nbytes,
-						     capture_root_ino,
-						     capture_root_dev,
-						     le32_to_cpu(*(le32*)rpbuf));
-	if (rp_status & RP_FIXED) {
-		wimlib_assert(rpdata.substitute_name_nbytes % 2 == 0);
-		utf16lechar substitute_name_copy[rpdata.substitute_name_nbytes / 2];
-		wmemcpy(substitute_name_copy, rpdata.substitute_name,
-			rpdata.substitute_name_nbytes / 2);
-		rpdata.substitute_name = substitute_name_copy;
-		rpdata.print_name = substitute_name_copy;
-		rpdata.print_name_nbytes = rpdata.substitute_name_nbytes;
-		if (rp_status == RP_FIXED_FULLPATH) {
-			/* "full path", meaning \??\ prefixed.  We should not
-			 * include this prefix in the print name, as it is
-			 * apparently meant for the filesystem driver only. */
-			rpdata.print_name += 4;
-			rpdata.print_name_nbytes -= 8;
-		}
-		ret = make_reparse_buffer(&rpdata, rpbuf, rpbuflen_p);
-		if (ret == 0)
-			ret = rp_status;
-		else
-			ret = -ret;
-	} else {
-		if (rp_status == RP_EXCLUDED) {
-			/* Ignoring absolute symbolic link or junction point
-			 * that points out of the tree to be captured.  */
-			size_t print_name_nchars = rpdata.print_name_nbytes / 2;
-			wchar_t print_name0[print_name_nchars + 1];
-			print_name0[print_name_nchars] = L'\0';
-			wmemcpy(print_name0, rpdata.print_name, print_name_nchars);
-
-			params->progress.scan.cur_path = printable_path(path);
-			params->progress.scan.symlink_target = print_name0;
-			do_capture_progress(params,
-					    WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK,
-					    NULL);
-		}
-		ret = rp_status;
+	if (parse_reparse_data(rpbuf, *rpbuflen_p, &rpdata)) {
+		/* Couldn't even understand the reparse data.  Don't try the
+		 * fixup.  */
+		return RP_NOT_FIXED;
 	}
-	return ret;
+
+	/*
+	 * Don't do reparse point fixups on relative symbolic links.
+	 *
+	 * On Windows, a relative symbolic link is supposed to be identifiable
+	 * by having reparse tag WIM_IO_REPARSE_TAG_SYMLINK and flags
+	 * SYMBOLIC_LINK_RELATIVE.  We will use this information, although this
+	 * may not always do what the user expects, since drive-relative
+	 * symbolic links such as "\Users\Public" have SYMBOLIC_LINK_RELATIVE
+	 * set, in addition to truely relative symbolic links such as "Users" or
+	 * "Users\Public".  However, WIMGAPI (as of Windows 8.1) has this same
+	 * behavior.
+	 *
+	 * Otherwise, as far as I can tell, the targets of symbolic links that
+	 * are NOT relative, as well as junctions (note: a mountpoint is the
+	 * sames thing as a junction), must be NT namespace paths, for example:
+	 *
+	 *     - \??\e:\Users\Public
+	 *     - \DosDevices\e:\Users\Public
+	 *     - \Device\HardDiskVolume4\Users\Public
+	 *     - \??\Volume{c47cb07c-946e-4155-b8f7-052e9cec7628}\Users\Public
+	 *     - \DosDevices\Volume{c47cb07c-946e-4155-b8f7-052e9cec7628}\Users\Public
+	 */
+	if (rpdata.rptag == WIM_IO_REPARSE_TAG_SYMLINK &&
+	    (rpdata.rpflags & SYMBOLIC_LINK_RELATIVE))
+		return RP_NOT_FIXED;
+
+	rel_target = winnt_get_root_relative_target(rpdata.substitute_name,
+						    rpdata.substitute_name_nbytes,
+						    capture_root_ino,
+						    capture_root_dev);
+	if (!rel_target) {
+		/* Target points outside of the tree being captured.  Exclude
+		 * this reparse point from the capture (but inform the library
+		 * user).  */
+		size_t print_name_nchars = rpdata.print_name_nbytes / sizeof(wchar_t);
+		wchar_t print_name0[print_name_nchars + 1];
+		print_name0[print_name_nchars] = L'\0';
+		wmemcpy(print_name0, rpdata.print_name, print_name_nchars);
+
+		params->progress.scan.cur_path = printable_path(path);
+		params->progress.scan.symlink_target = print_name0;
+		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK, NULL);
+		return RP_EXCLUDED;
+	}
+
+	if (rel_target == rpdata.substitute_name) {
+		/* Weird target --- keep the reparse point and don't mess with
+		 * it.  */
+		return RP_NOT_FIXED;
+	}
+
+	/* We have an absolute target pointing within the directory being
+	 * captured, @rel_target is the suffix of the link target that is the
+	 * part relative to the directory being captured.
+	 *
+	 * We will cut off the prefix before this part (which is the path to the
+	 * directory being captured) and add a dummy prefix.  Since the process
+	 * will need to be reversed when applying the image, it shouldn't matter
+	 * what exactly the prefix is, as long as it looks like an absolute
+	 * path.
+	 */
+
+	{
+		size_t rel_target_nbytes =
+			rpdata.substitute_name_nbytes - ((const u8 *)rel_target -
+							 (const u8 *)rpdata.substitute_name);
+		size_t rel_target_nchars = rel_target_nbytes / sizeof(wchar_t);
+
+		wchar_t tmp[rel_target_nchars + 7];
+
+		wmemcpy(tmp, L"\\??\\X:\\", 7);
+		wmemcpy(tmp + 7, rel_target, rel_target_nchars);
+
+		rpdata.substitute_name = tmp;
+		rpdata.substitute_name_nbytes = rel_target_nbytes + (7 * sizeof(wchar_t));
+		rpdata.print_name = tmp + 4;
+		rpdata.print_name_nbytes = rel_target_nbytes + (3 * sizeof(wchar_t));
+
+		if (make_reparse_buffer(&rpdata, rpbuf, rpbuflen_p))
+			return RP_NOT_FIXED;
+	}
+	return RP_FIXED;
 }
 
 /*
@@ -592,66 +694,57 @@ winnt_capture_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
  * fixing the targets of absolute symbolic links and junction points to be
  * relative to the root of capture.
  *
- * @h:	    Open handle to the reparse point.
- * @path:   Path to the reparse point file.
- * @params: Additional parameters, including whether to do reparse point fixups
- *          or not.
- * @rpbuf:  Buffer of length at least REPARSE_POINT_MAX_SIZE bytes into which
- *          the reparse point buffer will be loaded.
- * @rpbuflen_ret:  On success, the length of the reparse point buffer in bytes
- *                 is written to this location.
+ * @h:
+ *	Open handle to the reparse point file.
+ * @path:
+ *	Path to the reparse point file.
+ * @params:
+ *	Capture parameters.  add_flags, capture_root_ino, capture_root_dev,
+ *	progress_func, and progress are used.
+ * @rpbuf:
+ *	Buffer of length at least REPARSE_POINT_MAX_SIZE bytes into which the
+ *	reparse point buffer will be loaded.
+ * @rpbuflen_ret:
+ *	On success, the length of the reparse point buffer in bytes is written
+ *	to this location.
  *
- * Returns:
- *	On success, returns an `enum rp_status' value that indicates if and/or
- *	how the reparse point fixup was done.
- *
- *	On failure, returns a negative value that is a negated WIMLIB_ERR_*
- *	code.
+ * On success, returns a nonpositive `enum rp_status' value.
+ * On failure, returns a positive error code.
  */
 static int
 winnt_get_reparse_data(HANDLE h, const wchar_t *path,
 		       struct add_image_params *params,
 		       u8 *rpbuf, u16 *rpbuflen_ret)
 {
-	DWORD bytesReturned;
+	DWORD bytes_returned;
 	u32 reparse_tag;
 	int ret;
 	u16 rpbuflen;
 
 	if (!DeviceIoControl(h, FSCTL_GET_REPARSE_POINT,
-			     NULL, /* "Not used with this operation; set to NULL" */
-			     0, /* "Not used with this operation; set to 0" */
-			     rpbuf, /* "A pointer to a buffer that
-						   receives the reparse point data */
-			     REPARSE_POINT_MAX_SIZE, /* "The size of the output
-							buffer, in bytes */
-			     &bytesReturned,
-			     NULL))
+			     NULL, 0, rpbuf, REPARSE_POINT_MAX_SIZE,
+			     &bytes_returned, NULL))
 	{
 		set_errno_from_GetLastError();
-		return -WIMLIB_ERR_READ;
+		return WIMLIB_ERR_READ;
 	}
 
-	if (bytesReturned < 8 || bytesReturned > REPARSE_POINT_MAX_SIZE) {
+	if (unlikely(bytes_returned < 8)) {
 		errno = EINVAL;
-		return -WIMLIB_ERR_INVALID_REPARSE_DATA;
+		return WIMLIB_ERR_INVALID_REPARSE_DATA;
 	}
 
-	rpbuflen = bytesReturned;
+	rpbuflen = bytes_returned;
 	reparse_tag = le32_to_cpu(*(le32*)rpbuf);
+	ret = RP_NOT_FIXED;
 	if (params->add_flags & WIMLIB_ADD_FLAG_RPFIX &&
 	    (reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
 	     reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT))
 	{
-		/* Try doing reparse point fixup */
-		ret = winnt_capture_try_rpfix(rpbuf,
-					      &rpbuflen,
-					      params->capture_root_ino,
-					      params->capture_root_dev,
-					      path,
-					      params);
-	} else {
-		ret = RP_NOT_FIXED;
+		ret = winnt_try_rpfix(rpbuf, &rpbuflen,
+				      params->capture_root_ino,
+				      params->capture_root_dev,
+				      path, params);
 	}
 	*rpbuflen_ret = rpbuflen;
 	return ret;
@@ -1096,19 +1189,20 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		rpbuf = alloca(REPARSE_POINT_MAX_SIZE);
 		ret = winnt_get_reparse_data(h, full_path, params,
 					     rpbuf, &rpbuflen);
-		if (ret < 0) {
-			/* WIMLIB_ERR_* (inverted) */
-			ret = -ret;
+		switch (ret) {
+		case RP_EXCLUDED:
+			ret = 0;
+			goto out;
+		case RP_FIXED:
+			not_rpfixed = 0;
+			break;
+		case RP_NOT_FIXED:
+			not_rpfixed = 1;
+			break;
+		default:
 			ERROR_WITH_ERRNO("\"%ls\": Can't get reparse data",
 					 printable_path(full_path));
 			goto out;
-		} else if (ret & RP_FIXED) {
-			not_rpfixed = 0;
-		} else if (ret == RP_EXCLUDED) {
-			ret = 0;
-			goto out;
-		} else {
-			not_rpfixed = 1;
 		}
 	}
 

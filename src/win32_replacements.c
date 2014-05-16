@@ -269,36 +269,6 @@ pwrite(int fd, const void *buf, size_t count, off_t offset)
 	return do_pread_or_pwrite(fd, (void*)buf, count, offset, true);
 }
 
-int
-win32_get_file_and_vol_ids(const wchar_t *path, u64 *ino_ret, u64 *dev_ret)
-{
-	HANDLE h;
-	BY_HANDLE_FILE_INFORMATION file_info;
-	int ret;
-	DWORD err;
-
-	h = win32_open_existing_file(path, FILE_READ_ATTRIBUTES);
-	if (h == INVALID_HANDLE_VALUE) {
-		ret = WIMLIB_ERR_OPEN;
-		goto out;
-	}
-
-	if (!GetFileInformationByHandle(h, &file_info)) {
-		ret = WIMLIB_ERR_STAT;
-	} else {
-		*ino_ret = ((u64)file_info.nFileIndexHigh << 32) |
-			    (u64)file_info.nFileIndexLow;
-		*dev_ret = file_info.dwVolumeSerialNumber;
-		ret = 0;
-	}
-	err = GetLastError();
-	CloseHandle(h);
-	SetLastError(err);
-out:
-	set_errno_from_GetLastError();
-	return ret;
-}
-
 /* Replacement for glob() in Windows native builds that operates on wide
  * characters.  */
 int

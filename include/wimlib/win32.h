@@ -47,9 +47,6 @@ win32_truncate_replacement(const tchar *path, off_t size);
 extern int
 win32_strerror_r_replacement(int errnum, tchar *buf, size_t buflen);
 
-extern int
-win32_get_file_and_vol_ids(const wchar_t *path, u64 *ino_ret, u64 *dev_ret);
-
 extern ssize_t
 pread(int fd, void *buf, size_t count, off_t offset);
 

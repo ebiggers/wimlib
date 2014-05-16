@@ -77,8 +77,4 @@ wim_inode_set_symlink(struct wim_inode *inode, const char *target,
 		      struct wim_lookup_table *lookup_table);
 #endif
 
-extern tchar *
-capture_fixup_absolute_symlink(tchar *dest,
-			       u64 capture_root_ino, u64 capture_root_dev);
-
 #endif /* _WIMLIB_REPARSE_H */
