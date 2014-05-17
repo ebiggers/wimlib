@@ -315,7 +315,4 @@ dentry_has_long_name(const struct wim_dentry *dentry)
 {
 	return dentry->file_name_nbytes != 0;
 }
-
-extern int
-dentry_tree_fix_inodes(struct wim_dentry *root, struct list_head *inode_list);
 #endif /* _WIMLIB_DENTRY_H */
