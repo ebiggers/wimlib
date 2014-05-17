@@ -40,40 +40,24 @@ struct inode_fixup_params {
 #define MAX_DIR_HARD_LINK_WARNINGS 8
 
 static bool
-ads_entries_have_same_name(const struct wim_ads_entry *entry_1,
-			   const struct wim_ads_entry *entry_2)
-{
-	return entry_1->stream_name_nbytes == entry_2->stream_name_nbytes &&
-		!memcmp(entry_1->stream_name, entry_2->stream_name,
-			entry_1->stream_name_nbytes);
-}
-
-static bool
 inodes_consistent(const struct wim_inode *inode_1,
 		  const struct wim_inode *inode_2)
 {
-	if (inode_1->i_num_ads != inode_2->i_num_ads)
-		return false;
-
-	for (u32 i = 0; i <= inode_1->i_num_ads; i++) {
-		const u8 *hash_1 = inode_stream_hash_unresolved(inode_1, i);
-		const u8 *hash_2 = inode_stream_hash_unresolved(inode_2, i);
-
-		if (!hashes_equal(hash_1, hash_2) && !is_zero_hash(hash_1))
-			return false;
-
-		if (i && !ads_entries_have_same_name(&inode_1->i_ads_entries[i - 1],
-						     &inode_2->i_ads_entries[i - 1]))
-			return false;
-	}
-
-	if (inode_1->i_attributes != inode_2->i_attributes)
-		return false;
-
-	if (inode_1->i_security_id != inode_2->i_security_id)
-		return false;
-
-	return true;
+	/* This certainly isn't the only thing we need to check to make sure the
+	 * inodes are consistent.  However, this seems to be the only thing that
+	 * the MS implementation checks when working around its own bug.
+	 *
+	 * (Tested: If two dentries share the same hard link group ID, Windows
+	 * 8.1 DISM will link them if they have the same unnamed stream hash,
+	 * even if the dentries provide different timestamps, attributes,
+	 * alternate data streams, and security IDs!  And the one that gets used
+	 * will change if you merely swap the filenames.  But if you use
+	 * different unnamed stream hashes with everything else the same, it
+	 * doesn't link the dentries.)
+	 *
+	 * For non-buggy WIMs this function will always return true.  */
+	return hashes_equal(inode_unnamed_stream_hash(inode_1),
+			    inode_unnamed_stream_hash(inode_2));
 }
 
 static int
@@ -177,11 +161,8 @@ reassign_inode_numbers(struct list_head *inode_list)
  * - Due to bugs in the Microsoft implementation, dentries with different
  *   'hard_link_group_id' fields may, in fact, need to be interpreted as
  *   naming different inodes.  This seems to mostly affect images in
- *   install.wim for Windows 7.  I still have not been able to determine
- *   precisely how Microsoft's implementation generates and handles this
- *   invalid case, but we can at least try doing something reasonable by
- *   only joining a dentry with a different inode when this would not
- *   change the file's meaning (e.g. its contents or attributes).
+ *   install.wim for Windows 7.  I try to work around this in the same way
+ *   the Microsoft implementation works around this.
  *
  * Returns 0 or WIMLIB_ERR_NOMEM.  On success, the resulting inodes will be
  * appended to the @inode_list, and they will have consistent numbers in their
