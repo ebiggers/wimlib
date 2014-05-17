@@ -410,13 +410,6 @@ NTSTATUS (WINAPI *func_NtReadFile) (HANDLE FileHandle,
 				    PLARGE_INTEGER ByteOffset,
 				    PULONG Key);
 
-NTSTATUS (WINAPI *func_NtOpenFile) (PHANDLE FileHandle,
-				    ACCESS_MASK DesiredAccess,
-				    POBJECT_ATTRIBUTES ObjectAttributes,
-				    PIO_STATUS_BLOCK IoStatusBlock,
-				    ULONG ShareAccess,
-				    ULONG OpenOptions);
-
 NTSTATUS (WINAPI *func_NtQueryInformationFile)(HANDLE FileHandle,
 					       PIO_STATUS_BLOCK IoStatusBlock,
 					       PVOID FileInformation,
