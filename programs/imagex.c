@@ -2870,6 +2870,7 @@ imagex_extract(int argc, tchar **argv, int cmd)
 			extract_flags |= WIMLIB_EXTRACT_FLAG_TO_STDOUT;
 			imagex_info_file = stderr;
 			imagex_be_quiet = true;
+			set_fd_to_binary_mode(STDOUT_FILENO);
 			break;
 		case IMAGEX_INCLUDE_INVALID_NAMES_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_REPLACE_INVALID_FILENAMES;
