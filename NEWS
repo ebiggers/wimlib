@@ -20,6 +20,8 @@ Version 1.6.3-BETA:
 	The 'mkwinpeimg' script now supports writing the ISO image to standard
 	output.
 
+	On Windows, sparse file attributes are no longer set on extracted files.
+
 	The shared library version has been bumped up; however, there are only a
 	few incompatibilities:
 

@@ -292,8 +292,10 @@ win32_start_extract(const wchar_t *path, struct apply_ctx *ctx)
 
 	ctx->supported_features.not_context_indexed_files = 1;
 
+#if 0
 	if (vol_flags & FILE_SUPPORTS_SPARSE_FILES)
 		ctx->supported_features.sparse_files = 1;
+#endif
 
 	if (vol_flags & FILE_NAMED_STREAMS)
 		ctx->supported_features.named_data_streams = 1;
@@ -670,12 +672,27 @@ win32_set_special_file_attributes(const wchar_t *path, u32 attributes)
 	if (h == INVALID_HANDLE_VALUE)
 		goto error;
 
+	/* Don't make extracted files sparse.  It is pointless without also
+	 * skipping over runs of zeroes when writing the file, and in fact
+	 * increases disk usage --- apparently, allocation sizes in sparse files
+	 * are rounded up to multiples of 131072 bytes rather than 4096 bytes.
+	 * And in some Windows 7 images, *all* files are set as sparse for some
+	 * reason, which causes 1 GB+ of disk space to be wasted on the target
+	 * drive of a full extraction.
+	 *
+	 * WIMGAPI seemingly does not make extracted files sparse either.
+	 *
+	 * XXX: We really ought to do a proper sparse extraction anyway if the
+	 * file meets some heuristic that indicates this would be beneficial.
+	 */
+#if 0
 	if (attributes & FILE_ATTRIBUTE_SPARSE_FILE)
 		if (!DeviceIoControl(h, FSCTL_SET_SPARSE,
 				     NULL, 0,
 				     NULL, 0,
 				     &bytes_returned, NULL))
 			goto error_close_handle;
+#endif
 
 	if (attributes & FILE_ATTRIBUTE_COMPRESSED)
 		if (!DeviceIoControl(h, FSCTL_SET_COMPRESSION,

@@ -124,9 +124,10 @@ mode:
 .IP \[bu] 4
 Encrypted files will not be extracted.
 .IP \[bu]
-Although sparse file attributes will be applied, the full data will be extracted
-to each sparse file, so extracted "sparse" files may not actually contain any
-sparse regions.
+wimlib v1.6.3 and later:  Sparse file attributes will not be extracted (same
+behavior as ImageX/DISM/WIMGAPI).  wimlib v1.6.2 and earlier:  Although sparse
+file attributes will be applied, the full data will be extracted to each sparse
+file, so extracted "sparse" files may not actually contain any sparse regions.
 .PP
 Regardless, since almost all information from the WIM image is restored in this
 mode, it is possible to restore an image of an actual Windows installation using
