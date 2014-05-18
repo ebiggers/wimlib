@@ -259,9 +259,6 @@ extern void
 free_dentry(struct wim_dentry *dentry);
 
 extern void
-put_dentry(struct wim_dentry *dentry);
-
-extern void
 free_dentry_tree(struct wim_dentry *root,
 		 struct wim_lookup_table *lookup_table);
 
