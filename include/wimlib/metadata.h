@@ -72,16 +72,16 @@ wim_get_current_security_data(WIMStruct *wim)
 
 /* Iterate over each inode in a WIM image that has not yet been hashed */
 #define image_for_each_inode(inode, imd) \
-	list_for_each_entry(inode, &imd->inode_list, i_list)
+	list_for_each_entry(inode, &(imd)->inode_list, i_list)
 
 /* Iterate over each stream in a WIM image that has not yet been hashed */
 #define image_for_each_unhashed_stream(lte, imd) \
-	list_for_each_entry(lte, &imd->unhashed_streams, unhashed_list)
+	list_for_each_entry(lte, &(imd)->unhashed_streams, unhashed_list)
 
 /* Iterate over each stream in a WIM image that has not yet been hashed (safe
  * against stream removal) */
 #define image_for_each_unhashed_stream_safe(lte, tmp, imd) \
-	list_for_each_entry_safe(lte, tmp, &imd->unhashed_streams, unhashed_list)
+	list_for_each_entry_safe(lte, tmp, &(imd)->unhashed_streams, unhashed_list)
 
 extern void
 put_image_metadata(struct wim_image_metadata *imd,
