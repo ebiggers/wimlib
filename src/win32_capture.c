@@ -84,9 +84,7 @@ winnt_openat(HANDLE cur_dir, const wchar_t *path, size_t path_nchars,
 
 retry:
 	status = (*func_NtOpenFile)(h_ret, perms, &attr, &iosb,
-				    FILE_SHARE_READ |
-					    FILE_SHARE_WRITE |
-					    FILE_SHARE_DELETE,
+				    FILE_SHARE_VALID_FLAGS,
 				    FILE_OPEN_REPARSE_POINT |
 					    FILE_OPEN_FOR_BACKUP_INTENT |
 					    FILE_SYNCHRONOUS_IO_NONALERT |
