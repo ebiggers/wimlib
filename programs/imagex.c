@@ -157,7 +157,6 @@ enum {
 	IMAGEX_EXTRACT_XML_OPTION,
 	IMAGEX_FLAGS_OPTION,
 	IMAGEX_FORCE_OPTION,
-	IMAGEX_HARDLINK_OPTION,
 	IMAGEX_HEADER_OPTION,
 	IMAGEX_INCLUDE_INVALID_NAMES_OPTION,
 	IMAGEX_LAZY_OPTION,
@@ -190,7 +189,6 @@ enum {
 	IMAGEX_STAGING_DIR_OPTION,
 	IMAGEX_STREAMS_INTERFACE_OPTION,
 	IMAGEX_STRICT_ACLS_OPTION,
-	IMAGEX_SYMLINK_OPTION,
 	IMAGEX_THREADS_OPTION,
 	IMAGEX_TO_STDOUT_OPTION,
 	IMAGEX_UNIX_DATA_OPTION,
@@ -203,8 +201,6 @@ enum {
 
 static const struct option apply_options[] = {
 	{T("check"),       no_argument,       NULL, IMAGEX_CHECK_OPTION},
-	{T("hardlink"),    no_argument,       NULL, IMAGEX_HARDLINK_OPTION},
-	{T("symlink"),     no_argument,       NULL, IMAGEX_SYMLINK_OPTION},
 	{T("verbose"),     no_argument,       NULL, IMAGEX_VERBOSE_OPTION},
 	{T("ref"),         required_argument, NULL, IMAGEX_REF_OPTION},
 	{T("unix-data"),   no_argument,       NULL, IMAGEX_UNIX_DATA_OPTION},
@@ -1159,15 +1155,6 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 				      info->extract.total_parts);
 		}
 		break;
-	case WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS:
-		imagex_printf(T("Setting timestamps on all extracted files...\n"));
-		break;
-	case WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END:
-		if (info->extract.extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
-			imagex_printf(T("Unmounting NTFS volume \"%"TS"\"...\n"),
-				info->extract.target);
-		}
-		break;
 	case WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART:
 		percent_done = TO_PERCENT(info->split.completed_bytes,
 					  info->split.total_bytes);
@@ -1479,12 +1466,6 @@ imagex_apply(int argc, tchar **argv, int cmd)
 		switch (c) {
 		case IMAGEX_CHECK_OPTION:
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
-			break;
-		case IMAGEX_HARDLINK_OPTION:
-			extract_flags |= WIMLIB_EXTRACT_FLAG_HARDLINK;
-			break;
-		case IMAGEX_SYMLINK_OPTION:
-			extract_flags |= WIMLIB_EXTRACT_FLAG_SYMLINK;
 			break;
 		case IMAGEX_VERBOSE_OPTION:
 			/* No longer does anything.  */
@@ -3949,8 +3930,8 @@ T(
 "    %"TS" WIMFILE [(IMAGE_NUM | IMAGE_NAME | all)]\n"
 "                    (DIRECTORY | NTFS_VOLUME) [--check] [--ref=\"GLOB\"]\n"
 "                    [--no-acls] [--strict-acls] [--no-attributes]\n"
-"                    [--rpfix] [--norpfix] [--hardlink] [--symlink]\n"
-"                    [--include-invalid-names] [--wimboot]\n"
+"                    [--rpfix] [--norpfix] [--include-invalid-names]\n"
+"                    [--wimboot]\n"
 ),
 [CMD_CAPTURE] =
 T(

@@ -127,7 +127,6 @@ clone_lookup_table_entry(const struct wim_lookup_table_entry *old)
 	if (new == NULL)
 		return NULL;
 
-	new->extracted_file = NULL;
 	switch (new->resource_location) {
 	case RESOURCE_IN_WIM:
 		list_add(&new->rspec_node, &new->rspec->stream_list);
@@ -1269,16 +1268,6 @@ int
 lte_zero_out_refcnt(struct wim_lookup_table_entry *lte, void *_ignore)
 {
 	lte->out_refcnt = 0;
-	return 0;
-}
-
-int
-lte_free_extracted_file(struct wim_lookup_table_entry *lte, void *_ignore)
-{
-	if (lte->extracted_file != NULL) {
-		FREE(lte->extracted_file);
-		lte->extracted_file = NULL;
-	}
 	return 0;
 }
 

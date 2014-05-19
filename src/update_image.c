@@ -919,7 +919,7 @@ free_dentry_full_path(struct wim_dentry *dentry, void *_ignore)
 
 /* Is @d1 a (possibly nonproper) ancestor of @d2?  */
 static bool
-is_ancestor(struct wim_dentry *d1, struct wim_dentry *d2)
+is_ancestor(const struct wim_dentry *d1, const struct wim_dentry *d2)
 {
 	for (;;) {
 		if (d2 == d1)

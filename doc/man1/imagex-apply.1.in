@@ -49,7 +49,7 @@ This section documents how \fB@IMAGEX_PROGNAME@ apply\fR (and also
 thereof, in the case of \fB@IMAGEX_PROGNAME@ extract\fR) to a directory on
 UNIX-like systems.  See \fBDIRECTORY EXTRACTION (WINDOWS)\fR for the
 corresponding documentation for Windows.
-
+.PP
 As mentioned, a WIM image can be applied to a directory on a UNIX-like system by
 providing a \fITARGET\fR directory.  However, it is important to keep in mind
 that the WIM format was designed for Windows, and as a result WIM files can
@@ -329,21 +329,6 @@ captured with reparse-point fixups done.  Otherwise, it is \fB--norpfix\fR.
 .IP ""
 Reparse point fixups are never done in the NTFS volume extraction mode on
 UNIX-like systems.
-.TP
-\fB--hardlink\fR
-When extracting a file from the WIM that is identical to a file that has already
-extracted, create a hard link rather than creating a separate file.  This option
-causes all identical files to be hard-linked, overriding the hard link groups
-that are specified in the WIM image(s).  In the case of extracting all images
-from the WIM, files may be hard-linked even if they are in different WIM images.
-.IP ""
-However, hard-linked extraction mode does have some additional quirks.  Named
-data streams will not be extracted, and files can be hard linked even if their
-metadata is not fully consistent.
-.TP
-\fB--symlink\fR
-This option is similar to \fB--hardlink\fR, except symbolic links are created
-instead.
 .TP
 \fB--unix-data\fR
 (UNIX-like systems only)  By default, in the directory extraction mode on UNIX,

@@ -99,9 +99,6 @@ struct wim_inode {
 	 * error paths.  */
 	u8 i_visited : 1;
 
-	/* Set if the DOS name of an inode has already been extracted.  */
-	u8 i_dos_name_extracted : 1;
-
 	/* 1 iff all ADS entries of this inode are named or if this inode
 	 * has no ADS entries  */
 	u8 i_canonical_streams : 1;
@@ -153,19 +150,22 @@ struct wim_inode {
 		 * to 0 otherwise.  */
 		u64 i_devno;
 
+		/* Fields used only during extraction  */
 		struct {
+			/* List of aliases of this dentry that are being
+			 * extracted in the current extraction operation.  This
+			 * will be a (possibly nonproper) subset of the dentries
+			 * in the i_dentry list.  This list will be constructed
+			 * regardless of whether the extraction backend supports
+			 * hard links or not.  */
+			struct list_head i_extraction_aliases;
 
-			/* Used only during image extraction: pointer to the first path
-			 * (malloc()ed buffer) at which this inode has been extracted.
-			 * Freed and set to NULL after the extraction is done (either
-			 * success or failure).  */
-			tchar *i_extracted_file;
-
-			/** Used only during image extraction: "cookie" that
-			 * identifies this extracted file (inode), for example
-			 * an inode number.  Only used if supported by the
-			 * extraction mode.  */
-			u64 extract_cookie;
+		#ifdef WITH_NTFS_3G
+			/* In NTFS-3g extraction mode, this is set to the Master
+			 * File Table (MFT) number of the NTFS file that was
+			 * created for this inode.  */
+			u64 i_mft_no;
+		#endif
 		};
 
 #ifdef WITH_FUSE

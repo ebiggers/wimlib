@@ -64,6 +64,21 @@ struct wim_dentry {
 	 * long names but share the same case insensitive long name.  */
 	struct list_head d_ci_conflict_list;
 
+	/* The parent of this directory entry. */
+	struct wim_dentry *parent;
+
+	/* Linked list node that places this dentry in the list of aliases for
+	 * its inode (d_inode) */
+	struct list_head d_alias;
+
+	/* Pointer to the UTF-16LE short filename (malloc()ed buffer), or NULL
+	 * if this dentry has no short name.  */
+	utf16lechar *short_name;
+
+	/* Pointer to the UTF-16LE filename (malloc()ed buffer), or NULL if this
+	 * dentry has no filename.  */
+	utf16lechar *file_name;
+
 	/* Length of UTF-16LE encoded short filename, in bytes, not including
 	 * the terminating zero wide-character. */
 	u16 short_name_nbytes;
@@ -71,14 +86,6 @@ struct wim_dentry {
 	/* Length of UTF-16LE encoded "long" file name, in bytes, not including
 	 * the terminating null character. */
 	u16 file_name_nbytes;
-
-	/* Length of full path name encoded using "tchars", in bytes, not
-	 * including the terminating null character. */
-	u32 full_path_nbytes;
-
-	/* During extraction extractions, this flag will be set after the
-	 * "skeleton" of the dentry has been extracted.  */
-	u8 skeleton_extracted : 1;
 
 	/* When capturing from an NTFS volume using NTFS-3g, this flag is set on
 	 * dentries that were created from a filename in the WIN32 or WIN32+DOS
@@ -89,25 +96,11 @@ struct wim_dentry {
 	/* Temporary flag; always reset to 0 when done using.  */
 	u8 tmp_flag : 1;
 
-	/* Set to 1 if this name was extracted as a link, so no streams need to
-	 * be extracted to it.  */
-	u8 was_linked : 1;
-
 	/* Used by wimlib_update_image()  */
 	u8 is_orphan : 1;
 
 	/* Temporary list field  */
 	struct list_head tmp_list;
-
-	/* Links list of dentries being extracted  */
-	struct list_head extraction_list;
-
-	/* Linked list node that places this dentry in the list of aliases for
-	 * its inode (d_inode) */
-	struct list_head d_alias;
-
-	/* The parent of this directory entry. */
-	struct wim_dentry *parent;
 
 	/* 'length' and 'subdir_offset' are only used while reading and writing
 	 * this dentry; see the corresponding field in
@@ -115,35 +108,41 @@ struct wim_dentry {
 	u64 length;
 	u64 subdir_offset;
 
-	/* Pointer to the UTF-16LE short filename (malloc()ed buffer), or NULL
-	 * if this dentry has no short name.  */
-	utf16lechar *short_name;
-
-	/* Pointer to the UTF-16LE filename (malloc()ed buffer), or NULL if this
-	 * dentry has no filename.  */
-	utf16lechar *file_name;
-
 	/* Full path to this dentry in the WIM, in platform-dependent tchars
 	 * that can be printed without conversion.  By default this field will
 	 * be NULL and will only be calculated on-demand by the
 	 * calculate_dentry_full_path() or dentry_full_path() functions.  */
 	tchar *_full_path;
 
-	/* (Extraction only) Actual name to extract this dentry as, along with
-	 * its length in tchars excluding the NULL terminator.  This usually
-	 * will be the same as file_name, with the character encoding converted
-	 * if needed.  But if file_name contains characters not accepted on the
-	 * current platform, then this may be set slightly differently from
-	 * file_name.  This will be either NULL or a malloc()ed buffer that may
-	 * alias file_name.  */
-	tchar *extraction_name;
-	size_t extraction_name_nchars;
+	/* (Extraction only) Actual name to extract this dentry as.  This may be
+	 * either in 'tchars' or in 'utf16lechars', depending on what encoding
+	 * the extraction backend needs.  This may alias 'file_name'.  If it
+	 * doesn't, it is an allocated buffer which must be freed.  */
+	void *d_extraction_name;
+
+	/* (Extraction only) Number of characters in d_extraction_name.  */
+	size_t d_extraction_name_nchars;
+
+	/* (Extraction only) Linked list node that connects all dentries being
+	 * extracted as part of the current extraction operation.  */
+	struct list_head d_extraction_list_node;
+
+	/* (Extraction only) Linked list node that connects all dentries being
+	 * extracted as aliases of the same inode as part of the current
+	 * extraction operation.  */
+	struct list_head d_extraction_alias_node;
 };
 
 static inline bool
 dentry_is_first_in_inode(const struct wim_dentry *dentry)
 {
 	return inode_first_dentry(dentry->d_inode) == dentry;
+}
+
+static inline bool
+will_extract_dentry(const struct wim_dentry *dentry)
+{
+	return dentry->d_extraction_list_node.next != NULL;
 }
 
 extern u64

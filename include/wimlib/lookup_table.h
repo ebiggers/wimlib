@@ -63,6 +63,11 @@ enum resource_location {
 #endif
 };
 
+struct stream_owner {
+	struct wim_inode *inode;
+	const utf16lechar *stream_name;
+};
+
 /* Specification for a stream, which may be the contents of a file (unnamed data
  * stream), a named data stream, reparse point data, or a WIM metadata resource.
  *
@@ -136,8 +141,8 @@ struct wim_lookup_table_entry {
 	/* When a WIM file is written, this is set to the number of references
 	 * (by dentries) to this stream in the output WIM file.
 	 *
-	 * During extraction, this is set to the number of times the stream must
-	 * be extracted.
+	 * During extraction, this is the number of slots in stream_owners (or
+	 * inline_stream_owners) that have been filled.
 	 *
 	 * During image export, this is set to the number of references of this
 	 * stream that originated from the source WIM.
@@ -176,12 +181,6 @@ struct wim_lookup_table_entry {
 	 */
 	struct list_head rspec_node;
 
-	/* This field is used during the hardlink and symlink image extraction
-	 * modes.   In these modes, all identical files are linked together, and
-	 * @extracted_file will be set to the filename of the first extracted
-	 * file containing this stream.  */
-	tchar *extracted_file;
-
 	/* Temporary fields  */
 	union {
 		/* Fields used temporarily during WIM file writing.  */
@@ -209,14 +208,16 @@ struct wim_lookup_table_entry {
 			struct wim_reshdr out_reshdr;
 		};
 
-		/* Used temporarily during extraction  */
+		/* Used temporarily during extraction.  This is an array of
+		 * pointers to the inodes being extracted that use this stream.
+		 */
 		union {
-			/* Dentries to extract that reference this stream.
+			/* Inodes to extract that reference this stream.
 			 * out_refcnt tracks the number of slots filled.  */
-			struct wim_dentry *inline_lte_dentries[7];
+			struct stream_owner inline_stream_owners[3];
 			struct {
-				struct wim_dentry **lte_dentries;
-				size_t alloc_lte_dentries;
+				struct stream_owner *stream_owners;
+				u32 alloc_stream_owners;
 			};
 		};
 
@@ -340,9 +341,6 @@ lte_zero_out_refcnt(struct wim_lookup_table_entry *lte, void *ignore);
 extern int
 lte_zero_real_refcnt(struct wim_lookup_table_entry *lte, void *ignore);
 
-extern int
-lte_free_extracted_file(struct wim_lookup_table_entry *lte, void *ignore);
-
 static inline bool
 lte_is_partial(const struct wim_lookup_table_entry * lte)
 {
@@ -361,6 +359,15 @@ lte_filename_valid(const struct wim_lookup_table_entry *lte)
 		|| lte->resource_location == RESOURCE_IN_STAGING_FILE
 	#endif
 		;
+}
+
+static inline const struct stream_owner *
+stream_owners(struct wim_lookup_table_entry *stream)
+{
+	if (stream->out_refcnt <= ARRAY_LEN(stream->inline_stream_owners))
+		return stream->inline_stream_owners;
+	else
+		return stream->stream_owners;
 }
 
 static inline void

@@ -34,8 +34,6 @@
 #  include "config.h"
 #endif
 
-#ifdef __WIN32__
-
 #include "wimlib/win32_common.h"
 #include "wimlib/win32.h"
 #include "wimlib/assert.h"
@@ -49,8 +47,7 @@ static HANDLE
 open_file(const wchar_t *device_name, DWORD desiredAccess)
 {
 	return CreateFile(device_name, desiredAccess,
-			  FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-			  NULL, OPEN_EXISTING,
+			  FILE_SHARE_VALID_FLAGS, NULL, OPEN_EXISTING,
 			  FILE_FLAG_BACKUP_SEMANTICS, NULL);
 }
 
@@ -902,7 +899,7 @@ try_to_attach_wof(const wchar_t *drive)
  * @image
  *	Number of the image in the WIM being applied.
  * @target
- *	Path to the target drive.
+ *	Path to the target directory.
  * @data_source_id_ret
  *	On success, an identifier for the backing WIM file will be returned
  *	here.
@@ -1043,8 +1040,10 @@ out:
  * This turns it into a reparse point that redirects accesses to it, to the
  * corresponding resource in the WIM archive.
  *
- * @path
- *	Path to extracted file (already created).
+ * @name
+ *	Path to extracted file (already created), NT namespace.
+ * @printable_name
+ *	Printable representation of @name.
  * @lte
  *	Unnamed data stream of the file.
  * @data_source_id
@@ -1058,23 +1057,33 @@ out:
  * Returns 0 on success, or a positive error code on failure.
  */
 int
-wimboot_set_pointer(const wchar_t *path,
+wimboot_set_pointer(UNICODE_STRING *name,
+		    const wchar_t *printable_name,
 		    const struct wim_lookup_table_entry *lte,
 		    u64 data_source_id,
 		    const u8 lookup_table_hash[SHA1_HASH_SIZE],
 		    bool wof_running)
 {
-	HANDLE h;
-	DWORD bytes_returned;
 	int ret;
+	HANDLE h = NULL;
+	NTSTATUS status;
+	OBJECT_ATTRIBUTES attr;
+	IO_STATUS_BLOCK iosb;
+	DWORD bytes_returned;
+	DWORD err;
 
+	memset(&attr, 0, sizeof(attr));
+	attr.Length = sizeof(attr);
+	attr.ObjectName = name;
 
-	/* Open the file  */
-	h = win32_open_existing_file(path, GENERIC_WRITE);
-	if (h == INVALID_HANDLE_VALUE) {
-		set_errno_from_GetLastError();
-		ret = WIMLIB_ERR_OPEN;
-		goto out;
+	status = (*func_NtOpenFile)(&h, GENERIC_WRITE | SYNCHRONIZE, &attr,
+				    &iosb, FILE_SHARE_VALID_FLAGS,
+				    FILE_OPEN_FOR_BACKUP_INTENT |
+					FILE_OPEN_REPARSE_POINT |
+					FILE_SYNCHRONOUS_IO_NONALERT);
+	if (!NT_SUCCESS(status)) {
+		SetLastError((*func_RtlNtStatusToDosError)(status));
+		goto fail;
 	}
 
 	if (wof_running) {
@@ -1097,7 +1106,8 @@ wimboot_set_pointer(const wchar_t *path,
 		/* lookup_table_hash is not necessary  */
 
 		if (!DeviceIoControl(h, FSCTL_SET_EXTERNAL_BACKING,
-				     &in, sizeof(in), NULL, 0, &bytes_returned, NULL))
+				     &in, sizeof(in), NULL, 0,
+				     &bytes_returned, NULL))
 			goto fail;
 	} else {
 
@@ -1156,20 +1166,17 @@ wimboot_set_pointer(const wchar_t *path,
 	}
 
 	ret = 0;
-out_close_handle:
-	CloseHandle(h);
-out:
-	return ret;
+	goto out;
 
 fail:
-	{
-		DWORD err = GetLastError();
-		set_errno_from_win32_error(err);
-		ERROR_WITH_ERRNO("\"%ls\": Couldn't set WIMBoot pointer data "
-				 "(err=0x%08"PRIx32")", path, (u32)err);
-		ret = WIMLIB_ERR_WIMBOOT;
-		goto out_close_handle;
-	}
-}
+	err = GetLastError();
+	set_errno_from_win32_error(err);
+	ERROR_WITH_ERRNO("\"%ls\": Couldn't set WIMBoot pointer data "
+			 "(err=%"PRIu32")", printable_name, (u32)err);
+	ret = WIMLIB_ERR_WIMBOOT;
+out:
+	if (h)
+		(*func_NtClose)(h);
+	return ret;
 
-#endif /* __WIN32__ */
+}

@@ -451,135 +451,111 @@ enum wimlib_progress_msg {
 	 * This message is received only once per wimlib_extract_paths() and
 	 * wimlib_extract_pathlist(), since wimlib combines all paths into a
 	 * single extraction operation for optimization purposes.  */
-	WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN,
-
-	/** The directory structure and other preliminary metadata is about to
-	 * be extracted.  @p info will point to ::wimlib_progress_info.extract.
-	 * This message is received once after either
-	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN or
-	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN.  */
-	WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN,
-
-	/** Confirms that the directory structure and other preliminary metadata
-	 * has been successfully extracted.  @p info will point to
-	 * ::wimlib_progress_info.extract.  This message is paired with a
-	 * preceding ::WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN message.
-	 */
-	WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_END,
+	WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN = 1,
 
 	/** File data is currently being extracted.  @p info will point to
 	 * ::wimlib_progress_info.extract.  This is the main message to track
 	 * the progress of an extraction operation.  */
-	WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS,
+	WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS = 4,
 
 	/** Starting to read a new part of a split pipable WIM over the pipe.
 	 * @p info will point to ::wimlib_progress_info.extract.  */
-	WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN,
-
-	/** All data for WIM files and directories have been extracted, and
-	 * final metadata such as timestamps is about to be extracted.  @p info
-	 * will point to ::wimlib_progress_info.extract.  This message is
-	 * received once before ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END or
-	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_TREE_END.  */
-	WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS,
+	WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN = 5,
 
 	/** Confirms that the image has been successfully extracted.  @p info
 	 * will point to ::wimlib_progress_info.extract.  This is paired with
 	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN.  */
-	WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END,
+	WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END = 7,
 
 	/** Confirms that the files or directory trees have been successfully
 	 * extracted.  @p info will point to ::wimlib_progress_info.extract.
 	 * This is paired with ::WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN.  */
-	WIMLIB_PROGRESS_MSG_EXTRACT_TREE_END,
+	WIMLIB_PROGRESS_MSG_EXTRACT_TREE_END = 8,
 
 	/** The directory or NTFS volume is about to be scanned for metadata.
 	 * @p info will point to ::wimlib_progress_info.scan.  This message is
 	 * received once per call to wimlib_add_image(), or once per capture
 	 * source passed to wimlib_add_image_multisource(), or once per add
 	 * command passed to wimlib_update_image().  */
-	WIMLIB_PROGRESS_MSG_SCAN_BEGIN,
+	WIMLIB_PROGRESS_MSG_SCAN_BEGIN = 9,
 
 	/** A directory or file has been scanned.  @p info will point to
 	 * ::wimlib_progress_info.scan, and its @p cur_path member will be
 	 * valid.  This message is only sent if ::WIMLIB_ADD_FLAG_VERBOSE has
 	 * been specified.  */
-	WIMLIB_PROGRESS_MSG_SCAN_DENTRY,
+	WIMLIB_PROGRESS_MSG_SCAN_DENTRY = 10,
 
 	/** Confirms that the directory or NTFS volume has been successfully
 	 * scanned.  @p info will point to ::wimlib_progress_info.scan.  This is
 	 * paired with a previous ::WIMLIB_PROGRESS_MSG_SCAN_BEGIN message,
 	 * possibly with many intervening ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY
 	 * messages.  */
-	WIMLIB_PROGRESS_MSG_SCAN_END,
+	WIMLIB_PROGRESS_MSG_SCAN_END = 11,
 
 	/** File resources ("streams") are currently being written to the WIM.
 	 * @p info will point to ::wimlib_progress_info.write_streams.  This
 	 * message may be received many times while the WIM file is being
 	 * written or appended to with wimlib_write(), wimlib_overwrite(), or
 	 * wimlib_write_to_fd().  */
-	WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
+	WIMLIB_PROGRESS_MSG_WRITE_STREAMS = 12,
 
 	/** Per-image metadata is about to be written to the WIM file.  @p info
 	 * will not be valid. */
-	WIMLIB_PROGRESS_MSG_WRITE_METADATA_BEGIN,
+	WIMLIB_PROGRESS_MSG_WRITE_METADATA_BEGIN = 13,
 
 	/** Confirms that per-image metadata has been successfully been written
 	 * to the WIM file.  @p info will not be valid.  This message is paired
 	 * with a preceding ::WIMLIB_PROGRESS_MSG_WRITE_METADATA_BEGIN message.
 	 */
-	WIMLIB_PROGRESS_MSG_WRITE_METADATA_END,
+	WIMLIB_PROGRESS_MSG_WRITE_METADATA_END = 14,
 
 	/** wimlib_overwrite() has successfully renamed the temporary file to
 	 * the original WIM file, thereby committing the update.  @p info will
 	 * point to ::wimlib_progress_info.rename.  Note: this message is not
 	 * received if wimlib_overwrite() chose to append to the WIM file
 	 * in-place.  */
-	WIMLIB_PROGRESS_MSG_RENAME,
+	WIMLIB_PROGRESS_MSG_RENAME = 15,
 
 	/** The contents of the WIM file are being checked against the integrity
 	 * table.  @p info will point to ::wimlib_progress_info.integrity.  This
 	 * message is only received (and may be received many times) when
 	 * wimlib_open_wim() is called with the
 	 * ::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY flag.  */
-	WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY,
+	WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY = 16,
 
 	/** An integrity table is being calculated for the WIM being written.
 	 * @p info will point to ::wimlib_progress_info.integrity.  This message
 	 * is only received (and may be received many times) when a WIM file is
 	 * being written with the flag ::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY.  */
-	WIMLIB_PROGRESS_MSG_CALC_INTEGRITY,
-
-	/** Reserved.  */
-	WIMLIB_PROGRESS_MSG_RESERVED,
+	WIMLIB_PROGRESS_MSG_CALC_INTEGRITY = 17,
 
 	/** A wimlib_split() operation is in progress, and a new split part is
 	 * about to be started.  @p info will point to
 	 * ::wimlib_progress_info.split.  */
-	WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART,
+	WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART = 19,
 
 	/** A wimlib_split() operation is in progress, and a split part has been
 	 * finished. @p info will point to ::wimlib_progress_info.split.  */
-	WIMLIB_PROGRESS_MSG_SPLIT_END_PART,
+	WIMLIB_PROGRESS_MSG_SPLIT_END_PART = 20,
 
 	/** A WIM update command is just about to be executed. @p info will
 	 * point to ::wimlib_progress_info.update.  This message is received
 	 * once per update command when wimlib_update_image() is called with the
 	 * flag ::WIMLIB_UPDATE_FLAG_SEND_PROGRESS.  */
-	WIMLIB_PROGRESS_MSG_UPDATE_BEGIN_COMMAND,
+	WIMLIB_PROGRESS_MSG_UPDATE_BEGIN_COMMAND = 21,
 
 	/** A WIM update command has just been executed. @p info will point to
 	 * ::wimlib_progress_info.update.  This message is received once per
 	 * update command when wimlib_update_image() is called with the flag
 	 * ::WIMLIB_UPDATE_FLAG_SEND_PROGRESS.  */
-	WIMLIB_PROGRESS_MSG_UPDATE_END_COMMAND,
+	WIMLIB_PROGRESS_MSG_UPDATE_END_COMMAND = 22,
 
 	/** A file in the WIM image is being replaced as a result of a
 	 * ::wimlib_add_command without ::WIMLIB_ADD_FLAG_NO_REPLACE specified.
 	 * @p info will point to ::wimlib_progress_info.replace.  This is only
 	 * received when ::WIMLIB_ADD_FLAG_VERBOSE is also specified in the add
 	 * command.  */
-	WIMLIB_PROGRESS_MSG_REPLACE_FILE_IN_WIM,
+	WIMLIB_PROGRESS_MSG_REPLACE_FILE_IN_WIM = 23,
 
 	/** A WIM image is being applied with ::WIMLIB_EXTRACT_FLAG_WIMBOOT, and
 	 * a file is being extracted normally (not as a WIMBoot "pointer file")
@@ -587,7 +563,7 @@ enum wimlib_progress_msg {
 	 * configuration file \Windows\System32\WimBootCompress.ini in the WIM
 	 * image.  @info will point to ::wimlib_progress_info.wimboot_exclude.
 	 */
-	WIMLIB_PROGRESS_MSG_WIMBOOT_EXCLUDE,
+	WIMLIB_PROGRESS_MSG_WIMBOOT_EXCLUDE = 24,
 };
 
 /** A pointer to this union is passed to the user-supplied
@@ -775,12 +751,9 @@ union wimlib_progress_info {
 	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN,
 	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN,
 	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN,
-	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN,
-	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_END,
 	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS,
-	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_TREE_END,
-	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END, and
-	 * ::WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS.
+	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_TREE_END, and
+	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END.
 	 *
 	 * Note: most of the time of an extraction operation will be spent
 	 * extracting streams, and the application will receive
@@ -1451,30 +1424,13 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * a regular file or block device) rather than a directory.  It will be opened
  * using libntfs-3g, and the image will be extracted to the NTFS filesystem's
  * root directory.  Note: this flag cannot be used when wimlib_extract_image()
- * is called with ::WIMLIB_ALL_IMAGES as the @p image.  */
+ * is called with ::WIMLIB_ALL_IMAGES as the @p image, nor can it be used with
+ * wimlib_extract_paths() when passed multiple paths.  */
 #define WIMLIB_EXTRACT_FLAG_NTFS			0x00000001
 
-/** When identical files are extracted from the WIM, always hard link them
- * together.  This flag cannot be combined with ::WIMLIB_EXTRACT_FLAG_SYMLINK.
- */
-#define WIMLIB_EXTRACT_FLAG_HARDLINK			0x00000002
-
-/** When identical files are extracted from the WIM, always symlink them
- * together.  This flag cannot be combined with ::WIMLIB_EXTRACT_FLAG_HARDLINK.
- */
-#define WIMLIB_EXTRACT_FLAG_SYMLINK			0x00000004
-
-/** This flag no longer does anything but is reserved for future use.  */
-#define WIMLIB_EXTRACT_FLAG_VERBOSE			0x00000008
-
-/** Read the WIM file sequentially while extracting the image.  As of wimlib
- * v1.6.0 this is the default behavior, and this flag no longer does anything.
- */
-#define WIMLIB_EXTRACT_FLAG_SEQUENTIAL			0x00000010
-
-/** Extract special UNIX data captured with ::WIMLIB_ADD_FLAG_UNIX_DATA.  Only
- * valid on UNIX-like platforms, and when ::WIMLIB_EXTRACT_FLAG_NTFS was not
- * specified.  */
+/** UNIX-like systems only:  Extract special UNIX data captured with
+ * ::WIMLIB_ADD_FLAG_UNIX_DATA.  This flag cannot be combined with
+ * ::WIMLIB_EXTRACT_FLAG_NTFS.  */
 #define WIMLIB_EXTRACT_FLAG_UNIX_DATA			0x00000020
 
 /** Do not extract security descriptors.  This flag cannot be combined with
@@ -1503,9 +1459,8 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * with ::WIMLIB_EXTRACT_FLAG_RPFIX.  */
 #define WIMLIB_EXTRACT_FLAG_NORPFIX			0x00000200
 
-/** Extract the paths, each of which must name a regular file, to standard
- * output.  Not valid for wimlib_extract_image() and
- * wimlib_extract_image_from_pipe().  */
+/** For wimlib_extract_paths() and wimlib_extract_pathlist() only:  Extract the
+ * paths, each of which must name a regular file, to standard output.  */
 #define WIMLIB_EXTRACT_FLAG_TO_STDOUT			0x00000400
 
 /** Instead of ignoring files and directories with names that cannot be
@@ -1526,22 +1481,15 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 /** Do not ignore failure to set short names on extracted files.  */
 #define WIMLIB_EXTRACT_FLAG_STRICT_SHORT_NAMES          0x00004000
 
-/** Do not ignore failure to extract symbolic links (and junction points, on
- * Windows) due to permissions problems.  By default, such failures are ignored
- * since the default configuration of Windows only allows the Administrator to
- * create symbolic links.  */
+/** On Windows, do not ignore failure to extract symbolic links and junctions
+ * due to permissions problems.  By default, such failures are ignored since the
+ * default configuration of Windows only allows the Administrator to create
+ * symbolic links.  */
 #define WIMLIB_EXTRACT_FLAG_STRICT_SYMLINKS             0x00008000
 
 /** TODO: this flag is intended to allow resuming an aborted extraction, but the
  * behavior is currently less than satisfactory.  Do not use (yet).  */
 #define WIMLIB_EXTRACT_FLAG_RESUME			0x00010000
-
-/** Perform the extraction ordered by the tree of files to extract rather than
- * how the underlying streams are arranged in the WIM file.  For regular WIM
- * files this may decrease or increase performance, depending on various
- * factors.  For WIM files containing packed streams this will decrease
- * performance.  */
-#define WIMLIB_EXTRACT_FLAG_FILE_ORDER			0x00020000
 
 /** For wimlib_extract_paths() and wimlib_extract_pathlist() only:  Treat the
  * paths to extract as wildcard patterns ("globs") which may contain the
@@ -2479,9 +2427,8 @@ wimlib_export_image(WIMStruct *src_wim, int src_image,
  *	volume.  Flags affected by this include ::WIMLIB_EXTRACT_FLAG_NTFS,
  *	::WIMLIB_EXTRACT_FLAG_UNIX_DATA, ::WIMLIB_EXTRACT_FLAG_STRICT_ACLS,
  *	::WIMLIB_EXTRACT_FLAG_STRICT_SHORT_NAMES,
- *	::WIMLIB_EXTRACT_FLAG_STRICT_TIMESTAMPS,
- *	::WIMLIB_EXTRACT_FLAG_STRICT_SYMLINKS, ::WIMLIB_EXTRACT_FLAG_SYMLINK,
- *	and ::WIMLIB_EXTRACT_FLAG_HARDLINK.  For example, if
+ *	::WIMLIB_EXTRACT_FLAG_STRICT_TIMESTAMPS, and
+ *	::WIMLIB_EXTRACT_FLAG_STRICT_SYMLINKS.  For example, if
  *	::WIMLIB_EXTRACT_FLAG_STRICT_SHORT_NAMES is specified in @p
  *	extract_flags, ::WIMLIB_ERR_UNSUPPORTED will be returned if the WIM
  *	image contains one or more files with short names, but extracting short
@@ -2528,9 +2475,7 @@ wimlib_extract_image(WIMStruct *wim, int image,
  * @param target
  *	Same as the corresponding parameter to wimlib_extract_image().
  * @param extract_flags
- *	Same as the corresponding parameter to wimlib_extract_image(), except
- *	that ::WIMLIB_EXTRACT_FLAG_FILE_ORDER cannot be specified and will
- *	result in ::WIMLIB_ERR_INVALID_PARAM being returned.
+ *	Same as the corresponding parameter to wimlib_extract_image().
  * @param progress_func
  *	Same as the corresponding parameter to wimlib_extract_image(), except
  *	::WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN messages will also be

@@ -8,6 +8,38 @@ struct wim_lookup_table;
 
 #define REPARSE_POINT_MAX_SIZE (16 * 1024)
 
+/* On-disk format of reparse point buffer  */
+struct reparse_buffer_disk {
+	le32 rptag;
+	le16 rpdatalen;
+	le16 rpreserved;
+	union {
+		u8 rpdata[REPARSE_POINT_MAX_SIZE - 8];
+
+		struct {
+			le16 substitute_name_offset;
+			le16 substitute_name_nbytes;
+			le16 print_name_offset;
+			le16 print_name_nbytes;
+			le32 rpflags;
+			u8 data[REPARSE_POINT_MAX_SIZE - 20];
+		} _packed_attribute symlink;
+
+		struct {
+			le16 substitute_name_offset;
+			le16 substitute_name_nbytes;
+			le16 print_name_offset;
+			le16 print_name_nbytes;
+			u8 data[REPARSE_POINT_MAX_SIZE - 16];
+		} _packed_attribute junction;
+	};
+} _packed_attribute;
+
+#define REPARSE_DATA_OFFSET (offsetof(struct reparse_buffer_disk, rpdata))
+
+#define REPARSE_DATA_MAX_SIZE (REPARSE_POINT_MAX_SIZE - REPARSE_DATA_OFFSET)
+
+
 /* Structured format for symbolic link, junction point, or mount point reparse
  * data. */
 struct reparse_data {
@@ -41,16 +73,6 @@ struct reparse_data {
 	 * present */
 	u16 print_name_nbytes;
 };
-
-enum {
-	SUBST_NAME_IS_RELATIVE_LINK = -1,
-	SUBST_NAME_IS_VOLUME_JUNCTION = -2,
-	SUBST_NAME_IS_UNKNOWN = -3,
-};
-extern int
-parse_substitute_name(const utf16lechar *substitute_name,
-		      u16 substitute_name_nbytes,
-		      u32 rptag);
 
 extern int
 parse_reparse_data(const u8 * restrict rpbuf, u16 rpbuflen,

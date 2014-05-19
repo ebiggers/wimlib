@@ -282,23 +282,6 @@ if test "`get_inode_number tmp/myname/write.c`" = "`get_inode_number tmp/dir/wri
 	error "Incorrect inode number"
 fi
 rm -rf tmp
-echo "Testing application of multiple images with hardlinks"
-if ! imagex apply dir.wim all tmp --hardlink; then
-	error "Failed to apply multiple images with cross-image hardlinks"
-fi
-if ! diff -q -r tmp/dir tmp/myname || ! diff -q -r dir tmp/dir; then
-	error "Recursive diff of applied WIM with original directory failed"
-fi
-if test "`get_link_count tmp/dir/write.c`" != 2; then
-	error "Incorrect link count on extracted file"
-fi
-if test "`get_link_count tmp/myname/write.c`" != 2; then
-	error "Incorrect link count on extracted file"
-fi
-if test "`get_inode_number tmp/myname/write.c`" != "`get_inode_number tmp/dir/write.c`"; then
-	error "Incorrect inode number"
-fi
-rm -rf tmp
 
 echo "Testing application of single image containing identical files"
 if ! imagex apply dir.wim 1 tmp; then
@@ -317,43 +300,6 @@ if test "`get_inode_number tmp/subdir/hello`" != "`get_inode_number tmp/subdir/h
 	error "Inode numbers on hard-linked files are different"
 fi
 rm -rf tmp
-
-echo "Testing application of single image containing identical files with hardlinks"
-if ! imagex apply dir.wim 1 tmp --hardlink; then
-	error "Failed to apply WIM"
-fi
-if test "`get_link_count tmp/subdir/hello`" != 3; then
-	error "Incorrect link count on extracted file"
-fi
-if test "`get_link_count tmp/subdir/hello2`" != 3; then
-	error "Incorrect link count on extracted file"
-fi
-if test "`get_inode_number tmp/subdir/hello`" != "`get_inode_number tmp/subdir/hello2`"; then
-	error "Hard link set does not share inode number"
-fi
-if test "`get_inode_number tmp/subdir/hello`" != "`get_inode_number tmp/subdir/hellolink`"; then
-	error "Hard link set does not share inode number"
-fi
-rm -rf tmp
-
-echo "Testing application of single image containing identical files with symlinks"
-if ! imagex apply dir.wim 1 tmp --symlink; then
-	error "Failed to apply WIM"
-fi
-if test "`get_link_count tmp/subdir/hello`" != 1; then
-	error "Incorrect link count on extracted file"
-fi
-if test "`get_link_count tmp/subdir/hello2`" != 1; then
-	error "Incorrect link count on extracted file"
-fi
-if test "`get_inode_number tmp/subdir/hello`" = "`get_inode_number tmp/subdir/hello2`"; then
-	error "Incorrect inode number"
-fi
-if ! test -L tmp/subdir/hello -o -L tmp/subdir/hello2 -o -L tmp/subdir/hellolink; then
-	error "Expected symlinks, but found non-symlinks"
-fi
-rm -rf dir.wim tmp
-
 
 # imagex split, imagex join
 

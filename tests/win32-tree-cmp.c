@@ -316,8 +316,9 @@ cmp_streams(wchar_t *path_1, size_t path_1_len,
 	streams_2 = get_stream_array(path_2, &nstreams_2);
 
 	if (nstreams_1 != nstreams_2) {
-		error(L"%ls and %ls do not have the same number of streams",
-		      path_1, path_2);
+		error(L"%ls and %ls do not have the same number of streams "
+		      "(%lu vs %lu)",
+		      path_1, path_2, nstreams_1, nstreams_2);
 	}
 
 	for (i = 0; i < nstreams_1; i++)
@@ -481,7 +482,6 @@ static wchar_t *
 get_security_descriptor_string(PSECURITY_DESCRIPTOR desc)
 {
 	wchar_t *str;
-	ULONG len;
 	ConvertSecurityDescriptorToStringSecurityDescriptor(desc,
 							    SDDL_REVISION_1,
 							    OWNER_SECURITY_INFORMATION |

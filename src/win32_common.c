@@ -371,27 +371,21 @@ win32_release_capture_and_apply_privileges(void)
 	win32_modify_apply_privileges(false);
 }
 
-HANDLE
-win32_open_existing_file(const wchar_t *path, DWORD dwDesiredAccess)
-{
-	return CreateFile(path,
-			  dwDesiredAccess,
-			  FILE_SHARE_READ,
-			  NULL, /* lpSecurityAttributes */
-			  OPEN_EXISTING,
-			  FILE_FLAG_BACKUP_SEMANTICS |
-				FILE_FLAG_OPEN_REPARSE_POINT,
-			  NULL /* hTemplateFile */);
-}
-
 /* Pointers to dynamically loaded functions  */
 
-/* kernel32.dll:  Vista and later */
-BOOL (WINAPI *func_CreateSymbolicLinkW)(const wchar_t *lpSymlinkFileName,
-					const wchar_t *lpTargetFileName,
-					DWORD dwFlags);
-
 /* ntdll.dll  */
+
+NTSTATUS (WINAPI *func_NtCreateFile)(PHANDLE FileHandle,
+				     ACCESS_MASK DesiredAccess,
+				     POBJECT_ATTRIBUTES ObjectAttributes,
+				     PIO_STATUS_BLOCK IoStatusBlock,
+				     PLARGE_INTEGER AllocationSize,
+				     ULONG FileAttributes,
+				     ULONG ShareAccess,
+				     ULONG CreateDisposition,
+				     ULONG CreateOptions,
+				     PVOID EaBuffer,
+				     ULONG EaLength);
 
 NTSTATUS (WINAPI *func_NtOpenFile) (PHANDLE FileHandle,
 				    ACCESS_MASK DesiredAccess,
@@ -409,6 +403,16 @@ NTSTATUS (WINAPI *func_NtReadFile) (HANDLE FileHandle,
 				    ULONG Length,
 				    PLARGE_INTEGER ByteOffset,
 				    PULONG Key);
+
+NTSTATUS (WINAPI *func_NtWriteFile) (HANDLE FileHandle,
+				     HANDLE Event,
+				     PIO_APC_ROUTINE ApcRoutine,
+				     PVOID ApcContext,
+				     PIO_STATUS_BLOCK IoStatusBlock,
+				     PVOID Buffer,
+				     ULONG Length,
+				     PLARGE_INTEGER ByteOffset,
+				     PULONG Key);
 
 NTSTATUS (WINAPI *func_NtQueryInformationFile)(HANDLE FileHandle,
 					       PIO_STATUS_BLOCK IoStatusBlock,
@@ -440,13 +444,36 @@ NTSTATUS (WINAPI *func_NtQueryVolumeInformationFile) (HANDLE FileHandle,
 						      ULONG Length,
 						      FS_INFORMATION_CLASS FsInformationClass);
 
+NTSTATUS (WINAPI *func_NtSetInformationFile)(HANDLE FileHandle,
+					     PIO_STATUS_BLOCK IoStatusBlock,
+					     PVOID FileInformation,
+					     ULONG Length,
+					     FILE_INFORMATION_CLASS FileInformationClass);
+
 NTSTATUS (WINAPI *func_NtSetSecurityObject)(HANDLE Handle,
 					    SECURITY_INFORMATION SecurityInformation,
 					    PSECURITY_DESCRIPTOR SecurityDescriptor);
 
+NTSTATUS (WINAPI *func_NtFsControlFile) (HANDLE FileHandle,
+					 HANDLE Event,
+					 PIO_APC_ROUTINE ApcRoutine,
+					 PVOID ApcContext,
+					 PIO_STATUS_BLOCK IoStatusBlock,
+					 ULONG FsControlCode,
+					 PVOID InputBuffer,
+					 ULONG InputBufferLength,
+					 PVOID OutputBuffer,
+					 ULONG OutputBufferLength);
+
 NTSTATUS (WINAPI *func_NtClose) (HANDLE Handle);
 
 DWORD (WINAPI *func_RtlNtStatusToDosError)(NTSTATUS status);
+
+NTSTATUS (WINAPI *func_RtlDosPathNameToNtPathName_U_WithStatus)
+		(IN PCWSTR DosName,
+		 OUT PUNICODE_STRING NtName,
+		 OUT PCWSTR *PartName,
+		 OUT PRTL_RELATIVE_NAME_U RelativeName);
 
 NTSTATUS (WINAPI *func_RtlCreateSystemVolumeInformationFolder)
 		(PCUNICODE_STRING VolumeRootPath);
@@ -485,24 +512,21 @@ struct dll_spec {
 struct dll_spec ntdll_spec = {
 	.name = L"ntdll.dll",
 	.syms = {
+		DLL_SYM(NtCreateFile, true),
 		DLL_SYM(NtOpenFile, true),
 		DLL_SYM(NtReadFile, true),
+		DLL_SYM(NtWriteFile, true),
 		DLL_SYM(NtQueryInformationFile, true),
 		DLL_SYM(NtQuerySecurityObject, true),
 		DLL_SYM(NtQueryDirectoryFile, true),
 		DLL_SYM(NtQueryVolumeInformationFile, true),
+		DLL_SYM(NtSetInformationFile, true),
 		DLL_SYM(NtSetSecurityObject, true),
+		DLL_SYM(NtFsControlFile, true),
 		DLL_SYM(NtClose, true),
 		DLL_SYM(RtlNtStatusToDosError, true),
 		DLL_SYM(RtlCreateSystemVolumeInformationFolder, false),
-		{NULL, NULL},
-	},
-};
-
-struct dll_spec kernel32_spec = {
-	.name = L"kernel32.dll",
-	.syms = {
-		DLL_SYM(CreateSymbolicLinkW, false),
+		DLL_SYM(RtlDosPathNameToNtPathName_U_WithStatus, true),
 		{NULL, NULL},
 	},
 };
@@ -571,19 +595,12 @@ win32_global_init(int init_flags)
 	/* Get Windows version information.  */
 	GetVersionEx(&windows_version_info);
 
-	/* Try to dynamically load some functions.  */
-	ret = init_dll(&kernel32_spec);
+	ret = init_dll(&ntdll_spec);
 	if (ret)
 		goto out_drop_privs;
 
-	ret = init_dll(&ntdll_spec);
-	if (ret)
-		goto out_cleanup_kernel32;
-
 	return 0;
 
-out_cleanup_kernel32:
-	cleanup_dll(&kernel32_spec);
 out_drop_privs:
 	win32_release_capture_and_apply_privileges();
 	return ret;
@@ -595,7 +612,6 @@ win32_global_cleanup(void)
 	if (acquired_privileges)
 		win32_release_capture_and_apply_privileges();
 
-	cleanup_dll(&kernel32_spec);
 	cleanup_dll(&ntdll_spec);
 }
 

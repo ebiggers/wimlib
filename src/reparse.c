@@ -41,107 +41,6 @@
 #include <errno.h>
 #include <stdlib.h>
 
-/* On-disk format of a symbolic link (WIM_IO_REPARSE_TAG_SYMLINK) or junction
- * point (WIM_IO_REPARSE_TAG_MOUNT_POINT) reparse data buffer.  */
-struct reparse_buffer_disk {
-	le32 rptag;
-	le16 rpdatalen;
-	le16 rpreserved;
-	le16 substitute_name_offset;
-	le16 substitute_name_nbytes;
-	le16 print_name_offset;
-	le16 print_name_nbytes;
-	union {
-		struct {
-			le32 rpflags;
-			u8 data[REPARSE_POINT_MAX_SIZE - 20];
-		} _packed_attribute symlink;
-		struct {
-			u8 data[REPARSE_POINT_MAX_SIZE - 16];
-		} _packed_attribute junction;
-	};
-} _packed_attribute;
-
-static const utf16lechar volume_junction_prefix[11] = {
-	cpu_to_le16('\\'),
-	cpu_to_le16('?'),
-	cpu_to_le16('?'),
-	cpu_to_le16('\\'),
-	cpu_to_le16('V'),
-	cpu_to_le16('o'),
-	cpu_to_le16('l'),
-	cpu_to_le16('u'),
-	cpu_to_le16('m'),
-	cpu_to_le16('e'),
-	cpu_to_le16('{'),
-};
-
-/* Parse the "substitute name" (link target) from a symbolic link or junction
- * reparse point.
- *
- * Return value is:
- *
- * Non-negative integer:
- *	The name is an absolute symbolic link in one of several formats,
- *	and the return value is the number of UTF-16LE characters that need to
- *	be advanced to reach a simple "absolute" path starting with a backslash
- *	(i.e. skip over \??\ and/or drive letter)
- * Negative integer:
- *	SUBST_NAME_IS_VOLUME_JUNCTION:
- *		The name is a volume junction.
- *	SUBST_NAME_IS_RELATIVE_LINK:
- *		The name is a relative symbolic link.
- *	SUBST_NAME_IS_UNKNOWN:
- *		The name does not appear to be a valid symbolic link, junction,
- *		or mount point.
- */
-int
-parse_substitute_name(const utf16lechar *substitute_name,
-		      u16 substitute_name_nbytes, u32 rptag)
-{
-	u16 substitute_name_nchars = substitute_name_nbytes / 2;
-
-	if (substitute_name_nchars >= 7 &&
-	    substitute_name[0] == cpu_to_le16('\\') &&
-	    substitute_name[1] == cpu_to_le16('?') &&
-	    substitute_name[2] == cpu_to_le16('?') &&
-	    substitute_name[3] == cpu_to_le16('\\') &&
-	    substitute_name[4] != cpu_to_le16('\0') &&
-	    substitute_name[5] == cpu_to_le16(':') &&
-	    substitute_name[6] == cpu_to_le16('\\'))
-	{
-		/* "Full" symlink or junction (\??\x:\ prefixed path) */
-		return 6;
-	} else if (rptag == WIM_IO_REPARSE_TAG_MOUNT_POINT &&
-		   substitute_name_nchars >= 12 &&
-		   memcmp(substitute_name, volume_junction_prefix,
-			  sizeof(volume_junction_prefix)) == 0 &&
-		   substitute_name[substitute_name_nchars - 1] == cpu_to_le16('\\'))
-	{
-		/* Volume junction.  Can't really do anything with it. */
-		return SUBST_NAME_IS_VOLUME_JUNCTION;
-	} else if (rptag == WIM_IO_REPARSE_TAG_SYMLINK &&
-		   substitute_name_nchars >= 3 &&
-		   substitute_name[0] != cpu_to_le16('\0') &&
-		   substitute_name[1] == cpu_to_le16(':') &&
-		   substitute_name[2] == cpu_to_le16('\\'))
-	{
-		/* "Absolute" symlink, with drive letter */
-		return 2;
-	} else if (rptag == WIM_IO_REPARSE_TAG_SYMLINK &&
-		   substitute_name_nchars >= 1)
-	{
-		if (substitute_name[0] == cpu_to_le16('\\'))
-			/* "Absolute" symlink, without drive letter */
-			return 0;
-		else
-			/* "Relative" symlink, without drive letter */
-			return SUBST_NAME_IS_RELATIVE_LINK;
-	} else {
-		return SUBST_NAME_IS_UNKNOWN;
-	}
-}
-
 /*
  * Read the data from a symbolic link, junction, or mount point reparse point
  * buffer into a `struct reparse_data'.
@@ -167,10 +66,10 @@ parse_reparse_data(const u8 * restrict rpbuf, u16 rpbuflen,
 		      rpdata->rptag == WIM_IO_REPARSE_TAG_MOUNT_POINT);
 	rpdata->rpdatalen = le16_to_cpu(rpbuf_disk->rpdatalen);
 	rpdata->rpreserved = le16_to_cpu(rpbuf_disk->rpreserved);
-	substitute_name_offset = le16_to_cpu(rpbuf_disk->substitute_name_offset);
-	rpdata->substitute_name_nbytes = le16_to_cpu(rpbuf_disk->substitute_name_nbytes);
-	print_name_offset = le16_to_cpu(rpbuf_disk->print_name_offset);
-	rpdata->print_name_nbytes = le16_to_cpu(rpbuf_disk->print_name_nbytes);
+	substitute_name_offset = le16_to_cpu(rpbuf_disk->symlink.substitute_name_offset);
+	rpdata->substitute_name_nbytes = le16_to_cpu(rpbuf_disk->symlink.substitute_name_nbytes);
+	print_name_offset = le16_to_cpu(rpbuf_disk->symlink.print_name_offset);
+	rpdata->print_name_nbytes = le16_to_cpu(rpbuf_disk->symlink.print_name_nbytes);
 
 	if ((substitute_name_offset & 1) | (print_name_offset & 1) |
 	    (rpdata->substitute_name_nbytes & 1) | (rpdata->print_name_nbytes & 1))
@@ -220,10 +119,10 @@ make_reparse_buffer(const struct reparse_data * restrict rpdata,
 
 	rpbuf_disk->rptag = cpu_to_le32(rpdata->rptag);
 	rpbuf_disk->rpreserved = cpu_to_le16(rpdata->rpreserved);
-	rpbuf_disk->substitute_name_offset = cpu_to_le16(0);
-	rpbuf_disk->substitute_name_nbytes = cpu_to_le16(rpdata->substitute_name_nbytes);
-	rpbuf_disk->print_name_offset = cpu_to_le16(rpdata->substitute_name_nbytes + 2);
-	rpbuf_disk->print_name_nbytes = cpu_to_le16(rpdata->print_name_nbytes);
+	rpbuf_disk->symlink.substitute_name_offset = cpu_to_le16(0);
+	rpbuf_disk->symlink.substitute_name_nbytes = cpu_to_le16(rpdata->substitute_name_nbytes);
+	rpbuf_disk->symlink.print_name_offset = cpu_to_le16(rpdata->substitute_name_nbytes + 2);
+	rpbuf_disk->symlink.print_name_nbytes = cpu_to_le16(rpdata->print_name_nbytes);
 
 	if (rpdata->rptag == WIM_IO_REPARSE_TAG_SYMLINK) {
 		rpbuf_disk->symlink.rpflags = cpu_to_le32(rpdata->rpflags);
@@ -319,6 +218,92 @@ wim_inode_get_reparse_data(const struct wim_inode * restrict inode,
 /* UNIX version of getting and setting the data in reparse points */
 #ifndef __WIN32__
 
+static const utf16lechar volume_junction_prefix[11] = {
+	cpu_to_le16('\\'),
+	cpu_to_le16('?'),
+	cpu_to_le16('?'),
+	cpu_to_le16('\\'),
+	cpu_to_le16('V'),
+	cpu_to_le16('o'),
+	cpu_to_le16('l'),
+	cpu_to_le16('u'),
+	cpu_to_le16('m'),
+	cpu_to_le16('e'),
+	cpu_to_le16('{'),
+};
+
+enum {
+	SUBST_NAME_IS_RELATIVE_LINK = -1,
+	SUBST_NAME_IS_VOLUME_JUNCTION = -2,
+	SUBST_NAME_IS_UNKNOWN = -3,
+};
+
+/* Parse the "substitute name" (link target) from a symbolic link or junction
+ * reparse point.
+ *
+ * Return value is:
+ *
+ * Non-negative integer:
+ *	The name is an absolute symbolic link in one of several formats,
+ *	and the return value is the number of UTF-16LE characters that need to
+ *	be advanced to reach a simple "absolute" path starting with a backslash
+ *	(i.e. skip over \??\ and/or drive letter)
+ * Negative integer:
+ *	SUBST_NAME_IS_VOLUME_JUNCTION:
+ *		The name is a volume junction.
+ *	SUBST_NAME_IS_RELATIVE_LINK:
+ *		The name is a relative symbolic link.
+ *	SUBST_NAME_IS_UNKNOWN:
+ *		The name does not appear to be a valid symbolic link, junction,
+ *		or mount point.
+ */
+static int
+parse_substitute_name(const utf16lechar *substitute_name,
+		      u16 substitute_name_nbytes, u32 rptag)
+{
+	u16 substitute_name_nchars = substitute_name_nbytes / 2;
+
+	if (substitute_name_nchars >= 7 &&
+	    substitute_name[0] == cpu_to_le16('\\') &&
+	    substitute_name[1] == cpu_to_le16('?') &&
+	    substitute_name[2] == cpu_to_le16('?') &&
+	    substitute_name[3] == cpu_to_le16('\\') &&
+	    substitute_name[4] != cpu_to_le16('\0') &&
+	    substitute_name[5] == cpu_to_le16(':') &&
+	    substitute_name[6] == cpu_to_le16('\\'))
+	{
+		/* "Full" symlink or junction (\??\x:\ prefixed path) */
+		return 6;
+	} else if (rptag == WIM_IO_REPARSE_TAG_MOUNT_POINT &&
+		   substitute_name_nchars >= 12 &&
+		   memcmp(substitute_name, volume_junction_prefix,
+			  sizeof(volume_junction_prefix)) == 0 &&
+		   substitute_name[substitute_name_nchars - 1] == cpu_to_le16('\\'))
+	{
+		/* Volume junction.  Can't really do anything with it. */
+		return SUBST_NAME_IS_VOLUME_JUNCTION;
+	} else if (rptag == WIM_IO_REPARSE_TAG_SYMLINK &&
+		   substitute_name_nchars >= 3 &&
+		   substitute_name[0] != cpu_to_le16('\0') &&
+		   substitute_name[1] == cpu_to_le16(':') &&
+		   substitute_name[2] == cpu_to_le16('\\'))
+	{
+		/* "Absolute" symlink, with drive letter */
+		return 2;
+	} else if (rptag == WIM_IO_REPARSE_TAG_SYMLINK &&
+		   substitute_name_nchars >= 1)
+	{
+		if (substitute_name[0] == cpu_to_le16('\\'))
+			/* "Absolute" symlink, without drive letter */
+			return 0;
+		else
+			/* "Relative" symlink, without drive letter */
+			return SUBST_NAME_IS_RELATIVE_LINK;
+	} else {
+		return SUBST_NAME_IS_UNKNOWN;
+	}
+}
+
 /*
  * Get the UNIX-style symlink target from the WIM inode for a reparse point.
  * Specifically, this translates the target from UTF-16 to the current multibyte
@@ -367,7 +352,7 @@ wim_inode_readlink(const struct wim_inode * restrict inode,
 		return -EIO;
 
 	if (parse_reparse_data((const u8*)&rpbuf_disk, rpbuflen, &rpdata))
-		return -EIO;
+		return -EINVAL;
 
 	ret = utf16le_to_tstr(rpdata.substitute_name,
 			      rpdata.substitute_name_nbytes,

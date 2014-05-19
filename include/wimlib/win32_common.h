@@ -21,15 +21,19 @@ set_errno_from_win32_error(DWORD err);
 extern void
 set_errno_from_nt_status(NTSTATUS status);
 
-extern HANDLE
-win32_open_existing_file(const wchar_t *path, DWORD dwDesiredAccess);
-
-/* Vista and later */
-extern BOOL (WINAPI *func_CreateSymbolicLinkW)(const wchar_t *lpSymlinkFileName,
-					       const wchar_t *lpTargetFileName,
-					       DWORD dwFlags);
-
 /* ntdll functions  */
+
+extern NTSTATUS (WINAPI *func_NtCreateFile)(PHANDLE FileHandle,
+					    ACCESS_MASK DesiredAccess,
+					    POBJECT_ATTRIBUTES ObjectAttributes,
+					    PIO_STATUS_BLOCK IoStatusBlock,
+					    PLARGE_INTEGER AllocationSize,
+					    ULONG FileAttributes,
+					    ULONG ShareAccess,
+					    ULONG CreateDisposition,
+					    ULONG CreateOptions,
+					    PVOID EaBuffer,
+					    ULONG EaLength);
 
 extern NTSTATUS (WINAPI *func_NtOpenFile) (PHANDLE FileHandle,
 					   ACCESS_MASK DesiredAccess,
@@ -47,6 +51,16 @@ extern NTSTATUS (WINAPI *func_NtReadFile) (HANDLE FileHandle,
 					   ULONG Length,
 					   PLARGE_INTEGER ByteOffset,
 					   PULONG Key);
+
+extern NTSTATUS (WINAPI *func_NtWriteFile) (HANDLE FileHandle,
+					    HANDLE Event,
+					    PIO_APC_ROUTINE ApcRoutine,
+					    PVOID ApcContext,
+					    PIO_STATUS_BLOCK IoStatusBlock,
+					    PVOID Buffer,
+					    ULONG Length,
+					    PLARGE_INTEGER ByteOffset,
+					    PULONG Key);
 
 extern NTSTATUS (WINAPI *func_NtQueryInformationFile)(HANDLE FileHandle,
 						      PIO_STATUS_BLOCK IoStatusBlock,
@@ -78,14 +92,47 @@ extern NTSTATUS (WINAPI *func_NtQueryVolumeInformationFile) (HANDLE FileHandle,
 							     ULONG Length,
 							     FS_INFORMATION_CLASS FsInformationClass);
 
+extern NTSTATUS (WINAPI *func_NtSetInformationFile)(HANDLE FileHandle,
+						    PIO_STATUS_BLOCK IoStatusBlock,
+						    PVOID FileInformation,
+						    ULONG Length,
+						    FILE_INFORMATION_CLASS FileInformationClass);
 
 extern NTSTATUS (WINAPI *func_NtSetSecurityObject)(HANDLE Handle,
 						   SECURITY_INFORMATION SecurityInformation,
 						   PSECURITY_DESCRIPTOR SecurityDescriptor);
 
+extern NTSTATUS (WINAPI *func_NtFsControlFile) (HANDLE FileHandle,
+						HANDLE Event,
+						PIO_APC_ROUTINE ApcRoutine,
+						PVOID ApcContext,
+						PIO_STATUS_BLOCK IoStatusBlock,
+						ULONG FsControlCode,
+						PVOID InputBuffer,
+						ULONG InputBufferLength,
+						PVOID OutputBuffer,
+						ULONG OutputBufferLength);
+
 extern NTSTATUS (WINAPI *func_NtClose) (HANDLE Handle);
 
 extern DWORD (WINAPI *func_RtlNtStatusToDosError)(NTSTATUS status);
+
+typedef struct _RTLP_CURDIR_REF {
+	LONG RefCount;
+	HANDLE Handle;
+} RTLP_CURDIR_REF, *PRTLP_CURDIR_REF;
+
+typedef struct _RTL_RELATIVE_NAME_U {
+	UNICODE_STRING RelativeName;
+	HANDLE ContainingDirectory;
+	PRTLP_CURDIR_REF CurDirRef;
+} RTL_RELATIVE_NAME_U, *PRTL_RELATIVE_NAME_U;
+
+extern NTSTATUS (WINAPI *func_RtlDosPathNameToNtPathName_U_WithStatus)
+		(IN PCWSTR DosName,
+		 OUT PUNICODE_STRING NtName,
+		 OUT PCWSTR *PartName,
+		 OUT PRTL_RELATIVE_NAME_U RelativeName);
 
 extern NTSTATUS (WINAPI *func_RtlCreateSystemVolumeInformationFolder)
 			(PCUNICODE_STRING VolumeRootPath);

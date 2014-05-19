@@ -14,7 +14,8 @@ wimboot_alloc_data_source_id(const wchar_t *wim_path,
 			     bool *wof_running_ret);
 
 extern int
-wimboot_set_pointer(const wchar_t *path,
+wimboot_set_pointer(UNICODE_STRING *name,
+		    const wchar_t *printable_path,
 		    const struct wim_lookup_table_entry *lte,
 		    u64 data_source_id,
 		    const u8 lookup_table_hash[SHA1_HASH_SIZE],

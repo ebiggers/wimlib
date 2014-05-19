@@ -48,7 +48,7 @@ AC_PROG_CC
 AM_PROG_CC_C_O
 AC_CANONICAL_HOST
 
-AC_CHECK_FUNCS([utimensat lutimes utime flock mempcpy	\
+AC_CHECK_FUNCS([futimens utimensat utime flock mempcpy	\
 		openat fstatat readlinkat fdopendir])
 
 # Note: some of the following header checks are only to define the appropriate
