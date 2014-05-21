@@ -1002,9 +1002,9 @@ streamifier_cb(const void *chunk, size_t size, void *_ctx)
 	/* Consume the chunk.  */
 	ret = (*ctx->cbs.consume_chunk)(chunk, size,
 					ctx->cbs.consume_chunk_ctx);
+	ctx->cur_stream_offset += size;
 	if (ret)
 		return ret;
-	ctx->cur_stream_offset += size;
 
 	if (ctx->cur_stream_offset == ctx->cur_stream->size) {
 		/* Finished reading all the data for a stream.  */
