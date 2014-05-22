@@ -3949,7 +3949,7 @@ T(
 "                    (DIRECTORY | NTFS_VOLUME) [--check] [--ref=\"GLOB\"]\n"
 "                    [--no-acls] [--strict-acls] [--no-attributes]\n"
 "                    [--rpfix] [--norpfix] [--include-invalid-names]\n"
-"                    [--wimboot]\n"
+"                    [--wimboot] [--unix-data]\n"
 ),
 [CMD_CAPTURE] =
 T(
@@ -3959,7 +3959,7 @@ T(
 "                    [--dereference] [--config=FILE] [--threads=NUM_THREADS]\n"
 "                    [--source-list] [--no-acls] [--strict-acls] [--rpfix]\n"
 "                    [--norpfix] [--update-of=[WIMFILE:]IMAGE]\n"
-"                    [--delta-from=WIMFILE] [--wimboot]\n"
+"                    [--delta-from=WIMFILE] [--wimboot] [--unix-data]\n"
 ),
 [CMD_DELETE] =
 T(
@@ -4000,13 +4000,13 @@ T(
 T(
 "    %"TS" WIMFILE [(IMAGE_NUM | IMAGE_NAME)] DIRECTORY\n"
 "                    [--check] [--streams-interface=INTERFACE]\n"
-"                    [--ref=\"GLOB\"] [--allow-other]\n"
+"                    [--ref=\"GLOB\"] [--allow-other] [--unix-data]\n"
 ),
 [CMD_MOUNTRW] =
 T(
 "    %"TS" WIMFILE [(IMAGE_NUM | IMAGE_NAME)] DIRECTORY\n"
 "                    [--check] [--streams-interface=INTERFACE]\n"
-"                    [--staging-dir=CMD_DIR] [--allow-other]\n"
+"                    [--staging-dir=CMD_DIR] [--allow-other] [--unix-data]\n"
 ),
 #endif
 [CMD_OPTIMIZE] =
