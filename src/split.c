@@ -97,7 +97,6 @@ write_split_wim(WIMStruct *orig_wim, const tchar *swm_name,
 	for (part_number = 1; part_number <= swm_info->num_parts; part_number++)
 		progress.split.total_bytes += swm_info->parts[part_number - 1].size;
 	progress.split.total_parts = swm_info->num_parts;
-	progress.split.part_name = swm_name_buf;
 
 	randomize_byte_array(guid, WIMLIB_GUID_LEN);
 
@@ -111,6 +110,7 @@ write_split_wim(WIMStruct *orig_wim, const tchar *swm_name,
 		}
 
 		progress.split.cur_part_number = part_number;
+		progress.split.part_name = swm_name_buf;
 
 		ret = call_progress(orig_wim->progfunc,
 				    WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART,
@@ -127,7 +127,7 @@ write_split_wim(WIMStruct *orig_wim, const tchar *swm_name,
 		progfunc = orig_wim->progfunc;
 		orig_wim->progfunc = NULL;
 		ret = write_wim_part(orig_wim,
-				     swm_name_buf,
+				     progress.split.part_name,
 				     WIMLIB_ALL_IMAGES,
 				     part_write_flags,
 				     1,

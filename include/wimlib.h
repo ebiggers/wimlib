@@ -931,8 +931,12 @@ union wimlib_progress_info {
 
 		/** Name of the split WIM part that is about to be started
 		 * (::WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART) or has just been
-		 * finished (::WIMLIB_PROGRESS_MSG_SPLIT_END_PART). */
-		const wimlib_tchar *part_name;
+		 * finished (::WIMLIB_PROGRESS_MSG_SPLIT_END_PART).
+		 * As of wimlib v1.6.3, the library user may change this when
+		 * receiving ::WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART in order to
+		 * cause the next split WIM part to be written to a different
+		 * location.  */
+		wimlib_tchar *part_name;
 	} split;
 
 	/** Valid on messages ::WIMLIB_PROGRESS_MSG_REPLACE_FILE_IN_WIM  */
