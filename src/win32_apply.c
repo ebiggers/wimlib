@@ -1761,7 +1761,10 @@ end_extract_stream(struct wim_lookup_table_entry *stream, int status, void *_ctx
 			dentry = list_first_entry(&ctx->reparse_dentries,
 						  struct wim_dentry, tmp_list);
 			build_extraction_path(dentry, ctx);
-			ERROR("Invalid reparse point", current_path(ctx));
+			ERROR("Reparse data of \"%ls\" has size "
+			      "%"PRIu64" bytes (exceeds %u bytes)",
+			      current_path(ctx), stream->size,
+			      REPARSE_DATA_MAX_SIZE);
 			return WIMLIB_ERR_INVALID_REPARSE_DATA;
 		}
 		/* In the WIM format, reparse streams are just the reparse data
