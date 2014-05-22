@@ -128,6 +128,12 @@ typedef struct _RTL_RELATIVE_NAME_U {
 	PRTLP_CURDIR_REF CurDirRef;
 } RTL_RELATIVE_NAME_U, *PRTL_RELATIVE_NAME_U;
 
+extern BOOLEAN (WINAPI *func_RtlDosPathNameToNtPathName_U)
+		(IN PCWSTR DosName,
+		 OUT PUNICODE_STRING NtName,
+		 OUT PCWSTR *PartName,
+		 OUT PRTL_RELATIVE_NAME_U RelativeName);
+
 extern NTSTATUS (WINAPI *func_RtlDosPathNameToNtPathName_U_WithStatus)
 		(IN PCWSTR DosName,
 		 OUT PUNICODE_STRING NtName,

@@ -517,9 +517,18 @@ prepare_target(struct list_head *dentry_list, struct win32_apply_ctx *ctx)
 
 	/* Open handle to the target directory (possibly creating it).  */
 
-	status = (*func_RtlDosPathNameToNtPathName_U_WithStatus)(ctx->common.target,
-								 &ctx->target_ntpath,
-								 NULL, NULL);
+	if (func_RtlDosPathNameToNtPathName_U_WithStatus) {
+		status = (*func_RtlDosPathNameToNtPathName_U_WithStatus)(ctx->common.target,
+									 &ctx->target_ntpath,
+									 NULL, NULL);
+	} else {
+		if ((*func_RtlDosPathNameToNtPathName_U)(ctx->common.target,
+							 &ctx->target_ntpath,
+							 NULL, NULL))
+			status = STATUS_SUCCESS;
+		else
+			status = STATUS_NO_MEMORY;
+	}
 	if (!NT_SUCCESS(status)) {
 		if (status == STATUS_NO_MEMORY) {
 			return WIMLIB_ERR_NOMEM;

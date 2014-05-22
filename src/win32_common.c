@@ -469,6 +469,12 @@ NTSTATUS (WINAPI *func_NtClose) (HANDLE Handle);
 
 DWORD (WINAPI *func_RtlNtStatusToDosError)(NTSTATUS status);
 
+BOOLEAN (WINAPI *func_RtlDosPathNameToNtPathName_U)
+		  (IN PCWSTR DosName,
+		   OUT PUNICODE_STRING NtName,
+		   OUT PCWSTR *PartName,
+		   OUT PRTL_RELATIVE_NAME_U RelativeName);
+
 NTSTATUS (WINAPI *func_RtlDosPathNameToNtPathName_U_WithStatus)
 		(IN PCWSTR DosName,
 		 OUT PUNICODE_STRING NtName,
@@ -526,7 +532,8 @@ struct dll_spec ntdll_spec = {
 		DLL_SYM(NtClose, true),
 		DLL_SYM(RtlNtStatusToDosError, true),
 		DLL_SYM(RtlCreateSystemVolumeInformationFolder, false),
-		DLL_SYM(RtlDosPathNameToNtPathName_U_WithStatus, true),
+		DLL_SYM(RtlDosPathNameToNtPathName_U, true),
+		DLL_SYM(RtlDosPathNameToNtPathName_U_WithStatus, false), /* Not present on XP  */
 		{NULL, NULL},
 	},
 };
