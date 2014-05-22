@@ -520,7 +520,6 @@ handle_conflict(struct wim_dentry *branch, struct wim_dentry *existing,
 		/* Replace nondirectory file  */
 		struct wim_dentry *parent;
 		int ret;
-		union wimlib_progress_info info;
 
 		parent = existing->parent;
 
@@ -528,19 +527,22 @@ handle_conflict(struct wim_dentry *branch, struct wim_dentry *existing,
 		if (ret)
 			return ret;
 
+		if (add_flags & WIMLIB_ADD_FLAG_VERBOSE) {
+			union wimlib_progress_info info;
+
+			info.replace.path_in_wim = existing->_full_path;
+			ret = call_progress(progfunc,
+					    WIMLIB_PROGRESS_MSG_REPLACE_FILE_IN_WIM,
+					    &info, progctx);
+			if (ret)
+				return ret;
+		}
+
 		ret = journaled_unlink(j, existing);
 		if (ret)
 			return ret;
 
-		ret = journaled_link(j, branch, parent);
-		if (ret)
-			return ret;
-
-
-		info.replace.path_in_wim = existing->_full_path;
-		return call_progress(progfunc,
-				     WIMLIB_PROGRESS_MSG_REPLACE_FILE_IN_WIM,
-				     &info, progctx);
+		return journaled_link(j, branch, parent);
 	}
 }
 
