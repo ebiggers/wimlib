@@ -985,22 +985,6 @@ create_directories(struct list_head *dentry_list,
 	return 0;
 }
 
-/* Gets the number of bytes to allocate for the specified inode.  */
-static void
-inode_get_allocation_size(const struct wim_inode *inode,
-			  LARGE_INTEGER *allocation_size_ret)
-{
-	const struct wim_lookup_table_entry *unnamed_stream;
-
-	/* We just count the unnamed data stream.  */
-
-	unnamed_stream = inode_unnamed_lte_resolved(inode);
-	if (unnamed_stream)
-		allocation_size_ret->QuadPart = unnamed_stream->size;
-	else
-		allocation_size_ret->QuadPart = 0;
-}
-
 /*
  * Creates the nondirectory file named by @dentry.
  *
@@ -1013,16 +997,11 @@ create_nondirectory_inode(HANDLE *h_ret, const struct wim_dentry *dentry,
 			  struct win32_apply_ctx *ctx)
 {
 	const struct wim_inode *inode;
-	LARGE_INTEGER allocation_size;
 	ULONG attrib;
 	NTSTATUS status;
 	bool retried = false;
 
 	inode = dentry->d_inode;
-
-	/* To increase performance, we will pre-allocate space for the file
-	 * data.  */
-	inode_get_allocation_size(inode, &allocation_size);
 
 	/* If the file already exists and has FILE_ATTRIBUTE_SYSTEM and/or
 	 * FILE_ATTRIBUTE_HIDDEN, these must be specified in order to supersede
@@ -1049,7 +1028,7 @@ create_nondirectory_inode(HANDLE *h_ret, const struct wim_dentry *dentry,
 	build_extraction_path(dentry, ctx);
 retry:
 	status = do_create_file(h_ret, GENERIC_READ | GENERIC_WRITE | DELETE,
-				&allocation_size, attrib, FILE_SUPERSEDE,
+				NULL, attrib, FILE_SUPERSEDE,
 				FILE_NON_DIRECTORY_FILE, ctx);
 	if (NT_SUCCESS(status)) {
 		int ret;
@@ -1291,7 +1270,7 @@ begin_extract_stream_instance(const struct wim_lookup_table_entry *stream,
 {
 	const struct wim_inode *inode = dentry->d_inode;
 	size_t stream_name_nchars = 0;
-	LARGE_INTEGER allocation_size;
+	FILE_ALLOCATION_INFORMATION alloc_info;
 	HANDLE h;
 	NTSTATUS status;
 
@@ -1383,10 +1362,9 @@ begin_extract_stream_instance(const struct wim_lookup_table_entry *stream,
 	}
 
 	/* Open a new handle  */
-	allocation_size.QuadPart = stream->size;
 	status = do_create_file(&h,
 				FILE_WRITE_DATA | SYNCHRONIZE,
-				&allocation_size, 0, FILE_OPEN_IF,
+				NULL, 0, FILE_OPEN_IF,
 				FILE_SEQUENTIAL_ONLY |
 					FILE_SYNCHRONOUS_IO_NONALERT,
 				ctx);
@@ -1399,6 +1377,12 @@ begin_extract_stream_instance(const struct wim_lookup_table_entry *stream,
 	}
 
 	ctx->open_handles[ctx->num_open_handles++] = h;
+
+	/* Allocate space for the data.  */
+	alloc_info.AllocationSize.QuadPart = stream->size;
+	(*func_NtSetInformationFile)(h, &ctx->iosb,
+				     &alloc_info, sizeof(alloc_info),
+				     FileAllocationInformation);
 	return 0;
 }
 
