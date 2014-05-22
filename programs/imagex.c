@@ -285,6 +285,7 @@ static const struct option export_options[] = {
 	{T("rebuild"),     no_argument,       NULL, IMAGEX_REBUILD_OPTION},
 	{T("pipable"),     no_argument,       NULL, IMAGEX_PIPABLE_OPTION},
 	{T("not-pipable"), no_argument,       NULL, IMAGEX_NOT_PIPABLE_OPTION},
+	{T("wimboot"),     no_argument,       NULL, IMAGEX_WIMBOOT_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -2617,6 +2618,9 @@ imagex_export(int argc, tchar **argv, int cmd)
 		case IMAGEX_NOT_PIPABLE_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_NOT_PIPABLE;
 			break;
+		case IMAGEX_WIMBOOT_OPTION:
+			export_flags |= WIMLIB_EXPORT_FLAG_WIMBOOT;
+			break;
 		default:
 			goto out_usage;
 		}
@@ -2707,11 +2711,13 @@ imagex_export(int argc, tchar **argv, int cmd)
 
 		if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID) {
 			/* The user did not specify a compression type; default
-			 * to that of the source WIM, unless --pack-streams or
-			 * --solid was specified.   */
+			 * to that of the source WIM, unless --pack-streams,
+			 * --solid, or --wimboot was specified.   */
 
 			if (write_flags & WIMLIB_WRITE_FLAG_PACK_STREAMS)
 				compression_type = WIMLIB_COMPRESSION_TYPE_LZMS;
+			else if (export_flags & WIMLIB_EXPORT_FLAG_WIMBOOT)
+				compression_type = WIMLIB_COMPRESSION_TYPE_XPRESS;
 			else
 				compression_type = src_info.compression_type;
 		}
@@ -2719,10 +2725,17 @@ imagex_export(int argc, tchar **argv, int cmd)
 		if (ret)
 			goto out_free_src_wim;
 
-		/* Use same chunk size if compression type is the same.  */
-		if (compression_type == src_info.compression_type &&
-		    chunk_size == UINT32_MAX)
+		if ((export_flags & WIMLIB_EXPORT_FLAG_WIMBOOT)
+		    && compression_type == WIMLIB_COMPRESSION_TYPE_XPRESS)
+		{
+			/* For --wimboot export, use small XPRESS chunks.  */
+			wimlib_set_output_chunk_size(dest_wim, 4096);
+		} else if (compression_type == src_info.compression_type &&
+			   chunk_size == UINT32_MAX)
+		{
+			/* Use same chunk size if compression type is the same.  */
 			wimlib_set_output_chunk_size(dest_wim, src_info.chunk_size);
+		}
 	}
 
 	if (chunk_size != UINT32_MAX) {

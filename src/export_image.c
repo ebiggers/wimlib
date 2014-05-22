@@ -124,7 +124,8 @@ wimlib_export_image(WIMStruct *src_wim,
 	if (export_flags & ~(WIMLIB_EXPORT_FLAG_BOOT |
 			     WIMLIB_EXPORT_FLAG_NO_NAMES |
 			     WIMLIB_EXPORT_FLAG_NO_DESCRIPTIONS |
-			     WIMLIB_EXPORT_FLAG_GIFT))
+			     WIMLIB_EXPORT_FLAG_GIFT |
+			     WIMLIB_EXPORT_FLAG_WIMBOOT))
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (src_wim == NULL || dest_wim == NULL)
@@ -261,6 +262,13 @@ wimlib_export_image(WIMStruct *src_wim,
 			DEBUG("Marking destination image %u as bootable.",
 			      dest_wim->hdr.image_count);
 			dest_wim->hdr.boot_idx = dest_wim->hdr.image_count;
+		}
+
+		/* Possibly set WIMBoot flag  */
+		if (export_flags & WIMLIB_EXPORT_FLAG_WIMBOOT) {
+			wim_info_set_wimboot(dest_wim->wim_info,
+					     dest_wim->hdr.image_count,
+					     true);
 		}
 
 	}

@@ -1413,6 +1413,22 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * wimlib_export_image(), with the exception of the call to wimlib_free().  */
 #define WIMLIB_EXPORT_FLAG_GIFT				0x00000008
 
+/**
+ * Mark each exported image as WIMBoot-compatible.
+ *
+ * Note: by itself, this does change the destination WIM's compression type, nor
+ * does it add the file \Windows\System32\WimBootCompress.ini in the WIM image.
+ * Before writing the destination WIM, it's recommended to do something like:
+ *
+ * \code
+ *	wimlib_set_output_compression_type(wim, WIMLIB_COMPRESSION_TYPE_XPRESS);
+ *	wimlib_set_output_chunk_size(wim, 4096);
+ *	wimlib_add_tree(wim, image, L"myconfig.ini",
+ *			L"\\Windows\\System32\\WimBootCompress.ini", 0);
+ * \endcode
+ */
+#define WIMLIB_EXPORT_FLAG_WIMBOOT			0x00000010
+
 /** @} */
 /** @ingroup G_extracting_wims
  * @{ */
