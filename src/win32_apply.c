@@ -1358,7 +1358,7 @@ begin_extract_stream_instance(const struct wim_lookup_table_entry *stream,
 		} else {
 			FREE(dentry->_full_path);
 			dentry->_full_path = NULL;
-			return wimboot_set_pointer(&ctx->pathbuf,
+			return wimboot_set_pointer(&ctx->attr,
 						   current_path(ctx),
 						   stream,
 						   ctx->wimboot.data_source_id,

@@ -1040,10 +1040,10 @@ out:
  * This turns it into a reparse point that redirects accesses to it, to the
  * corresponding resource in the WIM archive.
  *
- * @name
- *	Path to extracted file (already created), NT namespace.
+ * @attr
+ *	Object attributes that specify the path to the file.
  * @printable_name
- *	Printable representation of @name.
+ *	Printable representation of the path encoded in @attr.
  * @lte
  *	Unnamed data stream of the file.
  * @data_source_id
@@ -1057,7 +1057,7 @@ out:
  * Returns 0 on success, or a positive error code on failure.
  */
 int
-wimboot_set_pointer(UNICODE_STRING *name,
+wimboot_set_pointer(OBJECT_ATTRIBUTES *attr,
 		    const wchar_t *printable_name,
 		    const struct wim_lookup_table_entry *lte,
 		    u64 data_source_id,
@@ -1067,16 +1067,11 @@ wimboot_set_pointer(UNICODE_STRING *name,
 	int ret;
 	HANDLE h = NULL;
 	NTSTATUS status;
-	OBJECT_ATTRIBUTES attr;
 	IO_STATUS_BLOCK iosb;
 	DWORD bytes_returned;
 	DWORD err;
 
-	memset(&attr, 0, sizeof(attr));
-	attr.Length = sizeof(attr);
-	attr.ObjectName = name;
-
-	status = (*func_NtOpenFile)(&h, GENERIC_WRITE | SYNCHRONIZE, &attr,
+	status = (*func_NtOpenFile)(&h, GENERIC_WRITE | SYNCHRONIZE, attr,
 				    &iosb, FILE_SHARE_VALID_FLAGS,
 				    FILE_OPEN_FOR_BACKUP_INTENT |
 					FILE_OPEN_REPARSE_POINT |
