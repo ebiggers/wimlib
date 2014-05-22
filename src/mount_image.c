@@ -341,16 +341,9 @@ create_dentry(struct fuse_context *fuse_ctx, const char *path,
 	new->d_inode->i_attributes = attributes;
 
 	if (wimfs_ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA) {
-		if (inode_set_unix_data(new->d_inode,
-					fuse_ctx->uid,
-					fuse_ctx->gid,
-					fuse_mask_mode(mode, fuse_ctx),
-					wimfs_ctx->wim->lookup_table,
-					UNIX_DATA_ALL | UNIX_DATA_CREATE))
-		{
-			free_dentry(new);
-			return -ENOMEM;
-		}
+		new->d_inode->i_unix_data.uid = fuse_ctx->uid;
+		new->d_inode->i_unix_data.gid = fuse_ctx->gid;
+		new->d_inode->i_unix_data.mode = fuse_mask_mode(mode, fuse_ctx);
 	}
 	dentry_add_child(parent, new);
 	list_add_tail(&new->d_inode->i_list, wimfs_ctx->image_inode_list);
@@ -389,14 +382,20 @@ remove_dentry(struct wim_dentry *dentry,
 }
 
 static mode_t
-inode_default_unix_mode(const struct wim_inode *inode)
+inode_unix_file_type(const struct wim_inode *inode)
 {
 	if (inode_is_symlink(inode))
-		return S_IFLNK | 0777;
+		return S_IFLNK;
 	else if (inode_is_directory(inode))
-		return S_IFDIR | 0777;
+		return S_IFDIR;
 	else
-		return S_IFREG | 0777;
+		return S_IFREG;
+}
+
+static mode_t
+inode_default_unix_mode(const struct wim_inode *inode)
+{
+	return inode_unix_file_type(inode) | 0777;
 }
 
 /* Transfers file attributes from a struct wim_inode to a `stat' buffer.
@@ -412,16 +411,16 @@ inode_to_stbuf(const struct wim_inode *inode,
 	const struct wimfs_context *ctx = wimfs_get_context();
 
 	memset(stbuf, 0, sizeof(struct stat));
-	stbuf->st_mode = inode_default_unix_mode(inode);
-	stbuf->st_uid = ctx->default_uid;
-	stbuf->st_gid = ctx->default_gid;
-	if (ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA) {
-		struct wimlib_unix_data unix_data;
-		if (inode_get_unix_data(inode, &unix_data, NULL) == 0) {
-			stbuf->st_uid = unix_data.uid;
-			stbuf->st_gid = unix_data.gid;
-			stbuf->st_mode = unix_data.mode;
-		}
+	if ((ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA) &&
+	    inode_has_unix_data(inode))
+	{
+		stbuf->st_uid = inode->i_unix_data.uid;
+		stbuf->st_gid = inode->i_unix_data.gid;
+		stbuf->st_mode = inode->i_unix_data.mode;
+	} else {
+		stbuf->st_uid = ctx->default_uid;
+		stbuf->st_gid = ctx->default_gid;
+		stbuf->st_mode = inode_default_unix_mode(inode);
 	}
 	stbuf->st_ino = (ino_t)inode->i_ino;
 	stbuf->st_nlink = inode->i_nlink;
@@ -1609,6 +1608,7 @@ static int
 wimfs_chmod(const char *path, mode_t mask)
 {
 	struct wim_dentry *dentry;
+	struct wim_inode *inode;
 	struct wimfs_context *ctx = wimfs_get_context();
 	int ret;
 
@@ -1620,16 +1620,21 @@ wimfs_chmod(const char *path, mode_t mask)
 	if (ret)
 		return ret;
 
-	ret = inode_set_unix_data(dentry->d_inode, ctx->default_uid,
-				  ctx->default_gid, mask,
-				  ctx->wim->lookup_table, UNIX_DATA_MODE);
-	return ret ? -ENOMEM : 0;
+	inode = dentry->d_inode;
+
+	if (!inode_has_unix_data(inode)) {
+		inode->i_unix_data.uid = ctx->default_uid;
+		inode->i_unix_data.gid = ctx->default_gid;
+	}
+	inode->i_unix_data.mode = mask;
+	return 0;
 }
 
 static int
 wimfs_chown(const char *path, uid_t uid, gid_t gid)
 {
 	struct wim_dentry *dentry;
+	struct wim_inode *inode;
 	struct wimfs_context *ctx = wimfs_get_context();
 	int ret;
 
@@ -1641,11 +1646,13 @@ wimfs_chown(const char *path, uid_t uid, gid_t gid)
 	if (ret)
 		return ret;
 
-	ret = inode_set_unix_data(dentry->d_inode, uid, gid,
-				  inode_default_unix_mode(dentry->d_inode),
-				  ctx->wim->lookup_table,
-				  UNIX_DATA_UID | UNIX_DATA_GID);
-	return ret ? -ENOMEM : 0;
+	inode = dentry->d_inode;
+
+	if (!inode_has_unix_data(inode))
+		inode->i_unix_data.mode = inode_default_unix_mode(inode);
+	inode->i_unix_data.uid = uid;
+	inode->i_unix_data.gid = gid;
+	return 0;
 }
 
 /* Called when the filesystem is unmounted. */

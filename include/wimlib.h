@@ -1208,7 +1208,14 @@ struct wimlib_dir_entry {
 
 	/** Time this file was last accessed.  */
 	struct timespec last_access_time;
-	uint64_t reserved[16];
+
+	/* UNIX data (wimlib extension), only valid if unix_mode != 0  */
+	uint32_t unix_uid;
+	uint32_t unix_gid;
+	uint32_t unix_mode;
+	uint32_t unix_reserved;
+
+	uint64_t reserved[14];
 
 	/** Array of streams that make up this file.  The first entry will
 	 * always exist and will correspond to the unnamed data stream (default

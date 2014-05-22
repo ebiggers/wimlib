@@ -13,6 +13,11 @@ Version 1.6.3-BETA:
 	documentation for the new '--wimboot' option to wimcapture and wimapply
 	for more information.
 
+	The format of UNIX data has been changed.  If you captured any WIMs with
+	the --unix-data option, to upgrade them you'll need to apply them with
+	--unix-data using wimlib v1.6.2, then re-capture them with --unix-data
+	using this version.
+
 	Removed the --hardlink and --symlink options to wimapply, since I don't
 	think they are too useful and they got in the way of improving the code.
 

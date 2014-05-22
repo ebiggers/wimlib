@@ -82,6 +82,11 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry, struct wim_dentry *dentry,
 	wdentry->last_write_time = wim_timestamp_to_timespec(inode->i_last_write_time);
 	wdentry->last_access_time = wim_timestamp_to_timespec(inode->i_last_access_time);
 
+	wdentry->unix_uid = inode->i_unix_data.uid;
+	wdentry->unix_gid = inode->i_unix_data.gid;
+	wdentry->unix_mode = inode->i_unix_data.mode;
+	wdentry->unix_reserved = inode->i_unix_data.reserved;
+
 	lte = inode_unnamed_lte(inode, wim->lookup_table);
 	if (lte) {
 		lte_to_wimlib_resource_entry(lte, &wdentry->streams[0].resource);

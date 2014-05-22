@@ -81,9 +81,14 @@ struct wim_dentry_on_disk {
 	le64 subdir_offset;
 
 	/* Reserved fields */
-	le64 unused_1;
-	le64 unused_2;
-
+	/* As an extension, wimlib can store UNIX data here.  */
+	union {
+		struct {
+			le64 unused_1;
+			le64 unused_2;
+		};
+		struct wimlib_unix_data_disk unix_data;
+	};
 
 	/* Creation time, last access time, and last write time, in
 	 * 100-nanosecond intervals since 12:00 a.m UTC January 1, 1601.  They
@@ -1207,6 +1212,12 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 	inode->i_attributes = le32_to_cpu(disk_dentry->attributes);
 	inode->i_security_id = le32_to_cpu(disk_dentry->security_id);
 	dentry->subdir_offset = le64_to_cpu(disk_dentry->subdir_offset);
+
+	inode->i_unix_data.uid = le32_to_cpu(disk_dentry->unix_data.uid);
+	inode->i_unix_data.gid = le32_to_cpu(disk_dentry->unix_data.gid);
+	inode->i_unix_data.mode = le32_to_cpu(disk_dentry->unix_data.mode);
+	inode->i_unix_data.reserved = le32_to_cpu(disk_dentry->unix_data.reserved);
+
 	inode->i_creation_time = le64_to_cpu(disk_dentry->creation_time);
 	inode->i_last_access_time = le64_to_cpu(disk_dentry->last_access_time);
 	inode->i_last_write_time = le64_to_cpu(disk_dentry->last_write_time);
@@ -1555,8 +1566,14 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 	disk_dentry->attributes = cpu_to_le32(inode->i_attributes);
 	disk_dentry->security_id = cpu_to_le32(inode->i_security_id);
 	disk_dentry->subdir_offset = cpu_to_le64(dentry->subdir_offset);
-	disk_dentry->unused_1 = cpu_to_le64(0);
-	disk_dentry->unused_2 = cpu_to_le64(0);
+
+	/* UNIX data uses the two 8-byte reserved fields.  So if no UNIX data
+	 * exists, they get set to 0, just as we would do anyway.  */
+	disk_dentry->unix_data.uid = cpu_to_le32(inode->i_unix_data.uid);
+	disk_dentry->unix_data.gid = cpu_to_le32(inode->i_unix_data.gid);
+	disk_dentry->unix_data.mode = cpu_to_le32(inode->i_unix_data.mode);
+	disk_dentry->unix_data.reserved = cpu_to_le32(inode->i_unix_data.reserved);
+
 	disk_dentry->creation_time = cpu_to_le64(inode->i_creation_time);
 	disk_dentry->last_access_time = cpu_to_le64(inode->i_last_access_time);
 	disk_dentry->last_write_time = cpu_to_le64(inode->i_last_write_time);

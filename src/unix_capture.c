@@ -388,13 +388,9 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 #endif
 	inode->i_resolved = 1;
 	if (params->add_flags & WIMLIB_ADD_FLAG_UNIX_DATA) {
-		ret = inode_set_unix_data(inode, stbuf.st_uid,
-					  stbuf.st_gid,
-					  stbuf.st_mode,
-					  params->lookup_table,
-					  UNIX_DATA_ALL | UNIX_DATA_CREATE);
-		if (ret)
-			goto out;
+		inode->i_unix_data.uid = stbuf.st_uid;
+		inode->i_unix_data.gid = stbuf.st_gid;
+		inode->i_unix_data.mode = stbuf.st_mode;
 	}
 
 	if (params->add_flags & WIMLIB_ADD_FLAG_ROOT) {

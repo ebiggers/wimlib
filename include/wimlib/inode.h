@@ -142,6 +142,9 @@ struct wim_inode {
 	 * wim_dentry_on_disk'.  */
 	u64 i_ino;
 
+	/* UNIX data (wimlib extension)  */
+	struct wimlib_unix_data i_unix_data;
+
 	union {
 		/* Device number, used only during image capture, so we can
 		 * identify hard linked files by the combination of inode number
@@ -336,18 +339,15 @@ inode_remove_ads(struct wim_inode *inode, u16 idx,
 		 struct wim_lookup_table *lookup_table);
 
 static inline bool
-ads_entry_is_unix_data(const struct wim_ads_entry *entry)
+ads_entry_is_named_stream(const struct wim_ads_entry *entry)
 {
-	return (entry->stream_name_nbytes ==
-			WIMLIB_UNIX_DATA_TAG_UTF16LE_NBYTES) &&
-		!memcmp(entry->stream_name, WIMLIB_UNIX_DATA_TAG_UTF16LE,
-			WIMLIB_UNIX_DATA_TAG_UTF16LE_NBYTES);
+	return entry->stream_name_nbytes != 0;
 }
 
 static inline bool
-ads_entry_is_named_stream(const struct wim_ads_entry *entry)
+inode_has_unix_data(const struct wim_inode *inode)
 {
-	return entry->stream_name_nbytes != 0 && !ads_entry_is_unix_data(entry);
+	return inode->i_unix_data.mode != 0;
 }
 
 /* Is the inode a directory?

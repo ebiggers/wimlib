@@ -219,6 +219,26 @@ unix_set_timestamps(int fd, const char *path, u64 atime, u64 mtime)
 	}
 }
 
+static int
+unix_set_owner_and_group(int fd, const char *path, uid_t uid, gid_t gid)
+{
+	if (fd >= 0 && !fchown(fd, uid, gid))
+		return 0;
+	if (fd < 0 && !lchown(path, uid, gid))
+		return 0;
+	return WIMLIB_ERR_SET_SECURITY;
+}
+
+static int
+unix_set_mode(int fd, const char *path, mode_t mode)
+{
+	if (fd >= 0 && !fchmod(fd, mode))
+		return 0;
+	if (fd < 0 && !chmod(path, mode))
+		return 0;
+	return WIMLIB_ERR_SET_SECURITY;
+}
+
 /*
  * Set metadata on an extracted file.
  *
@@ -235,6 +255,50 @@ unix_set_metadata(int fd, const struct wim_inode *inode,
 
 	if (fd < 0 && !path)
 		path = unix_build_inode_extraction_path(inode, ctx);
+
+	if ((ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA)
+	    && inode_has_unix_data(inode))
+	{
+		u32 uid = inode->i_unix_data.uid;
+		u32 gid = inode->i_unix_data.gid;
+		u32 mode = inode->i_unix_data.mode;
+
+		ret = unix_set_owner_and_group(fd, path, uid, gid);
+		if (ret) {
+			if (!path)
+				path = unix_build_inode_extraction_path(inode, ctx);
+			if (ctx->common.extract_flags &
+			    WIMLIB_EXTRACT_FLAG_STRICT_ACLS)
+			{
+				ERROR_WITH_ERRNO("Can't set uid=%"PRIu32" and "
+						 "gid=%"PRIu32" on \"%s\"",
+						 uid, gid, path);
+				return ret;
+			} else {
+				WARNING_WITH_ERRNO("Can't set uid=%"PRIu32" and "
+						   "gid=%"PRIu32" on \"%s\"",
+						   uid, gid, path);
+			}
+		}
+
+		ret = 0;
+		if (!inode_is_symlink(inode))
+			ret = unix_set_mode(fd, path, mode);
+		if (ret) {
+			if (!path)
+				path = unix_build_inode_extraction_path(inode, ctx);
+			if (ctx->common.extract_flags &
+			    WIMLIB_EXTRACT_FLAG_STRICT_ACLS)
+			{
+				ERROR_WITH_ERRNO("Can't set mode=0%"PRIo32" "
+						 "on \"%s\"", mode, path);
+				return ret;
+			} else {
+				WARNING_WITH_ERRNO("Can't set mode=0%"PRIo32" "
+						   "on \"%s\"", mode, path);
+			}
+		}
+	}
 
 	ret = unix_set_timestamps(fd, path,
 				  inode->i_last_access_time,

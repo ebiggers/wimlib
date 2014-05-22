@@ -2427,6 +2427,11 @@ print_dentry_detailed(const struct wimlib_dir_entry *dentry)
 	tprintf(T("Link Group ID       = 0x%016"PRIx64"\n"), dentry->hard_link_group_id);
 	tprintf(T("Link Count          = %"PRIu32"\n"), dentry->num_links);
 
+	if (dentry->unix_mode != 0) {
+		tprintf(T("UNIX Data           = uid:%"PRIu32" gid:%"PRIu32" mode:0%"PRIo32"\n"),
+			dentry->unix_uid, dentry->unix_gid, dentry->unix_mode);
+	}
+
 	for (uint32_t i = 0; i <= dentry->num_named_streams; i++) {
 		if (dentry->streams[i].stream_name) {
 			tprintf(T("\tData stream \"%"TS"\":\n"),

@@ -347,8 +347,7 @@ files.  This is done by adding a special alternate data stream to each directory
 entry that contains this information.  Please note that this flag is for
 convenience only, in case you want to use \fB@IMAGEX_PROGNAME@\fR to archive
 files on UNIX.  Microsoft's software will not understand this special
-information.  You also may run into problems when applying an image with UNIX
-data from a pipable WIM.
+information.
 .TP
 \fB--no-acls\fR
 Do not capture files' security descriptors.
@@ -580,7 +579,9 @@ pointing out that Windows' own default filesystem, NTFS, supports these
 characters, although Windows does not!)
 .IP \[bu]
 WIMs captured with \fB--unix-data\fR should be assumed to be incompatible with
-Microsoft's software.
+Microsoft's software.  However, the UNIX data format used in wimlib v1.6.3 and
+later uses reserved fields in the WIM dentries which seem to be ignored by the
+Microsoft implementation as of Windows 8.1.
 .IP \[bu]
 Pipable WIMs are incompatible with Microsoft's software.  Pipable WIMs are
 created only if \fIWIMFILE\fR was specified as "-" (standard output) or if
