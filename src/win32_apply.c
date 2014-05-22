@@ -482,7 +482,7 @@ build_win32_extraction_path(const struct wim_dentry *dentry,
 	ctx->pathbuf.Length += ctx->target_ntpath.Length + sizeof(wchar_t);
 	ctx->pathbuf.Buffer[ctx->pathbuf.Length / sizeof(wchar_t)] = L'\0';
 
-	wimlib_assert(ctx->pathbuf.Length >= 8 &&
+	wimlib_assert(ctx->pathbuf.Length >= 4 * sizeof(wchar_t) &&
 		      !wmemcmp(ctx->pathbuf.Buffer, L"\\??\\", 4));
 
 	ctx->pathbuf.Buffer[1] = L'\\';
