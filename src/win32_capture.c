@@ -45,7 +45,6 @@
 struct winnt_scan_stats {
 	unsigned long num_get_sd_access_denied;
 	unsigned long num_get_sacl_priv_notheld;
-	unsigned long num_long_path_warnings;
 };
 
 static inline const wchar_t *
