@@ -284,9 +284,24 @@ consume_chunk_with_progress(const void *chunk, size_t size, void *_ctx)
 	struct apply_ctx *ctx = _ctx;
 	wimlib_progress_func_t progress_func = ctx->progress_func;
 	union wimlib_progress_info *progress = &ctx->progress;
-	u32 num_copies = ctx->cur_stream->out_refcnt;
 
-	progress->extract.completed_bytes += size * num_copies;
+	if (likely(ctx->supported_features.hard_links)) {
+		progress->extract.completed_bytes +=
+			(u64)size * ctx->cur_stream->out_refcnt;
+	} else {
+		const struct stream_owner *owners = stream_owners(ctx->cur_stream);
+		for (u32 i = 0; i < ctx->cur_stream->out_refcnt; i++) {
+			const struct wim_inode *inode = owners[i].inode;
+			const struct wim_dentry *dentry;
+
+			list_for_each_entry(dentry,
+					    &inode->i_extraction_aliases,
+					    d_extraction_alias_node)
+			{
+				progress->extract.completed_bytes += size;
+			}
+		}
+	}
 	if (progress->extract.completed_bytes >= ctx->next_progress) {
 		progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS, progress);
 		if (progress->extract.completed_bytes >=
