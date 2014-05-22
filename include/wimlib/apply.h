@@ -2,6 +2,7 @@
 #define _WIMLIB_APPLY_H
 
 #include "wimlib/list.h"
+#include "wimlib/progress.h"
 #include "wimlib/types.h"
 #include "wimlib.h"
 
@@ -46,7 +47,8 @@ struct apply_ctx {
 	int extract_flags;
 
 	/* User-provided progress function, or NULL if not specified.  */
-	wimlib_progress_func_t progress_func;
+	wimlib_progress_func_t progfunc;
+	void *progctx;
 
 	/* Progress data buffer, with progress.extract initialized.  */
 	union wimlib_progress_info progress;
@@ -65,6 +67,12 @@ struct apply_ctx {
 	const struct read_stream_list_callbacks *saved_cbs;
 	struct wim_lookup_table_entry *cur_stream;
 };
+
+static inline int
+extract_progress(struct apply_ctx *ctx, enum wimlib_progress_msg msg)
+{
+	return call_progress(ctx->progfunc, msg, &ctx->progress, ctx->progctx);
+}
 
 /* Returns any of the aliases of an inode that are being extracted.  */
 #define inode_first_extraction_dentry(inode)		\

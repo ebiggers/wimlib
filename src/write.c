@@ -43,6 +43,7 @@
 #include "wimlib/integrity.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
+#include "wimlib/progress.h"
 #include "wimlib/resource.h"
 #ifdef __WIN32__
 #  include "wimlib/win32.h" /* win32_rename_replacement() */
@@ -270,12 +271,13 @@ write_pwm_stream_header(const struct wim_lookup_table_entry *lte,
 }
 
 struct write_streams_progress_data {
-	wimlib_progress_func_t progress_func;
+	wimlib_progress_func_t progfunc;
+	void *progctx;
 	union wimlib_progress_info progress;
 	uint64_t next_progress;
 };
 
-static void
+static int
 do_write_streams_progress(struct write_streams_progress_data *progress_data,
 			  struct wim_lookup_table_entry *cur_stream,
 			  u64 complete_size,
@@ -283,6 +285,7 @@ do_write_streams_progress(struct write_streams_progress_data *progress_data,
 			  bool discarded)
 {
 	union wimlib_progress_info *progress = &progress_data->progress;
+	int ret;
 
 	if (discarded) {
 		progress->write_streams.total_bytes -= complete_size;
@@ -297,11 +300,15 @@ do_write_streams_progress(struct write_streams_progress_data *progress_data,
 		progress->write_streams.completed_streams += complete_count;
 	}
 
-	if (progress_data->progress_func
-	    && (progress->write_streams.completed_bytes >= progress_data->next_progress))
+	if (progress->write_streams.completed_bytes >= progress_data->next_progress)
 	{
-		progress_data->progress_func(WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
-					     progress);
+		ret = call_progress(progress_data->progfunc,
+				    WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
+				    progress,
+				    progress_data->progctx);
+		if (ret)
+			return ret;
+
 		if (progress_data->next_progress == progress->write_streams.total_bytes) {
 			progress_data->next_progress = ~(uint64_t)0;
 		} else {
@@ -311,6 +318,7 @@ do_write_streams_progress(struct write_streams_progress_data *progress_data,
 				        progress->write_streams.total_bytes / 100);
 		}
 	}
+	return 0;
 }
 
 struct write_streams_ctx {
@@ -658,9 +666,9 @@ write_stream_begin_read(struct wim_lookup_table_entry *lte,
 				 * duplicate stream in the former case.  */
 				DEBUG("Discarding duplicate stream of "
 				      "length %"PRIu64, lte->size);
-				do_write_streams_progress(&ctx->progress_data,
-							  lte, lte->size,
-							  1, true);
+				ret = do_write_streams_progress(&ctx->progress_data,
+								lte, lte->size,
+								1, true);
 				list_del(&lte->write_streams_list);
 				list_del(&lte->lookup_table_list);
 				if (lte_new->will_be_in_output_wim)
@@ -668,6 +676,8 @@ write_stream_begin_read(struct wim_lookup_table_entry *lte,
 				if (ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS)
 					ctx->cur_write_res_size -= lte->size;
 				free_lookup_table_entry(lte);
+				if (ret)
+					return ret;
 				return BEGIN_STREAM_STATUS_SKIP_STREAM;
 			} else {
 				/* The duplicate stream can validly be written,
@@ -876,11 +886,9 @@ write_chunk(struct write_streams_ctx *ctx, const void *cchunk,
 		}
 	}
 
-	do_write_streams_progress(&ctx->progress_data, lte,
-				  completed_size, completed_stream_count,
-				  false);
-
-	return 0;
+	return do_write_streams_progress(&ctx->progress_data, lte,
+					 completed_size, completed_stream_count,
+					 false);
 
 error:
 	ERROR_WITH_ERRNO("Write error");
@@ -1169,8 +1177,10 @@ write_raw_copy_resources(struct list_head *raw_copy_streams,
 				return ret;
 			lte->rspec->raw_copy_ok = 0;
 		}
-		do_write_streams_progress(progress_data, lte, lte->size,
-					  1, false);
+		ret = do_write_streams_progress(progress_data, lte, lte->size,
+						1, false);
+		if (ret)
+			return ret;
 	}
 	return 0;
 }
@@ -1278,12 +1288,6 @@ remove_zero_length_streams(struct list_head *stream_list)
  *	no streams are hard-filtered or no streams are unhashed, this parameter
  *	can be NULL.
  *
- * @progress_func
- *	If non-NULL, a progress function that will be called periodically with
- *	WIMLIB_PROGRESS_MSG_WRITE_STREAMS messages.  Note that on-the-fly
- *	deduplication of unhashed streams may result in the total bytes provided
- *	in the progress data to decrease from one message to the next.
- *
  * This function will write the streams in @stream_list to resources in
  * consecutive positions in the output WIM file, or to a single packed resource
  * if WRITE_RESOURCE_FLAG_PACK_STREAMS was specified in @write_resource_flags.
@@ -1341,7 +1345,8 @@ write_stream_list(struct list_head *stream_list,
 		  unsigned num_threads,
 		  struct wim_lookup_table *lookup_table,
 		  struct filter_context *filter_ctx,
-		  wimlib_progress_func_t progress_func)
+		  wimlib_progress_func_t progfunc,
+		  void *progctx)
 {
 	int ret;
 	struct write_streams_ctx ctx;
@@ -1393,7 +1398,8 @@ write_stream_list(struct list_head *stream_list,
 
 	compute_stream_list_stats(stream_list, &ctx);
 
-	ctx.progress_data.progress_func = progress_func;
+	ctx.progress_data.progfunc = progfunc;
+	ctx.progress_data.progctx = progctx;
 
 	ctx.num_bytes_to_compress = find_raw_copy_streams(stream_list,
 							  write_resource_flags,
@@ -1454,10 +1460,12 @@ write_stream_list(struct list_head *stream_list,
 	INIT_LIST_HEAD(&ctx.pending_streams);
 	INIT_LIST_HEAD(&ctx.pack_streams);
 
-	if (ctx.progress_data.progress_func) {
-		(*ctx.progress_data.progress_func)(WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
-						   &ctx.progress_data.progress);
-	}
+	ret = call_progress(ctx.progress_data.progfunc,
+			    WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
+			    &ctx.progress_data.progress,
+			    ctx.progress_data.progctx);
+	if (ret)
+		goto out_destroy_context;
 
 	if (write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS) {
 		ret = begin_write_resource(&ctx, ctx.num_bytes_to_compress);
@@ -1553,8 +1561,7 @@ wim_write_stream_list(WIMStruct *wim,
 		      struct list_head *stream_list,
 		      int write_flags,
 		      unsigned num_threads,
-		      struct filter_context *filter_ctx,
-		      wimlib_progress_func_t progress_func)
+		      struct filter_context *filter_ctx)
 {
 	int out_ctype;
 	u32 out_chunk_size;
@@ -1588,7 +1595,8 @@ wim_write_stream_list(WIMStruct *wim,
 				 num_threads,
 				 wim->lookup_table,
 				 filter_ctx,
-				 progress_func);
+				 wim->progfunc,
+				 wim->progctx);
 }
 
 static int
@@ -1607,6 +1615,7 @@ write_wim_resource(struct wim_lookup_table_entry *lte,
 				 out_ctype,
 				 out_chunk_size,
 				 1,
+				 NULL,
 				 NULL,
 				 NULL,
 				 NULL);
@@ -2006,7 +2015,6 @@ prepare_stream_list_for_write(WIMStruct *wim, int image,
 static int
 write_wim_streams(WIMStruct *wim, int image, int write_flags,
 		  unsigned num_threads,
-		  wimlib_progress_func_t progress_func,
 		  struct list_head *stream_list_override,
 		  struct list_head *lookup_table_list_ret)
 {
@@ -2047,13 +2055,11 @@ write_wim_streams(WIMStruct *wim, int image, int write_flags,
 				     stream_list,
 				     write_flags,
 				     num_threads,
-				     filter_ctx,
-				     progress_func);
+				     filter_ctx);
 }
 
 static int
-write_wim_metadata_resources(WIMStruct *wim, int image, int write_flags,
-			     wimlib_progress_func_t progress_func)
+write_wim_metadata_resources(WIMStruct *wim, int image, int write_flags)
 {
 	int ret;
 	int start_image;
@@ -2072,8 +2078,11 @@ write_wim_metadata_resources(WIMStruct *wim, int image, int write_flags,
 	DEBUG("Writing metadata resources (offset=%"PRIu64")",
 	      wim->out_fd.offset);
 
-	if (progress_func)
-		progress_func(WIMLIB_PROGRESS_MSG_WRITE_METADATA_BEGIN, NULL);
+	ret = call_progress(wim->progfunc,
+			    WIMLIB_PROGRESS_MSG_WRITE_METADATA_BEGIN,
+			    NULL, wim->progctx);
+	if (ret)
+		return ret;
 
 	if (image == WIMLIB_ALL_IMAGES) {
 		start_image = 1;
@@ -2112,9 +2121,10 @@ write_wim_metadata_resources(WIMStruct *wim, int image, int write_flags,
 		if (ret)
 			return ret;
 	}
-	if (progress_func)
-		progress_func(WIMLIB_PROGRESS_MSG_WRITE_METADATA_END, NULL);
-	return 0;
+
+	return call_progress(wim->progfunc,
+			     WIMLIB_PROGRESS_MSG_WRITE_METADATA_END,
+			     NULL, wim->progctx);
 }
 
 static int
@@ -2278,7 +2288,6 @@ write_wim_lookup_table(WIMStruct *wim, int image, int write_flags,
  */
 static int
 finish_write(WIMStruct *wim, int image, int write_flags,
-	     wimlib_progress_func_t progress_func,
 	     struct list_head *lookup_table_list)
 {
 	int ret;
@@ -2347,8 +2356,7 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 
 		ret = write_integrity_table(wim,
 					    new_lookup_table_end,
-					    old_lookup_table_end,
-					    progress_func);
+					    old_lookup_table_end);
 		if (ret)
 			return ret;
 	} else {
@@ -2497,7 +2505,7 @@ lock_wim(WIMStruct *wim, int fd)
  */
 static int
 write_pipable_wim(WIMStruct *wim, int image, int write_flags,
-		  unsigned num_threads, wimlib_progress_func_t progress_func,
+		  unsigned num_threads,
 		  struct list_head *stream_list_override,
 		  struct list_head *lookup_table_list_ret)
 {
@@ -2532,16 +2540,14 @@ write_pipable_wim(WIMStruct *wim, int image, int write_flags,
 
 	/* Write metadata resources for the image(s) being included in the
 	 * output WIM.  */
-	ret = write_wim_metadata_resources(wim, image, write_flags,
-					   progress_func);
+	ret = write_wim_metadata_resources(wim, image, write_flags);
 	if (ret)
 		return ret;
 
 	/* Write streams needed for the image(s) being included in the output
 	 * WIM, or streams needed for the split WIM part.  */
 	return write_wim_streams(wim, image, write_flags, num_threads,
-				 progress_func, stream_list_override,
-				 lookup_table_list_ret);
+				 stream_list_override, lookup_table_list_ret);
 
 	/* The lookup table, XML data, and header at end are handled by
 	 * finish_write().  */
@@ -2555,7 +2561,6 @@ write_wim_part(WIMStruct *wim,
 	       int image,
 	       int write_flags,
 	       unsigned num_threads,
-	       wimlib_progress_func_t progress_func,
 	       unsigned part_number,
 	       unsigned total_parts,
 	       struct list_head *stream_list_override,
@@ -2631,7 +2636,7 @@ write_wim_part(WIMStruct *wim,
 		DEBUG("Number of threads: autodetect");
 	else
 		DEBUG("Number of threads: %u", num_threads);
-	DEBUG("Progress function: %s", (progress_func ? "yes" : "no"));
+	DEBUG("Progress function: %s", (wim->progfunc ? "yes" : "no"));
 	DEBUG("Stream list:       %s", (stream_list_override ? "specified" : "autodetect"));
 	DEBUG("GUID:              %s", (write_flags &
 					WIMLIB_WRITE_FLAG_RETAIN_GUID) ? "retain"
@@ -2799,19 +2804,18 @@ write_wim_part(WIMStruct *wim,
 	if (!(write_flags & WIMLIB_WRITE_FLAG_PIPABLE)) {
 		/* Default case: create a normal (non-pipable) WIM.  */
 		ret = write_wim_streams(wim, image, write_flags, num_threads,
-					progress_func, stream_list_override,
+					stream_list_override,
 					&lookup_table_list);
 		if (ret)
 			goto out_restore_hdr;
 
-		ret = write_wim_metadata_resources(wim, image, write_flags,
-						   progress_func);
+		ret = write_wim_metadata_resources(wim, image, write_flags);
 		if (ret)
 			goto out_restore_hdr;
 	} else {
 		/* Non-default case: create pipable WIM.  */
 		ret = write_pipable_wim(wim, image, write_flags, num_threads,
-					progress_func, stream_list_override,
+					stream_list_override,
 					&lookup_table_list);
 		if (ret)
 			goto out_restore_hdr;
@@ -2820,8 +2824,7 @@ write_wim_part(WIMStruct *wim,
 
 
 	/* Write lookup table, XML data, and (optional) integrity table.  */
-	ret = finish_write(wim, image, write_flags, progress_func,
-			   &lookup_table_list);
+	ret = finish_write(wim, image, write_flags, &lookup_table_list);
 out_restore_hdr:
 	memcpy(&wim->hdr, &hdr_save, sizeof(struct wim_header));
 	(void)close_wim_writable(wim, write_flags);
@@ -2832,18 +2835,16 @@ out_restore_hdr:
 /* Write a standalone WIM to a file or file descriptor.  */
 static int
 write_standalone_wim(WIMStruct *wim, const void *path_or_fd,
-		     int image, int write_flags, unsigned num_threads,
-		     wimlib_progress_func_t progress_func)
+		     int image, int write_flags, unsigned num_threads)
 {
 	return write_wim_part(wim, path_or_fd, image, write_flags,
-			      num_threads, progress_func, 1, 1, NULL, NULL);
+			      num_threads, 1, 1, NULL, NULL);
 }
 
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_write(WIMStruct *wim, const tchar *path,
-	     int image, int write_flags, unsigned num_threads,
-	     wimlib_progress_func_t progress_func)
+	     int image, int write_flags, unsigned num_threads)
 {
 	if (write_flags & ~WIMLIB_WRITE_MASK_PUBLIC)
 		return WIMLIB_ERR_INVALID_PARAM;
@@ -2851,15 +2852,13 @@ wimlib_write(WIMStruct *wim, const tchar *path,
 	if (path == NULL || path[0] == T('\0'))
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	return write_standalone_wim(wim, path, image, write_flags,
-				    num_threads, progress_func);
+	return write_standalone_wim(wim, path, image, write_flags, num_threads);
 }
 
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_write_to_fd(WIMStruct *wim, int fd,
-		   int image, int write_flags, unsigned num_threads,
-		   wimlib_progress_func_t progress_func)
+		   int image, int write_flags, unsigned num_threads)
 {
 	if (write_flags & ~WIMLIB_WRITE_MASK_PUBLIC)
 		return WIMLIB_ERR_INVALID_PARAM;
@@ -2869,8 +2868,7 @@ wimlib_write_to_fd(WIMStruct *wim, int fd,
 
 	write_flags |= WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR;
 
-	return write_standalone_wim(wim, &fd, image, write_flags,
-				    num_threads, progress_func);
+	return write_standalone_wim(wim, &fd, image, write_flags, num_threads);
 }
 
 static bool
@@ -2974,9 +2972,7 @@ check_resource_offsets(WIMStruct *wim, off_t end_offset)
  * small amount of space compared to the streams, however.)
  */
 static int
-overwrite_wim_inplace(WIMStruct *wim, int write_flags,
-		      unsigned num_threads,
-		      wimlib_progress_func_t progress_func)
+overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 {
 	int ret;
 	off_t old_wim_end;
@@ -3088,19 +3084,17 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags,
 				    &stream_list,
 				    write_flags,
 				    num_threads,
-				    &filter_ctx,
-				    progress_func);
+				    &filter_ctx);
 	if (ret)
 		goto out_truncate;
 
-	ret = write_wim_metadata_resources(wim, WIMLIB_ALL_IMAGES,
-					   write_flags, progress_func);
+	ret = write_wim_metadata_resources(wim, WIMLIB_ALL_IMAGES, write_flags);
 	if (ret)
 		goto out_truncate;
 
 	write_flags |= WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE;
 	ret = finish_write(wim, WIMLIB_ALL_IMAGES, write_flags,
-			   progress_func, &lookup_table_list);
+			   &lookup_table_list);
 	if (ret)
 		goto out_truncate;
 
@@ -3127,9 +3121,7 @@ out_restore_memory_hdr:
 }
 
 static int
-overwrite_wim_via_tmpfile(WIMStruct *wim, int write_flags,
-			  unsigned num_threads,
-			  wimlib_progress_func_t progress_func)
+overwrite_wim_via_tmpfile(WIMStruct *wim, int write_flags, unsigned num_threads)
 {
 	size_t wim_name_len;
 	int ret;
@@ -3148,7 +3140,7 @@ overwrite_wim_via_tmpfile(WIMStruct *wim, int write_flags,
 			   write_flags |
 				WIMLIB_WRITE_FLAG_FSYNC |
 				WIMLIB_WRITE_FLAG_RETAIN_GUID,
-			   num_threads, progress_func);
+			   num_threads);
 	if (ret) {
 		tunlink(tmpfile);
 		return ret;
@@ -3176,13 +3168,11 @@ overwrite_wim_via_tmpfile(WIMStruct *wim, int write_flags,
 		return WIMLIB_ERR_RENAME;
 	}
 
-	if (progress_func) {
-		union wimlib_progress_info progress;
-		progress.rename.from = tmpfile;
-		progress.rename.to = wim->filename;
-		progress_func(WIMLIB_PROGRESS_MSG_RENAME, &progress);
-	}
-	return 0;
+	union wimlib_progress_info progress;
+	progress.rename.from = tmpfile;
+	progress.rename.to = wim->filename;
+	return call_progress(wim->progfunc, WIMLIB_PROGRESS_MSG_RENAME,
+			     &progress, wim->progctx);
 }
 
 /* Determine if the specified WIM file may be updated by appending in-place
@@ -3216,9 +3206,7 @@ can_overwrite_wim_inplace(const WIMStruct *wim, int write_flags)
 
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
-wimlib_overwrite(WIMStruct *wim, int write_flags,
-		 unsigned num_threads,
-		 wimlib_progress_func_t progress_func)
+wimlib_overwrite(WIMStruct *wim, int write_flags, unsigned num_threads)
 {
 	int ret;
 	u32 orig_hdr_flags;
@@ -3238,12 +3226,10 @@ wimlib_overwrite(WIMStruct *wim, int write_flags,
 		return ret;
 
 	if (can_overwrite_wim_inplace(wim, write_flags)) {
-		ret = overwrite_wim_inplace(wim, write_flags, num_threads,
-					    progress_func);
+		ret = overwrite_wim_inplace(wim, write_flags, num_threads);
 		if (ret != WIMLIB_ERR_RESOURCE_ORDER)
 			return ret;
 		WARNING("Falling back to re-building entire WIM");
 	}
-	return overwrite_wim_via_tmpfile(wim, write_flags, num_threads,
-					 progress_func);
+	return overwrite_wim_via_tmpfile(wim, write_flags, num_threads);
 }

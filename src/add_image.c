@@ -157,8 +157,7 @@ wimlib_add_image_multisource(WIMStruct *wim,
 			     size_t num_sources,
 			     const tchar *name,
 			     const tchar *config_file,
-			     int add_flags,
-			     wimlib_progress_func_t progress_func)
+			     int add_flags)
 {
 	int ret;
 	struct wimlib_update_command *add_cmds;
@@ -182,7 +181,7 @@ wimlib_add_image_multisource(WIMStruct *wim,
 
 	/* Delegate the work to wimlib_update_image().  */
 	ret = wimlib_update_image(wim, wim->hdr.image_count, add_cmds,
-				  num_sources, 0, progress_func);
+				  num_sources, 0);
 	FREE(add_cmds);
 	if (ret)
 		goto out_delete_image;
@@ -215,8 +214,7 @@ wimlib_add_image(WIMStruct *wim,
 		 const tchar *source,
 		 const tchar *name,
 		 const tchar *config_file,
-		 int add_flags,
-		 wimlib_progress_func_t progress_func)
+		 int add_flags)
 {
 	/* Use the more general wimlib_add_image_multisource().  */
 	const struct wimlib_capture_source capture_src = {
@@ -225,6 +223,5 @@ wimlib_add_image(WIMStruct *wim,
 		.reserved = 0,
 	};
 	return wimlib_add_image_multisource(wim, &capture_src, 1, name,
-					    config_file, add_flags,
-					    progress_func);
+					    config_file, add_flags);
 }

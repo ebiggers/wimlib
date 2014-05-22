@@ -291,10 +291,9 @@ unix_scan_symlink(struct wim_dentry **root_p, const char *full_path,
 			*root_p = NULL;
 			params->progress.scan.cur_path = full_path;
 			params->progress.scan.symlink_target = deref_name_buf;
-			do_capture_progress(params,
-					    WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK,
-					    NULL);
-			return 0;
+			return do_capture_progress(params,
+						   WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK,
+						   NULL);
 		}
 		inode->i_not_rpfixed = 0;
 	}
@@ -358,8 +357,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 			goto out;
 		}
 		params->progress.scan.cur_path = full_path;
-		do_capture_progress(params, WIMLIB_SCAN_DENTRY_UNSUPPORTED, NULL);
-		ret = 0;
+		ret = do_capture_progress(params, WIMLIB_SCAN_DENTRY_UNSUPPORTED, NULL);
 		goto out;
 	}
 
@@ -418,9 +416,9 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 out_progress:
 	params->progress.scan.cur_path = full_path;
 	if (likely(tree))
-		do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
+		ret = do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
 	else
-		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
+		ret = do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
 out:
 	if (likely(ret == 0))
 		*tree_ret = tree;

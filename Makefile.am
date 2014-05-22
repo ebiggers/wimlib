@@ -108,6 +108,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/metadata.h	\
 	include/wimlib/pathlist.h	\
 	include/wimlib/paths.h		\
+	include/wimlib/progress.h	\
 	include/wimlib/reparse.h	\
 	include/wimlib/resource.h	\
 	include/wimlib/security.h	\

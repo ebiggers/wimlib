@@ -1344,17 +1344,17 @@ begin_extract_stream_instance(const struct wim_lookup_table_entry *stream,
 		if (ret)
 			return ret;
 		if (in_prepopulate_list(dentry, ctx)) {
-			if (ctx->common.progress_func) {
-				union wimlib_progress_info info;
+			union wimlib_progress_info info;
 
-				info.wimboot_exclude.path_in_wim = dentry->_full_path;
-				info.wimboot_exclude.extraction_path = current_path(ctx);
+			info.wimboot_exclude.path_in_wim = dentry->_full_path;
+			info.wimboot_exclude.extraction_path = current_path(ctx);
 
-				ctx->common.progress_func(WIMLIB_PROGRESS_MSG_WIMBOOT_EXCLUDE,
-							  &info);
-				FREE(dentry->_full_path);
-				dentry->_full_path = NULL;
-			}
+			ret = call_progress(ctx->common.progfunc,
+					    WIMLIB_PROGRESS_MSG_WIMBOOT_EXCLUDE,
+					    &info, ctx->common.progctx);
+			FREE(dentry->_full_path);
+			dentry->_full_path = NULL;
+			return ret;
 		} else {
 			FREE(dentry->_full_path);
 			dentry->_full_path = NULL;

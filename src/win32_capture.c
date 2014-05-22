@@ -589,7 +589,7 @@ out_close_root_dir:
 	return p;
 }
 
-static enum rp_status
+static int
 winnt_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
 		u64 capture_root_ino, u64 capture_root_dev,
 		const wchar_t *path, struct add_image_params *params)
@@ -644,7 +644,11 @@ winnt_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
 
 		params->progress.scan.cur_path = printable_path(path);
 		params->progress.scan.symlink_target = print_name0;
-		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK, NULL);
+		int ret = do_capture_progress(params,
+					      WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK,
+					      NULL);
+		if (ret)
+			return ret;
 		return RP_EXCLUDED;
 	}
 
@@ -698,7 +702,7 @@ winnt_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
  *	Path to the reparse point file.
  * @params:
  *	Capture parameters.  add_flags, capture_root_ino, capture_root_dev,
- *	progress_func, and progress are used.
+ *	progfunc, progctx, and progress are used.
  * @rpbuf:
  *	Buffer of length at least REPARSE_POINT_MAX_SIZE bytes into which the
  *	reparse point buffer will be loaded.
@@ -1329,9 +1333,9 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 out_progress:
 	params->progress.scan.cur_path = printable_path(full_path);
 	if (likely(root))
-		do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
+		ret = do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
 	else
-		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
+		ret = do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
 out:
 	if (likely(h != INVALID_HANDLE_VALUE))
 		(*func_NtClose)(h);

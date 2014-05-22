@@ -559,8 +559,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 			goto out;
 		}
 		params->progress.scan.cur_path = path;
-		do_capture_progress(params, WIMLIB_SCAN_DENTRY_UNSUPPORTED, NULL);
-		ret = 0;
+		ret = do_capture_progress(params, WIMLIB_SCAN_DENTRY_UNSUPPORTED, NULL);
 		goto out;
 	}
 
@@ -696,9 +695,9 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 out_progress:
 	params->progress.scan.cur_path = path;
 	if (root == NULL)
-		do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
+		ret = do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
 	else
-		do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
+		ret = do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
 out:
 	if (ret == 0)
 		*root_ret = root;

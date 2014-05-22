@@ -155,8 +155,7 @@ reference_resource_paths(WIMStruct *wim,
 			 const tchar * const *resource_wimfiles,
 			 unsigned num_resource_wimfiles,
 			 int ref_flags,
-			 int open_flags,
-			 wimlib_progress_func_t progress_func)
+			 int open_flags)
 {
 	WIMStruct **resource_wims;
 	unsigned i;
@@ -169,8 +168,11 @@ reference_resource_paths(WIMStruct *wim,
 	for (i = 0; i < num_resource_wimfiles; i++) {
 		DEBUG("Referencing resources from path \"%"TS"\"",
 		      resource_wimfiles[i]);
-		ret = wimlib_open_wim(resource_wimfiles[i], open_flags,
-				      &resource_wims[i], progress_func);
+		ret = wimlib_open_wim_with_progress(resource_wimfiles[i],
+						    open_flags,
+						    &resource_wims[i],
+						    wim->progfunc,
+						    wim->progctx);
 		if (ret)
 			goto out_free_resource_wims;
 	}
@@ -197,8 +199,7 @@ out_free_array:
 
 static int
 reference_resource_glob(WIMStruct *wim, const tchar *refglob,
-			int ref_flags, int open_flags,
-			wimlib_progress_func_t progress_func)
+			int ref_flags, int open_flags)
 {
 	glob_t globbuf;
 	int ret;
@@ -215,8 +216,7 @@ reference_resource_glob(WIMStruct *wim, const tchar *refglob,
 								&refglob,
 								1,
 								ref_flags,
-								open_flags,
-								progress_func);
+								open_flags);
 			}
 		} else {
 			ERROR_WITH_ERRNO("Failed to process glob \"%"TS"\"", refglob);
@@ -231,8 +231,7 @@ reference_resource_glob(WIMStruct *wim, const tchar *refglob,
 				       (const tchar * const *)globbuf.gl_pathv,
 				       globbuf.gl_pathc,
 				       ref_flags,
-				       open_flags,
-				       progress_func);
+				       open_flags);
 	globfree(&globbuf);
 	return ret;
 }
@@ -243,8 +242,7 @@ wimlib_reference_resource_files(WIMStruct *wim,
 				const tchar * const * resource_wimfiles_or_globs,
 				unsigned count,
 				int ref_flags,
-				int open_flags,
-				wimlib_progress_func_t progress_func)
+				int open_flags)
 {
 	unsigned i;
 	int ret;
@@ -257,15 +255,13 @@ wimlib_reference_resource_files(WIMStruct *wim,
 			ret = reference_resource_glob(wim,
 						      resource_wimfiles_or_globs[i],
 						      ref_flags,
-						      open_flags,
-						      progress_func);
+						      open_flags);
 			if (ret)
 				return ret;
 		}
 		return 0;
 	} else {
 		return reference_resource_paths(wim, resource_wimfiles_or_globs,
-						count, ref_flags,
-						open_flags, progress_func);
+						count, ref_flags, open_flags);
 	}
 }

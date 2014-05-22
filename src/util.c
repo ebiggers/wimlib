@@ -346,6 +346,10 @@ static const tchar *error_strings[] = {
 		= T("The WIM file (or parts of it) is encrypted"),
 	[WIMLIB_ERR_WIMBOOT]
 		= T("Failed to set WIMBoot pointer data"),
+	[WIMLIB_ERR_ABORTED_BY_PROGRESS]
+		= T("The operation was aborted by the library user"),
+	[WIMLIB_ERR_UNKNOWN_PROGRESS_STATUS]
+		= T("The user-provided progress function returned an unrecognized value"),
 };
 
 /* API function documented in wimlib.h  */

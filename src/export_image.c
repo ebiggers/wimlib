@@ -110,8 +110,7 @@ wimlib_export_image(WIMStruct *src_wim,
 		    WIMStruct *dest_wim,
 		    const tchar *dest_name,
 		    const tchar *dest_description,
-		    int export_flags,
-		    wimlib_progress_func_t progress_func)
+		    int export_flags)
 {
 	int ret;
 	int start_image;

@@ -34,6 +34,7 @@
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
 #include "wimlib/integrity.h"
+#include "wimlib/progress.h"
 #include "wimlib/resource.h"
 #include "wimlib/sha1.h"
 #include "wimlib/wim.h"
@@ -170,10 +171,6 @@ invalid:
  *	If @old_table is non-NULL, the byte after the last byte that was checked
  *	in the old table.  Must be less than or equal to new_check_end.
  *
- * @progress_func:
- *	If non-NULL, a progress function that will be called after every
- *	calculated chunk.
- *
  * @integrity_table_ret:
  *	On success, a pointer to the calculated integrity table is written into
  *	this location.
@@ -189,8 +186,9 @@ calculate_integrity_table(struct filedes *in_fd,
 			  off_t new_check_end,
 			  const struct integrity_table *old_table,
 			  off_t old_check_end,
-			  wimlib_progress_func_t progress_func,
-			  struct integrity_table **integrity_table_ret)
+			  struct integrity_table **integrity_table_ret,
+			  wimlib_progress_func_t progfunc,
+			  void *progctx)
 {
 	int ret;
 	size_t chunk_size = INTEGRITY_CHUNK_SIZE;
@@ -228,16 +226,17 @@ calculate_integrity_table(struct filedes *in_fd,
 	u64 offset = WIM_HEADER_DISK_SIZE;
 	union wimlib_progress_info progress;
 
-	if (progress_func) {
-		progress.integrity.total_bytes      = new_check_bytes;
-		progress.integrity.total_chunks     = new_num_chunks;
-		progress.integrity.completed_chunks = 0;
-		progress.integrity.completed_bytes  = 0;
-		progress.integrity.chunk_size       = chunk_size;
-		progress.integrity.filename         = NULL;
-		progress_func(WIMLIB_PROGRESS_MSG_CALC_INTEGRITY,
-			      &progress);
-	}
+	progress.integrity.total_bytes      = new_check_bytes;
+	progress.integrity.total_chunks     = new_num_chunks;
+	progress.integrity.completed_chunks = 0;
+	progress.integrity.completed_bytes  = 0;
+	progress.integrity.chunk_size       = chunk_size;
+	progress.integrity.filename         = NULL;
+
+	ret = call_progress(progfunc, WIMLIB_PROGRESS_MSG_CALC_INTEGRITY,
+			    &progress, progctx);
+	if (ret)
+		goto out_free_new_table;
 
 	for (u32 i = 0; i < new_num_chunks; i++) {
 		size_t this_chunk_size;
@@ -256,21 +255,24 @@ calculate_integrity_table(struct filedes *in_fd,
 			/* Calculate the SHA1 message digest of this chunk */
 			ret = calculate_chunk_sha1(in_fd, this_chunk_size,
 						   offset, new_table->sha1sums[i]);
-			if (ret) {
-				FREE(new_table);
-				return ret;
-			}
+			if (ret)
+				goto out_free_new_table;
 		}
 		offset += this_chunk_size;
-		if (progress_func) {
-			progress.integrity.completed_chunks++;
-			progress.integrity.completed_bytes += this_chunk_size;
-			progress_func(WIMLIB_PROGRESS_MSG_CALC_INTEGRITY,
-				      &progress);
-		}
+
+		progress.integrity.completed_chunks++;
+		progress.integrity.completed_bytes += this_chunk_size;
+		ret = call_progress(progfunc, WIMLIB_PROGRESS_MSG_CALC_INTEGRITY,
+				    &progress, progctx);
+		if (ret)
+			goto out_free_new_table;
 	}
 	*integrity_table_ret = new_table;
 	return 0;
+
+out_free_new_table:
+	FREE(new_table);
+	return ret;
 }
 
 /*
@@ -305,10 +307,6 @@ calculate_integrity_table(struct filedes *in_fd,
  *	If nonzero, the offset of the byte directly following the old lookup
  *	table in the WIM.
  *
- * @progress_func
- *	If non-NULL, a progress function that will be called after every
- *	calculated chunk.
- *
  * Return values:
  *	WIMLIB_ERR_SUCCESS (0)
  *	WIMLIB_ERR_NOMEM
@@ -318,8 +316,7 @@ calculate_integrity_table(struct filedes *in_fd,
 int
 write_integrity_table(WIMStruct *wim,
 		      off_t new_lookup_table_end,
-		      off_t old_lookup_table_end,
-		      wimlib_progress_func_t progress_func)
+		      off_t old_lookup_table_end)
 {
 	struct integrity_table *old_table;
 	struct integrity_table *new_table;
@@ -348,7 +345,7 @@ write_integrity_table(WIMStruct *wim,
 
 	ret = calculate_integrity_table(&wim->out_fd, new_lookup_table_end,
 					old_table, old_lookup_table_end,
-					progress_func, &new_table);
+					&new_table, wim->progfunc, wim->progctx);
 	if (ret)
 		goto out_free_old_table;
 
@@ -389,10 +386,6 @@ out_free_old_table:
  *	Number of bytes in the WIM that need to be checked (offset of end of the
  *	lookup table minus offset of end of the header).
  *
- * @progress_func
- *	If non-NULL, a progress function that will be called after every
- *	verified chunk.
- *
  * Returns:
  *	> 0 (WIMLIB_ERR_READ, WIMLIB_ERR_UNEXPECTED_END_OF_FILE) on error
  *	0 (WIM_INTEGRITY_OK) if the integrity was checked successfully and there
@@ -403,23 +396,25 @@ static int
 verify_integrity(struct filedes *in_fd, const tchar *filename,
 		 const struct integrity_table *table,
 		 u64 bytes_to_check,
-		 wimlib_progress_func_t progress_func)
+		 wimlib_progress_func_t progfunc, void *progctx)
 {
 	int ret;
 	u64 offset = WIM_HEADER_DISK_SIZE;
 	u8 sha1_md[SHA1_HASH_SIZE];
 	union wimlib_progress_info progress;
 
-	if (progress_func) {
-		progress.integrity.total_bytes      = bytes_to_check;
-		progress.integrity.total_chunks     = table->num_entries;
-		progress.integrity.completed_chunks = 0;
-		progress.integrity.completed_bytes  = 0;
-		progress.integrity.chunk_size       = table->chunk_size;
-		progress.integrity.filename         = filename;
-		progress_func(WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY,
-			      &progress);
-	}
+	progress.integrity.total_bytes      = bytes_to_check;
+	progress.integrity.total_chunks     = table->num_entries;
+	progress.integrity.completed_chunks = 0;
+	progress.integrity.completed_bytes  = 0;
+	progress.integrity.chunk_size       = table->chunk_size;
+	progress.integrity.filename         = filename;
+
+	ret = call_progress(progfunc, WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY,
+			    &progress, progctx);
+	if (ret)
+		return ret;
+
 	for (u32 i = 0; i < table->num_entries; i++) {
 		size_t this_chunk_size;
 		if (i == table->num_entries - 1)
@@ -436,12 +431,13 @@ verify_integrity(struct filedes *in_fd, const tchar *filename,
 			return WIM_INTEGRITY_NOT_OK;
 
 		offset += this_chunk_size;
-		if (progress_func) {
-			progress.integrity.completed_chunks++;
-			progress.integrity.completed_bytes += this_chunk_size;
-			progress_func(WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY,
-				      &progress);
-		}
+		progress.integrity.completed_chunks++;
+		progress.integrity.completed_bytes += this_chunk_size;
+
+		ret = call_progress(progfunc, WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY,
+				    &progress, progctx);
+		if (ret)
+			return ret;
 	}
 	return WIM_INTEGRITY_OK;
 }
@@ -457,10 +453,6 @@ verify_integrity(struct filedes *in_fd, const tchar *filename,
  * @wim:
  *	The WIM, opened for reading.
  *
- * @progress_func
- *	If non-NULL, a progress function that will be called after every
- *	verified chunk.
- *
  * Returns:
  *	> 0 (WIMLIB_ERR_INVALID_INTEGRITY_TABLE, WIMLIB_ERR_READ,
  *	     WIMLIB_ERR_UNEXPECTED_END_OF_FILE) on error
@@ -471,7 +463,7 @@ verify_integrity(struct filedes *in_fd, const tchar *filename,
  *	information.
  */
 int
-check_wim_integrity(WIMStruct *wim, wimlib_progress_func_t progress_func)
+check_wim_integrity(WIMStruct *wim)
 {
 	int ret;
 	u64 bytes_to_check;
@@ -497,7 +489,7 @@ check_wim_integrity(WIMStruct *wim, wimlib_progress_func_t progress_func)
 	if (ret)
 		return ret;
 	ret = verify_integrity(&wim->in_fd, wim->filename, table,
-			       bytes_to_check, progress_func);
+			       bytes_to_check, wim->progfunc, wim->progctx);
 	FREE(table);
 	return ret;
 }

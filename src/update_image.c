@@ -35,6 +35,7 @@
 #  include "wimlib/ntfs_3g.h" /* for do_ntfs_umount() */
 #endif
 #include "wimlib/paths.h"
+#include "wimlib/progress.h"
 #include "wimlib/xml.h"
 
 #include <errno.h>
@@ -460,7 +461,8 @@ rollback_update(struct update_command_journal *j)
 static int
 handle_conflict(struct wim_dentry *branch, struct wim_dentry *existing,
 		struct update_command_journal *j,
-		int add_flags, wimlib_progress_func_t progress_func)
+		int add_flags,
+		wimlib_progress_func_t progfunc, void *progctx)
 {
 	bool branch_is_dir = dentry_is_directory(branch);
 	bool existing_is_dir = dentry_is_directory(existing);
@@ -497,7 +499,8 @@ handle_conflict(struct wim_dentry *branch, struct wim_dentry *existing,
 			unlink_dentry(new_child);
 			if (existing_child) {
 				ret = handle_conflict(new_child, existing_child,
-						      j, add_flags, progress_func);
+						      j, add_flags,
+						      progfunc, progctx);
 			} else {
 				ret = journaled_link(j, new_child, existing);
 			}
@@ -517,6 +520,7 @@ handle_conflict(struct wim_dentry *branch, struct wim_dentry *existing,
 		/* Replace nondirectory file  */
 		struct wim_dentry *parent;
 		int ret;
+		union wimlib_progress_info info;
 
 		parent = existing->parent;
 
@@ -532,20 +536,18 @@ handle_conflict(struct wim_dentry *branch, struct wim_dentry *existing,
 		if (ret)
 			return ret;
 
-		if (progress_func && (add_flags & WIMLIB_ADD_FLAG_VERBOSE)) {
-			union wimlib_progress_info info;
 
-			info.replace.path_in_wim = existing->_full_path;
-			progress_func(WIMLIB_PROGRESS_MSG_REPLACE_FILE_IN_WIM, &info);
-		}
-		return 0;
+		info.replace.path_in_wim = existing->_full_path;
+		return call_progress(progfunc,
+				     WIMLIB_PROGRESS_MSG_REPLACE_FILE_IN_WIM,
+				     &info, progctx);
 	}
 }
 
 static int
 do_attach_branch(struct wim_dentry *branch, const utf16lechar *target,
 		 struct update_command_journal *j,
-		 int add_flags, wimlib_progress_func_t progress_func)
+		 int add_flags, wimlib_progress_func_t progfunc, void *progctx)
 {
 	struct wim_dentry *parent;
 	struct wim_dentry *existing;
@@ -629,8 +631,8 @@ do_attach_branch(struct wim_dentry *branch, const utf16lechar *target,
 
 	/* Last component  */
 	if (existing) {
-		return handle_conflict(branch, existing, j,
-				       add_flags, progress_func);
+		return handle_conflict(branch, existing, j, add_flags,
+				       progfunc, progctx);
 	} else {
 		return journaled_link(j, branch, parent);
 	}
@@ -651,8 +653,8 @@ do_attach_branch(struct wim_dentry *branch, const utf16lechar *target,
  */
 static int
 attach_branch(struct wim_dentry *branch, const tchar *target_tstr,
-	      struct update_command_journal *j,
-	      int add_flags, wimlib_progress_func_t progress_func)
+	      struct update_command_journal *j, int add_flags,
+	      wimlib_progress_func_t progfunc, void *progctx)
 {
 	int ret;
 	const utf16lechar *target;
@@ -670,7 +672,7 @@ attach_branch(struct wim_dentry *branch, const tchar *target_tstr,
 	if (ret)
 		goto out_free_target;
 
-	ret = do_attach_branch(branch, target, j, add_flags, progress_func);
+	ret = do_attach_branch(branch, target, j, add_flags, progfunc, progctx);
 	if (ret)
 		goto out_free_target;
 	/* branch was successfully committed to the journal  */
@@ -755,8 +757,7 @@ execute_add_command(struct update_command_journal *j,
 		    const struct wimlib_update_command *add_cmd,
 		    struct wim_inode_table *inode_table,
 		    struct wim_sd_set *sd_set,
-		    struct list_head *unhashed_streams,
-		    wimlib_progress_func_t progress_func)
+		    struct list_head *unhashed_streams)
 {
 	int ret;
 	int add_flags;
@@ -807,11 +808,14 @@ execute_add_command(struct update_command_journal *j,
 	params.add_flags = add_flags;
 	params.extra_arg = extra_arg;
 
-	params.progress_func = progress_func;
+	params.progfunc = wim->progfunc;
+	params.progctx = wim->progctx;
 	params.progress.scan.source = fs_source_path;
 	params.progress.scan.wim_target_path = wim_target_path;
-	if (progress_func)
-		progress_func(WIMLIB_PROGRESS_MSG_SCAN_BEGIN, &params.progress);
+	ret = call_progress(params.progfunc, WIMLIB_PROGRESS_MSG_SCAN_BEGIN,
+			    &params.progress, params.progctx);
+	if (ret)
+		goto out_destroy_config;
 
 	if (WIMLIB_IS_WIM_ROOT_PATH(wim_target_path))
 		params.add_flags |= WIMLIB_ADD_FLAG_ROOT;
@@ -819,8 +823,12 @@ execute_add_command(struct update_command_journal *j,
 	if (ret)
 		goto out_destroy_config;
 
-	if (progress_func)
-		progress_func(WIMLIB_PROGRESS_MSG_SCAN_END, &params.progress);
+	ret = call_progress(params.progfunc, WIMLIB_PROGRESS_MSG_SCAN_END,
+			    &params.progress, params.progctx);
+	if (ret) {
+		free_dentry_tree(branch, wim->lookup_table);
+		goto out_cleanup_after_capture;
+	}
 
 	if (WIMLIB_IS_WIM_ROOT_PATH(wim_target_path) &&
 	    branch && !dentry_is_directory(branch))
@@ -832,7 +840,7 @@ execute_add_command(struct update_command_journal *j,
 	}
 
 	ret = attach_branch(branch, wim_target_path, j,
-			    add_flags, params.progress_func);
+			    add_flags, params.progfunc, params.progctx);
 	if (ret)
 		goto out_cleanup_after_capture;
 
@@ -840,7 +848,7 @@ execute_add_command(struct update_command_journal *j,
 	    WIMLIB_IS_WIM_ROOT_PATH(wim_target_path))
 	{
 		params.add_flags = 0;
-		params.progress_func = NULL;
+		params.progfunc = NULL;
 		params.config = NULL;
 
 		/* If a capture configuration file was explicitly specified when
@@ -850,7 +858,7 @@ execute_add_command(struct update_command_journal *j,
 		if (ret)
 			goto out_cleanup_after_capture;
 
-		ret = attach_branch(branch, wimboot_cfgfile, j, 0, NULL);
+		ret = attach_branch(branch, wimboot_cfgfile, j, 0, NULL, NULL);
 		if (ret)
 			goto out_cleanup_after_capture;
 	}
@@ -1087,8 +1095,7 @@ static int
 execute_update_commands(WIMStruct *wim,
 			const struct wimlib_update_command *cmds,
 			size_t num_cmds,
-			int update_flags,
-			wimlib_progress_func_t progress_func)
+			int update_flags)
 {
 	struct wim_inode_table *inode_table;
 	struct wim_sd_set *sd_set;
@@ -1134,19 +1141,20 @@ execute_update_commands(WIMStruct *wim,
 	for (size_t i = 0; i < num_cmds; i++) {
 		DEBUG("Executing update command %zu of %zu (op=%"TS")",
 		      i + 1, num_cmds, update_op_to_str(cmds[i].op));
-		if (update_flags & WIMLIB_UPDATE_FLAG_SEND_PROGRESS &&
-		    progress_func)
-		{
-			info.update.command = &cmds[i];
-			(*progress_func)(WIMLIB_PROGRESS_MSG_UPDATE_BEGIN_COMMAND,
-					 &info);
+		info.update.command = &cmds[i];
+		if (update_flags & WIMLIB_UPDATE_FLAG_SEND_PROGRESS) {
+			ret = call_progress(wim->progfunc,
+					    WIMLIB_PROGRESS_MSG_UPDATE_BEGIN_COMMAND,
+					    &info, wim->progctx);
+			if (ret)
+				goto rollback;
 		}
+
 		ret = WIMLIB_ERR_INVALID_PARAM;
 		switch (cmds[i].op) {
 		case WIMLIB_UPDATE_OP_ADD:
 			ret = execute_add_command(j, wim, &cmds[i], inode_table,
-						  sd_set, &unhashed_streams,
-						  progress_func);
+						  sd_set, &unhashed_streams);
 			break;
 		case WIMLIB_UPDATE_OP_DELETE:
 			ret = execute_delete_command(j, wim, &cmds[i]);
@@ -1158,11 +1166,12 @@ execute_update_commands(WIMStruct *wim,
 		if (unlikely(ret))
 			goto rollback;
 		info.update.completed_commands++;
-		if (update_flags & WIMLIB_UPDATE_FLAG_SEND_PROGRESS &&
-		    progress_func)
-		{
-			(*progress_func)(WIMLIB_PROGRESS_MSG_UPDATE_END_COMMAND,
-					 &info);
+		if (update_flags & WIMLIB_UPDATE_FLAG_SEND_PROGRESS) {
+			ret = call_progress(wim->progfunc,
+					    WIMLIB_PROGRESS_MSG_UPDATE_END_COMMAND,
+					    &info, wim->progctx);
+			if (ret)
+				goto rollback;
 		}
 		next_command(j);
 	}
@@ -1415,8 +1424,7 @@ wimlib_update_image(WIMStruct *wim,
 		    int image,
 		    const struct wimlib_update_command *cmds,
 		    size_t num_cmds,
-		    int update_flags,
-		    wimlib_progress_func_t progress_func)
+		    int update_flags)
 {
 	int ret;
 	struct wimlib_update_command *cmds_copy;
@@ -1457,8 +1465,7 @@ wimlib_update_image(WIMStruct *wim,
 
 	/* Actually execute the update commands. */
 	DEBUG("Executing %zu update commands", num_cmds);
-	ret = execute_update_commands(wim, cmds_copy, num_cmds, update_flags,
-				      progress_func);
+	ret = execute_update_commands(wim, cmds_copy, num_cmds, update_flags);
 	if (ret)
 		goto out_free_cmds_copy;
 
@@ -1477,7 +1484,7 @@ out:
 static int
 update1(WIMStruct *wim, int image, const struct wimlib_update_command *cmd)
 {
-	return wimlib_update_image(wim, image, cmd, 1, 0, NULL);
+	return wimlib_update_image(wim, image, cmd, 1, 0);
 }
 
 WIMLIBAPI int

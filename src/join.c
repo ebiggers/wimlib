@@ -149,14 +149,14 @@ verify_swm_set(WIMStruct *wim, WIMStruct **additional_swms,
 	return 0;
 }
 
-/* API function documented in wimlib.h  */
 WIMLIBAPI int
-wimlib_join(const tchar * const *swm_names,
-	    unsigned num_swms,
-	    const tchar *output_path,
-	    int swm_open_flags,
-	    int wim_write_flags,
-	    wimlib_progress_func_t progress_func)
+wimlib_join_with_progress(const tchar * const *swm_names,
+			  unsigned num_swms,
+			  const tchar *output_path,
+			  int swm_open_flags,
+			  int wim_write_flags,
+			  wimlib_progress_func_t progfunc,
+			  void *progctx)
 {
 	int ret;
 	unsigned i;
@@ -178,8 +178,11 @@ wimlib_join(const tchar * const *swm_names,
 	for (i = 0, j = 0; i < num_swms; i++) {
 		WIMStruct *swm;
 
-		ret = wimlib_open_wim(swm_names[i], swm_open_flags, &swm,
-				      progress_func);
+		ret = wimlib_open_wim_with_progress(swm_names[i],
+						    swm_open_flags,
+						    &swm,
+						    progfunc,
+						    progctx);
 		if (ret)
 			goto out_free_swms;
 		if (swm->hdr.part_number == 1 && swm0 == NULL)
@@ -210,11 +213,24 @@ wimlib_join(const tchar * const *swm_names,
 			   wim_write_flags |
 				WIMLIB_WRITE_FLAG_STREAMS_OK |
 				WIMLIB_WRITE_FLAG_RETAIN_GUID,
-			   1, progress_func);
+			   1);
 out_free_swms:
 	for (i = 0; i < num_additional_swms + 1; i++)
 		wimlib_free(additional_swms[i]);
 	FREE(additional_swms);
 	wimlib_free(swm0);
 	return ret;
+}
+
+/* API function documented in wimlib.h  */
+WIMLIBAPI int
+wimlib_join(const tchar * const *swm_names,
+	    unsigned num_swms,
+	    const tchar *output_path,
+	    int swm_open_flags,
+	    int wim_write_flags)
+{
+	return wimlib_join_with_progress(swm_names, num_swms, output_path,
+					 swm_open_flags, wim_write_flags,
+					 NULL, NULL);
 }

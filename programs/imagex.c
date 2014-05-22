@@ -130,9 +130,6 @@ static void usage_all(FILE *fp);
 static void recommend_man_page(int cmd, FILE *fp);
 static const tchar *get_cmd_string(int cmd, bool nospace);
 
-static int imagex_progress_func(enum wimlib_progress_msg msg,
-				const union wimlib_progress_info *info);
-
 static bool imagex_be_quiet = false;
 static FILE *imagex_info_file;
 
@@ -580,8 +577,7 @@ wim_reference_globs(WIMStruct *wim, struct string_set *set, int open_flags)
 	return wimlib_reference_resource_files(wim, set->strings,
 					       set->num_strings,
 					       WIMLIB_REF_FLAG_GLOB_ENABLE,
-					       open_flags,
-					       imagex_progress_func);
+					       open_flags);
 }
 
 static void
@@ -1020,18 +1016,18 @@ report_scan_progress(const struct wimlib_progress_info_scan *scan, bool done)
 		last_scan_progress = *scan;
 	}
 }
-
 /* Progress callback function passed to various wimlib functions. */
-static int
+static enum wimlib_progress_status
 imagex_progress_func(enum wimlib_progress_msg msg,
-		     const union wimlib_progress_info *info)
+		     union wimlib_progress_info *info,
+		     void *_ignored_context)
 {
 	unsigned percent_done;
 	unsigned unit_shift;
 	const tchar *unit_name;
 
 	if (imagex_be_quiet)
-		return 0;
+		return WIMLIB_PROGRESS_STATUS_CONTINUE;
 	switch (msg) {
 	case WIMLIB_PROGRESS_MSG_WRITE_STREAMS:
 		{
@@ -1206,7 +1202,7 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 		break;
 	}
 	fflush(imagex_info_file);
-	return 0;
+	return WIMLIB_PROGRESS_STATUS_CONTINUE;
 }
 
 static unsigned
@@ -1526,8 +1522,8 @@ imagex_apply(int argc, tchar **argv, int cmd)
 		}
 		wim = NULL;
 	} else {
-		ret = wimlib_open_wim(wimfile, open_flags, &wim,
-				      imagex_progress_func);
+		ret = wimlib_open_wim_with_progress(wimfile, open_flags, &wim,
+						    imagex_progress_func, NULL);
 		if (ret)
 			goto out_free_refglobs;
 
@@ -1589,14 +1585,16 @@ imagex_apply(int argc, tchar **argv, int cmd)
 #endif
 
 	if (wim) {
-		ret = wimlib_extract_image(wim, image, target, extract_flags,
-					   imagex_progress_func);
+		ret = wimlib_extract_image(wim, image, target, extract_flags);
 	} else {
 		set_fd_to_binary_mode(STDIN_FILENO);
-		ret = wimlib_extract_image_from_pipe(STDIN_FILENO,
-						     image_num_or_name,
-						     target, extract_flags,
-						     imagex_progress_func);
+		ret = wimlib_extract_image_from_pipe_with_progress(
+					   STDIN_FILENO,
+					   image_num_or_name,
+					   target,
+					   extract_flags,
+					   imagex_progress_func,
+					   NULL);
 	}
 	if (ret == 0) {
 		imagex_printf(T("Done applying WIM image.\n"));
@@ -1938,13 +1936,17 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	}
 
 	/* Open the existing WIM, or create a new one.  */
-	if (cmd == CMD_APPEND)
-		ret = wimlib_open_wim(wimfile, open_flags, &wim,
-				      imagex_progress_func);
-	else
+	if (cmd == CMD_APPEND) {
+		ret = wimlib_open_wim_with_progress(wimfile, open_flags, &wim,
+						    imagex_progress_func, NULL);
+		if (ret)
+			goto out_free_capture_sources;
+	} else {
 		ret = wimlib_create_new_wim(compression_type, &wim);
-	if (ret)
-		goto out_free_capture_sources;
+		if (ret)
+			goto out_free_capture_sources;
+		wimlib_register_progress_function(wim, imagex_progress_func, NULL);
+	}
 
 	/* Set chunk size if non-default.  */
 	if (chunk_size != UINT32_MAX) {
@@ -2017,9 +2019,10 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		}
 
 		for (size_t i = 0; i < base_wimfiles.num_strings; i++) {
-			ret = wimlib_open_wim(base_wimfiles.strings[i],
-					      open_flags, &base_wims[i],
-					      imagex_progress_func);
+			ret = wimlib_open_wim_with_progress(
+				    base_wimfiles.strings[i],
+				    open_flags, &base_wims[i],
+				    imagex_progress_func, NULL);
 			if (ret)
 				goto out_free_base_wims;
 
@@ -2053,8 +2056,11 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		} else if (template_wimfile == wimfile) {
 			template_wim = wim;
 		} else {
-			ret = wimlib_open_wim(template_wimfile, open_flags,
-					      &template_wim, imagex_progress_func);
+			ret = wimlib_open_wim_with_progress(template_wimfile,
+							    open_flags,
+							    &template_wim,
+							    imagex_progress_func,
+							    NULL);
 			if (ret)
 				goto out_free_base_wims;
 		}
@@ -2090,8 +2096,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 					   num_sources,
 					   name,
 					   config_file,
-					   add_image_flags,
-					   imagex_progress_func);
+					   add_image_flags);
 	if (ret)
 		goto out_free_template_wim;
 
@@ -2128,7 +2133,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 							      info.image_count,
 							      template_wim,
 							      template_image,
-							      0, NULL);
+							      0);
 			if (ret)
 				goto out_free_template_wim;
 		}
@@ -2137,16 +2142,13 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	/* Write the new WIM or overwrite the existing WIM with the new image
 	 * appended.  */
 	if (cmd == CMD_APPEND) {
-		ret = wimlib_overwrite(wim, write_flags, num_threads,
-				       imagex_progress_func);
+		ret = wimlib_overwrite(wim, write_flags, num_threads);
 	} else if (wimfile) {
 		ret = wimlib_write(wim, wimfile, WIMLIB_ALL_IMAGES,
-				   write_flags, num_threads,
-				   imagex_progress_func);
+				   write_flags, num_threads);
 	} else {
 		ret = wimlib_write_to_fd(wim, wim_fd, WIMLIB_ALL_IMAGES,
-					 write_flags, num_threads,
-					 imagex_progress_func);
+					 write_flags, num_threads);
 	}
 out_free_template_wim:
 	/* template_wim may alias base_wims[0] or wim.  */
@@ -2214,8 +2216,8 @@ imagex_delete(int argc, tchar **argv, int cmd)
 	wimfile = argv[0];
 	image_num_or_name = argv[1];
 
-	ret = wimlib_open_wim(wimfile, open_flags, &wim,
-			      imagex_progress_func);
+	ret = wimlib_open_wim_with_progress(wimfile, open_flags, &wim,
+					    imagex_progress_func, NULL);
 	if (ret)
 		goto out;
 
@@ -2232,7 +2234,7 @@ imagex_delete(int argc, tchar **argv, int cmd)
 		goto out_wimlib_free;
 	}
 
-	ret = wimlib_overwrite(wim, write_flags, 0, imagex_progress_func);
+	ret = wimlib_overwrite(wim, write_flags, 0);
 	if (ret) {
 		imagex_error(T("Failed to write the file \"%"TS"\" with image "
 			       "deleted"), wimfile);
@@ -2497,7 +2499,8 @@ imagex_dir(int argc, tchar **argv, int cmd)
 	}
 
 	wimfile = argv[0];
-	ret = wimlib_open_wim(wimfile, 0, &wim, imagex_progress_func);
+	ret = wimlib_open_wim_with_progress(wimfile, 0, &wim,
+					    imagex_progress_func, NULL);
 	if (ret)
 		goto out;
 
@@ -2639,8 +2642,8 @@ imagex_export(int argc, tchar **argv, int cmd)
 	dest_wimfile          = argv[2];
 	dest_name             = (argc >= 4) ? argv[3] : NULL;
 	dest_desc             = (argc >= 5) ? argv[4] : NULL;
-	ret = wimlib_open_wim(src_wimfile, open_flags, &src_wim,
-			      imagex_progress_func);
+	ret = wimlib_open_wim_with_progress(src_wimfile, open_flags, &src_wim,
+					    imagex_progress_func, NULL);
 	if (ret)
 		goto out_free_refglobs;
 
@@ -2680,9 +2683,12 @@ imagex_export(int argc, tchar **argv, int cmd)
 			ret = -1;
 			goto out_free_src_wim;
 		}
-		ret = wimlib_open_wim(dest_wimfile,
-				      open_flags | WIMLIB_OPEN_FLAG_WRITE_ACCESS,
-				      &dest_wim, imagex_progress_func);
+		ret = wimlib_open_wim_with_progress(dest_wimfile,
+						    open_flags |
+							WIMLIB_OPEN_FLAG_WRITE_ACCESS,
+						    &dest_wim,
+						    imagex_progress_func,
+						    NULL);
 		if (ret)
 			goto out_free_src_wim;
 
@@ -2729,6 +2735,9 @@ imagex_export(int argc, tchar **argv, int cmd)
 		ret = wimlib_create_new_wim(compression_type, &dest_wim);
 		if (ret)
 			goto out_free_src_wim;
+
+		wimlib_register_progress_function(dest_wim,
+						  imagex_progress_func, NULL);
 
 		if ((export_flags & WIMLIB_EXPORT_FLAG_WIMBOOT)
 		    && compression_type == WIMLIB_COMPRESSION_TYPE_XPRESS)
@@ -2781,7 +2790,7 @@ imagex_export(int argc, tchar **argv, int cmd)
 	}
 
 	ret = wimlib_export_image(src_wim, image, dest_wim, dest_name,
-				  dest_desc, export_flags, imagex_progress_func);
+				  dest_desc, export_flags);
 	if (ret) {
 		if (ret == WIMLIB_ERR_RESOURCE_NOT_FOUND) {
 			do_resource_not_found_warning(src_wimfile,
@@ -2791,16 +2800,14 @@ imagex_export(int argc, tchar **argv, int cmd)
 	}
 
 	if (!wim_is_new)
-		ret = wimlib_overwrite(dest_wim, write_flags, num_threads,
-				       imagex_progress_func);
+		ret = wimlib_overwrite(dest_wim, write_flags, num_threads);
 	else if (dest_wimfile)
 		ret = wimlib_write(dest_wim, dest_wimfile, WIMLIB_ALL_IMAGES,
-				   write_flags, num_threads,
-				   imagex_progress_func);
+				   write_flags, num_threads);
 	else
 		ret = wimlib_write_to_fd(dest_wim, dest_wim_fd,
 					 WIMLIB_ALL_IMAGES, write_flags,
-					 num_threads, imagex_progress_func);
+					 num_threads);
 out_free_dest_wim:
 	wimlib_free(dest_wim);
 out_free_src_wim:
@@ -2910,7 +2917,8 @@ imagex_extract(int argc, tchar **argv, int cmd)
 	argc -= 2;
 	argv += 2;
 
-	ret = wimlib_open_wim(wimfile, open_flags, &wim, imagex_progress_func);
+	ret = wimlib_open_wim_with_progress(wimfile, open_flags, &wim,
+					    imagex_progress_func, NULL);
 	if (ret)
 		goto out_free_refglobs;
 
@@ -2945,15 +2953,13 @@ imagex_extract(int argc, tchar **argv, int cmd)
 			ret = wimlib_extract_paths(wim, image, dest_dir,
 						   (const tchar **)argv,
 						   num_paths,
-						   extract_flags | notlist_extract_flags,
-						   imagex_progress_func);
+						   extract_flags | notlist_extract_flags);
 			argc -= num_paths;
 			argv += num_paths;
 		} else {
 			ret = wimlib_extract_pathlist(wim, image, dest_dir,
 						      argv[0] + 1,
-						      extract_flags,
-						      imagex_progress_func);
+						      extract_flags);
 			argc--;
 			argv++;
 		}
@@ -3064,7 +3070,8 @@ imagex_info(int argc, tchar **argv, int cmd)
 	if (check)
 		open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 
-	ret = wimlib_open_wim(wimfile, open_flags, &wim, imagex_progress_func);
+	ret = wimlib_open_wim_with_progress(wimfile, open_flags, &wim,
+					    imagex_progress_func, NULL);
 	if (ret)
 		goto out;
 
@@ -3234,8 +3241,7 @@ imagex_info(int argc, tchar **argv, int cmd)
 				write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			if (nocheck)
 				write_flags |= WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY;
-			ret = wimlib_overwrite(wim, write_flags, 1,
-					       imagex_progress_func);
+			ret = wimlib_overwrite(wim, write_flags, 1);
 		} else {
 			imagex_printf(T("The file \"%"TS"\" was not modified "
 					"because nothing needed to be done.\n"),
@@ -3284,12 +3290,13 @@ imagex_join(int argc, tchar **argv, int cmd)
 		goto out_usage;
 	}
 	output_path = argv[0];
-	ret = wimlib_join((const tchar * const *)++argv,
-			  --argc,
-			  output_path,
-			  swm_open_flags,
-			  wim_write_flags,
-			  imagex_progress_func);
+	ret = wimlib_join_with_progress((const tchar * const *)++argv,
+					--argc,
+					output_path,
+					swm_open_flags,
+					wim_write_flags,
+					imagex_progress_func,
+					NULL);
 out:
 	return ret;
 
@@ -3369,7 +3376,8 @@ imagex_mount_rw_or_ro(int argc, tchar **argv, int cmd)
 
 	wimfile = argv[0];
 
-	ret = wimlib_open_wim(wimfile, open_flags, &wim, imagex_progress_func);
+	ret = wimlib_open_wim_with_progress(wimfile, open_flags, &wim,
+					    imagex_progress_func, NULL);
 	if (ret)
 		goto out_free_refglobs;
 
@@ -3503,7 +3511,8 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 
 	wimfile = argv[0];
 
-	ret = wimlib_open_wim(wimfile, open_flags, &wim, imagex_progress_func);
+	ret = wimlib_open_wim_with_progress(wimfile, open_flags, &wim,
+					    imagex_progress_func, NULL);
 	if (ret)
 		goto out;
 
@@ -3538,8 +3547,7 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 	else
 		tprintf(T("%"PRIu64" KiB\n"), old_size >> 10);
 
-	ret = wimlib_overwrite(wim, write_flags, num_threads,
-			       imagex_progress_func);
+	ret = wimlib_overwrite(wim, write_flags, num_threads);
 	if (ret) {
 		imagex_error(T("Optimization of \"%"TS"\" failed."), wimfile);
 		goto out_wimlib_free;
@@ -3607,11 +3615,12 @@ imagex_split(int argc, tchar **argv, int cmd)
 			       "floating-point number of megabytes."));
 		goto out_err;
 	}
-	ret = wimlib_open_wim(argv[0], open_flags, &wim, imagex_progress_func);
+	ret = wimlib_open_wim_with_progress(argv[0], open_flags, &wim,
+					    imagex_progress_func, NULL);
 	if (ret)
 		goto out;
 
-	ret = wimlib_split(wim, argv[1], part_size, write_flags, imagex_progress_func);
+	ret = wimlib_split(wim, argv[1], part_size, write_flags);
 	wimlib_free(wim);
 out:
 	return ret;
@@ -3667,8 +3676,8 @@ imagex_unmount(int argc, tchar **argv, int cmd)
 		imagex_printf(T("Committing changes as new image...\n"));
 	}
 
-	ret = wimlib_unmount_image(argv[0], unmount_flags,
-				   imagex_progress_func);
+	ret = wimlib_unmount_image_with_progress(argv[0], unmount_flags,
+						 imagex_progress_func, NULL);
 	if (ret)
 		imagex_error(T("Failed to unmount \"%"TS"\""), argv[0]);
 out:
@@ -3785,7 +3794,8 @@ imagex_update(int argc, tchar **argv, int cmd)
 		goto out_usage;
 	wimfile = argv[0];
 
-	ret = wimlib_open_wim(wimfile, open_flags, &wim, imagex_progress_func);
+	ret = wimlib_open_wim_with_progress(wimfile, open_flags, &wim,
+					    imagex_progress_func, NULL);
 	if (ret)
 		goto out_free_command_str;
 
@@ -3861,8 +3871,7 @@ imagex_update(int argc, tchar **argv, int cmd)
 	}
 
 	/* Execute the update commands */
-	ret = wimlib_update_image(wim, image, cmds, num_cmds, update_flags,
-				  imagex_progress_func);
+	ret = wimlib_update_image(wim, image, cmds, num_cmds, update_flags);
 	if (ret)
 		goto out_free_cmds;
 
@@ -3878,15 +3887,13 @@ imagex_update(int argc, tchar **argv, int cmd)
 		cmd.add.config_file = NULL;
 		cmd.add.add_flags = 0;
 
-		ret = wimlib_update_image(wim, image, &cmd, 1,
-					  update_flags, imagex_progress_func);
+		ret = wimlib_update_image(wim, image, &cmd, 1, update_flags);
 		if (ret)
 			goto out_free_cmds;
 	}
 
 	/* Overwrite the updated WIM */
-	ret = wimlib_overwrite(wim, write_flags, num_threads,
-			       imagex_progress_func);
+	ret = wimlib_overwrite(wim, write_flags, num_threads);
 out_free_cmds:
 	free(cmds);
 out_free_cmd_file_contents:

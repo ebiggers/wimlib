@@ -8,9 +8,9 @@
 #define TO_PERCENT(numerator, denominator) \
 	((float)(((denominator) == 0) ? 0 : ((numerator) * 100 / (float)(denominator))))
 
-static int
+static enum wimlib_progress_status
 extract_progress(enum wimlib_progress_msg msg,
-		 const union wimlib_progress_info *info)
+		 union wimlib_progress_info *info, void *progctx)
 {
 	switch (msg) {
 	case WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS:
@@ -21,7 +21,7 @@ extract_progress(enum wimlib_progress_msg msg,
 	default:
 		break;
 	}
-	return 0;
+	return WIMLIB_PROGRESS_STATUS_CONTINUE;
 }
 
 int main(int argc, char **argv)
@@ -43,17 +43,18 @@ int main(int argc, char **argv)
 	/* Open the WIM file as a WIMStruct.  */
 	ret = wimlib_open_wim(wimpath,  /* Path of WIM file to open  */
 			      0,        /* WIMLIB_OPEN_FLAG_* flags (0 means all defaults)  */
-			      &wim,     /* Return the WIMStruct pointer in this location  */
-			      NULL);    /* Progress function (NULL means none)  */
+			      &wim);    /* Return the WIMStruct pointer in this location  */
 	if (ret != 0) /* Always should check the error codes.  */
 		goto out;
+
+	/* Register our progress function.  */
+	wimlib_register_progress_function(wim, extract_progress, NULL);
 
 	/* Extract the first image.  */
 	ret = wimlib_extract_image(wim,     /* WIMStruct from which to extract the image  */
 				   1,       /* Image to extract  */
 				   destdir, /* Directory to extract the image to  */
-				   0,       /* WIMLIB_EXTRACT_FLAG_* flags (0 means all defaults)  */
-				   extract_progress);  /* Progress function  */
+				   0);      /* WIMLIB_EXTRACT_FLAG_* flags (0 means all defaults)  */
 
 out:
 	/* Free the WIMStruct.  Has no effect if the pointer to it is NULL.  */

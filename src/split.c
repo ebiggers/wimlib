@@ -32,6 +32,7 @@
 #include "wimlib/list.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
+#include "wimlib/progress.h"
 #include "wimlib/resource.h"
 #include "wimlib/wim.h"
 #include "wimlib/write.h"
@@ -64,8 +65,7 @@ struct swm_info {
 
 static int
 write_split_wim(WIMStruct *orig_wim, const tchar *swm_name,
-		struct swm_info *swm_info, int write_flags,
-		wimlib_progress_func_t progress_func)
+		struct swm_info *swm_info, int write_flags)
 {
 	size_t swm_name_len;
 	tchar *swm_name_buf;
@@ -103,6 +103,7 @@ write_split_wim(WIMStruct *orig_wim, const tchar *swm_name,
 
 	for (part_number = 1; part_number <= swm_info->num_parts; part_number++) {
 		int part_write_flags;
+		wimlib_progress_func_t progfunc;
 
 		if (part_number != 1) {
 			tsprintf(swm_name_buf + swm_base_name_len,
@@ -110,34 +111,42 @@ write_split_wim(WIMStruct *orig_wim, const tchar *swm_name,
 		}
 
 		progress.split.cur_part_number = part_number;
-		if (progress_func) {
-			progress_func(WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART,
-				      &progress);
-		}
+
+		ret = call_progress(orig_wim->progfunc,
+				    WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART,
+				    &progress,
+				    orig_wim->progctx);
+		if (ret)
+			return ret;
 
 		part_write_flags = write_flags;
 		part_write_flags |= WIMLIB_WRITE_FLAG_USE_EXISTING_TOTALBYTES;
 		if (part_number != 1)
 			part_write_flags |= WIMLIB_WRITE_FLAG_NO_METADATA;
 
+		progfunc = orig_wim->progfunc;
+		orig_wim->progfunc = NULL;
 		ret = write_wim_part(orig_wim,
 				     swm_name_buf,
 				     WIMLIB_ALL_IMAGES,
 				     part_write_flags,
 				     1,
-				     NULL,
 				     part_number,
 				     swm_info->num_parts,
 				     &swm_info->parts[part_number - 1].stream_list,
 				     guid);
+		orig_wim->progfunc = progfunc;
 		if (ret)
 			return ret;
 
 		progress.split.completed_bytes += swm_info->parts[part_number - 1].size;
-		if (progress_func) {
-			progress_func(WIMLIB_PROGRESS_MSG_SPLIT_END_PART,
-				      &progress);
-		}
+
+		ret = call_progress(orig_wim->progfunc,
+				    WIMLIB_PROGRESS_MSG_SPLIT_END_PART,
+				    &progress,
+				    orig_wim->progctx);
+		if (ret)
+			return ret;
 	}
 	return 0;
 }
@@ -201,8 +210,7 @@ add_stream_to_swm(struct wim_lookup_table_entry *lte, void *_swm_info)
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_split(WIMStruct *wim, const tchar *swm_name,
-	     u64 part_size, int write_flags,
-	     wimlib_progress_func_t progress_func)
+	     u64 part_size, int write_flags)
 {
 	struct swm_info swm_info;
 	unsigned i;
@@ -233,8 +241,7 @@ wimlib_split(WIMStruct *wim, const tchar *swm_name,
 	if (ret)
 		goto out_free_swm_info;
 
-	ret = write_split_wim(wim, swm_name, &swm_info, write_flags,
-			      progress_func);
+	ret = write_split_wim(wim, swm_name, &swm_info, write_flags);
 out_free_swm_info:
 	FREE(swm_info.parts);
 	return ret;

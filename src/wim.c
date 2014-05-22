@@ -622,6 +622,15 @@ wimlib_set_output_pack_chunk_size(WIMStruct *wim, uint32_t chunk_size)
 				  &wim->out_pack_chunk_size);
 }
 
+WIMLIBAPI void
+wimlib_register_progress_function(WIMStruct *wim,
+				  wimlib_progress_func_t progfunc,
+				  void *progctx)
+{
+	wim->progfunc = progfunc;
+	wim->progctx = progctx;
+}
+
 static int
 open_wim_file(const tchar *filename, struct filedes *fd_ret)
 {
@@ -641,8 +650,7 @@ open_wim_file(const tchar *filename, struct filedes *fd_ret)
  * lookup table, and optionally checks the integrity.
  */
 static int
-begin_read(WIMStruct *wim, const void *wim_filename_or_fd,
-	   int open_flags, wimlib_progress_func_t progress_func)
+begin_read(WIMStruct *wim, const void *wim_filename_or_fd, int open_flags)
 {
 	int ret;
 	int xml_num_images;
@@ -743,7 +751,7 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd,
 	}
 
 	if (open_flags & WIMLIB_OPEN_FLAG_CHECK_INTEGRITY) {
-		ret = check_wim_integrity(wim, progress_func);
+		ret = check_wim_integrity(wim);
 		if (ret == WIM_INTEGRITY_NONEXISTENT) {
 			WARNING("No integrity information for `%"TS"'; skipping "
 				"integrity check.", wimfile);
@@ -791,7 +799,8 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd,
 
 int
 open_wim_as_WIMStruct(const void *wim_filename_or_fd, int open_flags,
-		      WIMStruct **wim_ret, wimlib_progress_func_t progress_func)
+		      WIMStruct **wim_ret,
+		      wimlib_progress_func_t progfunc, void *progctx)
 {
 	WIMStruct *wim;
 	int ret;
@@ -810,7 +819,10 @@ open_wim_as_WIMStruct(const void *wim_filename_or_fd, int open_flags,
 	if (wim == NULL)
 		return WIMLIB_ERR_NOMEM;
 
-	ret = begin_read(wim, wim_filename_or_fd, open_flags, progress_func);
+	wim->progfunc = progfunc;
+	wim->progctx = progctx;
+
+	ret = begin_read(wim, wim_filename_or_fd, open_flags);
 	if (ret) {
 		wimlib_free(wim);
 		return ret;
@@ -823,8 +835,9 @@ open_wim_as_WIMStruct(const void *wim_filename_or_fd, int open_flags,
 
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
-wimlib_open_wim(const tchar *wimfile, int open_flags,
-		WIMStruct **wim_ret, wimlib_progress_func_t progress_func)
+wimlib_open_wim_with_progress(const tchar *wimfile, int open_flags,
+			      WIMStruct **wim_ret,
+			      wimlib_progress_func_t progfunc, void *progctx)
 {
 	if (open_flags & ~(WIMLIB_OPEN_FLAG_CHECK_INTEGRITY |
 			   WIMLIB_OPEN_FLAG_ERROR_IF_SPLIT |
@@ -832,7 +845,15 @@ wimlib_open_wim(const tchar *wimfile, int open_flags,
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	return open_wim_as_WIMStruct(wimfile, open_flags, wim_ret,
-				     progress_func);
+				     progfunc, progctx);
+}
+
+/* API function documented in wimlib.h  */
+WIMLIBAPI int
+wimlib_open_wim(const tchar *wimfile, int open_flags, WIMStruct **wim_ret)
+{
+	return wimlib_open_wim_with_progress(wimfile, open_flags, wim_ret,
+					     NULL, NULL);
 }
 
 /* Checksum all streams that are unhashed (other than the metadata streams),

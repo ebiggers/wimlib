@@ -30,6 +30,7 @@
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/paths.h"
+#include "wimlib/progress.h"
 #include "wimlib/textfile.h"
 #include "wimlib/wildcard.h"
 
@@ -51,19 +52,19 @@
  *	seen, inode->i_nlink will be 1.  On subsequent visits of the same inode
  *	via additional hard links, inode->i_nlink will be greater than 1.
  */
-void
+int
 do_capture_progress(struct add_image_params *params, int status,
 		    const struct wim_inode *inode)
 {
 	switch (status) {
 	case WIMLIB_SCAN_DENTRY_OK:
 		if (!(params->add_flags & WIMLIB_ADD_FLAG_VERBOSE))
-			return;
+			return 0;
 	case WIMLIB_SCAN_DENTRY_UNSUPPORTED:
 	case WIMLIB_SCAN_DENTRY_EXCLUDED:
 	case WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK:
 		if (!(params->add_flags & WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE))
-			return;
+			return 0;
 	}
 	params->progress.scan.status = status;
 	if (status == WIMLIB_SCAN_DENTRY_OK && inode->i_nlink == 1) {
@@ -84,11 +85,10 @@ do_capture_progress(struct add_image_params *params, int status,
 		else
 			params->progress.scan.num_nondirs_scanned++;
 	}
+
 	/* Call the user-provided progress function.  */
-	if (params->progress_func) {
-		params->progress_func(WIMLIB_PROGRESS_MSG_SCAN_DENTRY,
-				      &params->progress);
-	}
+	return call_progress(params->progfunc, WIMLIB_PROGRESS_MSG_SCAN_DENTRY,
+			     &params->progress, params->progctx);
 }
 
 /*

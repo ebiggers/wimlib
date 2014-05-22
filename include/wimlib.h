@@ -283,17 +283,28 @@
  * image read-write is an alternative to calling wimlib_update_image().
  */
 
-/** @defgroup G_progress Progress Messages
+/**
+ * @defgroup G_progress Progress Messages
  *
  * @brief Track the progress of long WIM operations.
  *
- * When operating on large archives, operations such as extraction will
- * naturally take a while to complete.  Because of this and to improve the
- * potential user-friendliness of library clients, a number of functions take a
- * pointer to a progress function of type ::wimlib_progress_func_t.  This
- * function will be called periodically during the WIM operation(s) to report on
- * the progress of the operation (for example, how many bytes have been written
- * so far).
+ * Library users can provide a progress function which will be called
+ * periodically during operations such as extracting a WIM image or writing a
+ * WIM image.  A ::WIMStruct can have a progress function of type
+ * ::wimlib_progress_func_t associated with it by calling
+ * wimlib_register_progress_function() or by opening the ::WIMStruct using
+ * wimlib_open_wim_with_progress().  Once this is done, the progress function
+ * will be called automatically during many operations, such as
+ * wimlib_extract_image() and wimlib_write().
+ *
+ * Some functions that do not operate directly on a user-provided ::WIMStruct,
+ * such as wimlib_join(), also take the progress function directly using an
+ * extended version of the function, such as wimlib_join_with_progress().
+ *
+ * In wimlib v1.6.3 and later, progress functions are no longer just
+ * unidirectional.  You can now return ::WIMLIB_PROGRESS_STATUS_ABORT to cause
+ * the current operation to be aborted.  wimlib v1.6.3 also added the third
+ * argument to ::wimlib_progress_func_t, which is a user-supplied context.
  */
 
 /** @defgroup G_writing_and_overwriting_wims Writing and Overwriting WIMs
@@ -519,7 +530,7 @@ enum wimlib_progress_msg {
 	/** The contents of the WIM file are being checked against the integrity
 	 * table.  @p info will point to ::wimlib_progress_info.integrity.  This
 	 * message is only received (and may be received many times) when
-	 * wimlib_open_wim() is called with the
+	 * wimlib_open_wim_with_progress() is called with the
 	 * ::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY flag.  */
 	WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY = 16,
 
@@ -564,6 +575,23 @@ enum wimlib_progress_msg {
 	 * image.  @info will point to ::wimlib_progress_info.wimboot_exclude.
 	 */
 	WIMLIB_PROGRESS_MSG_WIMBOOT_EXCLUDE = 24,
+};
+
+/** Valid return values from user-provided progress functions
+ * (::wimlib_progress_func_t).
+ *
+ * (Note: if an invalid value is returned, ::WIMLIB_ERR_UNKNOWN_PROGRESS_STATUS
+ * will be issued.)
+ */
+enum wimlib_progress_status {
+
+	/** The operation should be continued.  This is the normal return value.
+	 */
+	WIMLIB_PROGRESS_STATUS_CONTINUE	= 0,
+
+	/** The operation should be aborted.  This will cause the current
+	 * operation to fail with ::WIMLIB_ERR_ABORTED_BY_PROGRESS.  */
+	WIMLIB_PROGRESS_STATUS_ABORT	= 1,
 };
 
 /** A pointer to this union is passed to the user-supplied
@@ -923,17 +951,28 @@ union wimlib_progress_info {
 	} wimboot_exclude;
 };
 
-/** A user-supplied function that will be called periodically during certain WIM
- * operations.  The first argument will be the type of operation that is being
- * performed or is about to be started or has been completed.  The second
- * argument will be a pointer to one of a number of structures depending on the
- * first argument.  It may be @c NULL for some message types.
+/**
+ * A user-supplied function that will be called periodically during certain WIM
+ * operations.
  *
- * The return value of the progress function is currently ignored, but it may do
- * something in the future.  (Set it to 0 for now.)
+ * The first argument will be the type of operation that is being performed or
+ * is about to be started or has been completed.
+ *
+ * The second argument will be a pointer to one of a number of structures
+ * depending on the first argument.  It may be @c NULL for some message types.
+ * Note that although this argument is not @c const, users should not modify it
+ * except in explicitly documented cases.
+ *
+ * The third argument will be a user-supplied value that was provided when
+ * registering or specifying the progress function.
+ *
+ * This function must return one of the ::wimlib_progress_status values.  By
+ * default, you should return ::WIMLIB_PROGRESS_STATUS_CONTINUE (0).
  */
-typedef int (*wimlib_progress_func_t)(enum wimlib_progress_msg msg_type,
-				      const union wimlib_progress_info *info);
+typedef enum wimlib_progress_status
+	(*wimlib_progress_func_t)(enum wimlib_progress_msg msg_type,
+				  union wimlib_progress_info *info,
+				  void *progctx);
 
 /** @} */
 /** @ingroup G_modifying_wims
@@ -2023,6 +2062,8 @@ enum wimlib_error_code {
 	WIMLIB_ERR_XML,
 	WIMLIB_ERR_WIM_IS_ENCRYPTED,
 	WIMLIB_ERR_WIMBOOT,
+	WIMLIB_ERR_ABORTED_BY_PROGRESS,
+	WIMLIB_ERR_UNKNOWN_PROGRESS_STATUS,
 };
 
 
@@ -2110,12 +2151,6 @@ wimlib_add_empty_image(WIMStruct *wim,
  *	::WIMLIB_ADD_FLAG_WIMBOOT flags modify the default.
  * @param add_flags
  * 	Bitwise OR of flags prefixed with WIMLIB_ADD_FLAG.
- * @param progress_func
- * 	If non-NULL, a function that will be called periodically with the
- * 	progress of the current operation.  The progress messages that will be
- * 	received are ::WIMLIB_PROGRESS_MSG_SCAN_BEGIN,
- * 	::WIMLIB_PROGRESS_MSG_SCAN_END, and, if ::WIMLIB_ADD_FLAG_VERBOSE was
- * 	included in @p add_flags, also ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY.
  *
  * @return 0 on success; nonzero on error.  On error, changes to @p wim are
  * discarded so that it appears to be in the same state as when this function
@@ -2126,14 +2161,18 @@ wimlib_add_empty_image(WIMStruct *wim,
  * returned by wimlib_add_empty_image() may be returned, as well as any error
  * codes returned by wimlib_update_image() other than ones documented as only
  * being returned specifically by an update involving delete or rename commands.
+ *
+ * If a progress function is registered with @p wim, it will receive the
+ * messages ::WIMLIB_PROGRESS_MSG_SCAN_BEGIN and ::WIMLIB_PROGRESS_MSG_SCAN_END.
+ * In addition, if ::WIMLIB_ADD_FLAG_VERBOSE is specified in @p add_flags, it
+ * will receive ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY.
  */
 extern int
 wimlib_add_image(WIMStruct *wim,
 		 const wimlib_tchar *source,
 		 const wimlib_tchar *name,
 		 const wimlib_tchar *config_file,
-		 int add_flags,
-		 wimlib_progress_func_t progress_func);
+		 int add_flags);
 
 /**
  * @ingroup G_modifying_wims
@@ -2161,8 +2200,7 @@ wimlib_add_image_multisource(WIMStruct *wim,
 			     size_t num_sources,
 			     const wimlib_tchar *name,
 			     const wimlib_tchar *config_file,
-			     int add_flags,
-			     wimlib_progress_func_t progress_func);
+			     int add_flags);
 
 /**
  * @ingroup G_modifying_wims
@@ -2303,10 +2341,6 @@ wimlib_delete_path(WIMStruct *wim, int image,
  * 	parameter is overridden by ::WIMLIB_EXPORT_FLAG_NO_DESCRIPTIONS.
  * @param export_flags
  *	Bitwise OR of flags prefixed with WIMLIB_EXPORT_FLAG.
- * @param progress_func
- *	Currently ignored, but reserved for a function that will be called with
- *	information about the operation.  Use NULL if no additional information
- *	is desired.
  *
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_IMAGE_NAME_COLLISION
@@ -2348,9 +2382,7 @@ wimlib_export_image(WIMStruct *src_wim, int src_image,
 		    WIMStruct *dest_wim,
 		    const wimlib_tchar *dest_name,
 		    const wimlib_tchar *dest_description,
-		    int export_flags,
-		    wimlib_progress_func_t progress_func);
-
+		    int export_flags);
 
 /**
  * @ingroup G_extracting_wims
@@ -2383,11 +2415,6 @@ wimlib_export_image(WIMStruct *src_wim, int src_image,
  *	the unmounted NTFS volume to which to extract the image.
  * @param extract_flags
  *	Bitwise OR of flags prefixed with WIMLIB_EXTRACT_FLAG.
- * @param progress_func
- *	If non-NULL, a function that will be called periodically with the
- *	progress of the current operation.  The main message to look for is
- *	::WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS; however, there are others as
- *	well.
  *
  * @return 0 on success; nonzero on error.
  * @retval ::WIMLIB_ERR_DECOMPRESSION
@@ -2463,12 +2490,15 @@ wimlib_export_image(WIMStruct *src_wim, int src_image,
  *	there was a problem creating WIMBoot pointer files.
  * @retval ::WIMLIB_ERR_WRITE
  * 	Failed to write data to a file being extracted.
+ *
+ * If a progress function is registered with @p wim, then as each image is
+ * extracted it will receive ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN, then
+ * zero or more ::WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS messages, then
+ * ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END.
  */
 extern int
 wimlib_extract_image(WIMStruct *wim, int image,
-		     const wimlib_tchar *target,
-		     int extract_flags,
-		     wimlib_progress_func_t progress_func);
+		     const wimlib_tchar *target, int extract_flags);
 
 /**
  * @ingroup G_extracting_wims
@@ -2499,10 +2529,6 @@ wimlib_extract_image(WIMStruct *wim, int image,
  *	Same as the corresponding parameter to wimlib_extract_image().
  * @param extract_flags
  *	Same as the corresponding parameter to wimlib_extract_image().
- * @param progress_func
- *	Same as the corresponding parameter to wimlib_extract_image(), except
- *	::WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN messages will also be
- *	received by the progress function.
  *
  * @return 0 on success; nonzero on error.  The possible error codes include
  * those returned by wimlib_extract_image() and wimlib_open_wim() as well as the
@@ -2516,8 +2542,24 @@ wimlib_extract_image(WIMStruct *wim, int image,
 extern int
 wimlib_extract_image_from_pipe(int pipe_fd,
 			       const wimlib_tchar *image_num_or_name,
-			       const wimlib_tchar *target, int extract_flags,
-			       wimlib_progress_func_t progress_func);
+			       const wimlib_tchar *target, int extract_flags);
+
+/*
+ * @ingroup G_extracting_wims
+ *
+ * Same as wimlib_extract_image_from_pipe(), but allows specifying a progress
+ * function.  The progress function will be used while extracting the WIM image
+ * and will receive the normal extraction progress messages, such as
+ * ::WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS, in addition to
+ * ::WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN.
+ */
+extern int
+wimlib_extract_image_from_pipe_with_progress(int pipe_fd,
+					     const wimlib_tchar *image_num_or_name,
+					     const wimlib_tchar *target,
+					     int extract_flags,
+					     wimlib_progress_func_t progfunc,
+					     void *progctx);
 
 /**
  * @ingroup G_extracting_wims
@@ -2538,8 +2580,7 @@ extern int
 wimlib_extract_pathlist(WIMStruct *wim, int image,
 			const wimlib_tchar *target,
 			const wimlib_tchar *path_list_file,
-			int extract_flags,
-			wimlib_progress_func_t progress_func);
+			int extract_flags);
 
 /**
  * @ingroup G_extracting_wims
@@ -2593,15 +2634,6 @@ wimlib_extract_pathlist(WIMStruct *wim, int image,
  *	systems it may not contain backslashes, for example.
  * @param extract_flags
  *	Bitwise OR of flags prefixed with WIMLIB_EXTRACT_FLAG.
- * @param progress_func
- *	If non-NULL, a function that will be called periodically with the
- *	progress of the current operation.  The main message to look for is
- *	::WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS; however, there are others as
- *	well.  Note: because the extraction code is stream-based and not
- *	file-based, there is no way to get information about which path is
- *	currently being extracted, but based on byte count you can still
- *	calculate an approximate percentage complete for the extraction overall
- *	which may be all you really need anyway.
  *
  * @return 0 on success; nonzero on error.  Most of the error codes are the same
  * as those returned by wimlib_extract_image().  Below, some of the error codes
@@ -2619,6 +2651,13 @@ wimlib_extract_pathlist(WIMStruct *wim, int image,
  * @retval ::WIMLIB_ERR_NOT_A_REGULAR_FILE
  *	::WIMLIB_EXTRACT_FLAG_TO_STDOUT was specified in @p extract_flags, but
  *	one of the paths to extract did not name a regular file.
+ *
+ * If a progress function is registered with @p wim, it will receive
+ * ::WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS.  Note that because the extraction code
+ * is stream-based and not file-based, there is no way to get information about
+ * which path is currently being extracted, but based on byte count you can
+ * still calculate an approximate percentage complete for the extraction overall
+ * which may be all you really need anyway.
  */
 extern int
 wimlib_extract_paths(WIMStruct *wim,
@@ -2626,8 +2665,7 @@ wimlib_extract_paths(WIMStruct *wim,
 		     const wimlib_tchar *target,
 		     const wimlib_tchar * const *paths,
 		     size_t num_paths,
-		     int extract_flags,
-		     wimlib_progress_func_t progress_func);
+		     int extract_flags);
 
 /**
  * @ingroup G_wim_information
@@ -2964,9 +3002,6 @@ wimlib_iterate_lookup_table(WIMStruct *wim, int flags,
  * 	be used to write the joined WIM.
  * @param output_path
  * 	The path to write the joined WIM file to.
- * @param progress_func
- * 	If non-NULL, a function that will be called periodically with the
- * 	progress of the current operation.
  *
  * @return 0 on success; nonzero on error.  This function may return most error
  * codes that can be returned by wimlib_open_wim() and wimlib_write(), as well
@@ -2989,8 +3024,27 @@ wimlib_join(const wimlib_tchar * const *swms,
 	    unsigned num_swms,
 	    const wimlib_tchar *output_path,
 	    int swm_open_flags,
-	    int wim_write_flags,
-	    wimlib_progress_func_t progress_func);
+	    int wim_write_flags);
+
+/**
+ * @ingroup G_nonstandalone_wims
+ *
+ * Same as wimlib_join(), but allows specifying a progress function.  The
+ * progress function will receive the write progress messages, such as
+ * ::WIMLIB_PROGRESS_MSG_WRITE_STREAMS, while writing the joined WIM.  In
+ * addition, if ::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY is specified in @p
+ * swm_open_flags, the progress function will receive a series of
+ * ::WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY messages when each of the split WIM
+ * parts is opened.
+ */
+extern int
+wimlib_join_with_progress(const wimlib_tchar * const *swms,
+			  unsigned num_swms,
+			  const wimlib_tchar *output_path,
+			  int swm_open_flags,
+			  int wim_write_flags,
+			  wimlib_progress_func_t progfunc,
+			  void *progctx);
 
 
 /**
@@ -3091,12 +3145,6 @@ wimlib_mount_image(WIMStruct *wim,
  * @param open_flags
  * 	Bitwise OR of flags prefixed with WIMLIB_OPEN_FLAG.
  *
- * @param progress_func
- * 	If non-NULL, a function that will be called periodically with the
- * 	progress of the current operation.  Currently, the only messages sent
- * 	will be ::WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY, and only if
- * 	::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY was specified in @p open_flags.
- *
  * @param wim_ret
  * 	On success, a pointer to an opaque ::WIMStruct for the opened WIM file
  * 	is written to the memory location pointed to by this parameter.  The
@@ -3158,8 +3206,24 @@ wimlib_mount_image(WIMStruct *wim,
 extern int
 wimlib_open_wim(const wimlib_tchar *wim_file,
 		int open_flags,
-		WIMStruct **wim_ret,
-		wimlib_progress_func_t progress_func);
+		WIMStruct **wim_ret);
+
+/**
+ * @ingroup G_creating_and_opening_wims
+ *
+ * Same as wimlib_open_wim(), but allows specifying a progress function and
+ * progress context.  If successful, the progress function will be registered in
+ * the newly open ::WIMStruct.  In addition, if
+ * ::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY is specified in @p open_flags, the
+ * progress function will receive ::WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY
+ * messages while checking the WIM's integrity.
+ */
+extern int
+wimlib_open_wim_with_progress(const wimlib_tchar *wim_file,
+			      int open_flags,
+			      WIMStruct **wim_ret,
+			      wimlib_progress_func_t progfunc,
+			      void *progctx);
 
 /**
  * @ingroup G_writing_and_overwriting_wims
@@ -3213,9 +3277,6 @@ wimlib_open_wim(const wimlib_tchar *wim_file,
  * 	Bitwise OR of relevant flags prefixed with WIMLIB_WRITE_FLAG.
  * @param num_threads
  * 	Number of threads to use for compression (see wimlib_write()).
- * @param progress_func
- * 	If non-NULL, a function that will be called periodically with the
- * 	progress of the current operation.
  *
  * @return 0 on success; nonzero on error.  This function may return most error
  * codes returned by wimlib_write() as well as the following error codes:
@@ -3235,10 +3296,14 @@ wimlib_open_wim(const wimlib_tchar *wim_file,
  *	The WIM file is considered read-only because of any of the reasons
  *	mentioned in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS
  *	flag.
+ *
+ * If a progress function is registered with @p wim, it will receive the
+ * messages ::WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
+ * ::WIMLIB_PROGRESS_MSG_WRITE_METADATA_BEGIN, and
+ * ::WIMLIB_PROGRESS_MSG_WRITE_METADATA_END.
  */
 extern int
-wimlib_overwrite(WIMStruct *wim, int write_flags, unsigned num_threads,
-		 wimlib_progress_func_t progress_func);
+wimlib_overwrite(WIMStruct *wim, int write_flags, unsigned num_threads);
 
 /**
  * @ingroup G_wim_information
@@ -3297,8 +3362,6 @@ wimlib_print_header(const WIMStruct *wim) _wimlib_deprecated;
  * @param open_flags
  *	Additional open flags, such as ::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY, to
  *	pass to internal calls to wimlib_open_wim() on the reference files.
- * @param progress_func
- *	Passed to internal calls to wimlib_open_wim() on the reference files.
  *
  * @return 0 on success; nonzero on error.
  *
@@ -3319,8 +3382,7 @@ wimlib_reference_resource_files(WIMStruct *wim,
 				const wimlib_tchar * const *resource_wimfiles_or_globs,
 				unsigned count,
 				int ref_flags,
-				int open_flags,
-				wimlib_progress_func_t progress_func);
+				int open_flags);
 
 /**
  * @ingroup G_nonstandalone_wims
@@ -3400,10 +3462,6 @@ wimlib_reference_resources(WIMStruct *wim, WIMStruct **resource_wims,
  *	of the directory tree being captured.
  * @param flags
  *	Reserved; must be 0.
- * @param progress_func
- *	Currently ignored, but reserved for a function that will be called with
- *	information about the operation.  Use NULL if no additional information
- *	is desired.
  *
  * @return 0 on success; nonzero on error.
  *
@@ -3429,7 +3487,27 @@ wimlib_reference_resources(WIMStruct *wim, WIMStruct **resource_wims,
 extern int
 wimlib_reference_template_image(WIMStruct *wim, int new_image,
 				WIMStruct *template_wim, int template_image,
-				int flags, wimlib_progress_func_t progress_func);
+				int flags);
+
+/**
+ * @ingroup G_general
+ *
+ * Registers a progress function with a ::WIMStruct.
+ *
+ * @param wim
+ *	The ::WIMStruct for which to register the progress function.
+ * @param progfunc
+ *	Pointer to the progress function to register.  If the WIM already has a
+ *	progress function registered, it will be replaced with this one.  If @p
+ *	NULL, the current progress function (if any) will be unregistered.
+ * @param progctx
+ *	The value which will be passed as the third argument to calls to @p
+ *	progfunc.
+ */
+extern void
+wimlib_register_progress_function(WIMStruct *wim,
+				  wimlib_progress_func_t progfunc,
+				  void *progctx);
 
 /**
  * @ingroup G_modifying_wims
@@ -3742,11 +3820,6 @@ wimlib_set_print_errors(bool show_messages);
  * 	Bitwise OR of relevant flags prefixed with @c WIMLIB_WRITE_FLAG.  These
  * 	flags will be used to write each split WIM part.  Specify 0 here to get
  * 	the default behavior.
- * @param progress_func
- * 	If non-NULL, a function that will be called periodically with the
- * 	progress of the current operation
- * 	(::WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART and
- * 	::WIMLIB_PROGRESS_MSG_SPLIT_END_PART).
  *
  * @return 0 on success; nonzero on error.  This function may return most error
  * codes that can be returned by wimlib_write() as well as the following error
@@ -3759,13 +3832,17 @@ wimlib_set_print_errors(bool show_messages);
  * when they are copied from the joined WIM to the split WIM parts, nor are
  * compressed resources re-compressed (unless explicitly requested with
  * ::WIMLIB_WRITE_FLAG_RECOMPRESS).
+ *
+ * If a progress function is registered with @p wim, for each split WIM part
+ * that is written it will receive the messages
+ * ::WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART and
+ * ::WIMLIB_PROGRESS_MSG_SPLIT_END_PART.
  */
 extern int
 wimlib_split(WIMStruct *wim,
 	     const wimlib_tchar *swm_name,
 	     uint64_t part_size,
-	     int write_flags,
-	     wimlib_progress_func_t progress_func);
+	     int write_flags);
 
 /**
  * @ingroup G_mounting_wim_images
@@ -3789,10 +3866,6 @@ wimlib_split(WIMStruct *wim,
  * 	::WIMLIB_UNMOUNT_FLAG_COMMIT, ::WIMLIB_UNMOUNT_FLAG_REBUILD, and/or
  * 	::WIMLIB_UNMOUNT_FLAG_RECOMPRESS.  None of these flags affect read-only
  * 	mounts.
- * @param progress_func
- * 	If non-NULL, a function that will be called periodically with the
- * 	progress of the current operation.  Currently, only
- * 	::WIMLIB_PROGRESS_MSG_WRITE_STREAMS will be sent.
  *
  * @return 0 on success; nonzero on error.
  *
@@ -3833,8 +3906,20 @@ wimlib_split(WIMStruct *wim,
  */
 extern int
 wimlib_unmount_image(const wimlib_tchar *dir,
-		     int unmount_flags,
-		     wimlib_progress_func_t progress_func);
+		     int unmount_flags);
+
+/**
+ * @ingroup G_mounting_wim_images
+ *
+ * Same as wimlib_unmount_image(), but allows specifying a progress function.
+ * If changes are committed from a read-write mount, the progress function will
+ * receive ::WIMLIB_PROGRESS_MSG_WRITE_STREAMS messages.
+ */
+extern int
+wimlib_unmount_image_with_progress(const wimlib_tchar *dir,
+				   int unmount_flags,
+				   wimlib_progress_func_t progfunc,
+				   void *progctx);
 
 /**
  * @ingroup G_modifying_wims
@@ -3853,9 +3938,6 @@ wimlib_unmount_image(const wimlib_tchar *dir,
  *	Number of commands in @p cmds.
  * @param update_flags
  *	::WIMLIB_UPDATE_FLAG_SEND_PROGRESS or 0.
- * @param progress_func
- *	If non-NULL, a function that will be called periodically with the
- *	progress of the current operation.
  *
  * @return 0 on success; nonzero on error.  On failure, all update commands will
  * be rolled back, and no visible changes shall have been made to @p wim.
@@ -3946,8 +4028,7 @@ wimlib_update_image(WIMStruct *wim,
 		    int image,
 		    const struct wimlib_update_command *cmds,
 		    size_t num_cmds,
-		    int update_flags,
-		    wimlib_progress_func_t progress_func);
+		    int update_flags);
 
 /**
  * @ingroup G_writing_and_overwriting_wims
@@ -3983,12 +4064,6 @@ wimlib_update_image(WIMStruct *wim,
  * 	exporting an image from a compressed WIM to another WIM of the same
  * 	compression type without ::WIMLIB_WRITE_FLAG_RECOMPRESS specified in @p
  * 	write_flags).
- * @param progress_func
- * 	If non-NULL, a function that will be called periodically with the
- * 	progress of the current operation.  The possible messages are
- * 	::WIMLIB_PROGRESS_MSG_WRITE_METADATA_BEGIN,
- * 	::WIMLIB_PROGRESS_MSG_WRITE_METADATA_END, and
- * 	::WIMLIB_PROGRESS_MSG_WRITE_STREAMS.
  *
  * @return 0 on success; nonzero on error.
  *
@@ -4027,14 +4102,18 @@ wimlib_update_image(WIMStruct *wim,
  * ::WIMLIB_ERR_UNEXPECTED_END_OF_FILE, all of which indicate failure (for
  * different reasons) to read the metadata resource for an image that needed to
  * be written.
+ *
+ * If a progress function is registered with @p wim, it will receive the
+ * messages ::WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
+ * ::WIMLIB_PROGRESS_MSG_WRITE_METADATA_BEGIN, and
+ * ::WIMLIB_PROGRESS_MSG_WRITE_METADATA_END.
  */
 extern int
 wimlib_write(WIMStruct *wim,
 	     const wimlib_tchar *path,
 	     int image,
 	     int write_flags,
-	     unsigned num_threads,
-	     wimlib_progress_func_t progress_func);
+	     unsigned num_threads);
 
 /**
  * @ingroup G_writing_and_overwriting_wims
@@ -4061,8 +4140,7 @@ wimlib_write_to_fd(WIMStruct *wim,
 		   int fd,
 		   int image,
 		   int write_flags,
-		   unsigned num_threads,
-		   wimlib_progress_func_t progress_func);
+		   unsigned num_threads);
 
 /**
  * @defgroup G_compression Compression and decompression functions

@@ -190,10 +190,10 @@ load_streams_from_pipe(struct apply_ctx *ctx,
 	memcpy(ctx->progress.extract.guid, ctx->wim->hdr.guid, WIM_GUID_LEN);
 	ctx->progress.extract.part_number = ctx->wim->hdr.part_number;
 	ctx->progress.extract.total_parts = ctx->wim->hdr.total_parts;
-	if (ctx->progress_func) {
-		ctx->progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN,
-				   &ctx->progress);
-	}
+	ret = extract_progress(ctx, WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN);
+	if (ret)
+		goto out;
+
 	while (ctx->num_streams_remaining) {
 		struct wim_header_disk pwm_hdr;
 		struct wim_lookup_table_entry *needed_lte;
@@ -251,11 +251,10 @@ load_streams_from_pipe(struct apply_ctx *ctx,
 				ctx->progress.extract.total_parts = total_parts;
 				memcpy(ctx->progress.extract.guid,
 				       pwm_hdr.guid, WIM_GUID_LEN);
-				if (ctx->progress_func) {
-					ctx->progress_func(
-						WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN,
-							   &ctx->progress);
-				}
+				ret = extract_progress(ctx,
+						       WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN);
+				if (ret)
+					goto out;
 			}
 		}
 	}
@@ -283,8 +282,8 @@ static int
 consume_chunk_with_progress(const void *chunk, size_t size, void *_ctx)
 {
 	struct apply_ctx *ctx = _ctx;
-	wimlib_progress_func_t progress_func = ctx->progress_func;
 	union wimlib_progress_info *progress = &ctx->progress;
+	int ret;
 
 	if (likely(ctx->supported_features.hard_links)) {
 		progress->extract.completed_bytes +=
@@ -304,7 +303,11 @@ consume_chunk_with_progress(const void *chunk, size_t size, void *_ctx)
 		}
 	}
 	if (progress->extract.completed_bytes >= ctx->next_progress) {
-		progress_func(WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS, progress);
+
+		ret = extract_progress(ctx, WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS);
+		if (ret)
+			return ret;
+
 		if (progress->extract.completed_bytes >=
 		    progress->extract.total_bytes)
 		{
@@ -342,7 +345,7 @@ extract_stream_list(struct apply_ctx *ctx,
 		.end_stream        = cbs->end_stream,
 		.end_stream_ctx    = cbs->end_stream_ctx,
 	};
-	if (ctx->progress_func) {
+	if (ctx->progfunc) {
 		ctx->saved_cbs = cbs;
 		cbs = &wrapper_cbs;
 	}
@@ -1169,8 +1172,7 @@ select_apply_operations(int extract_flags)
 
 static int
 extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
-	      const tchar *target, int extract_flags,
-	      wimlib_progress_func_t progress_func)
+	      const tchar *target, int extract_flags)
 {
 	const struct apply_operations *ops;
 	struct apply_ctx *ctx;
@@ -1206,8 +1208,9 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 	ctx->target = target;
 	ctx->target_nchars = tstrlen(target);
 	ctx->extract_flags = extract_flags;
-	if (progress_func) {
-		ctx->progress_func = progress_func;
+	if (ctx->wim->progfunc) {
+		ctx->progfunc = ctx->wim->progfunc;
+		ctx->progctx = ctx->wim->progctx;
 		ctx->progress.extract.image = wim->current_image;
 		ctx->progress.extract.extract_flags = (extract_flags &
 						       WIMLIB_EXTRACT_MASK_PUBLIC);
@@ -1268,38 +1271,31 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 		}
 	}
 
-	if (ctx->progress_func) {
-		int msg;
-		if (extract_flags & WIMLIB_EXTRACT_FLAG_IMAGEMODE)
-			msg = WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN;
-		else
-			msg = WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN;
-		(*ctx->progress_func)(msg, &ctx->progress);
-	}
+	ret = extract_progress(ctx,
+			       ((extract_flags & WIMLIB_EXTRACT_FLAG_IMAGEMODE) ?
+				       WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN :
+				       WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN));
+	if (ret)
+		goto out_cleanup;
 
 	ret = (*ops->extract)(&dentry_list, ctx);
 	if (ret)
 		goto out_cleanup;
 
-	if (ctx->progress_func &&
-	    ctx->progress.extract.completed_bytes <
-		ctx->progress.extract.total_bytes)
+	if (ctx->progress.extract.completed_bytes <
+	    ctx->progress.extract.total_bytes)
 	{
 		ctx->progress.extract.completed_bytes =
 			ctx->progress.extract.total_bytes;
-		(*ctx->progress_func)(WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS,
-				      &ctx->progress);
+		ret = extract_progress(ctx, WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS);
+		if (ret)
+			goto out_cleanup;
 	}
 
-	if (ctx->progress_func) {
-		int msg;
-		if (extract_flags & WIMLIB_EXTRACT_FLAG_IMAGEMODE)
-			msg = WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END;
-		else
-			msg = WIMLIB_PROGRESS_MSG_EXTRACT_TREE_END;
-		(*ctx->progress_func)(msg, &ctx->progress);
-	}
-	ret = 0;
+	ret = extract_progress(ctx,
+			       ((extract_flags & WIMLIB_EXTRACT_FLAG_IMAGEMODE) ?
+				       WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END :
+				       WIMLIB_PROGRESS_MSG_EXTRACT_TREE_END));
 out_cleanup:
 	destroy_stream_list(&ctx->stream_list);
 	destroy_dentry_list(&dentry_list);
@@ -1427,7 +1423,7 @@ append_dentry_cb(struct wim_dentry *dentry, void *_ctx)
 static int
 do_wimlib_extract_paths(WIMStruct *wim, int image, const tchar *target,
 			const tchar * const *paths, size_t num_paths,
-			int extract_flags, wimlib_progress_func_t progress_func)
+			int extract_flags)
 {
 	int ret;
 	struct wim_dentry **trees;
@@ -1519,8 +1515,7 @@ do_wimlib_extract_paths(WIMStruct *wim, int image, const tchar *target,
 		goto out_free_trees;
 	}
 
-	ret = extract_trees(wim, trees, num_trees,
-			    target, extract_flags, progress_func);
+	ret = extract_trees(wim, trees, num_trees, target, extract_flags);
 out_free_trees:
 	FREE(trees);
 	return ret;
@@ -1528,13 +1523,11 @@ out_free_trees:
 
 static int
 extract_single_image(WIMStruct *wim, int image,
-		     const tchar *target, int extract_flags,
-		     wimlib_progress_func_t progress_func)
+		     const tchar *target, int extract_flags)
 {
 	const tchar *path = WIMLIB_WIM_ROOT_PATH;
 	extract_flags |= WIMLIB_EXTRACT_FLAG_IMAGEMODE;
-	return do_wimlib_extract_paths(wim, image, target, &path, 1,
-				       extract_flags, progress_func);
+	return do_wimlib_extract_paths(wim, image, target, &path, 1, extract_flags);
 }
 
 static const tchar * const filename_forbidden_chars =
@@ -1560,10 +1553,7 @@ image_name_ok_as_dir(const tchar *image_name)
 /* Extracts all images from the WIM to the directory @target, with the images
  * placed in subdirectories named by their image names. */
 static int
-extract_all_images(WIMStruct *wim,
-		   const tchar *target,
-		   int extract_flags,
-		   wimlib_progress_func_t progress_func)
+extract_all_images(WIMStruct *wim, const tchar *target, int extract_flags)
 {
 	size_t image_name_max_len = max(xml_get_max_image_name_len(wim), 20);
 	size_t output_path_len = tstrlen(target);
@@ -1593,8 +1583,7 @@ extract_all_images(WIMStruct *wim,
 			 * Use image number instead. */
 			tsprintf(buf + output_path_len + 1, T("%d"), image);
 		}
-		ret = extract_single_image(wim, image, buf, extract_flags,
-					   progress_func);
+		ret = extract_single_image(wim, image, buf, extract_flags);
 		if (ret)
 			return ret;
 	}
@@ -1602,11 +1591,8 @@ extract_all_images(WIMStruct *wim,
 }
 
 static int
-do_wimlib_extract_image(WIMStruct *wim,
-			int image,
-			const tchar *target,
-			int extract_flags,
-			wimlib_progress_func_t progress_func)
+do_wimlib_extract_image(WIMStruct *wim, int image, const tchar *target,
+			int extract_flags)
 {
 	if (extract_flags & (WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE |
 			     WIMLIB_EXTRACT_FLAG_TO_STDOUT |
@@ -1614,11 +1600,9 @@ do_wimlib_extract_image(WIMStruct *wim,
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (image == WIMLIB_ALL_IMAGES)
-		return extract_all_images(wim, target, extract_flags,
-					  progress_func);
+		return extract_all_images(wim, target, extract_flags);
 	else
-		return extract_single_image(wim, image, target, extract_flags,
-					    progress_func);
+		return extract_single_image(wim, image, target, extract_flags);
 }
 
 
@@ -1629,19 +1613,18 @@ do_wimlib_extract_image(WIMStruct *wim,
 WIMLIBAPI int
 wimlib_extract_paths(WIMStruct *wim, int image, const tchar *target,
 		     const tchar * const *paths, size_t num_paths,
-		     int extract_flags, wimlib_progress_func_t progress_func)
+		     int extract_flags)
 {
 	if (extract_flags & ~WIMLIB_EXTRACT_MASK_PUBLIC)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	return do_wimlib_extract_paths(wim, image, target, paths, num_paths,
-				       extract_flags, progress_func);
+				       extract_flags);
 }
 
 WIMLIBAPI int
 wimlib_extract_pathlist(WIMStruct *wim, int image, const tchar *target,
-			const tchar *path_list_file, int extract_flags,
-			wimlib_progress_func_t progress_func)
+			const tchar *path_list_file, int extract_flags)
 {
 	int ret;
 	tchar **paths;
@@ -1657,16 +1640,19 @@ wimlib_extract_pathlist(WIMStruct *wim, int image, const tchar *target,
 
 	ret = wimlib_extract_paths(wim, image, target,
 				   (const tchar * const *)paths, num_paths,
-				   extract_flags, progress_func);
+				   extract_flags);
 	FREE(paths);
 	FREE(mem);
 	return ret;
 }
 
 WIMLIBAPI int
-wimlib_extract_image_from_pipe(int pipe_fd, const tchar *image_num_or_name,
-			       const tchar *target, int extract_flags,
-			       wimlib_progress_func_t progress_func)
+wimlib_extract_image_from_pipe_with_progress(int pipe_fd,
+					     const tchar *image_num_or_name,
+					     const tchar *target,
+					     int extract_flags,
+					     wimlib_progress_func_t progfunc,
+					     void *progctx)
 {
 	int ret;
 	WIMStruct *pwm;
@@ -1681,9 +1667,8 @@ wimlib_extract_image_from_pipe(int pipe_fd, const tchar *image_num_or_name,
 	 * the pipable WIM.  Caveats:  Unlike getting a WIMStruct with
 	 * wimlib_open_wim(), getting a WIMStruct in this way will result in
 	 * an empty lookup table, no XML data read, and no filename set.  */
-	ret = open_wim_as_WIMStruct(&pipe_fd,
-				    WIMLIB_OPEN_FLAG_FROM_PIPE,
-				    &pwm, progress_func);
+	ret = open_wim_as_WIMStruct(&pipe_fd, WIMLIB_OPEN_FLAG_FROM_PIPE, &pwm,
+				    progfunc, progctx);
 	if (ret)
 		return ret;
 
@@ -1814,20 +1799,31 @@ wimlib_extract_image_from_pipe(int pipe_fd, const tchar *image_num_or_name,
 	}
 	/* Extract the image.  */
 	extract_flags |= WIMLIB_EXTRACT_FLAG_FROM_PIPE;
-	ret = do_wimlib_extract_image(pwm, image, target,
-				      extract_flags, progress_func);
+	ret = do_wimlib_extract_image(pwm, image, target, extract_flags);
 	/* Clean up and return.  */
 out_wimlib_free:
 	wimlib_free(pwm);
 	return ret;
 }
 
+
+WIMLIBAPI int
+wimlib_extract_image_from_pipe(int pipe_fd, const tchar *image_num_or_name,
+			       const tchar *target, int extract_flags)
+{
+	return wimlib_extract_image_from_pipe_with_progress(pipe_fd,
+							    image_num_or_name,
+							    target,
+							    extract_flags,
+							    NULL,
+							    NULL);
+}
+
 WIMLIBAPI int
 wimlib_extract_image(WIMStruct *wim, int image, const tchar *target,
-		     int extract_flags, wimlib_progress_func_t progress_func)
+		     int extract_flags)
 {
 	if (extract_flags & ~WIMLIB_EXTRACT_MASK_PUBLIC)
 		return WIMLIB_ERR_INVALID_PARAM;
-	return do_wimlib_extract_image(wim, image, target, extract_flags,
-				       progress_func);
+	return do_wimlib_extract_image(wim, image, target, extract_flags);
 }

@@ -1,7 +1,7 @@
 #ifndef _WIMLIB_INTEGRITY_H
 #define _WIMLIB_INTEGRITY_H
 
-#include "wimlib.h"
+#include "wimlib/types.h"
 #include <sys/types.h>
 
 #define WIM_INTEGRITY_OK 0
@@ -11,10 +11,9 @@
 extern int
 write_integrity_table(WIMStruct *wim,
 		      off_t new_lookup_table_end,
-		      off_t old_lookup_table_end,
-		      wimlib_progress_func_t progress_func);
+		      off_t old_lookup_table_end);
 
 extern int
-check_wim_integrity(WIMStruct *wim, wimlib_progress_func_t progress_func);
+check_wim_integrity(WIMStruct *wim);
 
 #endif /* _WIMLIB_INTEGRITY_H */

@@ -8,9 +8,9 @@
 #define TO_PERCENT(numerator, denominator) \
 	((float)(((denominator) == 0) ? 0 : ((numerator) * 100 / (float)(denominator))))
 
-static int
+static enum wimlib_progress_status
 write_progress(enum wimlib_progress_msg msg,
-	       const union wimlib_progress_info *info)
+	       union wimlib_progress_info *info, void *progctx)
 {
 	switch (msg) {
 	case WIMLIB_PROGRESS_MSG_WRITE_STREAMS:
@@ -21,7 +21,7 @@ write_progress(enum wimlib_progress_msg msg,
 	default:
 		break;
 	}
-	return 0;
+	return WIMLIB_PROGRESS_STATUS_CONTINUE;
 }
 
 int main(int argc, char **argv)
@@ -45,14 +45,16 @@ int main(int argc, char **argv)
 	if (ret != 0)  /* Always should check the error codes.  */
 		goto out;
 
+	/* Register our progress function.  */
+	wimlib_register_progress_function(wim, write_progress, NULL);
+
 	/* Add the directory tree to the WIMStruct as an image.  */
 
 	ret = wimlib_add_image(wim,     /* WIMStruct to which to add the image    */
 			       srcdir,  /* Directory from which to add the image  */
 			       NULL,    /* Name to give the image (NULL means none)  */
 			       NULL,    /* Capture configuration structure (NULL means none)  */
-			       0,       /* WIMLIB_ADD_FLAG_* flags (0 means all defaults)  */
-			       NULL);   /* Progress function (NULL means none) */
+			       0);      /* WIMLIB_ADD_FLAG_* flags (0 means all defaults)  */
 	if (ret != 0)
 		goto out;
 
@@ -62,8 +64,7 @@ int main(int argc, char **argv)
 			   wimpath,  /* Path to write the WIM to             */
 			   WIMLIB_ALL_IMAGES, /*  Image(s) in the WIM to write */
 			   0,        /* WIMLIB_WRITE_FLAG_* flags (0 means all defaults)   */
-			   0,        /* Number of compressor threads (0 means default)  */
-			   write_progress); /* Progress function  */
+			   0);       /* Number of compressor threads (0 means default)  */
 
 out:
 	/* Free the WIMStruct.  Has no effect if the pointer to it is NULL.  */

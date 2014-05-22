@@ -92,6 +92,11 @@ struct WIMStruct {
 	/* Chunk size for writing packed streams; can be set with
 	 * wimlib_set_output_pack_chunk_size().  */
 	u32 out_pack_chunk_size;
+
+	/* Currently registered progress function for this WIMStruct, or NULL if
+	 * no progress function is currently registered for this WIMStruct.  */
+	wimlib_progress_func_t progfunc;
+	void *progctx;
 };
 
 static inline bool wim_is_pipable(const WIMStruct *wim)
@@ -147,7 +152,7 @@ wim_checksum_unhashed_streams(WIMStruct *wim);
 extern int
 open_wim_as_WIMStruct(const void *wim_filename_or_fd, int open_flags,
 		      WIMStruct **wim_ret,
-		      wimlib_progress_func_t progress_func);
+		      wimlib_progress_func_t progfunc, void *progctx);
 
 extern int
 close_wim(WIMStruct *wim);

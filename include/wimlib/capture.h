@@ -45,9 +45,9 @@ struct add_image_params {
 	 * libntfs-3g capture.  */
 	void *extra_arg;
 
-
 	/* If non-NULL, the user-supplied progress function. */
-	wimlib_progress_func_t progress_func;
+	wimlib_progress_func_t progfunc;
+	void *progctx;
 
 	/* Progress data.  */
 	union wimlib_progress_info progress;
@@ -58,10 +58,9 @@ struct add_image_params {
 	size_t capture_root_nchars;
 };
 
-
 /* capture_common.c */
 
-extern void
+extern int
 do_capture_progress(struct add_image_params *params, int status,
 		    const struct wim_inode *inode);
 

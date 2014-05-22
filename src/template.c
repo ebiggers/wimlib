@@ -207,7 +207,7 @@ dentry_reference_template(struct wim_dentry *dentry, void *_args)
 WIMLIBAPI int
 wimlib_reference_template_image(WIMStruct *wim, int new_image,
 				WIMStruct *template_wim, int template_image,
-				int flags, wimlib_progress_func_t progress_func)
+				int flags)
 {
 	int ret;
 	struct wim_image_metadata *new_imd;
