@@ -343,11 +343,10 @@ that may be present on the filesystem.
 .TP
 \fB--unix-data\fR
 (UNIX-like systems only) Store the UNIX owner, group, and mode of all captured
-files.  This is done by adding a special alternate data stream to each directory
-entry that contains this information.  Please note that this flag is for
-convenience only, in case you want to use \fB@IMAGEX_PROGNAME@\fR to archive
-files on UNIX.  Microsoft's software will not understand this special
-information.
+files.  This is done by adding a special tagged metadata item to each directory
+entry that contains this information.  This information should be ignored by the
+Microsoft implementation.  (Note: the way that UNIX data is stored was changed
+in wimlib v1.7.0 and is not backwards or forward compatible.)
 .TP
 \fB--no-acls\fR
 Do not capture files' security descriptors.
@@ -577,11 +576,6 @@ such files will not be extracted by default by the Windows version of
 such names and quit extracting the image partway through.  (It perhaps is worth
 pointing out that Windows' own default filesystem, NTFS, supports these
 characters, although Windows does not!)
-.IP \[bu]
-WIMs captured with \fB--unix-data\fR should be assumed to be incompatible with
-Microsoft's software.  However, the UNIX data format used in wimlib v1.6.3 and
-later uses reserved fields in the WIM dentries which seem to be ignored by the
-Microsoft implementation as of Windows 8.1.
 .IP \[bu]
 Pipable WIMs are incompatible with Microsoft's software.  Pipable WIMs are
 created only if \fIWIMFILE\fR was specified as "-" (standard output) or if

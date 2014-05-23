@@ -33,7 +33,7 @@
  *
  * @section sec_intro Introduction
  *
- * This is the documentation for the library interface of wimlib 1.6.3, a C
+ * This is the documentation for the library interface of wimlib 1.7.0, a C
  * library for creating, modifying, extracting, and mounting files in the
  * Windows Imaging Format.  This documentation is intended for developers only.
  * If you have installed wimlib and want to know how to use the @b wimlib-imagex
@@ -301,9 +301,9 @@
  * such as wimlib_join(), also take the progress function directly using an
  * extended version of the function, such as wimlib_join_with_progress().
  *
- * In wimlib v1.6.3 and later, progress functions are no longer just
+ * In wimlib v1.7.0 and later, progress functions are no longer just
  * unidirectional.  You can now return ::WIMLIB_PROGRESS_STATUS_ABORT to cause
- * the current operation to be aborted.  wimlib v1.6.3 also added the third
+ * the current operation to be aborted.  wimlib v1.7.0 also added the third
  * argument to ::wimlib_progress_func_t, which is a user-supplied context.
  */
 
@@ -353,10 +353,10 @@
 #define WIMLIB_MAJOR_VERSION 1
 
 /** Minor version of the library (for example, the 2 in 1.2.5). */
-#define WIMLIB_MINOR_VERSION 6
+#define WIMLIB_MINOR_VERSION 7
 
 /** Patch version of the library (for example, the 5 in 1.2.5). */
-#define WIMLIB_PATCH_VERSION 3
+#define WIMLIB_PATCH_VERSION 0
 
 #ifdef __cplusplus
 extern "C" {
@@ -932,7 +932,7 @@ union wimlib_progress_info {
 		/** Name of the split WIM part that is about to be started
 		 * (::WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART) or has just been
 		 * finished (::WIMLIB_PROGRESS_MSG_SPLIT_END_PART).
-		 * As of wimlib v1.6.3, the library user may change this when
+		 * As of wimlib v1.7.0, the library user may change this when
 		 * receiving ::WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART in order to
 		 * cause the next split WIM part to be written to a different
 		 * location.  */

@@ -1569,7 +1569,7 @@ wim_write_stream_list(WIMStruct *wim,
 
 	write_resource_flags = write_flags_to_resource_flags(write_flags);
 
-	/* wimlib v1.6.3: pack streams by default if the WIM version has been
+	/* wimlib v1.7.0: pack streams by default if the WIM version has been
 	 * set to WIM_VERSION_PACKED_STREAMS and at least one stream in the
 	 * WIM's lookup table is located in a packed resource (may be the same
 	 * WIM, or a different one in the case of export).  */

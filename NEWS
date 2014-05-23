@@ -1,6 +1,6 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
-Version 1.6.3-BETA:
+Version 1.7.0-BETA:
 	Improved compatibility with version 3584 WIM / ESD files.
 
 	Performance improvements, including for extraction.

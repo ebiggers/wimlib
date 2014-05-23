@@ -124,7 +124,7 @@ mode:
 .IP \[bu] 4
 Encrypted files will not be extracted.
 .IP \[bu]
-wimlib v1.6.3 and later:  Sparse file attributes will not be extracted (same
+wimlib v1.7.0 and later:  Sparse file attributes will not be extracted (same
 behavior as ImageX/DISM/WIMGAPI).  wimlib v1.6.2 and earlier:  Although sparse
 file attributes will be applied, the full data will be extracted to each sparse
 file, so extracted "sparse" files may not actually contain any sparse regions.

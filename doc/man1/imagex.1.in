@@ -153,6 +153,10 @@ to standard output or read from standard input.  This can be used to pipe images
 to or from a server over the network to implement fast filesystem imaging and
 restore.
 .IP \[bu]
+On UNIX-like systems, support for saving and restoring UNIX uids (user IDs),
+gids (group IDs), and modes to/from WIM images.  This is a wimlib extension, but
+the Microsoft implementation ignores this extra metadata.
+.IP \[bu]
 Multithreaded compression.  By default, data compression is multithreaded and
 will use all available processors.  In most cases, this can be changed by the
 \fB--threads\fR option.
@@ -163,8 +167,8 @@ can do better than the equivalent Microsoft implementations.
 .IP \[bu]
 "ESD file" support.  As mentioned in \fBBACKGROUND INFORMATION\fR, "ESD files"
 use a new WIM format that features solid blocks and LZMS compression.  This
-support was first present in wimlib v1.6.0, but later v1.6 releases have
-improved compatibility.
+support was first present in wimlib v1.6.0, but v1.7.0 and later have improved
+compatibility.
 .IP \[bu]
 Mounting WIM images.  This relies on FUSE (Filesystem in UserSpacE) and is only
 supported on compatible UNIX-like systems, in particular Linux.  FreeBSD may
