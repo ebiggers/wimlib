@@ -589,12 +589,29 @@ out_close_root_dir:
 }
 
 static int
+winnt_rpfix_progress(struct add_image_params *params, const wchar_t *path,
+		     const struct reparse_data *rpdata,
+		     enum wimlib_progress_msg msg)
+{
+	size_t print_name_nchars = rpdata->print_name_nbytes / sizeof(wchar_t);
+	wchar_t print_name0[print_name_nchars + 1];
+
+	wmemcpy(print_name0, rpdata->print_name, print_name_nchars);
+	print_name0[print_name_nchars] = L'\0';
+
+	params->progress.scan.cur_path = printable_path(path);
+	params->progress.scan.symlink_target = print_name0;
+	return do_capture_progress(params, msg, NULL);
+}
+
+static int
 winnt_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
 		u64 capture_root_ino, u64 capture_root_dev,
 		const wchar_t *path, struct add_image_params *params)
 {
 	struct reparse_data rpdata;
 	const wchar_t *rel_target;
+	int ret;
 
 	if (parse_reparse_data(rpbuf, *rpbuflen_p, &rpdata)) {
 		/* Couldn't even understand the reparse data.  Don't try the
@@ -636,16 +653,8 @@ winnt_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
 		/* Target points outside of the tree being captured.  Exclude
 		 * this reparse point from the capture (but inform the library
 		 * user).  */
-		size_t print_name_nchars = rpdata.print_name_nbytes / sizeof(wchar_t);
-		wchar_t print_name0[print_name_nchars + 1];
-		print_name0[print_name_nchars] = L'\0';
-		wmemcpy(print_name0, rpdata.print_name, print_name_nchars);
-
-		params->progress.scan.cur_path = printable_path(path);
-		params->progress.scan.symlink_target = print_name0;
-		int ret = do_capture_progress(params,
-					      WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK,
-					      NULL);
+		ret = winnt_rpfix_progress(params, path, &rpdata,
+					   WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK);
 		if (ret)
 			return ret;
 		return RP_EXCLUDED;
@@ -687,6 +696,10 @@ winnt_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
 		if (make_reparse_buffer(&rpdata, rpbuf, rpbuflen_p))
 			return RP_NOT_FIXED;
 	}
+	ret = winnt_rpfix_progress(params, path, &rpdata,
+				   WIMLIB_SCAN_DENTRY_FIXED_SYMLINK);
+	if (ret)
+		return ret;
 	return RP_FIXED;
 }
 

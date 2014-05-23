@@ -1086,6 +1086,24 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 					"absolute symbolic links as-is)\n"),
 				        info->scan.cur_path, info->scan.symlink_target);
 			break;
+		case WIMLIB_SCAN_DENTRY_FIXED_SYMLINK:
+			/* Symlink fixups are enabled by default.  This is
+			 * mainly intended for Windows, which for some reason
+			 * uses absolute junctions (with drive letters!) in the
+			 * default installation.  On UNIX-like systems, warn the
+			 * user when fixing the target of an absolute symbolic
+			 * link, so they know to disable this if they want.
+			 * (Although, more likely they will get the warning
+			 * about an absolute symbolic link with an out-of-tree
+			 * target first.)  */
+		#ifndef __WIN32__
+			imagex_printf(T("\nWARNING: Adjusted target of "
+					"absolute symbolic link \"%"TS"\"\n"
+					"           (Use --norpfix to capture "
+					"absolute symbolic links as-is)\n"),
+				        info->scan.cur_path);
+		#endif
+			break;
 		}
 		break;
 	case WIMLIB_PROGRESS_MSG_SCAN_END:

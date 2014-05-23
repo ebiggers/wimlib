@@ -719,6 +719,14 @@ union wimlib_progress_info {
 			 * fixups can be disabled by using the flag
 			 * ::WIMLIB_ADD_FLAG_NORPFIX.)  */
 			WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK,
+
+			/** The file is an absolute symbolic link or junction
+			 * that points into the capture directory, and
+			 * reparse-point fixups are enabled, so its target is
+			 * being adjusted.  (Reparse point fixups can be
+			 * disabled with the flag ::WIMLIB_ADD_FLAG_NORPFIX.)
+			 */
+			WIMLIB_SCAN_DENTRY_FIXED_SYMLINK,
 		} status;
 
 		union {
@@ -728,9 +736,9 @@ union wimlib_progress_info {
 			const wimlib_tchar *wim_target_path;
 
 			/** For ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY and a status
-			 * of @p WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK, this is
-			 * the target of the absolute symbolic link or junction
-			 * point.  */
+			 * of @p WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK or @p
+			 * WIMLIB_SCAN_DENTRY_FIXED_SYMLINK, this is the target
+			 * of the absolute symbolic link or junction.  */
 			const wimlib_tchar *symlink_target;
 		};
 

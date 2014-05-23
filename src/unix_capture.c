@@ -281,22 +281,31 @@ unix_scan_symlink(struct wim_dentry **root_p, const char *full_path,
 	if ((params->add_flags & WIMLIB_ADD_FLAG_RPFIX) &&
 	     dest[0] == '/')
 	{
+		/* RPFIX (reparse point fixup) mode:  Change target of absolute
+		 * symbolic link to be "absolute" relative to the tree being
+		 * captured.  */
 		dest = unix_fixup_abslink(dest,
 					  params->capture_root_ino,
 					  params->capture_root_dev);
-		if (!dest) {
-			/* RPFIX (reparse point fixup) mode:  Ignore
-			 * absolute symbolic link that points out of the
-			 * tree to be captured.  */
+		params->progress.scan.cur_path = full_path;
+		params->progress.scan.symlink_target = deref_name_buf;
+		if (dest) {
+			/* Successfully fixed the link target.  */
+			inode->i_not_rpfixed = 0;
+			ret = do_capture_progress(params,
+						  WIMLIB_SCAN_DENTRY_FIXED_SYMLINK,
+						  NULL);
+			if (ret)
+				return ret;
+		} else {
+			/* Link points outside of the tree being captured.
+			 * Exclude it.  */
 			free_dentry(*root_p);
 			*root_p = NULL;
-			params->progress.scan.cur_path = full_path;
-			params->progress.scan.symlink_target = deref_name_buf;
 			return do_capture_progress(params,
 						   WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK,
 						   NULL);
 		}
-		inode->i_not_rpfixed = 0;
 	}
 	ret = wim_inode_set_symlink(inode, dest, params->lookup_table);
 	if (ret)
