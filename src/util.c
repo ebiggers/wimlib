@@ -350,6 +350,8 @@ static const tchar *error_strings[] = {
 		= T("The operation was aborted by the library user"),
 	[WIMLIB_ERR_UNKNOWN_PROGRESS_STATUS]
 		= T("The user-provided progress function returned an unrecognized value"),
+	[WIMLIB_ERR_MKNOD]
+		= T("Unable to create a special file (e.g. device node or socket)"),
 };
 
 /* API function documented in wimlib.h  */

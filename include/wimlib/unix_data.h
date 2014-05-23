@@ -7,6 +7,7 @@ struct wimlib_unix_data {
 	u32 uid;
 	u32 gid;
 	u32 mode;
+	u32 rdev;
 };
 
 struct wim_inode;
@@ -21,11 +22,12 @@ inode_get_unix_data(const struct wim_inode *inode,
 #define UNIX_DATA_UID	0x1
 #define UNIX_DATA_GID	0x2
 #define UNIX_DATA_MODE	0x4
+#define UNIX_DATA_RDEV	0x8
 
-#define UNIX_DATA_ALL	(UNIX_DATA_UID | UNIX_DATA_GID | UNIX_DATA_MODE)
+#define UNIX_DATA_ALL	0xF
 
 extern bool
-inode_set_unix_data(struct wim_inode *inode, u32 uid, u32 gid, u32 mode,
-		    int which);
+inode_set_unix_data(struct wim_inode *inode,
+		    struct wimlib_unix_data *unix_data, int which);
 
 #endif /* _WIMLIB_UNIX_DATA_H  */

@@ -87,6 +87,7 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry, struct wim_dentry *dentry,
 		wdentry->unix_uid = unix_data.uid;
 		wdentry->unix_gid = unix_data.gid;
 		wdentry->unix_mode = unix_data.mode;
+		wdentry->unix_rdev = unix_data.rdev;
 	}
 
 	lte = inode_unnamed_lte(inode, wim->lookup_table);

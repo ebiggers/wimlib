@@ -1256,7 +1256,7 @@ struct wimlib_dir_entry {
 	uint32_t unix_uid;
 	uint32_t unix_gid;
 	uint32_t unix_mode;
-	uint32_t unix_reserved;
+	uint32_t unix_rdev;
 
 	uint64_t reserved[14];
 
@@ -1321,10 +1321,9 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * wimlib_update_image().  */
 #define WIMLIB_ADD_FLAG_BOOT			0x00000008
 
-/** Store the UNIX owner, group, and mode.  This is done by adding a special
- * alternate data stream to each regular file, symbolic link, and directory to
- * contain this information.  Please note that this flag is for convenience
- * only; Microsoft's implementation will not understand this special
+/** UNIX-like systems only: Store the UNIX owner, group, mode, and device ID
+ * (major and minor number) of each file.  See the documentation for the
+ * <b>--unix-data</b> option to <b>wimlib-imagex capture</b> for more
  * information.  */
 #define WIMLIB_ADD_FLAG_UNIX_DATA		0x00000010
 
@@ -2068,6 +2067,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_WIMBOOT,
 	WIMLIB_ERR_ABORTED_BY_PROGRESS,
 	WIMLIB_ERR_UNKNOWN_PROGRESS_STATUS,
+	WIMLIB_ERR_MKNOD,
 };
 
 

@@ -96,6 +96,9 @@ struct unix_apply_ctx {
 
 	/* Number of characters in target_abspath.  */
 	size_t target_abspath_nchars;
+
+	/* Number of special files we couldn't create due to EPERM  */
+	unsigned long num_special_files_ignored;
 };
 
 /* Returns the number of characters needed to represent the path to the
@@ -373,15 +376,15 @@ unix_create_if_directory(const struct wim_dentry *dentry,
 	return 0;
 }
 
-/* If @dentry represents an empty regular file, create it, set its metadata, and
- * create any needed hard links.  */
+/* If @dentry represents an empty regular file or a special file, create it, set
+ * its metadata, and create any needed hard links.  */
 static int
 unix_extract_if_empty_file(const struct wim_dentry *dentry,
 			   struct unix_apply_ctx *ctx)
 {
 	const struct wim_inode *inode;
+	struct wimlib_unix_data unix_data;
 	const char *path;
-	int fd;
 	int ret;
 
 	inode = dentry->d_inode;
@@ -390,26 +393,54 @@ unix_extract_if_empty_file(const struct wim_dentry *dentry,
 	if (dentry != inode_first_extraction_dentry(inode))
 		return 0;
 
-	/* Not an empty regular file?  */
+	/* Is this a directory, a symbolic link, or any type of nonempty file?
+	 */
 	if (inode_is_directory(inode) || inode_is_symlink(inode) ||
 	    inode_unnamed_lte_resolved(inode))
 		return 0;
 
-	path = unix_build_extraction_path(dentry, ctx);
-retry_create:
-	fd = open(path, O_TRUNC | O_CREAT | O_WRONLY | O_NOFOLLOW, 0644);
-	if (fd < 0) {
-		if (errno == EEXIST && !unlink(path))
-			goto retry_create;
-		ERROR_WITH_ERRNO("Can't create regular file \"%s\"", path);
-		return WIMLIB_ERR_OPEN;
-	}
-	/* On empty files, we can set timestamps immediately because we don't
-	 * need to write any data to them.  */
-	ret = unix_set_metadata(fd, inode, path, ctx);
-	if (close(fd) && !ret) {
-		ERROR_WITH_ERRNO("Error closing \"%s\"", path);
-		ret = WIMLIB_ERR_WRITE;
+	/* Recognize special files in UNIX_DATA mode  */
+	if ((ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) &&
+	    inode_get_unix_data(inode, &unix_data) &&
+	    !S_ISREG(unix_data.mode))
+	{
+		path = unix_build_extraction_path(dentry, ctx);
+	retry_mknod:
+		if (mknod(path, unix_data.mode, unix_data.rdev)) {
+			if (errno == EPERM) {
+				WARNING_WITH_ERRNO("Can't create special "
+						   "file \"%s\"", path);
+				ctx->num_special_files_ignored++;
+				return 0;
+			}
+			if (errno == EEXIST && !unlink(path))
+				goto retry_mknod;
+			ERROR_WITH_ERRNO("Can't create special file \"%s\"",
+					 path);
+			return WIMLIB_ERR_MKNOD;
+		}
+		/* On special files, we can set timestamps immediately because
+		 * we don't need to write any data to them.  */
+		ret = unix_set_metadata(-1, inode, path, ctx);
+	} else {
+		int fd;
+
+		path = unix_build_extraction_path(dentry, ctx);
+	retry_create:
+		fd = open(path, O_TRUNC | O_CREAT | O_WRONLY | O_NOFOLLOW, 0644);
+		if (fd < 0) {
+			if (errno == EEXIST && !unlink(path))
+				goto retry_create;
+			ERROR_WITH_ERRNO("Can't create regular file \"%s\"", path);
+			return WIMLIB_ERR_OPEN;
+		}
+		/* On empty files, we can set timestamps immediately because we
+		 * don't need to write any data to them.  */
+		ret = unix_set_metadata(fd, inode, path, ctx);
+		if (close(fd) && !ret) {
+			ERROR_WITH_ERRNO("Error closing \"%s\"", path);
+			ret = WIMLIB_ERR_WRITE;
+		}
 	}
 	if (ret)
 		return ret;
@@ -709,6 +740,12 @@ unix_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	/* Set directory metadata.  We do this last so that we get the right
 	 * directory timestamps.  */
 	ret = unix_set_dir_metadata(dentry_list, ctx);
+	if (ret)
+		goto out;
+	if (ctx->num_special_files_ignored) {
+		WARNING("%lu special files were not extracted due to EPERM!",
+			ctx->num_special_files_ignored);
+	}
 out:
 	for (unsigned i = 0; i < NUM_PATHBUFS; i++)
 		FREE(ctx->pathbufs[i]);

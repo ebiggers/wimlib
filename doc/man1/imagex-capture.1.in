@@ -57,10 +57,10 @@ the WIM format was designed for Windows, so it cannot store all possible
 metadata from filesystems used on UNIX-like systems.  The main information that
 will \fInot\fR be stored is:
 .IP \[bu] 4
-UNIX file owners, groups, and modes.  (Exception: see the \fB--unix-data\fR
-option.)  As a result, file permissions will not be stored, and files that are
-neither regular files, directories, nor symbolic links, such as device files and
-FIFOs, cannot be captured and will be excluded by default.
+UNIX file owners, groups, modes, and device IDs (major and minor numbers),
+unless the \fB--unix-data\fR option is specified.  By default (without
+\fB--unix-data\fR), files that are neither regular files, directories, nor
+symbolic links, such as device nodes and FIFOs, will be excluded.
 .IP \[bu]
 Extended attributes.  This mainly includes extensions to the traditional UNIX
 security model, such as SELinux security labels, POSIX ACLs, and capabilities
@@ -342,11 +342,18 @@ saved in the WIM image as Windows/System32/WimBootCompress.ini, overriding any
 that may be present on the filesystem.
 .TP
 \fB--unix-data\fR
-(UNIX-like systems only) Store the UNIX owner, group, and mode of all captured
-files.  This is done by adding a special tagged metadata item to each directory
-entry that contains this information.  This information should be ignored by the
-Microsoft implementation.  (Note: the way that UNIX data is stored was changed
-in wimlib v1.7.0 and is not backwards or forward compatible.)
+(UNIX-like systems only) Store the UNIX owner, group, mode, and device ID (major
+and minor number) of each captured file.  As of wimlib v1.7.0, you can backup
+and restore not only the standard UNIX file permission information, but also
+character device nodes, block device nodes, named pipes (FIFOs), and UNIX domain
+sockets.
+.IP
+wimlib stores UNIX data by adding a special tagged metadata item to each
+directory entry of each file that contains this information.  This extra
+information is ignored by the Microsoft implementation.  Note: UNIX data stored
+by wimlib before v1.7.0 used a different format that is no longer supported.  If
+you have old WIM files with UNIX data, apply them with v1.6.2 and recapture them
+with v1.7.0 or later.
 .TP
 \fB--no-acls\fR
 Do not capture files' security descriptors.

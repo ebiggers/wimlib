@@ -69,7 +69,7 @@ struct wimlib_unix_data_disk {
 	le32 uid;
 	le32 gid;
 	le32 mode;
-	le32 reserved;
+	le32 rdev;
 };
 
 /* Retrieves the first tagged item with the specified tag and minimum length
@@ -178,19 +178,20 @@ inode_get_unix_data(const struct wim_inode *inode,
 	unix_data->uid = le32_to_cpu(p->uid);
 	unix_data->gid = le32_to_cpu(p->gid);
 	unix_data->mode = le32_to_cpu(p->mode);
+	unix_data->rdev = le32_to_cpu(p->rdev);
 	return true;
 }
 
 /* Sets UNIX data on the specified WIM inode.
  * This is a wimlib extension.
  *
- * Callers must specify all of @uid, @gid, and @mode.  If the inode does not yet
+ * Callers must specify all members in @unix_data.  If the inode does not yet
  * have UNIX data, it is given these values.  Otherwise, only the values that
  * also have the corresponding flags in @which set are changed.
  *
  * Returns %true if successful, %false if failed (out of memory).  */
 bool
-inode_set_unix_data(struct wim_inode *inode, u32 uid, u32 gid, u32 mode,
+inode_set_unix_data(struct wim_inode *inode, struct wimlib_unix_data *unix_data,
 		    int which)
 {
 	struct wimlib_unix_data_disk *p;
@@ -200,14 +201,15 @@ inode_set_unix_data(struct wim_inode *inode, u32 uid, u32 gid, u32 mode,
 		p = inode_add_unix_data_disk(inode);
 		if (!p)
 			return false;
-		p->reserved = cpu_to_le32(0);
-		which = UNIX_DATA_UID | UNIX_DATA_GID | UNIX_DATA_MODE;
+		which = UNIX_DATA_ALL;
 	}
 	if (which & UNIX_DATA_UID)
-		p->uid = cpu_to_le32(uid);
+		p->uid = cpu_to_le32(unix_data->uid);
 	if (which & UNIX_DATA_GID)
-		p->gid = cpu_to_le32(gid);
+		p->gid = cpu_to_le32(unix_data->gid);
 	if (which & UNIX_DATA_MODE)
-		p->mode = cpu_to_le32(mode);
+		p->mode = cpu_to_le32(unix_data->mode);
+	if (which & UNIX_DATA_RDEV)
+		p->rdev = cpu_to_le32(unix_data->rdev);
 	return true;
 }

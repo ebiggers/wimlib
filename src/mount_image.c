@@ -315,7 +315,8 @@ fuse_mask_mode(mode_t mode, struct fuse_context *fuse_ctx)
  */
 static int
 create_dentry(struct fuse_context *fuse_ctx, const char *path,
-	      mode_t mode, int attributes, struct wim_dentry **dentry_ret)
+	      mode_t mode, dev_t rdev, int attributes,
+	      struct wim_dentry **dentry_ret)
 {
 	struct wim_dentry *parent;
 	struct wim_dentry *new;
@@ -343,10 +344,14 @@ create_dentry(struct fuse_context *fuse_ctx, const char *path,
 	new->d_inode->i_attributes = attributes;
 
 	if (wimfs_ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA) {
-		if (!inode_set_unix_data(new->d_inode,
-					 fuse_ctx->uid,
-					 fuse_ctx->gid,
-					 fuse_mask_mode(mode, fuse_ctx),
+		struct wimlib_unix_data unix_data;
+
+		unix_data.uid = fuse_ctx->uid;
+		unix_data.gid = fuse_ctx->gid;
+		unix_data.mode = fuse_mask_mode(mode, fuse_ctx);
+		unix_data.rdev = rdev;
+
+		if (!inode_set_unix_data(new->d_inode, &unix_data,
 					 UNIX_DATA_ALL))
 		{
 			free_dentry(new);
@@ -426,10 +431,12 @@ inode_to_stbuf(const struct wim_inode *inode,
 		stbuf->st_uid = unix_data.uid;
 		stbuf->st_gid = unix_data.gid;
 		stbuf->st_mode = unix_data.mode;
+		stbuf->st_rdev = unix_data.rdev;
 	} else {
 		stbuf->st_uid = ctx->default_uid;
 		stbuf->st_gid = ctx->default_gid;
 		stbuf->st_mode = inode_default_unix_mode(inode);
+		stbuf->st_rdev = 0;
 	}
 	stbuf->st_ino = (ino_t)inode->i_ino;
 	stbuf->st_nlink = inode->i_nlink;
@@ -1617,6 +1624,7 @@ wimfs_chmod(const char *path, mode_t mask)
 	struct wim_dentry *dentry;
 	struct wim_inode *inode;
 	struct wimfs_context *ctx = wimfs_get_context();
+	struct wimlib_unix_data unix_data;
 	int ret;
 
 	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA))
@@ -1629,8 +1637,11 @@ wimfs_chmod(const char *path, mode_t mask)
 
 	inode = dentry->d_inode;
 
-	if (!inode_set_unix_data(inode, ctx->default_uid,
-				 ctx->default_gid, mask, UNIX_DATA_MODE))
+	unix_data.uid = ctx->default_uid;
+	unix_data.gid = ctx->default_gid;
+	unix_data.mode = mask;
+	unix_data.rdev = 0;
+	if (!inode_set_unix_data(inode, &unix_data, UNIX_DATA_MODE))
 		return -ENOMEM;
 
 	return 0;
@@ -1643,6 +1654,7 @@ wimfs_chown(const char *path, uid_t uid, gid_t gid)
 	struct wim_inode *inode;
 	struct wimfs_context *ctx = wimfs_get_context();
 	int which;
+	struct wimlib_unix_data unix_data;
 	int ret;
 
 	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA))
@@ -1668,8 +1680,11 @@ wimfs_chown(const char *path, uid_t uid, gid_t gid)
 		gid = ctx->default_gid;
 
 
-	if (!inode_set_unix_data(inode, uid, gid,
-				 inode_default_unix_mode(inode), which))
+	unix_data.uid = uid;
+	unix_data.gid = gid;
+	unix_data.mode = inode_default_unix_mode(inode);
+	unix_data.rdev = 0;
+	if (!inode_set_unix_data(inode, &unix_data, which))
 		return -ENOMEM;
 
 	return 0;
@@ -1880,11 +1895,12 @@ wimfs_listxattr(const char *path, char *list, size_t size)
 static int
 wimfs_mkdir(const char *path, mode_t mode)
 {
-	return create_dentry(fuse_get_context(), path, mode | S_IFDIR,
+	return create_dentry(fuse_get_context(), path, mode | S_IFDIR, 0,
 			     FILE_ATTRIBUTE_DIRECTORY, NULL);
 }
 
-/* Create a regular file or alternate data stream in the WIM image. */
+/* Create a non-directory, non-symbolic-link file or alternate data stream in
+ * the WIM image.  */
 static int
 wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
@@ -1892,11 +1908,12 @@ wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 	struct fuse_context *fuse_ctx = fuse_get_context();
 	struct wimfs_context *wimfs_ctx = WIMFS_CTX(fuse_ctx);
 
-	if (!S_ISREG(mode))
-		return -EPERM;
-
 	if ((wimfs_ctx->mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)
 	     && (stream_name = path_stream_name(path))) {
+
+		if (!S_ISREG(mode))
+			return -EPERM;
+
 		/* Make an alternate data stream */
 		struct wim_ads_entry *new_entry;
 		struct wim_inode *inode;
@@ -1917,8 +1934,12 @@ wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 			return -ENOMEM;
 		return 0;
 	} else {
-		/* Make a normal file (not an alternate data stream) */
-		return create_dentry(fuse_ctx, path, mode | S_IFREG,
+		if (!S_ISREG(mode) &&
+		    !(wimfs_ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA))
+			return -EPERM;
+
+		/* Make a regular file, device node, named pipe, or socket.  */
+		return create_dentry(fuse_ctx, path, mode, rdev,
 				     FILE_ATTRIBUTE_NORMAL, NULL);
 	}
 }
@@ -2255,7 +2276,7 @@ wimfs_symlink(const char *to, const char *from)
 	struct wim_dentry *dentry;
 	int ret;
 
-	ret = create_dentry(fuse_ctx, from, S_IFLNK | 0777,
+	ret = create_dentry(fuse_ctx, from, S_IFLNK | 0777, 0,
 			    FILE_ATTRIBUTE_REPARSE_POINT, &dentry);
 	if (ret == 0) {
 		dentry->d_inode->i_reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;

@@ -331,15 +331,12 @@ Reparse point fixups are never done in the NTFS volume extraction mode on
 UNIX-like systems.
 .TP
 \fB--unix-data\fR
-(UNIX-like systems only)  By default, in the directory extraction mode on UNIX,
-\fB@IMAGEX_PROGNAME@ apply\fR will ignore both Windows-style security
-descriptors and UNIX-specific file owners, groups, and modes set when using
-\fB@IMAGEX_PROGNAME@ capture\fR with the \fB--unix-data\fR flag.  By passing
-\fB--unix-data\fR to \fB@IMAGEX_PROGNAME@ apply\fR instead, this causes this
-UNIX-specific data to be restored when available.  However, by default, if
-\fB@IMAGEX_PROGNAME@\fR does not have permission to set the UNIX owner, group or
-file mode on an extracted file, a warning will be printed and it will not be
-considered an error condition; use \fB--strict-acls\fR to get stricter behavior.
+(UNIX-like systems only)  Restore UNIX owners, groups, modes, and device IDs
+(major and minor numbers) that were captured by \fB@IMAGEX_PROGNAME@ capture\fR
+with the \fB--unix-data\fR option.  As of wimlib v1.7.0, you can backup and
+restore not only the standard UNIX file permission information, but also
+character device nodes, block device nodes, named pipes (FIFOs), and UNIX domain
+sockets.
 .TP
 \fB--no-acls\fR
 Do not restore security descriptors on extracted files and directories.

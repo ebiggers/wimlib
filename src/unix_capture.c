@@ -347,19 +347,25 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 		goto out;
 	}
 
-	if (unlikely(!S_ISREG(stbuf.st_mode) &&
-		     !S_ISDIR(stbuf.st_mode) &&
-		     !S_ISLNK(stbuf.st_mode)))
-	{
-		if (params->add_flags & WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE)
+	if (!(params->add_flags & WIMLIB_ADD_FLAG_UNIX_DATA)) {
+		if (unlikely(!S_ISREG(stbuf.st_mode) &&
+			     !S_ISDIR(stbuf.st_mode) &&
+			     !S_ISLNK(stbuf.st_mode)))
 		{
-			ERROR("\"%s\": File type is unsupported", full_path);
-			ret = WIMLIB_ERR_UNSUPPORTED_FILE;
+			if (params->add_flags &
+			    WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE)
+			{
+				ERROR("\"%s\": File type is unsupported",
+				      full_path);
+				ret = WIMLIB_ERR_UNSUPPORTED_FILE;
+				goto out;
+			}
+			params->progress.scan.cur_path = full_path;
+			ret = do_capture_progress(params,
+						  WIMLIB_SCAN_DENTRY_UNSUPPORTED,
+						  NULL);
 			goto out;
 		}
-		params->progress.scan.cur_path = full_path;
-		ret = do_capture_progress(params, WIMLIB_SCAN_DENTRY_UNSUPPORTED, NULL);
-		goto out;
 	}
 
 	ret = inode_table_new_dentry(params->inode_table, relpath,
@@ -387,9 +393,13 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 #endif
 	inode->i_resolved = 1;
 	if (params->add_flags & WIMLIB_ADD_FLAG_UNIX_DATA) {
-		if (!inode_set_unix_data(inode, stbuf.st_uid, stbuf.st_gid,
-					 stbuf.st_mode, UNIX_DATA_ALL))
-		{
+		struct wimlib_unix_data unix_data;
+
+		unix_data.uid = stbuf.st_uid;
+		unix_data.gid = stbuf.st_gid;
+		unix_data.mode = stbuf.st_mode;
+		unix_data.rdev = stbuf.st_rdev;
+		if (!inode_set_unix_data(inode, &unix_data, UNIX_DATA_ALL)) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto out;
 		}
@@ -407,7 +417,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 	} else if (S_ISDIR(stbuf.st_mode)) {
 		ret = unix_scan_directory(tree, full_path, full_path_len,
 					  dirfd, relpath, params);
-	} else {
+	} else if (S_ISLNK(stbuf.st_mode)) {
 		ret = unix_scan_symlink(&tree, full_path, dirfd, relpath,
 					inode, params);
 		if (!tree)

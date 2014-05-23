@@ -13,10 +13,14 @@ Version 1.7.0-BETA:
 	documentation for the new '--wimboot' option to wimcapture and wimapply
 	for more information.
 
-	The format of UNIX data has been changed.  If you captured any WIMs with
-	the --unix-data option, to upgrade them you'll need to apply them with
-	--unix-data using wimlib v1.6.2, then re-capture them with --unix-data
-	using this version.
+	On UNIX-like systems, you can now backup and restore device nodes, named
+	pipes, and sockets.  In addition, 32-bit user and group IDs are now
+	supported.
+
+	The way that UNIX data is stored in WIM files has been changed.  If you
+	captured any WIMs with the --unix-data option, to upgrade them you'll
+	need to apply them with --unix-data using wimlib-imagex v1.6.2, then
+	re-capture them with --unix-data using this version.
 
 	wimlib now understands tagged metadata items, such as object IDs, that
 	can be stored in WIM directory entries.

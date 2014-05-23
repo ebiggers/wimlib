@@ -123,17 +123,20 @@ Store temporary staging files in a subdirectory of the directory \fIDIR\fR.
 Only valid for \fB@IMAGEX_PROGNAME@ mountrw\fR.
 .TP
 \fB--unix-data\fR
-By default, \fB@IMAGEX_PROGNAME@ mount\fR and \fB@IMAGEX_PROGNAME@ mountrw\fR will ignore both
-Windows-style security descriptors (which may have been set either from Windows or by
-\fB@IMAGEX_PROGNAME@ capture\fR from an NTFS-volume) and UNIX-specific data (which is from using
-\fB@IMAGEX_PROGNAME@ capture\fR with the \fB--unix-data\fR flag).  In this default mode,
-all files will simply be owned by the user running \fB@IMAGEX_PROGNAME@\fR and will have mode 0777.
-(Note: they will still not be accessible to other users unless you also specify
-\fB--allow-other\fR.)  If you instead provide the \fB--unix-data\fR flag, these
-default permissions will be overridden on a per-file basis with the
-UNIX-specific data when available, and in the case of \fB@IMAGEX_PROGNAME@ mountrw\fR it
-will be possible to change the UNIX permissions using the standard UNIX
-tools and functions.
+Honor UNIX-specific metadata that was captured by \fB@IMAGEX_PROGNAME@
+capture\fR with the \fB--unix-data option\fR.  By default, \fB@IMAGEX_PROGNAME@
+mount\fR and \fB@IMAGEX_PROGNAME@ mountrw\fR will ignore both Windows-style
+security descriptors (which may have been set either from Windows or by
+\fB@IMAGEX_PROGNAME@ capture\fR from an NTFS-volume) and UNIX-specific metadata.
+In this default mode, all files will simply be owned by the user running
+\fB@IMAGEX_PROGNAME@\fR and will have mode 0777.  (Note: they will still not be
+accessible to other users unless you also specify \fB--allow-other\fR.)  If you
+instead provide the \fB--unix-data\fR option, these default permissions will be
+overridden on a per-file basis with the UNIX-specific data when available, and
+in the case of \fB@IMAGEX_PROGNAME@ mountrw\fR it will be possible to change the
+UNIX permissions using the standard UNIX tools and functions.  In addition, with
+wimlib v1.7.0 and later, you can create device nodes, named pipes, and sockets
+on the mounted filesystem and have them stored in the WIM image.
 .TP
 \fB--allow-other\fR
 Pass the \fBallow_other\fR option to the FUSE mount.  See \fBmount.fuse\fR (8).
