@@ -1134,6 +1134,13 @@ do_feature_check(const struct wim_features *required_features,
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 
+	if (required_features->unix_data &&
+	    !(extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA))
+	{
+		WARNING("Ignoring UNIX metadata of %lu files",
+			required_features->unix_data);
+	}
+
 	/* DOS Names.  */
 	if (required_features->short_names &&
 	    !supported_features->short_names)
