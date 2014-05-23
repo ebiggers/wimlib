@@ -5,7 +5,6 @@
 #include "wimlib/list.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/sha1.h"
-#include "wimlib/unix_data.h"
 
 #include <string.h>
 
@@ -107,6 +106,15 @@ struct wim_inode {
 	 * entries for this inode.  */
 	struct wim_ads_entry *i_ads_entries;
 
+	/* If not NULL, a pointer to the extra data that was read from the
+	 * dentry.  This should be a series of tagged items, each of which
+	 * represents a bit of extra metadata, such as the file's object ID.
+	 * See tagged_items.c for more information.  */
+	void *i_extra;
+
+	/* Size of @i_extra buffer in bytes.  If 0, there is no extra data.  */
+	size_t i_extra_size;
+
 	/* Creation time, last access time, and last write time for this inode, in
 	 * 100-nanosecond intervals since 12:00 a.m UTC January 1, 1601.  They
 	 * should correspond to the times gotten by calling GetFileTime() on
@@ -141,9 +149,6 @@ struct wim_inode {
 	/* Inode number; corresponds to hard_link_group_id in the `struct
 	 * wim_dentry_on_disk'.  */
 	u64 i_ino;
-
-	/* UNIX data (wimlib extension)  */
-	struct wimlib_unix_data i_unix_data;
 
 	union {
 		/* Device number, used only during image capture, so we can
@@ -342,12 +347,6 @@ static inline bool
 ads_entry_is_named_stream(const struct wim_ads_entry *entry)
 {
 	return entry->stream_name_nbytes != 0;
-}
-
-static inline bool
-inode_has_unix_data(const struct wim_inode *inode)
-{
-	return inode->i_unix_data.mode != 0;
 }
 
 /* Is the inode a directory?

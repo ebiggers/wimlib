@@ -31,6 +31,7 @@
 #include "wimlib/file_io.h"
 #include "wimlib/reparse.h"
 #include "wimlib/timestamp.h"
+#include "wimlib/unix_data.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -252,16 +253,17 @@ unix_set_metadata(int fd, const struct wim_inode *inode,
 		  const char *path, struct unix_apply_ctx *ctx)
 {
 	int ret;
+	struct wimlib_unix_data unix_data;
 
 	if (fd < 0 && !path)
 		path = unix_build_inode_extraction_path(inode, ctx);
 
 	if ((ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA)
-	    && inode_has_unix_data(inode))
+	    && inode_get_unix_data(inode, &unix_data))
 	{
-		u32 uid = inode->i_unix_data.uid;
-		u32 gid = inode->i_unix_data.gid;
-		u32 mode = inode->i_unix_data.mode;
+		u32 uid = unix_data.uid;
+		u32 gid = unix_data.gid;
+		u32 mode = unix_data.mode;
 
 		ret = unix_set_owner_and_group(fd, path, uid, gid);
 		if (ret) {

@@ -63,6 +63,7 @@ libwim_la_SOURCES =		\
 	src/sha1.c		\
 	src/split.c		\
 	src/reparse.c		\
+	src/tagged_items.c	\
 	src/template.c		\
 	src/textfile.c		\
 	src/timestamp.c		\

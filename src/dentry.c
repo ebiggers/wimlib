@@ -81,14 +81,8 @@ struct wim_dentry_on_disk {
 	le64 subdir_offset;
 
 	/* Reserved fields */
-	/* As an extension, wimlib can store UNIX data here.  */
-	union {
-		struct {
-			le64 unused_1;
-			le64 unused_2;
-		};
-		struct wimlib_unix_data_disk unix_data;
-	};
+	le64 unused_1;
+	le64 unused_2;
 
 	/* Creation time, last access time, and last write time, in
 	 * 100-nanosecond intervals since 12:00 a.m UTC January 1, 1601.  They
@@ -189,6 +183,9 @@ struct wim_dentry_on_disk {
 	/* Followed by variable length short name, in UTF16-LE, if
 	 * short_name_nbytes != 0.  Includes null terminator. */
 	/*utf16lechar short_name[];*/
+
+	/* And optionally followed by a variable-length series of tagged items;
+	 * see tagged_items.c.  */
 } _packed_attribute;
 
 /* Calculates the unaligned length, in bytes, of an on-disk WIM dentry that has
@@ -206,9 +203,9 @@ dentry_correct_length_unaligned(u16 file_name_nbytes, u16 short_name_nbytes)
 }
 
 /* Calculates the unaligned length, in bytes, of an on-disk WIM dentry, based on
- * the file name length and short name length.  Note that dentry->length is
- * ignored; also, this excludes any alternate data stream entries that may
- * follow the dentry. */
+ * the file name length, short name length, and optional tagged items.  Note
+ * that dentry->length is ignored; also, this excludes any alternate data stream
+ * entries that may follow the dentry.  */
 static u64
 dentry_correct_length_aligned(const struct wim_dentry *dentry)
 {
@@ -216,6 +213,12 @@ dentry_correct_length_aligned(const struct wim_dentry *dentry)
 
 	len = dentry_correct_length_unaligned(dentry->file_name_nbytes,
 					      dentry->short_name_nbytes);
+
+	if (dentry->d_inode->i_extra_size) {
+		len = (len + 7) & ~7;
+		len += dentry->d_inode->i_extra_size;
+	}
+
 	return (len + 7) & ~7;
 }
 
@@ -1138,6 +1141,21 @@ unlink_dentry(struct wim_dentry *dentry)
 	list_del(&dentry->d_ci_conflict_list);
 }
 
+static int
+read_extra_data(const u8 *p, const u8 *end, struct wim_inode *inode)
+{
+	while (((uintptr_t)p & 7) && p < end)
+		p++;
+
+	if (unlikely(p < end)) {
+		inode->i_extra = memdup(p, end - p);
+		if (!inode->i_extra)
+			return WIMLIB_ERR_NOMEM;
+		inode->i_extra_size = end - p;
+	}
+	return 0;
+}
+
 /* Reads a WIM directory entry, including all alternate data stream entries that
  * follow it, from the WIM image's metadata resource.  */
 static int
@@ -1212,12 +1230,6 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 	inode->i_attributes = le32_to_cpu(disk_dentry->attributes);
 	inode->i_security_id = le32_to_cpu(disk_dentry->security_id);
 	dentry->subdir_offset = le64_to_cpu(disk_dentry->subdir_offset);
-
-	inode->i_unix_data.uid = le32_to_cpu(disk_dentry->unix_data.uid);
-	inode->i_unix_data.gid = le32_to_cpu(disk_dentry->unix_data.gid);
-	inode->i_unix_data.mode = le32_to_cpu(disk_dentry->unix_data.mode);
-	inode->i_unix_data.reserved = le32_to_cpu(disk_dentry->unix_data.reserved);
-
 	inode->i_creation_time = le64_to_cpu(disk_dentry->creation_time);
 	inode->i_last_access_time = le64_to_cpu(disk_dentry->last_access_time);
 	inode->i_last_write_time = le64_to_cpu(disk_dentry->last_write_time);
@@ -1299,6 +1311,12 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 		dentry->short_name_nbytes = short_name_nbytes;
 		p += short_name_nbytes + 2;
 	}
+
+	/* Read extra data at end of dentry (but before alternate data stream
+	 * entries).  This may contain tagged items.  */
+	ret = read_extra_data(p, &buf[offset + dentry->length], inode);
+	if (ret)
+		goto err_free_dentry;
 
 	/* Align the dentry length.  */
 	dentry->length = (dentry->length + 7) & ~7;
@@ -1569,10 +1587,8 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 
 	/* UNIX data uses the two 8-byte reserved fields.  So if no UNIX data
 	 * exists, they get set to 0, just as we would do anyway.  */
-	disk_dentry->unix_data.uid = cpu_to_le32(inode->i_unix_data.uid);
-	disk_dentry->unix_data.gid = cpu_to_le32(inode->i_unix_data.gid);
-	disk_dentry->unix_data.mode = cpu_to_le32(inode->i_unix_data.mode);
-	disk_dentry->unix_data.reserved = cpu_to_le32(inode->i_unix_data.reserved);
+	disk_dentry->unused_1 = cpu_to_le64(0);
+	disk_dentry->unused_2 = cpu_to_le64(0);
 
 	disk_dentry->creation_time = cpu_to_le64(inode->i_creation_time);
 	disk_dentry->last_access_time = cpu_to_le64(inode->i_last_access_time);
@@ -1611,6 +1627,13 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 	/* Align to 8-byte boundary */
 	while ((uintptr_t)p & 7)
 		*p++ = 0;
+
+	if (inode->i_extra_size) {
+		/* Extra tagged items --- not usually present.  */
+		p = mempcpy(p, inode->i_extra, inode->i_extra_size);
+		while ((uintptr_t)p & 7)
+			*p++ = 0;
+	}
 
 	disk_dentry->length = cpu_to_le64(p - orig_p);
 

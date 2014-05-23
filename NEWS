@@ -18,6 +18,9 @@ Version 1.6.3-BETA:
 	--unix-data using wimlib v1.6.2, then re-capture them with --unix-data
 	using this version.
 
+	wimlib now understands tagged metadata items, such as object IDs, that
+	can be stored in WIM directory entries.
+
 	Removed the --hardlink and --symlink options to wimapply, since I don't
 	think they are too useful and they got in the way of improving the code.
 

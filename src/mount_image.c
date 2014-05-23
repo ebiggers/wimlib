@@ -50,6 +50,7 @@
 #include "wimlib/reparse.h"
 #include "wimlib/resource.h"
 #include "wimlib/timestamp.h"
+#include "wimlib/unix_data.h"
 #include "wimlib/version.h"
 #include "wimlib/write.h"
 #include "wimlib/xml.h"
@@ -342,9 +343,15 @@ create_dentry(struct fuse_context *fuse_ctx, const char *path,
 	new->d_inode->i_attributes = attributes;
 
 	if (wimfs_ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA) {
-		new->d_inode->i_unix_data.uid = fuse_ctx->uid;
-		new->d_inode->i_unix_data.gid = fuse_ctx->gid;
-		new->d_inode->i_unix_data.mode = fuse_mask_mode(mode, fuse_ctx);
+		if (!inode_set_unix_data(new->d_inode,
+					 fuse_ctx->uid,
+					 fuse_ctx->gid,
+					 fuse_mask_mode(mode, fuse_ctx),
+					 UNIX_DATA_ALL))
+		{
+			free_dentry(new);
+			return -ENOMEM;
+		}
 	}
 	dentry_add_child(parent, new);
 	list_add_tail(&new->d_inode->i_list, wimfs_ctx->image_inode_list);
@@ -410,14 +417,15 @@ inode_to_stbuf(const struct wim_inode *inode,
 	       struct stat *stbuf)
 {
 	const struct wimfs_context *ctx = wimfs_get_context();
+	struct wimlib_unix_data unix_data;
 
 	memset(stbuf, 0, sizeof(struct stat));
 	if ((ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA) &&
-	    inode_has_unix_data(inode))
+	    inode_get_unix_data(inode, &unix_data))
 	{
-		stbuf->st_uid = inode->i_unix_data.uid;
-		stbuf->st_gid = inode->i_unix_data.gid;
-		stbuf->st_mode = inode->i_unix_data.mode;
+		stbuf->st_uid = unix_data.uid;
+		stbuf->st_gid = unix_data.gid;
+		stbuf->st_mode = unix_data.mode;
 	} else {
 		stbuf->st_uid = ctx->default_uid;
 		stbuf->st_gid = ctx->default_gid;
@@ -1621,11 +1629,10 @@ wimfs_chmod(const char *path, mode_t mask)
 
 	inode = dentry->d_inode;
 
-	if (!inode_has_unix_data(inode)) {
-		inode->i_unix_data.uid = ctx->default_uid;
-		inode->i_unix_data.gid = ctx->default_gid;
-	}
-	inode->i_unix_data.mode = mask;
+	if (!inode_set_unix_data(inode, ctx->default_uid,
+				 ctx->default_gid, mask, UNIX_DATA_MODE))
+		return -ENOMEM;
+
 	return 0;
 }
 
@@ -1635,6 +1642,7 @@ wimfs_chown(const char *path, uid_t uid, gid_t gid)
 	struct wim_dentry *dentry;
 	struct wim_inode *inode;
 	struct wimfs_context *ctx = wimfs_get_context();
+	int which;
 	int ret;
 
 	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA))
@@ -1647,10 +1655,23 @@ wimfs_chown(const char *path, uid_t uid, gid_t gid)
 
 	inode = dentry->d_inode;
 
-	if (!inode_has_unix_data(inode))
-		inode->i_unix_data.mode = inode_default_unix_mode(inode);
-	inode->i_unix_data.uid = uid;
-	inode->i_unix_data.gid = gid;
+	which = 0;
+
+	if (uid != (uid_t)-1)
+		which |= UNIX_DATA_UID;
+	else
+		uid = ctx->default_uid;
+
+	if (gid != (gid_t)-1)
+		which |= UNIX_DATA_GID;
+	else
+		gid = ctx->default_gid;
+
+
+	if (!inode_set_unix_data(inode, uid, gid,
+				 inode_default_unix_mode(inode), which))
+		return -ENOMEM;
+
 	return 0;
 }
 

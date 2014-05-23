@@ -53,6 +53,7 @@
 #include "wimlib/reparse.h"
 #include "wimlib/resource.h"
 #include "wimlib/security.h"
+#include "wimlib/unix_data.h"
 #ifdef __WIN32__
 #  include "wimlib/win32.h" /* for realpath() equivalent */
 #endif

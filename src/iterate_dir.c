@@ -36,6 +36,7 @@
 #include "wimlib/paths.h"
 #include "wimlib/security.h"
 #include "wimlib/timestamp.h"
+#include "wimlib/unix_data.h"
 #include "wimlib/util.h"
 #include "wimlib/wim.h"
 
@@ -48,6 +49,7 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry, struct wim_dentry *dentry,
 	const struct wim_inode *inode = dentry->d_inode;
 	struct wim_lookup_table_entry *lte;
 	const u8 *hash;
+	struct wimlib_unix_data unix_data;
 
 	ret = utf16le_get_tstr(dentry->file_name, dentry->file_name_nbytes,
 			       &wdentry->filename, &dummy);
@@ -81,11 +83,11 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry, struct wim_dentry *dentry,
 	wdentry->creation_time = wim_timestamp_to_timespec(inode->i_creation_time);
 	wdentry->last_write_time = wim_timestamp_to_timespec(inode->i_last_write_time);
 	wdentry->last_access_time = wim_timestamp_to_timespec(inode->i_last_access_time);
-
-	wdentry->unix_uid = inode->i_unix_data.uid;
-	wdentry->unix_gid = inode->i_unix_data.gid;
-	wdentry->unix_mode = inode->i_unix_data.mode;
-	wdentry->unix_reserved = inode->i_unix_data.reserved;
+	if (inode_get_unix_data(inode, &unix_data)) {
+		wdentry->unix_uid = unix_data.uid;
+		wdentry->unix_gid = unix_data.gid;
+		wdentry->unix_mode = unix_data.mode;
+	}
 
 	lte = inode_unnamed_lte(inode, wim->lookup_table);
 	if (lte) {

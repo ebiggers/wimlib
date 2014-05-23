@@ -40,6 +40,7 @@
 #include "wimlib/lookup_table.h"
 #include "wimlib/reparse.h"
 #include "wimlib/timestamp.h"
+#include "wimlib/unix_data.h"
 
 #ifdef HAVE_FDOPENDIR
 #  define my_fdopendir(dirfd_p) fdopendir(*(dirfd_p))
@@ -386,9 +387,12 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 #endif
 	inode->i_resolved = 1;
 	if (params->add_flags & WIMLIB_ADD_FLAG_UNIX_DATA) {
-		inode->i_unix_data.uid = stbuf.st_uid;
-		inode->i_unix_data.gid = stbuf.st_gid;
-		inode->i_unix_data.mode = stbuf.st_mode;
+		if (!inode_set_unix_data(inode, stbuf.st_uid, stbuf.st_gid,
+					 stbuf.st_mode, UNIX_DATA_ALL))
+		{
+			ret = WIMLIB_ERR_NOMEM;
+			goto out;
+		}
 	}
 
 	if (params->add_flags & WIMLIB_ADD_FLAG_ROOT) {
