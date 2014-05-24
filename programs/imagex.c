@@ -365,6 +365,7 @@ static const struct option unmount_options[] = {
 	{T("check"),   no_argument, NULL, IMAGEX_CHECK_OPTION},
 	{T("rebuild"), no_argument, NULL, IMAGEX_REBUILD_OPTION},
 	{T("lazy"),    no_argument, NULL, IMAGEX_LAZY_OPTION},
+	{T("force"),    no_argument, NULL, IMAGEX_FORCE_OPTION},
 	{T("new-image"), no_argument, NULL, IMAGEX_NEW_IMAGE_OPTION},
 	{NULL, 0, NULL, 0},
 };
@@ -1215,6 +1216,20 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 	case WIMLIB_PROGRESS_MSG_WIMBOOT_EXCLUDE:
 		imagex_printf(T("\nExtracting \"%"TS"\" as normal file (not WIMBoot pointer)\n"),
 			      info->wimboot_exclude.path_in_wim);
+		break;
+	case WIMLIB_PROGRESS_MSG_UNMOUNT_BEGIN:
+		if (info->unmount.mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
+			if (info->unmount.unmount_flags & WIMLIB_UNMOUNT_FLAG_COMMIT) {
+				imagex_printf(T("Committing changes to %"TS" (image %d)\n"),
+					      info->unmount.mounted_wim,
+					      info->unmount.mounted_image);
+			} else {
+				imagex_printf(T("Discarding changes to %"TS" (image %d)\n"),
+					      info->unmount.mounted_wim,
+					      info->unmount.mounted_image);
+				imagex_printf(T("\t(Use --commit to keep changes.)\n"));
+			}
+		}
 		break;
 	default:
 		break;
@@ -3673,7 +3688,14 @@ imagex_unmount(int argc, tchar **argv, int cmd)
 			unmount_flags |= WIMLIB_UNMOUNT_FLAG_REBUILD;
 			break;
 		case IMAGEX_LAZY_OPTION:
-			unmount_flags |= WIMLIB_UNMOUNT_FLAG_LAZY;
+		case IMAGEX_FORCE_OPTION:
+			/* Now, unmount is lazy by default.  However, committing
+			 * the image will fail with
+			 * WIMLIB_ERR_MOUNTED_IMAGE_IS_BUSY if there are open
+			 * file descriptors on the WIM image.  The
+			 * WIMLIB_UNMOUNT_FLAG_FORCE option forces these file
+			 * descriptors to be closed.  */
+			unmount_flags |= WIMLIB_UNMOUNT_FLAG_FORCE;
 			break;
 		case IMAGEX_NEW_IMAGE_OPTION:
 			unmount_flags |= WIMLIB_UNMOUNT_FLAG_NEW_IMAGE;
@@ -3693,13 +3715,19 @@ imagex_unmount(int argc, tchar **argv, int cmd)
 				       "without --commit also specified!"));
 			goto out_err;
 		}
-		imagex_printf(T("Committing changes as new image...\n"));
 	}
 
 	ret = wimlib_unmount_image_with_progress(argv[0], unmount_flags,
 						 imagex_progress_func, NULL);
-	if (ret)
+	if (ret) {
 		imagex_error(T("Failed to unmount \"%"TS"\""), argv[0]);
+		if (ret == WIMLIB_ERR_MOUNTED_IMAGE_IS_BUSY) {
+			imagex_printf(T(
+				"\tNote: Use --commit --force to force changes "
+					"to be committed, regardless\n"
+				"\t      of open files.\n"));
+		}
+	}
 out:
 	return ret;
 
@@ -4049,8 +4077,8 @@ T(
 #if WIM_MOUNTING_SUPPORTED
 [CMD_UNMOUNT] =
 T(
-"    %"TS" DIRECTORY [--commit] [--check] [--rebuild] [--lazy]\n"
-"                    [--new-image]\n"
+"    %"TS" DIRECTORY [--commit] [--force] [--new-image]\n"
+"                         [--check] [--rebuild]\n"
 ),
 #endif
 [CMD_UPDATE] =

@@ -169,7 +169,10 @@ struct wim_lookup_table_entry {
 		tchar *file_on_disk;
 		void *attached_buffer;
 	#ifdef WITH_FUSE
-		tchar *staging_file_name;
+		struct {
+			char *staging_file_name;
+			int staging_dir_fd;
+		};
 	#endif
 	#ifdef WITH_NTFS_3G
 		struct ntfs_location *ntfs_loc;

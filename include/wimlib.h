@@ -572,9 +572,13 @@ enum wimlib_progress_msg {
 	 * a file is being extracted normally (not as a WIMBoot "pointer file")
 	 * due to it matching a pattern in the [PrepopulateList] section of the
 	 * configuration file \Windows\System32\WimBootCompress.ini in the WIM
-	 * image.  @info will point to ::wimlib_progress_info.wimboot_exclude.
+	 * image.  @p info will point to ::wimlib_progress_info.wimboot_exclude.
 	 */
 	WIMLIB_PROGRESS_MSG_WIMBOOT_EXCLUDE = 24,
+
+	/** Starting to unmount a WIM image.  @p info will point to
+	 * ::wimlib_progress_info.unmount.  */
+	WIMLIB_PROGRESS_MSG_UNMOUNT_BEGIN = 25,
 };
 
 /** Valid return values from user-provided progress functions
@@ -961,6 +965,25 @@ union wimlib_progress_info {
 		/** Path to which the file is being extracted  */
 		const wimlib_tchar *extraction_path;
 	} wimboot_exclude;
+
+	/** Valid on messages ::WIMLIB_PROGRESS_MSG_UNMOUNT_BEGIN.  */
+	struct wimlib_progress_info_unmount {
+		/** Path to directory being unmounted  */
+		const wimlib_tchar *mountpoint;
+
+		/** Path to WIM file being unmounted  */
+		const wimlib_tchar *mounted_wim;
+
+		/** 1-based index of image being unmounted.  */
+		uint32_t mounted_image;
+
+		/** Flags that were passed to wimlib_mount_image() when the
+		 * mountpoint was set up.  */
+		uint32_t mount_flags;
+
+		/** Flags passed to wimlib_unmount_image().  */
+		uint32_t unmount_flags;
+	} unmount;
 };
 
 /**
@@ -1604,23 +1627,24 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 /** Enable FUSE debugging by passing the @c -d flag to @c fuse_main().*/
 #define WIMLIB_MOUNT_FLAG_DEBUG				0x00000002
 
-/** Do not allow accessing alternate data streams in the mounted WIM image. */
+/** Do not allow accessing named data streams in the mounted WIM image.  */
 #define WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_NONE		0x00000004
 
-/** Access alternate data streams in the mounted WIM image through extended file
- * attributes.  This is the default mode. */
+/** Access named data streams in the mounted WIM image through extended file
+ * attributes named "user.X", where X is the name of a data stream.  This is the
+ * default mode.  */
 #define WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR	0x00000008
 
-/** Access alternate data streams in the mounted WIM image by specifying the
- * file name, a colon, then the alternate file stream name. */
+/** Access named data streams in the mounted WIM image by specifying the file
+ * name, a colon, then the name of the data stream.  */
 #define WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS	0x00000010
 
-/** Use UNIX file owners, groups, and modes if available in the WIM (see
- * ::WIMLIB_ADD_FLAG_UNIX_DATA). */
+/** Use UNIX metadata if available in the WIM image.  See
+ * ::WIMLIB_ADD_FLAG_UNIX_DATA.  */
 #define WIMLIB_MOUNT_FLAG_UNIX_DATA			0x00000020
 
-/** Allow other users to see the mounted filesystem.  (this passes the @c
- * allow_other option to FUSE mount) */
+/** Allow other users to see the mounted filesystem.  This passes the @c
+ * allow_other option to the FUSE mount.  */
 #define WIMLIB_MOUNT_FLAG_ALLOW_OTHER			0x00000040
 
 /** @} */
@@ -1652,25 +1676,36 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 /** @ingroup G_mounting_wim_images
  * @{ */
 
-/** See ::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY.  */
+/** Provide ::WIMLIB_WRITE_FLAG_CHECK_INTEGRITY when committing the WIM image.
+ * Ignored if ::WIMLIB_UNMOUNT_FLAG_COMMIT not also specified.  */
 #define WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY		0x00000001
 
-/** Unless this flag is given, changes to a read-write mounted WIM are
- * discarded.  Ignored for read-only mounts.  */
+/** Commit changes to the read-write mounted WIM image.
+ * If this flag is not specified, changes will be discarded.  */
 #define WIMLIB_UNMOUNT_FLAG_COMMIT			0x00000002
 
-/** See ::WIMLIB_WRITE_FLAG_REBUILD.  */
+/** Provide ::WIMLIB_WRITE_FLAG_REBUILD when committing the WIM image.
+ * Ignored if ::WIMLIB_UNMOUNT_FLAG_COMMIT not also specified.  */
 #define WIMLIB_UNMOUNT_FLAG_REBUILD			0x00000004
 
-/** See ::WIMLIB_WRITE_FLAG_RECOMPRESS */
+/** Provide ::WIMLIB_WRITE_FLAG_RECOMPRESS when committing the WIM image.
+ * Ignored if ::WIMLIB_UNMOUNT_FLAG_COMMIT not also specified.  */
 #define WIMLIB_UNMOUNT_FLAG_RECOMPRESS			0x00000008
 
-/** Do a "lazy" unmount (detach filesystem immediately, even if busy).  */
-#define WIMLIB_UNMOUNT_FLAG_LAZY			0x00000010
+/**
+ * In combination with ::WIMLIB_UNMOUNT_FLAG_COMMIT for a read-write mounted WIM
+ * image, forces all file descriptors to the open WIM image to be closed before
+ * committing it.
+ *
+ * Without ::WIMLIB_UNMOUNT_FLAG_COMMIT or with a read-only mounted WIM image,
+ * this flag has no effect.
+ */
+#define WIMLIB_UNMOUNT_FLAG_FORCE			0x00000010
 
 /** In combination with ::WIMLIB_UNMOUNT_FLAG_COMMIT for a read-write mounted
- * image, causes the modified image to be committed as a new, unnamed image
- * appended to the archive.  The original image will be unmodified.  */
+ * WIM image, causes the modified image to be committed to the WIM file as a
+ * new, unnamed image appended to the archive.  The original image in the WIM
+ * file will be unmodified.  */
 #define WIMLIB_UNMOUNT_FLAG_NEW_IMAGE			0x00000020
 
 /** @} */
@@ -2076,6 +2111,9 @@ enum wimlib_error_code {
 	WIMLIB_ERR_ABORTED_BY_PROGRESS,
 	WIMLIB_ERR_UNKNOWN_PROGRESS_STATUS,
 	WIMLIB_ERR_MKNOD,
+	WIMLIB_ERR_MOUNTED_IMAGE_IS_BUSY,
+	WIMLIB_ERR_NOT_A_MOUNTPOINT,
+	WIMLIB_ERR_NOT_PERMITTED_TO_UNMOUNT,
 };
 
 
@@ -3062,82 +3100,75 @@ wimlib_join_with_progress(const wimlib_tchar * const *swms,
 /**
  * @ingroup G_mounting_wim_images
  *
- * Mounts an image in a WIM file on a directory read-only or read-write.
- *
- * As this is implemented using FUSE (Filesystme in UserSpacE), this is not
- * supported if wimlib was configured with @c --without-fuse.  This includes
- * Windows builds of wimlib; ::WIMLIB_ERR_UNSUPPORTED will be returned in such
- * cases.
- *
- * Calling this function daemonizes the process, unless
- * ::WIMLIB_MOUNT_FLAG_DEBUG was specified or an early occur occurs.  If the
- * mount is read-write (::WIMLIB_MOUNT_FLAG_READWRITE specified), modifications
- * to the WIM are staged in a temporary directory.
- *
- * It is safe to mount multiple images from the same underlying WIM file
- * read-only at the same time, but only if different ::WIMStruct's are used.  It
- * is @b not safe to mount multiple images from the same WIM file read-write at
- * the same time.
- *
- * wimlib_mount_image() cannot be used on an image that was exported with
- * wimlib_export_image() while the dentry trees for both images are still in
- * memory.  In addition, wimlib_mount_image() may not be used to mount an image
- * that already has modifications pending (e.g. an image added with
- * wimlib_add_image()).
+ * Mounts an image from a WIM file on a directory read-only or read-write.
  *
  * @param wim
  * 	Pointer to the ::WIMStruct containing the image to be mounted.
  * @param image
- * 	The number of the image to mount, indexed starting from it.  It must be
- * 	an existing, single image.
+ * 	The 1-based index of the image to mount.
  * @param dir
- * 	The path to an existing empty directory to mount the image on.
+ * 	The path to an existing empty directory on which to mount the WIM image.
  * @param mount_flags
- * 	Bitwise OR of flags prefixed with WIMLIB_MOUNT_FLAG.
+ * 	Bitwise OR of flags prefixed with WIMLIB_MOUNT_FLAG.  Use
+ * 	::WIMLIB_MOUNT_FLAG_READWRITE to request a read-write mount instead of a
+ * 	read-only mount.
  * @param staging_dir
- * 	If non-NULL, the name of a directory in which the staging directory will
- * 	be created.  Ignored if ::WIMLIB_MOUNT_FLAG_READWRITE is not specified
- * 	in @p mount_flags.  If left @c NULL, the staging directory is created in
- * 	the same directory as the WIM file that @p wim was originally read from.
+ * 	If non-NULL, the name of a directory in which a temporary directory for
+ * 	storing modified or added files will be created.  Ignored if
+ * 	::WIMLIB_MOUNT_FLAG_READWRITE is not specified in @p mount_flags.  If
+ * 	left @c NULL, the staging directory is created in the same directory as
+ * 	the WIM file that @p wim was originally read from.  The staging
+ * 	directory is deleted when the image is unmounted.
  *
- * @return 0 on success; nonzero on error.
+ * @return 0 on success; nonzero on error.  The possible error codes include:
  *
  * @retval ::WIMLIB_ERR_ALREADY_LOCKED
- * 	A read-write mount was requested, but an exclusive advisory lock on
- * 	the on-disk WIM file could not be acquired because another thread or
- * 	process has mounted an image from the WIM read-write or is currently
- * 	modifying the WIM in-place.
+ * 	An image from the WIM file is already mounted read-write, or another
+ * 	process is currently appending data to the WIM file.
  * @retval ::WIMLIB_ERR_FUSE
- * 	A non-zero status was returned by @c fuse_main().
+ * 	A non-zero status code was returned by @c fuse_main().
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  * 	@p image does not specify an existing, single image in @p wim.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
- * 	@p image is shared among multiple ::WIMStruct's as a result of a call to
- * 	wimlib_export_image(), or @p image has been added with
- * 	wimlib_add_image().
+ *	@p wim was @c NULL; or @p dir was NULL or the empty string; or an
+ *	unrecognized flag was specified in @p mount_flags; or the WIM image has
+ *	already been modified in memory (e.g. by wimlib_update_image()).
  * @retval ::WIMLIB_ERR_MKDIR
  * 	::WIMLIB_MOUNT_FLAG_READWRITE was specified in @p mount_flags, but the
  * 	staging directory could not be created.
- * @retval ::WIMLIB_ERR_NOTDIR
- * 	Could not determine the current working directory.
- * @retval ::WIMLIB_ERR_RESOURCE_NOT_FOUND
- *	One of the dentries in the image referenced a stream not present in the
- *	WIM's lookup table (or in any of the lookup tables of the split WIM
- *	parts).
  * @retval ::WIMLIB_ERR_WIM_IS_READONLY
- *	::WIMLIB_MOUNT_FLAG_READWRITE was specified in @p mount_flags, but @p
- *	wim is considered read-only because of any of the reasons mentioned in
- *	the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS flag.
+ *	::WIMLIB_MOUNT_FLAG_READWRITE was specified in @p mount_flags, but the
+ *	WIM file is considered read-only because of any of the reasons mentioned
+ *	in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS flag.
  * @retval ::WIMLIB_ERR_UNSUPPORTED
  * 	Mounting is not supported, either because the platform is Windows, or
- * 	because the platform is UNIX-like and wimlib was compiled with @c
- * 	--without-fuse.
+ * 	because the platform is UNIX-like and wimlib was compiled using
+ * 	<code>--without-fuse</code>.
  *
  * This function can additionally return ::WIMLIB_ERR_DECOMPRESSION,
  * ::WIMLIB_ERR_INVALID_METADATA_RESOURCE, ::WIMLIB_ERR_METADATA_NOT_FOUND,
  * ::WIMLIB_ERR_NOMEM, ::WIMLIB_ERR_READ, or
  * ::WIMLIB_ERR_UNEXPECTED_END_OF_FILE, all of which indicate failure (for
  * different reasons) to read the metadata resource for the image to mount.
+ *
+ * The ability to mount WIM image is implemented using FUSE (Filesystem in
+ * UserSpacE).  Depending on how FUSE is set up on your system, this function
+ * may work as normal users in addition to the root user.
+ *
+ * Mounting WIM images is not supported if wimlib was configured
+ * <code>--without-fuse</code>.  This includes Windows builds of wimlib;
+ * ::WIMLIB_ERR_UNSUPPORTED will be returned in such cases.
+ *
+ * Calling this function daemonizes the process, unless
+ * ::WIMLIB_MOUNT_FLAG_DEBUG was specified or an early error occurs.
+ *
+ * It is safe to mount multiple images from the same underlying WIM file
+ * read-only at the same time, but only if different ::WIMStruct's are used.  It
+ * is @b not safe to mount multiple images from the same WIM file read-write at
+ * the same time.
+ *
+ * To unmount the image, call wimlib_unmount_image().  This may be done in a
+ * different process.
  */
 extern int
 wimlib_mount_image(WIMStruct *wim,
@@ -3861,64 +3892,38 @@ wimlib_split(WIMStruct *wim,
  *
  * Unmounts a WIM image that was mounted using wimlib_mount_image().
  *
- * The image to unmount is specified by the path to the mountpoint, not the
- * original ::WIMStruct passed to wimlib_mount_image(), which should not be
- * touched and also may have been allocated in a different process.
- *
- * To unmount the image, the process calling this function communicates with the
- * process that is managing the mounted WIM image.  This function blocks until it
- * is known whether the unmount succeeded or failed.  In the case of a
- * read-write mounted WIM, the unmount is not considered to have succeeded until
- * all changes have been saved to the underlying WIM file.
+ * When unmounting a read-write mounted image, the default behavior is to
+ * discard changes to the image.  Use ::WIMLIB_UNMOUNT_FLAG_COMMIT to cause the
+ * WIM image to be committed.
  *
  * @param dir
- * 	The directory that the WIM image was mounted on.
+ * 	The directory the WIM image was mounted on.
  * @param unmount_flags
- * 	Bitwise OR of the flags ::WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY,
- * 	::WIMLIB_UNMOUNT_FLAG_COMMIT, ::WIMLIB_UNMOUNT_FLAG_REBUILD, and/or
- * 	::WIMLIB_UNMOUNT_FLAG_RECOMPRESS.  None of these flags affect read-only
- * 	mounts.
+ * 	Bitwise OR of flags prefixed with @p WIMLIB_UNMOUNT_FLAG.
  *
- * @return 0 on success; nonzero on error.
+ * @return 0 on success; nonzero on error.  The possible error codes include:
  *
- * @retval ::WIMLIB_ERR_DELETE_STAGING_DIR
- * 	The filesystem daemon was unable to remove the staging directory and the
- * 	temporary files that it contains.
- * @retval ::WIMLIB_ERR_FILESYSTEM_DAEMON_CRASHED
- * 	The filesystem daemon appears to have terminated before sending an exit
- * 	status.
- * @retval ::WIMLIB_ERR_FORK
- * 	Could not @c fork() the process.
- * @retval ::WIMLIB_ERR_FUSERMOUNT
- * 	The @b fusermount program could not be executed or exited with a failure
- * 	status.
+ * @retval ::WIMLIB_ERR_NOT_A_MOUNTPOINT
+ * 	There is no WIM image mounted on the specified directory.
+ * @retval ::WIMLIB_ERR_MOUNTED_IMAGE_IS_BUSY
+ *	The read-write mounted WIM image cannot be committed because there are
+ *	file descriptors open to it, and ::WIMLIB_UNMOUNT_FLAG_FORCE was not
+ *	specified.
  * @retval ::WIMLIB_ERR_MQUEUE
- * 	Could not open a POSIX message queue to communicate with the filesystem
- * 	daemon servicing the mounted filesystem, could not send a message
- * 	through the queue, or could not receive a message through the queue.
- * @retval ::WIMLIB_ERR_NOMEM
- * 	Failed to allocate needed memory.
- * @retval ::WIMLIB_ERR_OPEN
- * 	The filesystem daemon could not open a temporary file for writing the
- * 	new WIM.
- * @retval ::WIMLIB_ERR_READ
- * 	A read error occurred when the filesystem daemon tried to a file from
- * 	the staging directory
- * @retval ::WIMLIB_ERR_RENAME
- * 	The filesystem daemon failed to rename the newly written WIM file to the
- * 	original WIM file.
+ * 	Could not create a POSIX message queue.
+ * @retval ::WIMLIB_ERR_NOT_PERMITTED_TO_UNMOUNT
+ *	The WIM image was mounted by a different user.
  * @retval ::WIMLIB_ERR_UNSUPPORTED
  * 	Mounting is not supported, either because the platform is Windows, or
- * 	because the platform is UNIX-like and wimlib was compiled with @c
+ * 	because the platform is UNIX-like and wimlib was compiled using @c
  * 	--without-fuse.
- * @retval ::WIMLIB_ERR_WRITE
- * 	A write error occurred when the filesystem daemon was writing to the new
- * 	WIM file, or the filesystem daemon was unable to flush changes that had
- * 	been made to files in the staging directory.
+ *
+ * Note: you can also unmount the image by using the @c umount() system call, or
+ * by using the @c umount or @c fusermount programs.  However, you need to call
+ * this function if you want changes to be committed.
  */
 extern int
-wimlib_unmount_image(const wimlib_tchar *dir,
-		     int unmount_flags);
+wimlib_unmount_image(const wimlib_tchar *dir, int unmount_flags);
 
 /**
  * @ingroup G_mounting_wim_images

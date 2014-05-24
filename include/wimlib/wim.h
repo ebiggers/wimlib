@@ -66,7 +66,8 @@ struct WIMStruct {
 	 * generates WIMs with invalid reference counts.)  */
 	u8 refcnts_ok : 1;
 
-	u8 wim_locked : 1;
+	/* Has the underlying WIM file been locked for appending?  */
+	u8 locked_for_append : 1;
 
 	/* One of WIMLIB_COMPRESSION_TYPE_*, cached from the header flags. */
 	u8 compression_type;

@@ -352,6 +352,12 @@ static const tchar *error_strings[] = {
 		= T("The user-provided progress function returned an unrecognized value"),
 	[WIMLIB_ERR_MKNOD]
 		= T("Unable to create a special file (e.g. device node or socket)"),
+	[WIMLIB_ERR_MOUNTED_IMAGE_IS_BUSY]
+		= T("There are still files open on the mounted WIM image"),
+	[WIMLIB_ERR_NOT_A_MOUNTPOINT]
+		= T("There is not a WIM image mounted on the directory"),
+	[WIMLIB_ERR_NOT_PERMITTED_TO_UNMOUNT]
+		= T("The current user does not have permission to unmount the WIM image"),
 };
 
 /* API function documented in wimlib.h  */

@@ -840,15 +840,13 @@ wim_pathname_to_stream(WIMStruct *wim,
 
 	if (stream_name) {
 		struct wim_ads_entry *ads_entry;
-		u16 ads_idx;
-		ads_entry = inode_get_ads_entry(inode, stream_name,
-						&ads_idx);
-		if (ads_entry) {
-			stream_idx = ads_idx + 1;
-			lte = ads_entry->lte;
-		} else {
-			return -ENOENT;
-		}
+
+		ads_entry = inode_get_ads_entry(inode, stream_name);
+		if (!ads_entry)
+			return -errno;
+
+		stream_idx = ads_entry - inode->i_ads_entries + 1;
+		lte = ads_entry->lte;
 	} else {
 		lte = inode_unnamed_stream_resolved(inode, &stream_idx);
 	}

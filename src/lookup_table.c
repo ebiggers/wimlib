@@ -269,7 +269,8 @@ lte_decrement_refcnt(struct wim_lookup_table_entry *lte,
 			 * that there still may be open file descriptors to it.)
 			 * */
 			if (lte->resource_location == RESOURCE_IN_STAGING_FILE)
-				unlink(lte->staging_file_name);
+				unlinkat(lte->staging_dir_fd,
+					 lte->staging_file_name, 0);
 		#endif
 		} else {
 			if (!should_retain_lte(lte))

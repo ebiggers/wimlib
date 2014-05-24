@@ -193,6 +193,7 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 		      "expected power-of-2 chunk size (got %"PRIu32")",
 		      chunk_size);
 		ret = WIMLIB_ERR_INVALID_CHUNK_SIZE;
+		errno = EINVAL;
 		goto out_free_memory;
 	}
 
@@ -207,8 +208,11 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 	} else {
 		ret = wimlib_create_decompressor(ctype, chunk_size, NULL,
 						 &decompressor);
-		if (ret)
+		if (ret) {
+			if (ret != WIMLIB_ERR_NOMEM)
+				errno = EINVAL;
 			goto out_free_memory;
+		}
 	}
 
 	const u32 chunk_order = bsr32(chunk_size);
@@ -789,6 +793,34 @@ read_file_on_disk_prefix(const struct wim_lookup_table_entry *lte, u64 size,
 	return ret;
 }
 
+#ifdef WITH_FUSE
+static int
+read_staging_file_prefix(const struct wim_lookup_table_entry *lte, u64 size,
+			 consume_data_callback_t cb, void *cb_ctx)
+{
+	int raw_fd;
+	struct filedes fd;
+	int ret;
+
+	wimlib_assert(size <= lte->size);
+
+	DEBUG("Reading %"PRIu64" bytes from staging file \"%s\"",
+	      size, lte->staging_file_name);
+
+	raw_fd = openat(lte->staging_dir_fd, lte->staging_file_name,
+			O_RDONLY | O_NOFOLLOW);
+	if (raw_fd < 0) {
+		ERROR_WITH_ERRNO("Can't open staging file \"%s\"",
+				 lte->staging_file_name);
+		return WIMLIB_ERR_OPEN;
+	}
+	filedes_init(&fd, raw_fd);
+	ret = read_raw_file_data(&fd, 0, size, cb, cb_ctx);
+	filedes_close(&fd);
+	return ret;
+}
+#endif
+
 /* This function handles the trivial case of reading stream data that is, in
  * fact, already located in an in-memory buffer.  */
 static int
@@ -828,7 +860,7 @@ read_stream_prefix(const struct wim_lookup_table_entry *lte, u64 size,
 		[RESOURCE_IN_FILE_ON_DISK]    = read_file_on_disk_prefix,
 		[RESOURCE_IN_ATTACHED_BUFFER] = read_buffer_prefix,
 	#ifdef WITH_FUSE
-		[RESOURCE_IN_STAGING_FILE]    = read_file_on_disk_prefix,
+		[RESOURCE_IN_STAGING_FILE]    = read_staging_file_prefix,
 	#endif
 	#ifdef WITH_NTFS_3G
 		[RESOURCE_IN_NTFS_VOLUME]     = read_ntfs_file_prefix,

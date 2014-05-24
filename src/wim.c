@@ -328,8 +328,22 @@ new_image_metadata_array(unsigned num_images)
 }
 
 
-/* Load the metadata for the specified WIM image into memory and set it as the
- * WIMStruct's currently selected WIM image.  */
+/*
+ * Load the metadata for the specified WIM image into memory and set it
+ * as the WIMStruct's currently selected image.
+ *
+ * @wim
+ *	The WIMStruct for the WIM.
+ * @image
+ *	The 1-based index of the image in the WIM to select.
+ *
+ * On success, 0 will be returned, wim->current_image will be set to
+ * @image, and wim_get_current_image_metadata() can be used to retrieve
+ * metadata information for the image.
+ *
+ * On failure, WIMLIB_ERR_INVALID_IMAGE, WIMLIB_ERR_METADATA_NOT_FOUND,
+ * or another error code will be returned.
+ */
 int
 select_wim_image(WIMStruct *wim, int image)
 {

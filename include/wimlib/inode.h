@@ -177,10 +177,17 @@ struct wim_inode {
 		};
 
 #ifdef WITH_FUSE
-		/* Used only during image mount:  Table of file descriptors that
-		 * have been opened to this inode.  The table is automatically
-		 * freed when the last file descriptor is closed.  */
-		struct wimfs_fd **i_fds;
+		struct {
+			/* Used only during image mount:  Table of file
+			 * descriptors that have been opened to this inode.
+			 * This table is freed when the last file descriptor is
+			 * closed.  */
+			struct wimfs_fd **i_fds;
+
+			/* Lower bound on the index of the next available entry
+			 * in 'i_fds'.  */
+			u16 i_next_fd;
+		};
 #endif
 	};
 
@@ -316,8 +323,7 @@ free_inode(struct wim_inode *inode);
 		dentry_full_path(inode_first_dentry(inode))
 
 extern struct wim_ads_entry *
-inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name,
-		    u16 *idx_ret);
+inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name);
 
 extern struct wim_ads_entry *
 inode_add_ads_utf16le(struct wim_inode *inode,
@@ -327,7 +333,7 @@ inode_add_ads_utf16le(struct wim_inode *inode,
 extern struct wim_ads_entry *
 inode_add_ads(struct wim_inode *dentry, const tchar *stream_name);
 
-extern int
+extern struct wim_ads_entry *
 inode_add_ads_with_data(struct wim_inode *inode, const tchar *name,
 			const void *value, size_t size,
 			struct wim_lookup_table *lookup_table);
@@ -340,7 +346,7 @@ inode_set_unnamed_stream(struct wim_inode *inode, const void *data, size_t len,
 			 struct wim_lookup_table *lookup_table);
 
 extern void
-inode_remove_ads(struct wim_inode *inode, u16 idx,
+inode_remove_ads(struct wim_inode *inode, struct wim_ads_entry *entry,
 		 struct wim_lookup_table *lookup_table);
 
 static inline bool
@@ -479,6 +485,15 @@ inode_stream_name_nbytes(const struct wim_inode *inode, unsigned stream_idx)
 		return 0;
 	else
 		return inode->i_ads_entries[stream_idx - 1].stream_name_nbytes;
+}
+
+static inline u32
+inode_stream_idx_to_id(const struct wim_inode *inode, unsigned stream_idx)
+{
+	if (stream_idx == 0)
+		return 0;
+	else
+		return inode->i_ads_entries[stream_idx - 1].stream_id;
 }
 
 extern struct wim_lookup_table_entry *

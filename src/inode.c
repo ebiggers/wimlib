@@ -39,6 +39,8 @@
 #include "wimlib/security.h"
 #include "wimlib/timestamp.h"
 
+#include <errno.h>
+
 /* Allocate a new inode.  Set the timestamps to the current time.  */
 struct wim_inode *
 new_inode(void)
@@ -138,10 +140,11 @@ ads_entry_has_name(const struct wim_ads_entry *entry,
  *
  * If @p stream_name is the empty string, NULL is returned --- that is, this
  * function will not return "unnamed" alternate data stream entries.
+ *
+ * If NULL is returned, errno is set.
  */
 struct wim_ads_entry *
-inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name,
-		    u16 *idx_ret)
+inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name)
 {
 	int ret;
 	const utf16lechar *stream_name_utf16le;
@@ -149,11 +152,15 @@ inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name,
 	u16 i;
 	struct wim_ads_entry *result;
 
-	if (inode->i_num_ads == 0)
+	if (inode->i_num_ads == 0) {
+		errno = ENOENT;
 		return NULL;
+	}
 
-	if (stream_name[0] == T('\0'))
+	if (stream_name[0] == T('\0')) {
+		errno = ENOENT;
 		return NULL;
+	}
 
 	ret = tstr_get_utf16le_and_len(stream_name, &stream_name_utf16le,
 				       &stream_name_utf16le_nbytes);
@@ -168,8 +175,6 @@ inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name,
 				       stream_name_utf16le_nbytes,
 				       default_ignore_case))
 		{
-			if (idx_ret)
-				*idx_ret = i;
 			result = &inode->i_ads_entries[i];
 			break;
 		}
@@ -177,6 +182,8 @@ inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name,
 
 	tstr_put_utf16le(stream_name_utf16le);
 
+	if (!result)
+		errno = ENOENT;
 	return result;
 }
 
@@ -190,6 +197,7 @@ do_inode_add_ads(struct wim_inode *inode,
 
 	if (inode->i_num_ads >= 0xfffe) {
 		ERROR("Too many alternate data streams in one inode!");
+		errno = EFBIG;
 		return NULL;
 	}
 	num_ads = inode->i_num_ads + 1;
@@ -232,24 +240,21 @@ inode_add_ads_utf16le(struct wim_inode *inode,
 
 /*
  * Add an alternate stream entry to a WIM inode.  On success, returns a pointer
- * to the new entry; on failure, returns NULL.
+ * to the new entry; on failure, returns NULL and sets errno.
  */
 struct wim_ads_entry *
 inode_add_ads(struct wim_inode *inode, const tchar *stream_name)
 {
 	utf16lechar *stream_name_utf16le = NULL;
 	size_t stream_name_utf16le_nbytes = 0;
-	int ret;
 	struct wim_ads_entry *result;
 
-	if (stream_name && *stream_name) {
-		ret = tstr_to_utf16le(stream_name,
-				      tstrlen(stream_name) * sizeof(tchar),
-				      &stream_name_utf16le,
-				      &stream_name_utf16le_nbytes);
-		if (ret)
+	if (stream_name && *stream_name)
+		if (tstr_to_utf16le(stream_name,
+				    tstrlen(stream_name) * sizeof(tchar),
+				    &stream_name_utf16le,
+				    &stream_name_utf16le_nbytes))
 			return NULL;
-	}
 
 	result = do_inode_add_ads(inode, stream_name_utf16le,
 				  stream_name_utf16le_nbytes);
@@ -258,27 +263,25 @@ inode_add_ads(struct wim_inode *inode, const tchar *stream_name)
 	return result;
 }
 
-int
+struct wim_ads_entry *
 inode_add_ads_with_data(struct wim_inode *inode, const tchar *name,
 			const void *value, size_t size,
 			struct wim_lookup_table *lookup_table)
 {
-	struct wim_ads_entry *new_ads_entry;
+	struct wim_ads_entry *new_entry;
 
 	wimlib_assert(inode->i_resolved);
 
-	new_ads_entry = inode_add_ads(inode, name);
-	if (new_ads_entry == NULL)
-		return WIMLIB_ERR_NOMEM;
+	new_entry = inode_add_ads(inode, name);
+	if (!new_entry)
+		return NULL;
 
-	new_ads_entry->lte = new_stream_from_data_buffer(value, size,
-							 lookup_table);
-	if (new_ads_entry->lte == NULL) {
-		inode_remove_ads(inode, new_ads_entry - inode->i_ads_entries,
-				 lookup_table);
-		return WIMLIB_ERR_NOMEM;
+	new_entry->lte = new_stream_from_data_buffer(value, size, lookup_table);
+	if (!new_entry->lte) {
+		inode_remove_ads(inode, new_entry, lookup_table);
+		return NULL;
 	}
-	return 0;
+	return new_entry;
 }
 
 bool
@@ -305,22 +308,20 @@ inode_set_unnamed_stream(struct wim_inode *inode, const void *data, size_t len,
 
 /* Remove an alternate data stream from a WIM inode  */
 void
-inode_remove_ads(struct wim_inode *inode, u16 idx,
+inode_remove_ads(struct wim_inode *inode, struct wim_ads_entry *entry,
 		 struct wim_lookup_table *lookup_table)
 {
-	struct wim_ads_entry *ads_entry;
 	struct wim_lookup_table_entry *lte;
+	unsigned idx = entry - inode->i_ads_entries;
 
 	wimlib_assert(idx < inode->i_num_ads);
 	wimlib_assert(inode->i_resolved);
 
-	ads_entry = &inode->i_ads_entries[idx];
-
-	lte = ads_entry->lte;
+	lte = entry->lte;
 	if (lte)
 		lte_decrement_refcnt(lte, lookup_table);
 
-	destroy_ads_entry(ads_entry);
+	destroy_ads_entry(entry);
 
 	memmove(&inode->i_ads_entries[idx],
 		&inode->i_ads_entries[idx + 1],

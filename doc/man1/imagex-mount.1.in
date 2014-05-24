@@ -6,7 +6,7 @@
 .br
 \fB@IMAGEX_PROGNAME@ mountrw\fR \fIWIMFILE\fR [\fIIMAGE\fR] \fIDIRECTORY\fR [\fIOPTION\fR...]
 .br
-\fB@IMAGEX_PROGNAME@ unmount\fR \fIDIRECTORY\fR [--commit] [--check] [--rebuild]
+\fB@IMAGEX_PROGNAME@ unmount\fR \fIDIRECTORY\fR [\fIOPTION\fR...]
 .SH DESCRIPTION
 The \fB@IMAGEX_PROGNAME@ mount\fR and \fB@IMAGEX_PROGNAME@ mountrw\fR commands
 will mount the image in the Windows Imaging (WIM) file \fIWIMFILE\fR specified
@@ -21,9 +21,9 @@ be the name of an image in the WIM.  Use the \fB@IMAGEX_PROGNAME@ info\fR (1)
 command to see the available images in the WIM.  \fIIMAGE\fR may be omitted if
 \fIWIMFILE\fR contains only one image.
 .PP
-The WIM image can be unmounted using the \fB@IMAGEX_PROGNAME@ unmount\fR command.  Changes
-made to a WIM mounted read-write will be discarded unless the \fB--commit\fR
-flag is provided to \fB@IMAGEX_PROGNAME@ unmount\fR.
+The WIM image can be unmounted using the \fB@IMAGEX_PROGNAME@ unmount\fR
+command.  Changes made to a WIM mounted read-write will be discarded unless the
+\fB--commit\fR flag is provided to \fB@IMAGEX_PROGNAME@ unmount\fR.
 .SH SPLIT WIMS
 You may use \fB@IMAGEX_PROGNAME@ mount\fR to mount an image from a split WIM
 read-only.  However, you may not mount an image from a split WIM read-write.
@@ -62,16 +62,16 @@ All files in the mounted WIM will be accessible regardless of whether there is a
 security descriptor in the WIM associated with the file or not.  New files or
 directories created in a read-write mounted WIM will be created with no security
 descriptor.  Although there is support for accessing named data streams (see the
-\fB--streams-interface\fR option), it is currently not possible
-to set or get DOS names, file attributes, or security
-descriptors in a mounted WIM.
+\fB--streams-interface\fR option), it is currently not possible to set or get
+DOS names, file attributes, or security descriptors in a mounted WIM.
 .PP
 By default, changes to a read-write WIM are made in-place by appending to the
 WIM.  This is nice for big WIM files, since the entire file doesn't have to be
 rebuilt to make a small change.  But, if you are making many changes to a
 read-write mounted WIM, especially deleting large files, it is suggested to
-provide the \fB--rebuild\fR option to \fB@IMAGEX_PROGNAME@ unmount\fR to force the WIM to
-be rebuilt, or else run \fB@IMAGEX_PROGNAME@ optimize\fR on the WIM afterwards.
+provide the \fB--rebuild\fR option to \fB@IMAGEX_PROGNAME@ unmount\fR to force
+the WIM to be rebuilt, or else run \fB@IMAGEX_PROGNAME@ optimize\fR on the WIM
+afterwards.
 .PP
 wimlib v1.6.0 and later can mount version 3584 WIMs, which usually use packed,
 LZMS-compressed streams and may carry the \fI.esd\fR file extension rather than
@@ -148,6 +148,15 @@ specified in /etc/fuse.conf (with the FUSE implementation on Linux, at least).
 Update the WIM file with the changes that have been made.  Has no effect if the
 mount is read-only.
 .TP
+\fB--force\fR
+In combination with \fB--commit\fR, force the WIM image to be committed even if
+there are open file descriptors to the WIM image.  Any such file descriptors
+will be immediately closed, and the WIM image will be committed and unmounted.
+.IP
+\fB--lazy\fR is a deprecated alias for \fB--force\fR.  (Unmounts are now "lazy"
+by default with regards to the kernel-level mountpoint, except in the case with
+\fB--commit\fR described above.)
+.TP
 \fB--check\fR
 When writing \fIWIMFILE\fR, include an integrity table.  Has no effect if the
 mount is read-only or if \fB--commit\fR was not specified.  The default behavior
@@ -159,28 +168,23 @@ Rebuilding the WIM is slower, but will save a little bit of space that would
 otherwise be left as a hole in the WIM.  Even more space will be saved if the
 read-write mount resulted in streams being deleted from the WIM.  Also see
 .TP
-\fB--lazy\fR
-Pass the \fB-z\fR option to \fBfusermount\fR, which performs a "lazy" unmount
-where the filesystem is detached immediately even if it is still busy.  However,
-even with this option, \fB@IMAGEX_PROGNAME@ unmount\fR still waits for the
-filesystem to become unbusy; \fB--lazy\fR will only stop the unmount from
-immediately failing.
-.TP
 \fB--new-image\fR
 In combination with \fB--commit\fR for a read-write mounted image, causes the
 modified image to be committed as a new, unnamed image appended to the WIM
 archive.  The original image will be unmodified.
 .SH IMPLEMENTATION DETAILS
-Since a WIM is an archive and not a filesystem, \fB@IMAGEX_PROGNAME@ mountrw\fR creates a
-temporary staging directory to contain files that are created or modified.  This
-directory is located in the same directory as \fIWIMFILE\fR by default, but the
-location can be set using the \fB--staging-dir\fR option.  When the filesystem
-is unmounted with \fB--commit\fR, the WIM is modified in-place (or rebuild
-completely with \fB--rebuild\fR), merging in the staging files as needed.  Then,
-the temporary staging directory is deleted.
+Since a WIM is an archive and not a filesystem, \fB@IMAGEX_PROGNAME@ mountrw\fR
+creates a temporary staging directory to contain files that are created or
+modified.  This directory is located in the same directory as \fIWIMFILE\fR by
+default, but the location can be set using the \fB--staging-dir\fR option.  When
+the filesystem is unmounted with \fB--commit\fR, the WIM is modified in-place
+(or rebuilt completely with \fB--rebuild\fR), merging in the staging files as
+needed.  Then, the temporary staging directory is deleted.
 .PP
-\fB@IMAGEX_PROGNAME@ unmount\fR runs in a separate process from the process that previously
-ran \fB@IMAGEX_PROGNAME@ mount\fR, and these two processes communicate using POSIX message
-queues.  See \fIsrc/mount_image.c\fR in the sources for details.
+\fB@IMAGEX_PROGNAME@ unmount\fR runs in a separate process from the process that
+previously ran \fB@IMAGEX_PROGNAME@ mount\fR.  When unmounting a read-write
+mounted WIM image with \fB--commit\fR, these two processes communicate using a
+POSIX message queue so that the unmount process can track the progress of the
+mount process.  See \fIsrc/mount_image.c\fR in the sources for details.
 .SH SEE ALSO
 .BR @IMAGEX_PROGNAME@ (1)

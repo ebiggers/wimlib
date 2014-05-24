@@ -31,129 +31,164 @@
 #endif
 
 #include "wimlib.h"
-#include "wimlib/error.h"
 
 #ifdef WITH_FUSE
 
 #ifdef __WIN32__
-#  error "FUSE mount not supported on Win32!  Please configure --without-fuse"
+#  error "FUSE mount not supported on Windows!  Please configure --without-fuse"
 #endif
 
-#include "wimlib/encoding.h"
-#include "wimlib/file_io.h"
 #include "wimlib/dentry.h"
-#include "wimlib/inode.h"
-#include "wimlib/lookup_table.h"
+#include "wimlib/encoding.h"
 #include "wimlib/metadata.h"
 #include "wimlib/paths.h"
 #include "wimlib/progress.h"
 #include "wimlib/reparse.h"
-#include "wimlib/resource.h"
 #include "wimlib/timestamp.h"
 #include "wimlib/unix_data.h"
-#include "wimlib/version.h"
 #include "wimlib/write.h"
 #include "wimlib/xml.h"
 
+#include <dirent.h>
 #include <errno.h>
-#include <ftw.h>
 #include <limits.h>
 #include <mqueue.h>
-#include <signal.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <sys/wait.h>
 #include <unistd.h>
 #include <utime.h>
 
 #define FUSE_USE_VERSION 26
 #include <fuse.h>
-
-#ifdef ENABLE_XATTR
 #include <attr/xattr.h>
+
+#ifndef O_NOFOLLOW
+#  define O_NOFOLLOW 0  /* Security only...  */
 #endif
 
-#define MSG_VERSION_TOO_HIGH	-1
-#define MSG_BREAK_LOOP		-2
+#define WIMFS_MQUEUE_NAME_LEN 32
 
-/* File descriptor to a file open on the WIM filesystem. */
-struct wimfs_fd {
-	struct wim_inode *f_inode;
-	struct wim_lookup_table_entry *f_lte;
-	struct filedes staging_fd;
-	u16 idx;
-	u32 stream_id;
+#define WIMLIB_UNMOUNT_FLAG_SEND_PROGRESS 0x80000000
+
+struct wimfs_unmount_info {
+	unsigned unmount_flags;
+	char mq_name[WIMFS_MQUEUE_NAME_LEN + 1];
 };
 
+struct commit_progress_report {
+	enum wimlib_progress_msg msg;
+	union wimlib_progress_info info;
+};
+
+/* Description of an open file on a mounted WIM image.  Actually, this
+ * represents the open state of a particular data stream of an inode, rather
+ * than the inode itself.  (An inode might have multiple named data streams in
+ * addition to the default, unnamed data stream.)  At a given time, an inode in
+ * the WIM image might have multiple file descriptors open to it, each to any
+ * one of its data streams.  */
+struct wimfs_fd {
+
+	/* Pointer to the inode of this open file.
+	 * 'i_num_opened_fds' of the inode tracks the number of file descriptors
+	 * that reference it.  */
+	struct wim_inode *f_inode;
+
+	/* Pointer to the lookup table entry for the data stream that has been
+	 * opened.  'num_opened_fds' of the lookup table entry tracks the number
+	 * of file descriptors that reference it.  Or, this value may be NULL,
+	 * which indicates that the opened stream is empty and consequently does
+	 * not have a lookup table entry.  */
+	struct wim_lookup_table_entry *f_lte;
+
+	/* If valid (filedes_valid(&f_staging_fd)), this contains the
+	 * corresponding native file descriptor for the staging file that has
+	 * been created for reading from and/or writing to this open stream.  A
+	 * single staging file might have multiple file descriptors open to it
+	 * simultaneously, each used by a different 'struct wimfs_fd'.
+	 *
+	 * Or, if invalid (!filedes_valid(&f_staging_fd)), this 'struct
+	 * wimfs_fd' is not associated with a staging file.  This is permissible
+	 * only if this 'struct wimfs_fd' was opened read-only and the stream
+	 * has not yet been extracted to a staging file.  */
+	struct filedes f_staging_fd;
+
+	/* 0-based index of this file descriptor in the file descriptor table of
+	 * its inode.  */
+	u16 f_idx;
+
+	/* Unique ID of the opened stream in the inode.  This will stay the same
+	 * even if the indices of the inode's alternate data streams are changed
+	 * by a deletion.  */
+	u32 f_stream_id;
+};
+
+#define WIMFS_FD(fi) ((struct wimfs_fd *)(uintptr_t)((fi)->fh))
+
+/* Context structure for a mounted WIM image.  */
 struct wimfs_context {
-	/* The WIMStruct for the mounted WIM. */
+	/* The WIMStruct containing the mounted image.  The mounted image is the
+	 * currently selected image (wim->current_image).  */
 	WIMStruct *wim;
 
-	/* Name of the staging directory for a read-write mount.  Whenever a new file is
-	 * created, it is done so in the staging directory.  Furthermore, whenever a
-	 * file in the WIM is modified, it is extracted to the staging directory.  If
-	 * changes are commited when the WIM is unmounted, the file resources are merged
-	 * in from the staging directory when writing the new WIM. */
-	char *staging_dir_name;
-	size_t staging_dir_name_len;
-
-	/* Flags passed to wimlib_mount(). */
+	/* Flags passed to wimlib_mount_image() (WIMLIB_MOUNT_FLAG_*).  */
 	int mount_flags;
 
-	/* Default flags to use when looking up a WIM dentry (depends on whether
-	 * the Windows interface to alternate data streams is being used or
-	 * not). */
+	/* Default flags for path lookup in the WIM image.  */
 	int default_lookup_flags;
 
-	/* Next inode number to be assigned.  Note: I didn't bother with a
-	 * bitmap of free inode numbers since this isn't even a "real"
-	 * filesystem anyway. */
+	/* Information about the user who has mounted the WIM image  */
+	uid_t owner_uid;
+	gid_t owner_gid;
+
+	/* Information about the staging directory for a read-write mount.  */
+	int parent_dir_fd;
+	int staging_dir_fd;
+	char *staging_dir_name;
+
+	/* For read-write mounts, the inode number to be assigned to the next
+	 * created file.  Note: since this isn't a persistent filesystem and we
+	 * can re-assign the inode numbers just before mounting the image, it's
+	 * good enough to just generate inode numbers sequentially.  */
 	u64 next_ino;
 
-	/* List of inodes in the mounted image */
-	struct list_head *image_inode_list;
+	/* Number of file descriptors open to the mounted WIM image.  */
+	unsigned long num_open_fds;
 
-	/* Original list of streams in the mounted image, linked by
-	 * mount_orig_stream_list.  */
+	/* Original list of single-instance streams in the mounted image, linked
+	 * by 'struct wim_lookup_table_entry'.orig_stream_list.  */
 	struct list_head orig_stream_list;
-
-	/* Name and message queue descriptors for message queues between the
-	 * filesystem daemon process and the unmount process.  These are used
-	 * when the filesystem is unmounted and the process running
-	 * wimlib_unmount_image() needs to communicate with the filesystem
-	 * daemon running fuse_main() (i.e. the process created by a call to
-	 * wimlib_mount_image().  */
-	char *unmount_to_daemon_mq_name;
-	char *daemon_to_unmount_mq_name;
-	mqd_t unmount_to_daemon_mq;
-	mqd_t daemon_to_unmount_mq;
-
-	uid_t default_uid;
-	gid_t default_gid;
-
-	int status;
-	bool have_status;
 };
-
-static void
-init_wimfs_context(struct wimfs_context *ctx)
-{
-	memset(ctx, 0, sizeof(*ctx));
-	ctx->unmount_to_daemon_mq = (mqd_t)-1;
-	ctx->daemon_to_unmount_mq = (mqd_t)-1;
-}
 
 #define WIMFS_CTX(fuse_ctx) ((struct wimfs_context*)(fuse_ctx)->private_data)
 
+/* Retrieve the context structure for the currently mounted WIM image.
+ *
+ * Note: this is a per-thread variable.  It is possible for different threads to
+ * mount different images at the same time in the same process, although they
+ * must use different WIMStructs!  */
 static inline struct wimfs_context *
 wimfs_get_context(void)
 {
 	return WIMFS_CTX(fuse_get_context());
 }
 
+static void
+wimfs_inc_num_open_fds(void)
+{
+	wimfs_get_context()->num_open_fds++;
+}
+
+static void
+wimfs_dec_num_open_fds(void)
+{
+	wimfs_get_context()->num_open_fds--;
+}
+
+/* Retrieve the WIMStruct for the currently mounted WIM image.  */
 static inline WIMStruct *
 wimfs_get_WIMStruct(void)
 {
@@ -166,141 +201,16 @@ get_lookup_flags(const struct wimfs_context *ctx)
 	return ctx->default_lookup_flags;
 }
 
-/* Returns nonzero if write permission is requested on the file open flags */
-static inline int
+/* Is write permission requested on the file?  */
+static inline bool
 flags_writable(int open_flags)
 {
 	int accmode = (open_flags & O_ACCMODE);
 	return (accmode == O_RDWR || accmode == O_WRONLY);
 }
 
-/*
- * Allocate a file descriptor for a stream.
- *
- * @inode:	inode containing the stream we're opening
- * @stream_id:	ID of the stream we're opening
- * @lte:	Lookup table entry for the stream (may be NULL)
- * @fd_ret:	Return the allocated file descriptor if successful.
- *
- * Return 0 iff successful or negative error code if unsuccessful.
- */
-static int
-alloc_wimfs_fd(struct wim_inode *inode,
-	       u32 stream_id,
-	       struct wim_lookup_table_entry *lte,
-	       struct wimfs_fd **fd_ret)
-{
-	static const u16 fds_per_alloc = 8;
-	static const u16 max_fds = 0xffff;
-
-	DEBUG("Allocating fd for stream ID %u from inode %#"PRIx64" "
-	      "(open = %u, allocated = %u)",
-	      stream_id, inode->i_ino, inode->i_num_opened_fds,
-	      inode->i_num_allocated_fds);
-
-	if (inode->i_num_opened_fds == inode->i_num_allocated_fds) {
-		struct wimfs_fd **fds;
-		u16 num_new_fds;
-
-		if (inode->i_num_allocated_fds == max_fds)
-			return -EMFILE;
-
-		num_new_fds = min(fds_per_alloc,
-				  max_fds - inode->i_num_allocated_fds);
-
-		fds = REALLOC(inode->i_fds,
-			      (inode->i_num_allocated_fds + num_new_fds) *
-			        sizeof(inode->i_fds[0]));
-		if (!fds)
-			return -ENOMEM;
-
-		memset(&fds[inode->i_num_allocated_fds], 0,
-		       num_new_fds * sizeof(fds[0]));
-		inode->i_fds = fds;
-		inode->i_num_allocated_fds += num_new_fds;
-	}
-	for (u16 i = 0; ; i++) {
-		if (!inode->i_fds[i]) {
-			struct wimfs_fd *fd = CALLOC(1, sizeof(*fd));
-			if (!fd)
-				return -ENOMEM;
-
-			fd->f_inode     = inode;
-			fd->f_lte       = lte;
-			filedes_invalidate(&fd->staging_fd);
-			fd->idx         = i;
-			fd->stream_id   = stream_id;
-			*fd_ret         = fd;
-			inode->i_fds[i] = fd;
-			inode->i_num_opened_fds++;
-			if (lte)
-				lte->num_opened_fds++;
-			DEBUG("Allocated fd (idx = %u)", fd->idx);
-			return 0;
-		}
-	}
-}
-
-static void
-inode_put_fd(struct wim_inode *inode, struct wimfs_fd *fd)
-{
-	wimlib_assert(inode != NULL);
-	wimlib_assert(fd->f_inode == inode);
-	wimlib_assert(inode->i_num_opened_fds != 0);
-	wimlib_assert(fd->idx < inode->i_num_allocated_fds);
-	wimlib_assert(inode->i_fds[fd->idx] == fd);
-
-	inode->i_fds[fd->idx] = NULL;
-	FREE(fd);
-	if (--inode->i_num_opened_fds == 0) {
-		FREE(inode->i_fds);
-		inode->i_fds = NULL;
-		inode->i_num_allocated_fds = 0;
-		if (inode->i_nlink == 0)
-			free_inode(inode);
-	}
-}
-
-static int
-lte_put_fd(struct wim_lookup_table_entry *lte, struct wimfs_fd *fd)
-{
-	wimlib_assert(fd->f_lte == lte);
-
-	if (!lte) /* Empty stream with no lookup table entry */
-		return 0;
-
-	/* Close staging file descriptor if needed. */
-
-	if (lte->resource_location == RESOURCE_IN_STAGING_FILE
-	     && filedes_valid(&fd->staging_fd))
-	{
-		if (filedes_close(&fd->staging_fd)) {
-			ERROR_WITH_ERRNO("Failed to close staging file");
-			return -errno;
-		}
-	}
-	lte_decrement_num_opened_fds(lte);
-	return 0;
-}
-
-/* Close a file descriptor. */
-static int
-close_wimfs_fd(struct wimfs_fd *fd)
-{
-	int ret;
-	DEBUG("Closing fd (ino = %#"PRIx64", opened = %u, allocated = %u)",
-	      fd->f_inode->i_ino, fd->f_inode->i_num_opened_fds,
-	      fd->f_inode->i_num_allocated_fds);
-	ret = lte_put_fd(fd->f_lte, fd);
-	if (ret)
-		return ret;
-
-	inode_put_fd(fd->f_inode, fd);
-	return 0;
-}
-
 static mode_t
-fuse_mask_mode(mode_t mode, struct fuse_context *fuse_ctx)
+fuse_mask_mode(mode_t mode, const struct fuse_context *fuse_ctx)
 {
 #if FUSE_MAJOR_VERSION > 2 || (FUSE_MAJOR_VERSION == 2 && FUSE_MINOR_VERSION >= 8)
 	mode &= ~fuse_ctx->umask;
@@ -309,20 +219,177 @@ fuse_mask_mode(mode_t mode, struct fuse_context *fuse_ctx)
 }
 
 /*
- * Add a new dentry with a new inode to a WIM image.
+ * Allocate a file descriptor to a data stream in the mounted WIM image.
  *
- * Returns 0 on success, or negative error number on failure.
+ * @inode
+ *	A pointer to the inode containing the stream being opened.
+ * @stream_id
+ *	The ID of the data stream being opened within the inode.
+ * @lte
+ *	A pointer to the lookup table entry for the stream data.  Or, for a
+ *	0-byte stream, this may be NULL.
+ * @fd_ret
+ *	On success, a pointer to the new file descriptor will be stored here.
+ *
+ * Returns 0 or a -errno code.
+ */
+static int
+alloc_wimfs_fd(struct wim_inode *inode,
+	       u32 stream_id,
+	       struct wim_lookup_table_entry *lte,
+	       struct wimfs_fd **fd_ret)
+{
+	static const u16 min_fds_per_alloc = 8;
+	static const u16 max_fds = 0xffff;
+	u16 i;
+	struct wimfs_fd *fd;
+
+	if (inode->i_num_opened_fds == inode->i_num_allocated_fds) {
+		u16 num_new_fds;
+		struct wimfs_fd **fds;
+
+		/* Expand this inode's file descriptor table.  */
+
+		num_new_fds = max(min_fds_per_alloc,
+				  inode->i_num_allocated_fds / 4);
+
+		num_new_fds = min(num_new_fds,
+				  max_fds - inode->i_num_allocated_fds);
+
+		if (num_new_fds == 0)
+			return -EMFILE;
+
+		fds = REALLOC(inode->i_fds,
+			      (inode->i_num_allocated_fds + num_new_fds) *
+			        sizeof(fds[0]));
+		if (!fds)
+			return -ENOMEM;
+
+		memset(&fds[inode->i_num_allocated_fds], 0,
+		       num_new_fds * sizeof(fds[0]));
+		inode->i_fds = fds;
+		inode->i_num_allocated_fds += num_new_fds;
+		inode->i_next_fd = inode->i_num_opened_fds;
+	}
+
+	/* Allocate the file descriptor in the first available space in the
+	 * inode's file descriptor table.
+	 *
+	 * i_next_fd is the lower bound on the next open slot.  */
+	for (i = inode->i_next_fd; inode->i_fds[i]; i++)
+		;
+
+	fd = MALLOC(sizeof(*fd));
+	if (!fd)
+		return -ENOMEM;
+
+	fd->f_inode     = inode;
+	fd->f_lte       = lte;
+	filedes_invalidate(&fd->f_staging_fd);
+	fd->f_idx       = i;
+	fd->f_stream_id = stream_id;
+	*fd_ret         = fd;
+	inode->i_fds[i] = fd;
+	inode->i_num_opened_fds++;
+	if (lte)
+		lte->num_opened_fds++;
+	wimfs_inc_num_open_fds();
+	inode->i_next_fd = i + 1;
+	return 0;
+}
+
+/*
+ * Close a file descriptor to a data stream in the mounted WIM image.
+ *
+ * Returns 0 or a -errno code.  The file descriptor is always closed.
+ */
+static int
+close_wimfs_fd(struct wimfs_fd *fd)
+{
+	int ret = 0;
+	struct wim_inode *inode;
+
+	/* Close the staging file if open.  */
+	if (filedes_valid(&fd->f_staging_fd))
+		 if (filedes_close(&fd->f_staging_fd))
+			 ret = -errno;
+
+	/* Release this file descriptor from its lookup table entry.  */
+	if (fd->f_lte)
+		lte_decrement_num_opened_fds(fd->f_lte);
+
+	wimfs_dec_num_open_fds();
+
+	/* Release this file descriptor from its inode.  */
+	inode = fd->f_inode;
+	inode->i_fds[fd->f_idx] = NULL;
+	if (fd->f_idx < inode->i_next_fd)
+		inode->i_next_fd = fd->f_idx;
+	FREE(fd);
+	if (--inode->i_num_opened_fds == 0) {
+		/* The last file descriptor to this inode was closed.  */
+		FREE(inode->i_fds);
+		inode->i_fds = NULL;
+		inode->i_num_allocated_fds = 0;
+		if (inode->i_nlink == 0)
+			/* No links to this inode remain.  Get rid of it.  */
+			free_inode(inode);
+	}
+	return ret;
+}
+
+/*
+ * Translate a path into the corresponding inode in the mounted WIM image.
+ *
+ * See get_dentry() for more information.
+ *
+ * Returns a pointer to the resulting inode, or NULL with errno set.
+ */
+static struct wim_inode *
+wim_pathname_to_inode(WIMStruct *wim, const char *path)
+{
+	struct wim_dentry *dentry;
+
+	dentry = get_dentry(wim, path, WIMLIB_CASE_SENSITIVE);
+	if (!dentry)
+		return NULL;
+	return dentry->d_inode;
+}
+
+/*
+ * Create a new file in the mounted WIM image.
+ *
+ * @fuse_ctx
+ *	The FUSE context for the mounted image.
+ * @path
+ *	The path at which to create the first link to the new file.  If a file
+ *	already exists at this path, -EEXIST is returned.
+ * @mode
+ *	The UNIX mode for the new file.  This is only honored if
+ *	WIMLIB_MOUNT_FLAG_UNIX_DATA was passed to wimlib_mount_image().
+ * @rdev
+ *	The device ID for the new file, encoding the major and minor device
+ *	numbers.  This is only honored if WIMLIB_MOUNT_FLAG_UNIX_DATA was passed
+ *	to wimlib_mount_image().
+ * @attributes
+ *	Windows file attributes to use for the new file.
+ * @dentry_ret
+ *	On success, a pointer to the new dentry is returned here.  Its d_inode
+ *	member will point to the new inode that was created for it and added to
+ *	the mounted WIM image.
+ *
+ * Returns 0 or a -errno code.
  */
 static int
 create_dentry(struct fuse_context *fuse_ctx, const char *path,
-	      mode_t mode, dev_t rdev, int attributes,
+	      mode_t mode, dev_t rdev, u32 attributes,
 	      struct wim_dentry **dentry_ret)
 {
-	struct wim_dentry *parent;
-	struct wim_dentry *new;
-	const char *basename;
 	struct wimfs_context *wimfs_ctx = WIMFS_CTX(fuse_ctx);
-	int ret;
+	struct wim_dentry *parent;
+	const char *basename;
+	struct wim_dentry *new_dentry;
+	struct wim_inode *new_inode;
 
 	parent = get_parent_dentry(wimfs_ctx->wim, path, WIMLIB_CASE_SENSITIVE);
 	if (!parent)
@@ -332,16 +399,18 @@ create_dentry(struct fuse_context *fuse_ctx, const char *path,
 		return -ENOTDIR;
 
 	basename = path_basename(path);
+
 	if (get_dentry_child_with_name(parent, basename, WIMLIB_CASE_SENSITIVE))
 		return -EEXIST;
 
-	ret = new_dentry_with_inode(basename, &new);
-	if (ret)
+	if (new_dentry_with_inode(basename, &new_dentry))
 		return -ENOMEM;
 
-	new->d_inode->i_resolved = 1;
-	new->d_inode->i_ino = wimfs_ctx->next_ino++;
-	new->d_inode->i_attributes = attributes;
+	new_inode = new_dentry->d_inode;
+
+	new_inode->i_resolved = 1;
+	new_inode->i_ino = wimfs_ctx->next_ino++;
+	new_inode->i_attributes = attributes;
 
 	if (wimfs_ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA) {
 		struct wimlib_unix_data unix_data;
@@ -350,50 +419,44 @@ create_dentry(struct fuse_context *fuse_ctx, const char *path,
 		unix_data.gid = fuse_ctx->gid;
 		unix_data.mode = fuse_mask_mode(mode, fuse_ctx);
 		unix_data.rdev = rdev;
-
-		if (!inode_set_unix_data(new->d_inode, &unix_data,
-					 UNIX_DATA_ALL))
+		if (!inode_set_unix_data(new_inode, &unix_data, UNIX_DATA_ALL))
 		{
-			free_dentry(new);
+			free_dentry(new_dentry);
 			return -ENOMEM;
 		}
 	}
-	dentry_add_child(parent, new);
-	list_add_tail(&new->d_inode->i_list, wimfs_ctx->image_inode_list);
+
+	list_add_tail(&new_inode->i_list,
+		      &wim_get_current_image_metadata(wimfs_ctx->wim)->inode_list);
+
+	dentry_add_child(parent, new_dentry);
+
 	if (dentry_ret)
-		*dentry_ret = new;
+		*dentry_ret = new_dentry;
 	return 0;
 }
 
-static struct wim_inode *
-wim_pathname_to_inode(WIMStruct *wim, const tchar *path)
-{
-	struct wim_dentry *dentry;
-	dentry = get_dentry(wim, path, WIMLIB_CASE_SENSITIVE);
-	if (dentry)
-		return dentry->d_inode;
-	else
-		return NULL;
-}
-
 /*
- * Remove a dentry from a mounted WIM image; i.e. remove an alias for an inode.
+ * Remove a dentry from the mounted WIM image; i.e. remove an alias for an
+ * inode.
  */
 static void
 remove_dentry(struct wim_dentry *dentry,
 	      struct wim_lookup_table *lookup_table)
 {
-	/* Put a reference to each stream the inode contains.  */
+	/* Drop the reference to each stream the inode contains.  */
 	inode_unref_streams(dentry->d_inode, lookup_table);
 
 	/* Unlink the dentry from the image's dentry tree.  */
 	unlink_dentry(dentry);
 
 	/* Delete the dentry.  This will also decrement the link count of the
-	 * corresponding inode.  */
+	 * corresponding inode, and possibly cause it to be deleted as well.  */
 	free_dentry(dentry);
 }
 
+/* Generate UNIX filetype mode bits for the specified WIM inode, based on its
+ * Windows file attributes.  */
 static mode_t
 inode_unix_file_type(const struct wim_inode *inode)
 {
@@ -405,17 +468,22 @@ inode_unix_file_type(const struct wim_inode *inode)
 		return S_IFREG;
 }
 
+/* Generate a default UNIX mode for the specified WIM inode.  */
 static mode_t
 inode_default_unix_mode(const struct wim_inode *inode)
 {
 	return inode_unix_file_type(inode) | 0777;
 }
 
-/* Transfers file attributes from a struct wim_inode to a `stat' buffer.
+/*
+ * Retrieve standard UNIX metadata ('struct stat') for a WIM inode.
  *
- * The lookup table entry tells us which stream in the inode we are statting.
- * For a named data stream, everything returned is the same as the unnamed data
- * stream except possibly the size and block count. */
+ * @lte specifies the stream of the inode that is being queried.  We mostly
+ * return the same information for all streams, but st_size and st_blocks may be
+ * different for different streams.
+ *
+ * This always returns 0.
+ */
 static int
 inode_to_stbuf(const struct wim_inode *inode,
 	       const struct wim_lookup_table_entry *lte,
@@ -428,22 +496,25 @@ inode_to_stbuf(const struct wim_inode *inode,
 	if ((ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA) &&
 	    inode_get_unix_data(inode, &unix_data))
 	{
+		/* Use the user ID, group ID, mode, and device ID from the
+		 * inode's extra UNIX metadata information.  */
 		stbuf->st_uid = unix_data.uid;
 		stbuf->st_gid = unix_data.gid;
 		stbuf->st_mode = unix_data.mode;
 		stbuf->st_rdev = unix_data.rdev;
 	} else {
-		stbuf->st_uid = ctx->default_uid;
-		stbuf->st_gid = ctx->default_gid;
+		/* Generate default values for the user ID, group ID, and mode.
+		 *
+		 * Note: in the case of an allow_other mount, fuse_context.uid
+		 * may not be the same as wimfs_context.owner_uid!  */
+		stbuf->st_uid = ctx->owner_uid;
+		stbuf->st_gid = ctx->owner_gid;
 		stbuf->st_mode = inode_default_unix_mode(inode);
-		stbuf->st_rdev = 0;
 	}
-	stbuf->st_ino = (ino_t)inode->i_ino;
+	stbuf->st_ino = inode->i_ino;
 	stbuf->st_nlink = inode->i_nlink;
 	if (lte)
 		stbuf->st_size = lte->size;
-	else
-		stbuf->st_size = 0;
 #ifdef HAVE_STAT_NANOSECOND_PRECISION
 	stbuf->st_atim = wim_timestamp_to_timespec(inode->i_last_access_time);
 	stbuf->st_mtim = wim_timestamp_to_timespec(inode->i_last_write_time);
@@ -457,6 +528,7 @@ inode_to_stbuf(const struct wim_inode *inode,
 	return 0;
 }
 
+/* Update the last access and last write timestamps of a WIM inode.  */
 static void
 touch_inode(struct wim_inode *inode)
 {
@@ -465,61 +537,37 @@ touch_inode(struct wim_inode *inode)
 	inode->i_last_write_time = now;
 }
 
-/* Creates a new staging file and returns its file descriptor opened for
- * writing.
+/*
+ * Create a new file in the staging directory for a read-write mounted image.
  *
- * @name_ret: A location into which the a pointer to the newly allocated name of
- *	      the staging file is stored.
+ * On success, returns the file descriptor for the new staging file, opened for
+ * writing.  In addition, stores the allocated name of the staging file in
+ * @name_ret.
  *
- * @ctx:      Context for the WIM filesystem; this provides the name of the
- *	      staging directory.
- *
- * On success, returns the file descriptor for the staging file, opened for
- * writing.  On failure, returns -1 and sets errno.
+ * On failure, returns -1 and sets errno.
  */
 static int
-create_staging_file(char **name_ret, struct wimfs_context *ctx)
+create_staging_file(const struct wimfs_context *ctx, char **name_ret)
 {
-	size_t name_len;
-	char *name;
-	struct stat stbuf;
-	int fd;
-	int errno_save;
 
 	static const size_t STAGING_FILE_NAME_LEN = 20;
+	char *name;
+	int fd;
 
-	name_len = ctx->staging_dir_name_len + 1 + STAGING_FILE_NAME_LEN;
-	name = MALLOC(name_len + 1);
-	if (!name) {
-		errno = ENOMEM;
+	name = MALLOC(STAGING_FILE_NAME_LEN + 1);
+	if (!name)
 		return -1;
-	}
+	name[STAGING_FILE_NAME_LEN] = '\0';
 
-	do {
-
-		memcpy(name, ctx->staging_dir_name, ctx->staging_dir_name_len);
-		name[ctx->staging_dir_name_len] = '/';
-		randomize_char_array_with_alnum(name + ctx->staging_dir_name_len + 1,
-						STAGING_FILE_NAME_LEN);
-		name[name_len] = '\0';
-
-
-	/* Just in case, verify that the randomly generated name doesn't name an
-	 * existing file, and try again if so  */
-	} while (stat(name, &stbuf) == 0);
-
-	if (errno != ENOENT) /* other error?! */
-		return -1;
-
-	/* doesn't exist--- ok */
-
-	DEBUG("Creating staging file `%s'", name);
-
-	fd = open(name, O_WRONLY | O_CREAT | O_EXCL, 0600);
-	if (fd == -1) {
-		errno_save = errno;
+retry:
+	randomize_char_array_with_alnum(name, STAGING_FILE_NAME_LEN);
+	fd = openat(ctx->staging_dir_fd, name,
+		    O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+	if (unlikely(fd < 0)) {
+		if (unlikely(errno == EEXIST))
+			/* Try again with another name.  */
+			goto retry;
 		FREE(name);
-		errno = errno_save;
 	} else {
 		*name_ret = name;
 	}
@@ -528,104 +576,105 @@ create_staging_file(char **name_ret, struct wimfs_context *ctx)
 
 /*
  * Extract a WIM resource to the staging directory.
+ * This is necessary if a stream using the resource is being opened for writing.
  *
- * @inode:  Inode that contains the stream we are extracting
+ * @inode
+ *	The inode containing the stream being opened for writing.
  *
- * @stream_id: Identifier for the stream (it stays constant even if the indices
- * of the stream entries are changed)
+ * @stream_idx
+ *	The index of the stream in @inode being opened for writing.
  *
- * @lte: Pointer to pointer to the lookup table entry for the stream we need to
- * extract, or NULL if there was no lookup table entry present for the stream
+ * @lte_ptr
+ *	*lte_ptr is the lookup table entry for the stream being extracted, or
+ *	NULL if the stream does not have a lookup table entry (which is possible
+ *	if the stream is empty).  On success, *lte_ptr will be set to point to a
+ *	lookup table entry that represents the resource in its new location in a
+ *	staging file.  This may be the same as the old entry in the case that it
+ *	was reused, or it may be a new entry.
  *
- * @size:  Number of bytes of the stream we want to extract (this supports the
- * wimfs_truncate() function).  It may be more than the actual stream length, in
- * which case the extra space is filled with zeroes.
+ * @size
+ *	Number of bytes of the stream to extract and include in the staging file
+ *	resource.  It may be less than the actual stream length, in which case
+ *	only a prefix of the resource will be extracted.  It may also be more
+ *	than the actual stream length, in which case the extra space will be
+ *	zero-filled.
  *
- * @ctx:  Context for the WIM filesystem.
- *
- * Returns 0 on success or a negative error code on failure.
+ * Returns 0 or a -errno code.
  */
 static int
 extract_resource_to_staging_dir(struct wim_inode *inode,
-				u32 stream_id,
-				struct wim_lookup_table_entry **lte,
+				u16 stream_idx,
+				struct wim_lookup_table_entry **lte_ptr,
 				off_t size,
-				struct wimfs_context *ctx)
+				const struct wimfs_context *ctx)
 {
+	struct wim_lookup_table_entry *old_lte;
+	struct wim_lookup_table_entry *new_lte;
 	char *staging_file_name;
-	int ret;
-	int fd;
-	struct wim_lookup_table_entry *old_lte, *new_lte;
+	int staging_fd;
 	off_t extract_size;
+	int result;
+	u32 stream_id;
+	int ret;
 
-	DEBUG("Extracting resource to staging dir: inode %"PRIu64", "
-	      "stream id %"PRIu32, inode->i_ino, stream_id);
+	old_lte = *lte_ptr;
 
-	old_lte = *lte;
-
-	wimlib_assert(old_lte == NULL ||
-		      old_lte->resource_location != RESOURCE_IN_STAGING_FILE);
-
-	/* Create the staging file */
-	fd = create_staging_file(&staging_file_name, ctx);
-	if (fd == -1)
+	/* Create the staging file.  */
+	staging_fd = create_staging_file(ctx, &staging_file_name);
+	if (unlikely(staging_fd < 0))
 		return -errno;
 
-	/* Extract the stream to the staging file (possibly truncated) */
+	/* Extract the stream to the staging file (possibly truncated).  */
 	if (old_lte) {
-		struct filedes wimlib_fd;
-		filedes_init(&wimlib_fd, fd);
+		struct filedes fd;
+
+		filedes_init(&fd, staging_fd);
+		errno = 0;
 		extract_size = min(old_lte->size, size);
-		ret = extract_stream_to_fd(old_lte, &wimlib_fd, extract_size);
+		result = extract_stream_to_fd(old_lte, &fd, extract_size);
 	} else {
-		ret = 0;
 		extract_size = 0;
+		result = 0;
 	}
 
 	/* In the case of truncate() to more than the file length, extend the
-	 * file with zeroes by calling ftruncate() on the underlying staging
-	 * file */
-	if (ret == 0 && size > extract_size)
-		ret = ftruncate(fd, size);
+	 * staging file with zeroes by calling ftruncate().  */
+	if (!result && size > extract_size)
+		result = ftruncate(staging_fd, size);
 
-	/* Close the staging file descriptor and check for errors.  If there's
-	 * an error, unlink the staging file. */
-	if (ret != 0 || close(fd) != 0) {
-		if (errno != 0)
-			ret = -errno;
-		else
-			ret = -EIO;
-		close(fd);
+	/* Close the staging file.  */
+	if (close(staging_fd))
+		result = -1;
+
+	/* If an error occurred, unlink the staging file.  */
+	if (unlikely(result)) {
+		/* extract_stream_to_fd() should set errno, but if it didn't,
+		 * set a default value.  */
+		ret = errno ? -errno : -EIO;
 		goto out_delete_staging_file;
 	}
 
 	/* Now deal with the lookup table entries.  We may be able to re-use the
-	 * existing entry, but we may have to create a new one instead. */
+	 * existing entry, but we may have to create a new one instead.  */
+
+	stream_id = inode_stream_idx_to_id(inode, stream_idx);
 
 	if (old_lte && inode->i_nlink == old_lte->refcnt) {
 		/* The reference count of the existing lookup table entry is the
 		 * same as the link count of the inode that contains the stream
-		 * we're opening.  Therefore, ALL the references to the lookup
+		 * we're opening.  Therefore, all the references to the lookup
 		 * table entry correspond to the stream we're trying to extract,
 		 * so the lookup table entry can be re-used.  */
-		DEBUG("Re-using lookup table entry");
 		lookup_table_unlink(ctx->wim->lookup_table, old_lte);
+		lte_put_resource(old_lte);
 		new_lte = old_lte;
 	} else {
-		if (old_lte) {
-			/* There's an existing lookup table entry, but its
-			 * reference count is greater than the link count for
-			 * the inode containing a stream we're opening.
-			 * Therefore, we need to split the lookup table entry.
-			 */
-			wimlib_assert(old_lte->refcnt > inode->i_nlink);
-			DEBUG("Splitting lookup table entry "
-			      "(inode->i_nlink = %u, old_lte->refcnt = %u)",
-			      inode->i_nlink, old_lte->refcnt);
-		}
+		/* We need to split the old lookup table entry because it also
+		 * has other references.  Or, there was no old lookup table
+		 * entry, so we need to create a new one anyway.  */
 
 		new_lte = new_lookup_table_entry();
-		if (!new_lte) {
+		if (unlikely(!new_lte)) {
 			ret = -ENOMEM;
 			goto out_delete_staging_file;
 		}
@@ -640,554 +689,213 @@ extract_resource_to_staging_dir(struct wim_inode *inode,
 		 * At the same time, we need to count the number of these opened
 		 * file descriptors to the new lookup table entry.  If there's
 		 * an old lookup table entry, this number needs to be subtracted
-		 * from the fd's opened to the old entry. */
+		 * from the fd's opened to the old entry.  */
 		for (u16 i = 0, j = 0; j < inode->i_num_opened_fds; i++) {
-			struct wimfs_fd *fd = inode->i_fds[i];
-			if (fd) {
-				if (fd->stream_id == stream_id) {
-					int raw_fd;
+			struct wimfs_fd *fd;
+			int raw_fd;
 
-					wimlib_assert(fd->f_lte == old_lte);
-					wimlib_assert(!filedes_valid(&fd->staging_fd));
-					fd->f_lte = new_lte;
-					new_lte->num_opened_fds++;
-					raw_fd = open(staging_file_name, O_RDONLY);
-					if (raw_fd < 0) {
-						ret = -errno;
-						goto out_revert_fd_changes;
-					}
-					filedes_init(&fd->staging_fd, raw_fd);
-				}
-				j++;
+			fd = inode->i_fds[i];
+			if (!fd)
+				continue;
+
+			j++;
+
+			if (fd->f_stream_id != stream_id)
+				continue;
+
+			/* This is a readonly fd for the same stream.  */
+			fd->f_lte = new_lte;
+			new_lte->num_opened_fds++;
+			raw_fd = openat(ctx->staging_dir_fd, staging_file_name,
+					O_RDONLY | O_NOFOLLOW);
+			if (unlikely(raw_fd < 0)) {
+				ret = -errno;
+				goto out_revert_fd_changes;
 			}
+			filedes_init(&fd->f_staging_fd, raw_fd);
 		}
-		DEBUG("%hu fd's were already opened to the file we extracted",
-		      new_lte->num_opened_fds);
 		if (old_lte) {
 			old_lte->num_opened_fds -= new_lte->num_opened_fds;
 			old_lte->refcnt -= inode->i_nlink;
 		}
 	}
 
-	lte_put_resource(new_lte);
-	new_lte->refcnt              = inode->i_nlink;
-	new_lte->resource_location   = RESOURCE_IN_STAGING_FILE;
-	new_lte->staging_file_name   = staging_file_name;
-	new_lte->size                = size;
+	new_lte->refcnt		   = inode->i_nlink;
+	new_lte->resource_location = RESOURCE_IN_STAGING_FILE;
+	new_lte->staging_file_name = staging_file_name;
+	new_lte->staging_dir_fd	   = ctx->staging_dir_fd;
+	new_lte->size		   = size;
 
 	add_unhashed_stream(new_lte, inode, stream_id,
 			    &wim_get_current_image_metadata(ctx->wim)->unhashed_streams);
-	*retrieve_lte_pointer(new_lte) = new_lte;
-	*lte = new_lte;
+	if (stream_idx == 0)
+		inode->i_lte = new_lte;
+	else
+		inode->i_ads_entries[stream_idx - 1].lte = new_lte;
+	*lte_ptr = new_lte;
 	return 0;
+
 out_revert_fd_changes:
-	for (u16 i = 0, j = 0; j < new_lte->num_opened_fds; i++) {
+	for (u16 i = 0; new_lte->num_opened_fds; i++) {
 		struct wimfs_fd *fd = inode->i_fds[i];
-		if (fd && fd->stream_id == stream_id && fd->f_lte == new_lte) {
+		if (fd && fd->f_stream_id == stream_id) {
 			fd->f_lte = old_lte;
-			if (filedes_valid(&fd->staging_fd)) {
-				filedes_close(&fd->staging_fd);
-				filedes_invalidate(&fd->staging_fd);
+			if (filedes_valid(&fd->f_staging_fd)) {
+				filedes_close(&fd->f_staging_fd);
+				filedes_invalidate(&fd->f_staging_fd);
 			}
-			j++;
+			new_lte->num_opened_fds--;
 		}
 	}
 	free_lookup_table_entry(new_lte);
 out_delete_staging_file:
-	unlink(staging_file_name);
+	unlinkat(ctx->staging_dir_fd, staging_file_name, 0);
 	FREE(staging_file_name);
 	return ret;
 }
 
 /*
- * Creates a randomly named staging directory and saves its name in the
- * filesystem context structure.
+ * Create the staging directory for the WIM file.
+ *
+ * The staging directory will be created in the directory specified by the open
+ * file descriptor @parent_dir_fd.  It will be given a randomly generated name
+ * based on @wim_basename, the name of the WIM file.
+ *
+ * On success, returns a file descriptor to the open staging directory with
+ * O_RDONLY access.  In addition, stores the allocated name of the staging
+ * directory (relative to @parent_dir_fd) in @staging_dir_name_ret.
+ * On failure, returns -1 and sets errno.
  */
 static int
-make_staging_dir(struct wimfs_context *ctx, const char *user_prefix)
+make_staging_dir_at(int parent_dir_fd, const char *wim_basename,
+		    char **staging_dir_name_ret)
 {
+	static const char common_suffix[8] = ".staging";
 	static const size_t random_suffix_len = 10;
-	static const char *common_suffix = ".staging";
-	static const size_t common_suffix_len = 8;
-
-	char *staging_dir_name = NULL;
+	size_t wim_basename_len;
 	size_t staging_dir_name_len;
-	size_t prefix_len;
-	const char *wim_basename;
-	char *real_user_prefix = NULL;
-	int ret;
+	char *staging_dir_name;
+	char *p;
+	int fd;
 
-	if (user_prefix) {
-		real_user_prefix = realpath(user_prefix, NULL);
-		if (!real_user_prefix) {
-			ERROR_WITH_ERRNO("Could not resolve `%s'",
-					 real_user_prefix);
-			ret = WIMLIB_ERR_NOTDIR;
-			goto out;
-		}
-		wim_basename = path_basename(ctx->wim->filename);
-		prefix_len = strlen(real_user_prefix) + 1 + strlen(wim_basename);
-	} else {
-		prefix_len = strlen(ctx->wim->filename);
-	}
-
-	staging_dir_name_len = prefix_len + common_suffix_len + random_suffix_len;
-
+	wim_basename_len = strlen(wim_basename);
+	staging_dir_name_len = wim_basename_len + sizeof(common_suffix) +
+			       random_suffix_len;
 	staging_dir_name = MALLOC(staging_dir_name_len + 1);
-	if (!staging_dir_name) {
-		ret = WIMLIB_ERR_NOMEM;
-		goto out;
-	}
+	if (!staging_dir_name)
+		return -1;
 
-	if (real_user_prefix)
-		sprintf(staging_dir_name, "%s/%s", real_user_prefix, wim_basename);
-	else
-		strcpy(staging_dir_name, ctx->wim->filename);
+	p = staging_dir_name;
+	p = mempcpy(p, wim_basename, wim_basename_len);
+	p = mempcpy(p, common_suffix, sizeof(common_suffix));
+	randomize_char_array_with_alnum(p, random_suffix_len);
+	p += random_suffix_len;
+	*p = '\0';
 
-	strcat(staging_dir_name, common_suffix);
+	if (mkdirat(parent_dir_fd, staging_dir_name, 0700))
+		goto err1;
 
-	randomize_char_array_with_alnum(staging_dir_name + prefix_len + common_suffix_len,
-					random_suffix_len);
+	fd = openat(parent_dir_fd, staging_dir_name,
+		    O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+	if (fd < 0)
+		goto err2;
 
-	staging_dir_name[staging_dir_name_len] = '\0';
+	*staging_dir_name_ret = staging_dir_name;
+	return fd;
 
-	if (mkdir(staging_dir_name, 0700) != 0) {
-		ERROR_WITH_ERRNO("Failed to create temporary directory `%s'",
-				 staging_dir_name);
-		ret = WIMLIB_ERR_MKDIR;
-	} else {
-		ret = 0;
-	}
-out:
-	FREE(real_user_prefix);
-	if (ret == 0) {
-		ctx->staging_dir_name = staging_dir_name;
-		ctx->staging_dir_name_len = staging_dir_name_len;
-	} else {
-		FREE(staging_dir_name);
-	}
-	return ret;
-}
-
-static int
-remove_file_or_directory(const char *fpath, const struct stat *sb,
-			 int typeflag, struct FTW *ftwbuf)
-{
-	if (remove(fpath) == 0)
-		return 0;
-	else {
-		ERROR_WITH_ERRNO("Cannot remove `%s'", fpath);
-		return WIMLIB_ERR_DELETE_STAGING_DIR;
-	}
+err2:
+	unlinkat(parent_dir_fd, staging_dir_name, AT_REMOVEDIR);
+err1:
+	FREE(staging_dir_name);
+	return -1;
 }
 
 /*
- * Deletes the staging directory and all the files contained in it.
+ * Create the staging directory and set ctx->staging_dir_fd,
+ * ctx->staging_dir_name, and ctx->parent_dir_fd.
  */
 static int
+make_staging_dir(struct wimfs_context *ctx, const char *parent_dir_path)
+{
+	const char *wim_basename;
+	char *end = NULL;
+	int ret;
+
+	wim_basename = path_basename(ctx->wim->filename);
+
+	if (!parent_dir_path) {
+		/* The user did not specify a directory.  Default to creating
+		 * the staging directory alongside the WIM file.  */
+		if (wim_basename > ctx->wim->filename) {
+			parent_dir_path = ctx->wim->filename;
+			end = (char *)(wim_basename - 1);
+			/* *end must be a slash.  Temporarily overwrite it so we
+			 * can open the parent directory.  */
+			*end = '\0';
+		} else {
+			parent_dir_path = ".";
+		}
+	}
+
+	/* Open the parent directory (in which we'll create our staging
+	 * directory).  */
+	ctx->parent_dir_fd = open(parent_dir_path, O_RDONLY | O_DIRECTORY);
+	if (ctx->parent_dir_fd < 0) {
+		ERROR_WITH_ERRNO("Can't open directory \"%s\"",
+				 parent_dir_path);
+		ret = WIMLIB_ERR_OPENDIR;
+		goto out_restore_wim_filename;
+	}
+
+	ctx->staging_dir_fd = make_staging_dir_at(ctx->parent_dir_fd,
+						  wim_basename,
+						  &ctx->staging_dir_name);
+	if (ctx->staging_dir_fd < 0) {
+		ERROR_WITH_ERRNO("Can't create staging directory in \"%s\"",
+				 parent_dir_path);
+		close(ctx->parent_dir_fd);
+		ret = WIMLIB_ERR_MKDIR;
+		goto out_restore_wim_filename;
+	}
+	ret = 0;
+out_restore_wim_filename:
+	if (end)
+		*end = '/';
+	return ret;
+}
+
+/* Deletes the staging directory, undoing the effects of a succesful call to
+ * make_staging_dir().  */
+static void
 delete_staging_dir(struct wimfs_context *ctx)
 {
-	int ret;
-	ret = nftw(ctx->staging_dir_name, remove_file_or_directory,
-		   10, FTW_DEPTH);
+	DIR *dir;
+	struct dirent *ent;
+
+	dir = fdopendir(ctx->staging_dir_fd);
+	if (dir) {
+		while ((ent = readdir(dir)))
+			unlinkat(ctx->staging_dir_fd, ent->d_name, 0);
+		closedir(dir);
+	} else {
+		close(ctx->staging_dir_fd);
+	}
+	if (unlinkat(ctx->parent_dir_fd, ctx->staging_dir_name, AT_REMOVEDIR))
+		WARNING_WITH_ERRNO("Could not delete staging directory");
 	FREE(ctx->staging_dir_name);
-	ctx->staging_dir_name = NULL;
-	return ret;
-}
-
-static int
-inode_close_fds(struct wim_inode *inode)
-{
-	u16 num_opened_fds = inode->i_num_opened_fds;
-	for (u16 i = 0, j = 0; j < num_opened_fds; i++) {
-		struct wimfs_fd *fd = inode->i_fds[i];
-		if (fd) {
-			wimlib_assert(fd->f_inode == inode);
-			int ret = close_wimfs_fd(fd);
-			if (ret != 0)
-				return ret;
-			j++;
-		}
-	}
-	return 0;
-}
-
-/* Overwrites the WIM file, with changes saved. */
-static int
-rebuild_wim(struct wimfs_context *ctx, int write_flags)
-{
-	int ret;
-	struct wim_lookup_table_entry *lte, *tmp;
-	WIMStruct *wim = ctx->wim;
-	struct wim_image_metadata *imd = wim_get_current_image_metadata(ctx->wim);
-
-	DEBUG("Closing all staging file descriptors.");
-	image_for_each_unhashed_stream_safe(lte, tmp, imd) {
-		ret = inode_close_fds(lte->back_inode);
-		if (ret)
-			return ret;
-	}
-
-	DEBUG("Freeing entries for zero-length streams");
-	image_for_each_unhashed_stream_safe(lte, tmp, imd) {
-		wimlib_assert(lte->unhashed);
-		if (lte->size == 0) {
-			struct wim_lookup_table_entry **back_ptr;
-			back_ptr = retrieve_lte_pointer(lte);
-			*back_ptr = NULL;
-			list_del(&lte->unhashed_list);
-			free_lookup_table_entry(lte);
-		}
-	}
-
-	xml_update_image_info(wim, wim->current_image);
-	ret = wimlib_overwrite(wim, write_flags, 0);
-	if (ret)
-		ERROR("Failed to commit changes to mounted WIM image");
-	return ret;
-}
-
-/* Simple function that returns the concatenation of 2 strings. */
-static char *
-strcat_dup(const char *s1, const char *s2, size_t max_len)
-{
-	size_t len = strlen(s1) + strlen(s2);
-	if (len > max_len)
-		len = max_len;
-	char *p = MALLOC(len + 1);
-	if (!p)
-		return NULL;
-	snprintf(p, len + 1, "%s%s", s1, s2);
-	return p;
-}
-
-static int
-set_message_queue_names(struct wimfs_context *ctx, const char *mount_dir)
-{
-	static const char *u2d_prefix = "/wimlib-unmount-to-daemon-mq";
-	static const char *d2u_prefix = "/wimlib-daemon-to-unmount-mq";
-	char *dir_path;
-	char *p;
-	int ret;
-
-	dir_path = realpath(mount_dir, NULL);
-	if (!dir_path) {
-		ERROR_WITH_ERRNO("Failed to resolve path \"%s\"", mount_dir);
-		if (errno == ENOMEM)
-			return WIMLIB_ERR_NOMEM;
-		else
-			return WIMLIB_ERR_NOTDIR;
-	}
-
-	for (p = dir_path; *p; p++)
-		if (*p == '/')
-			*p = 0xff;
-
-	ctx->unmount_to_daemon_mq_name = strcat_dup(u2d_prefix, dir_path,
-						    NAME_MAX);
-	if (!ctx->unmount_to_daemon_mq_name) {
-		ret = WIMLIB_ERR_NOMEM;
-		goto out_free_dir_path;
-	}
-	ctx->daemon_to_unmount_mq_name = strcat_dup(d2u_prefix, dir_path,
-						    NAME_MAX);
-	if (!ctx->daemon_to_unmount_mq_name) {
-		ret = WIMLIB_ERR_NOMEM;
-		goto out_free_unmount_to_daemon_mq_name;
-	}
-
-	ret = 0;
-	goto out_free_dir_path;
-out_free_unmount_to_daemon_mq_name:
-	FREE(ctx->unmount_to_daemon_mq_name);
-	ctx->unmount_to_daemon_mq_name = NULL;
-out_free_dir_path:
-	FREE(dir_path);
-	return ret;
+	close(ctx->parent_dir_fd);
 }
 
 static void
-free_message_queue_names(struct wimfs_context *ctx)
+reassign_inode_numbers(struct wimfs_context *ctx)
 {
-	FREE(ctx->unmount_to_daemon_mq_name);
-	FREE(ctx->daemon_to_unmount_mq_name);
-	ctx->unmount_to_daemon_mq_name = NULL;
-	ctx->daemon_to_unmount_mq_name = NULL;
-}
+	struct wim_image_metadata *imd;
+	struct wim_inode *inode;
 
-/*
- * Opens two POSIX message queue: one for sending messages from the unmount
- * process to the daemon process, and one to go the other way.  The names of the
- * message queues, which must be system-wide unique, are be based on the mount
- * point.
- *
- * @daemon specifies whether the calling process is the filesystem daemon or the
- * unmount process.
- */
-static int
-open_message_queues(struct wimfs_context *ctx, bool daemon)
-{
-	int unmount_to_daemon_mq_flags = O_WRONLY | O_CREAT;
-	int daemon_to_unmount_mq_flags = O_RDONLY | O_CREAT;
-	mode_t mode;
-	mode_t orig_umask;
-	int ret;
-
-	if (daemon) {
-		swap(unmount_to_daemon_mq_flags, daemon_to_unmount_mq_flags);
-		mode = 0600;
-	} else {
-		mode = 0666;
-	}
-
-	orig_umask = umask(0000);
-	DEBUG("Opening message queue \"%s\"", ctx->unmount_to_daemon_mq_name);
-	ctx->unmount_to_daemon_mq = mq_open(ctx->unmount_to_daemon_mq_name,
-					    unmount_to_daemon_mq_flags, mode, NULL);
-
-	if (ctx->unmount_to_daemon_mq == (mqd_t)-1) {
-		ERROR_WITH_ERRNO("mq_open()");
-		ret = WIMLIB_ERR_MQUEUE;
-		goto out;
-	}
-
-	DEBUG("Opening message queue \"%s\"", ctx->daemon_to_unmount_mq_name);
-	ctx->daemon_to_unmount_mq = mq_open(ctx->daemon_to_unmount_mq_name,
-					    daemon_to_unmount_mq_flags, mode, NULL);
-
-	if (ctx->daemon_to_unmount_mq == (mqd_t)-1) {
-		ERROR_WITH_ERRNO("mq_open()");
-		mq_close(ctx->unmount_to_daemon_mq);
-		mq_unlink(ctx->unmount_to_daemon_mq_name);
-		ctx->unmount_to_daemon_mq = (mqd_t)-1;
-		ret = WIMLIB_ERR_MQUEUE;
-		goto out;
-	}
-	ret = 0;
-out:
-	umask(orig_umask);
-	return ret;
-}
-
-/* Try to determine the maximum message size of a message queue.  The return
- * value is the maximum message size, or a guess of 8192 bytes if it cannot be
- * determined. */
-static long
-mq_get_msgsize(mqd_t mq)
-{
-	static const char *msgsize_max_file = "/proc/sys/fs/mqueue/msgsize_max";
-	FILE *fp;
-	struct mq_attr attr;
-	long msgsize;
-
-	if (mq_getattr(mq, &attr) == 0) {
-		msgsize = attr.mq_msgsize;
-	} else {
-		ERROR_WITH_ERRNO("mq_getattr()");
-		ERROR("Attempting to read %s", msgsize_max_file);
-		fp = fopen(msgsize_max_file, "rb");
-		if (fp) {
-			if (fscanf(fp, "%ld", &msgsize) != 1) {
-				ERROR("Assuming message size of 8192");
-				msgsize = 8192;
-			}
-			fclose(fp);
-		} else {
-			ERROR_WITH_ERRNO("Failed to open the file `%s'",
-					 msgsize_max_file);
-			ERROR("Assuming message size of 8192");
-			msgsize = 8192;
-		}
-	}
-	return msgsize;
-}
-
-static int
-get_mailbox(mqd_t mq, long needed_msgsize, long *msgsize_ret,
-	    void **mailbox_ret)
-{
-	long msgsize;
-	void *mailbox;
-
-	msgsize = mq_get_msgsize(mq);
-
-	if (msgsize < needed_msgsize) {
-		ERROR("Message queue max size must be at least %ld!",
-		      needed_msgsize);
-		return WIMLIB_ERR_MQUEUE;
-	}
-
-	mailbox = MALLOC(msgsize);
-	if (!mailbox) {
-		ERROR("Failed to allocate %ld bytes for mailbox", msgsize);
-		return WIMLIB_ERR_NOMEM;
-	}
-	*msgsize_ret = msgsize;
-	*mailbox_ret = mailbox;
-	return 0;
-}
-
-static void
-unlink_message_queues(struct wimfs_context *ctx)
-{
-	mq_unlink(ctx->unmount_to_daemon_mq_name);
-	mq_unlink(ctx->daemon_to_unmount_mq_name);
-}
-
-/* Closes the message queues, which are allocated in static variables */
-static void
-close_message_queues(struct wimfs_context *ctx)
-{
-	DEBUG("Closing message queues");
-	mq_close(ctx->unmount_to_daemon_mq);
-	ctx->unmount_to_daemon_mq = (mqd_t)(-1);
-	mq_close(ctx->daemon_to_unmount_mq);
-	ctx->daemon_to_unmount_mq = (mqd_t)(-1);
-	unlink_message_queues(ctx);
-}
-
-
-struct unmount_msg_hdr {
-	u32 min_version;
-	u32 cur_version;
-	u32 msg_type;
-	u32 msg_size;
-} _packed_attribute;
-
-struct msg_unmount_request {
-	struct unmount_msg_hdr hdr;
-	u32 unmount_flags;
-	u8 want_progress_messages;
-} _packed_attribute;
-
-struct msg_daemon_info {
-	struct unmount_msg_hdr hdr;
-	pid_t daemon_pid;
-	u32 mount_flags;
-} _packed_attribute;
-
-struct msg_unmount_finished {
-	struct unmount_msg_hdr hdr;
-	s32 status;
-} _packed_attribute;
-
-struct msg_write_streams_progress {
-	struct unmount_msg_hdr hdr;
-	union wimlib_progress_info info;
-} _packed_attribute;
-
-enum {
-	MSG_TYPE_UNMOUNT_REQUEST,
-	MSG_TYPE_DAEMON_INFO,
-	MSG_TYPE_WRITE_STREAMS_PROGRESS,
-	MSG_TYPE_UNMOUNT_FINISHED,
-	MSG_TYPE_MAX,
-};
-
-struct msg_handler_context_hdr {
-	int timeout_seconds;
-};
-
-struct unmount_msg_handler_context {
-	struct msg_handler_context_hdr hdr;
-	pid_t daemon_pid;
-	int mount_flags;
-	int status;
-	wimlib_progress_func_t progfunc;
-	void *progctx;
-};
-
-struct daemon_msg_handler_context {
-	struct msg_handler_context_hdr hdr;
-	struct wimfs_context *wimfs_ctx;
-};
-
-static int
-send_unmount_request_msg(mqd_t mq, int unmount_flags, u8 want_progress_messages)
-{
-	DEBUG("Sending unmount request msg");
-	struct msg_unmount_request msg = {
-		.hdr = {
-			.min_version = ((unmount_flags & WIMLIB_UNMOUNT_FLAG_NEW_IMAGE) ?
-						WIMLIB_MAKEVERSION(1, 6, 2) :
-						WIMLIB_MAKEVERSION(1, 2, 1)),
-			.cur_version = WIMLIB_VERSION_CODE,
-			.msg_type    = MSG_TYPE_UNMOUNT_REQUEST,
-			.msg_size    = sizeof(msg),
-		},
-		.unmount_flags = unmount_flags,
-		.want_progress_messages = want_progress_messages,
-	};
-
-	if (mq_send(mq, (void*)&msg, sizeof(msg), 1)) {
-		ERROR_WITH_ERRNO("Failed to communicate with filesystem daemon");
-		return WIMLIB_ERR_MQUEUE;
-	}
-	return 0;
-}
-
-static int
-send_daemon_info_msg(mqd_t mq, pid_t pid, int mount_flags)
-{
-	DEBUG("Sending daemon info msg (pid = %d, mount_flags=%x)",
-	      pid, mount_flags);
-
-	struct msg_daemon_info msg = {
-		.hdr = {
-			.min_version = WIMLIB_MAKEVERSION(1, 2, 1),
-			.cur_version = WIMLIB_VERSION_CODE,
-			.msg_type = MSG_TYPE_DAEMON_INFO,
-			.msg_size = sizeof(msg),
-		},
-		.daemon_pid = pid,
-		.mount_flags = mount_flags,
-	};
-	if (mq_send(mq, (void*)&msg, sizeof(msg), 1)) {
-		ERROR_WITH_ERRNO("Failed to send daemon info to unmount process");
-		return WIMLIB_ERR_MQUEUE;
-	}
-	return 0;
-}
-
-static void
-send_unmount_finished_msg(mqd_t mq, int status)
-{
-	DEBUG("Sending unmount finished msg");
-	struct msg_unmount_finished msg = {
-		.hdr = {
-			.min_version = WIMLIB_MAKEVERSION(1, 2, 1),
-			.cur_version = WIMLIB_VERSION_CODE,
-			.msg_type = MSG_TYPE_UNMOUNT_FINISHED,
-			.msg_size = sizeof(msg),
-		},
-		.status = status,
-	};
-	if (mq_send(mq, (void*)&msg, sizeof(msg), 1))
-		ERROR_WITH_ERRNO("Failed to send status to unmount process");
-}
-
-static enum wimlib_progress_status
-unmount_progress_func(enum wimlib_progress_msg msg,
-		      union wimlib_progress_info *info, void *_ignored_context)
-{
-	if (msg == WIMLIB_PROGRESS_MSG_WRITE_STREAMS) {
-		struct msg_write_streams_progress msg = {
-			.hdr = {
-				.min_version = WIMLIB_MAKEVERSION(1, 2, 1),
-				.cur_version = WIMLIB_VERSION_CODE,
-				.msg_type = MSG_TYPE_WRITE_STREAMS_PROGRESS,
-				.msg_size = sizeof(msg),
-			},
-			.info = *info,
-		};
-		if (mq_send(wimfs_get_context()->daemon_to_unmount_mq,
-			    (void*)&msg, sizeof(msg), 1))
-		{
-			ERROR_WITH_ERRNO("Failed to send progress information "
-					 "to unmount process");
-		}
-	}
-	return WIMLIB_PROGRESS_STATUS_CONTINUE;
+	ctx->next_ino = 1;
+	imd = wim_get_current_image_metadata(ctx->wim);
+	image_for_each_inode(inode, imd)
+		inode->i_ino = ctx->next_ino++;
 }
 
 static void
@@ -1204,6 +912,47 @@ release_extra_refcnts(struct wimfs_context *ctx)
 	}
 }
 
+static void
+delete_empty_streams(struct wimfs_context *ctx)
+{
+	struct wim_lookup_table_entry *lte, *tmp;
+	struct wim_image_metadata *imd;
+
+	imd = wim_get_current_image_metadata(ctx->wim);
+
+        image_for_each_unhashed_stream_safe(lte, tmp, imd) {
+                if (!lte->size) {
+                        *retrieve_lte_pointer(lte) = NULL;
+                        list_del(&lte->unhashed_list);
+                        free_lookup_table_entry(lte);
+                }
+        }
+}
+
+static void
+inode_close_fds(struct wim_inode *inode)
+{
+	u16 num_open_fds = inode->i_num_opened_fds;
+	for (u16 i = 0; num_open_fds; i++) {
+		if (inode->i_fds[i]) {
+			close_wimfs_fd(inode->i_fds[i]);
+			num_open_fds--;
+		}
+	}
+}
+
+static void
+close_all_fds(struct wimfs_context *ctx)
+{
+	struct wim_inode *inode, *tmp;
+	struct wim_image_metadata *imd;
+
+	imd = wim_get_current_image_metadata(ctx->wim);
+
+	list_for_each_entry_safe(inode, tmp, &imd->inode_list, i_list)
+		inode_close_fds(inode);
+}
+
 /* Moves the currently selected image, which may have been modified, to a new
  * index, and sets the original index to refer to a reset (unmodified) copy of
  * the image.  */
@@ -1211,23 +960,18 @@ static int
 renew_current_image(struct wimfs_context *ctx)
 {
 	WIMStruct *wim = ctx->wim;
-	int ret;
 	int idx = wim->current_image - 1;
 	struct wim_image_metadata *imd = wim->image_metadata[idx];
 	struct wim_image_metadata *replace_imd;
 	struct wim_lookup_table_entry *new_lte;
-
-	if (imd->metadata_lte->resource_location != RESOURCE_IN_WIM) {
-		ERROR("Can't reset modified image that doesn't yet "
-		      "exist in the on-disk WIM file!");
-		return WIMLIB_ERR_METADATA_NOT_FOUND;
-	}
+	int ret;
 
 	/* Create 'replace_imd' structure to use for the reset original,
 	 * unmodified image.  */
+	ret = WIMLIB_ERR_NOMEM;
 	replace_imd = new_image_metadata();
 	if (!replace_imd)
-		return WIMLIB_ERR_NOMEM;
+		goto err;
 
 	/* Create new stream reference for the modified image's metadata
 	 * resource, which doesn't exist yet.  */
@@ -1261,386 +1005,124 @@ err_free_new_lte:
 	free_lookup_table_entry(new_lte);
 err_put_replace_imd:
 	put_image_metadata(replace_imd, NULL);
+err:
 	return ret;
 }
 
-static int
-msg_unmount_request_handler(const void *_msg, void *_handler_ctx)
+static enum wimlib_progress_status
+commit_progress_func(enum wimlib_progress_msg msg,
+		     union wimlib_progress_info *info, void *progctx)
 {
-	const struct msg_unmount_request *msg = _msg;
-	struct daemon_msg_handler_context *handler_ctx = _handler_ctx;
-	struct wimfs_context *wimfs_ctx;
-	int status = 0;
-	int ret;
-	int unmount_flags;
+	mqd_t mq = *(mqd_t *)progctx;
+	struct commit_progress_report report;
 
-	DEBUG("Handling unmount request msg");
+	memset(&report, 0, sizeof(report));
+	report.msg = msg;
+	if (info)
+		report.info = *info;
+	mq_send(mq, (const char *)&report, sizeof(report), 1);
+	return WIMLIB_PROGRESS_STATUS_CONTINUE;
+}
 
-	wimfs_ctx = handler_ctx->wimfs_ctx;
-	if (msg->hdr.msg_size < sizeof(*msg)) {
-		status = WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
-		goto out;
-	}
+/* Commit the mounted image to the underlying WIM file.  */
+static int
+commit_image(struct wimfs_context *ctx, int unmount_flags, mqd_t mq)
+{
+	int write_flags;
 
-	unmount_flags = msg->unmount_flags;
+	if (unmount_flags & WIMLIB_UNMOUNT_FLAG_SEND_PROGRESS)
+		wimlib_register_progress_function(ctx->wim,
+						  commit_progress_func, &mq);
+	else
+		wimlib_register_progress_function(ctx->wim, NULL, NULL);
 
-	wimlib_register_progress_function(wimfs_ctx->wim,
-					  (msg->want_progress_messages ?
-					   unmount_progress_func : NULL),
-					  NULL);
-
-	ret = send_daemon_info_msg(wimfs_ctx->daemon_to_unmount_mq, getpid(),
-				   wimfs_ctx->mount_flags);
-	if (ret != 0) {
-		status = ret;
-		goto out;
-	}
-
-	if (wimfs_ctx->mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
-		if (unmount_flags & WIMLIB_UNMOUNT_FLAG_COMMIT) {
-
-			if (unmount_flags & WIMLIB_UNMOUNT_FLAG_NEW_IMAGE) {
-				ret = renew_current_image(wimfs_ctx);
-				if (ret) {
-					status = ret;
-					goto out;
-				}
-			} else {
-				release_extra_refcnts(wimfs_ctx);
-			}
-			INIT_LIST_HEAD(&wimfs_ctx->orig_stream_list);
-
-			int write_flags = 0;
-			if (unmount_flags & WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY)
-				write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
-			if (unmount_flags & WIMLIB_UNMOUNT_FLAG_REBUILD)
-				write_flags |= WIMLIB_WRITE_FLAG_REBUILD;
-			if (unmount_flags & WIMLIB_UNMOUNT_FLAG_RECOMPRESS)
-				write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
-			status = rebuild_wim(wimfs_ctx, write_flags);
-		}
+	if (unmount_flags & WIMLIB_UNMOUNT_FLAG_NEW_IMAGE) {
+		int ret = renew_current_image(ctx);
+		if (ret)
+			return ret;
 	} else {
-		DEBUG("Read-only mount");
-		status = 0;
+		release_extra_refcnts(ctx);
 	}
+	INIT_LIST_HEAD(&ctx->orig_stream_list);
+	delete_empty_streams(ctx);
+	xml_update_image_info(ctx->wim, ctx->wim->current_image);
 
-out:
-	if (wimfs_ctx->mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
-		ret = delete_staging_dir(wimfs_ctx);
-		if (ret != 0) {
-			ERROR("Failed to delete the staging directory");
-			if (status == 0)
-				status = ret;
-		}
-	}
-	wimfs_ctx->status = status;
-	wimfs_ctx->have_status = true;
-	return MSG_BREAK_LOOP;
+	write_flags = 0;
+	if (unmount_flags & WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY)
+		write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
+	if (unmount_flags & WIMLIB_UNMOUNT_FLAG_REBUILD)
+		write_flags |= WIMLIB_WRITE_FLAG_REBUILD;
+	if (unmount_flags & WIMLIB_UNMOUNT_FLAG_RECOMPRESS)
+		write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
+	return wimlib_overwrite(ctx->wim, write_flags, 0);
 }
 
 static int
-msg_daemon_info_handler(const void *_msg, void *_handler_ctx)
+unmount_wimfs(const struct wimfs_unmount_info *info)
 {
-	const struct msg_daemon_info *msg = _msg;
-	struct unmount_msg_handler_context *handler_ctx = _handler_ctx;
-
-	DEBUG("Handling daemon info msg");
-	if (msg->hdr.msg_size < sizeof(*msg))
-		return WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
-	handler_ctx->daemon_pid = msg->daemon_pid;
-	handler_ctx->mount_flags = msg->mount_flags;
-	handler_ctx->hdr.timeout_seconds = 1;
-	DEBUG("pid of daemon is %d; mount flags were %#x",
-	      handler_ctx->daemon_pid,
-	      handler_ctx->mount_flags);
-	return 0;
-}
-
-static int
-msg_write_streams_progress_handler(const void *_msg, void *_handler_ctx)
-{
-	const struct msg_write_streams_progress *msg = _msg;
-	struct unmount_msg_handler_context *handler_ctx = _handler_ctx;
-
-	if (msg->hdr.msg_size < sizeof(*msg))
-		return WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
-	return call_progress(handler_ctx->progfunc,
-			     WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
-			     (union wimlib_progress_info *)&msg->info,
-			     handler_ctx->progctx);
-}
-
-static int
-msg_unmount_finished_handler(const void *_msg, void *_handler_ctx)
-{
-	const struct msg_unmount_finished *msg = _msg;
-	struct unmount_msg_handler_context *handler_ctx = _handler_ctx;
-
-	DEBUG("Handling unmount finished message");
-	if (msg->hdr.msg_size < sizeof(*msg))
-		return WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
-	handler_ctx->status = msg->status;
-	DEBUG("status is %d", handler_ctx->status);
-	return MSG_BREAK_LOOP;
-}
-
-static int
-unmount_timed_out_cb(void *_handler_ctx)
-{
-	const struct unmount_msg_handler_context *handler_ctx = _handler_ctx;
-
-	if (handler_ctx->daemon_pid == 0 ||
-	    (kill(handler_ctx->daemon_pid, 0) != 0 && errno == ESRCH))
-	{
-		ERROR("The filesystem daemon has crashed!  Changes to the "
-		      "WIM may not have been commited.");
-		return WIMLIB_ERR_FILESYSTEM_DAEMON_CRASHED;
-	}
-
-	DEBUG("Filesystem daemon is still alive... "
-	      "Waiting another %d seconds", handler_ctx->hdr.timeout_seconds);
-	return 0;
-}
-
-static int
-daemon_timed_out_cb(void *_handler_ctx)
-{
-	ERROR("Timed out waiting for unmount request! "
-	      "Changes to the mounted WIM will not be committed.");
-	return WIMLIB_ERR_TIMEOUT;
-}
-
-typedef int (*msg_handler_t)(const void *_msg, void *_handler_ctx);
-
-struct msg_handler_callbacks {
-	int (*timed_out)(void * _handler_ctx);
-	msg_handler_t msg_handlers[MSG_TYPE_MAX];
-};
-
-static const struct msg_handler_callbacks unmount_msg_handler_callbacks = {
-	.timed_out = unmount_timed_out_cb,
-	.msg_handlers = {
-		[MSG_TYPE_DAEMON_INFO] = msg_daemon_info_handler,
-		[MSG_TYPE_WRITE_STREAMS_PROGRESS] = msg_write_streams_progress_handler,
-		[MSG_TYPE_UNMOUNT_FINISHED] = msg_unmount_finished_handler,
-	},
-};
-
-static const struct msg_handler_callbacks daemon_msg_handler_callbacks = {
-	.timed_out = daemon_timed_out_cb,
-	.msg_handlers = {
-		[MSG_TYPE_UNMOUNT_REQUEST] = msg_unmount_request_handler,
-	},
-};
-
-static int
-receive_message(mqd_t mq,
-		struct msg_handler_context_hdr *handler_ctx,
-		const msg_handler_t msg_handlers[],
-		long mailbox_size, void *mailbox)
-{
-	struct timeval now;
-	struct timespec timeout;
-	ssize_t bytes_received;
-	struct unmount_msg_hdr *hdr;
-	int ret;
-
-	gettimeofday(&now, NULL);
-	timeout.tv_sec = now.tv_sec + handler_ctx->timeout_seconds;
-	timeout.tv_nsec = now.tv_usec * 1000;
-
-	bytes_received = mq_timedreceive(mq, mailbox,
-					 mailbox_size, NULL, &timeout);
-	hdr = mailbox;
-	if (bytes_received == -1) {
-		if (errno == ETIMEDOUT) {
-			ret = WIMLIB_ERR_TIMEOUT;
-		} else {
-			ERROR_WITH_ERRNO("mq_timedreceive()");
-			ret = WIMLIB_ERR_MQUEUE;
-		}
-	} else if (bytes_received < sizeof(*hdr) ||
-		   bytes_received != hdr->msg_size) {
-		ret = WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
-	} else if (WIMLIB_VERSION_CODE < hdr->min_version) {
-		/*ERROR("Cannot understand the received message. "*/
-		      /*"Please upgrade wimlib to at least v%d.%d.%d",*/
-		      /*WIMLIB_GET_MAJOR_VERSION(hdr->min_version),*/
-		      /*WIMLIB_GET_MINOR_VERSION(hdr->min_version),*/
-		      /*WIMLIB_GET_PATCH_VERSION(hdr->min_version));*/
-		ret = MSG_VERSION_TOO_HIGH;
-	} else if (hdr->msg_type >= MSG_TYPE_MAX) {
-		ret = WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
-	} else if (msg_handlers[hdr->msg_type] == NULL) {
-		ret = WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE;
-	} else {
-		ret = msg_handlers[hdr->msg_type](mailbox, handler_ctx);
-	}
-	return ret;
-}
-
-static int
-message_loop(mqd_t mq,
-	     const struct msg_handler_callbacks *callbacks,
-	     struct msg_handler_context_hdr *handler_ctx)
-{
-	static const size_t MAX_MSG_SIZE = 512;
-	long msgsize;
-	void *mailbox;
-	int ret;
-
-	DEBUG("Entering message loop");
-
-	ret = get_mailbox(mq, MAX_MSG_SIZE, &msgsize, &mailbox);
-	if (ret != 0)
-		return ret;
-	while (1) {
-		ret = receive_message(mq, handler_ctx,
-				      callbacks->msg_handlers,
-				      msgsize, mailbox);
-		if (ret == 0 || ret == MSG_VERSION_TOO_HIGH) {
-			continue;
-		} else if (ret == MSG_BREAK_LOOP) {
-			ret = 0;
-			break;
-		} else if (ret == WIMLIB_ERR_TIMEOUT) {
-			if (callbacks->timed_out)
-				ret = callbacks->timed_out(handler_ctx);
-			if (ret == 0)
-				continue;
-			else
-				break;
-		} else {
-			ERROR_WITH_ERRNO("Error communicating with "
-					 "filesystem daemon");
-			break;
-		}
-	}
-	FREE(mailbox);
-	DEBUG("Exiting message loop");
-	return ret;
-}
-
-/* Execute `fusermount -u', which is installed setuid root, to unmount the WIM.
- *
- * FUSE does not yet implement synchronous unmounts.  This means that fusermount
- * -u will return before the filesystem daemon returns from wimfs_destroy().
- *  This is partly what we want, because we need to send a message from this
- *  process to the filesystem daemon telling whether --commit was specified or
- *  not.  However, after that, the unmount process must wait for the filesystem
- *  daemon to finish writing the WIM file.
- */
-static int
-execute_fusermount(const char *dir, bool lazy)
-{
-	pid_t pid;
-	int ret;
+	struct fuse_context *fuse_ctx = fuse_get_context();
+	struct wimfs_context *wimfs_ctx = WIMFS_CTX(fuse_ctx);
+	int unmount_flags = info->unmount_flags;
+	mqd_t mq = (mqd_t)-1;
 	int status;
 
-	pid = fork();
-	if (pid == -1) {
-		ERROR_WITH_ERRNO("Failed to fork()");
-		return WIMLIB_ERR_FORK;
-	}
-	if (pid == 0) {
-		/* Child */
-		char *argv[10];
-		char **argp = argv;
-		*argp++ = "fusermount";
-		if (lazy)
-			*argp++ = "-z";
-		*argp++ = "-u";
-		*argp++ = (char*)dir;
-		*argp = NULL;
-		execvp("fusermount", argv);
-		ERROR_WITH_ERRNO("Failed to execute `fusermount'");
-		exit(WIMLIB_ERR_FUSERMOUNT);
+	if (fuse_ctx->uid != wimfs_ctx->owner_uid &&
+	    fuse_ctx->uid != 0)
+		return -EPERM;
+
+	if (info->mq_name[0]) {
+		mq = mq_open(info->mq_name, O_WRONLY | O_NONBLOCK);
+		if (mq == (mqd_t)-1)
+			return -errno;
 	}
 
-	/* Parent */
-	ret = waitpid(pid, &status, 0);
-	if (ret == -1) {
-		ERROR_WITH_ERRNO("Failed to wait for fusermount process to "
-				 "terminate");
-		return WIMLIB_ERR_FUSERMOUNT;
+	/* Ignore COMMIT if the image is mounted read-only.  */
+	if (!(wimfs_ctx->mount_flags & WIMLIB_MOUNT_FLAG_READWRITE))
+		unmount_flags &= ~WIMLIB_UNMOUNT_FLAG_COMMIT;
+
+	if (wimfs_ctx->num_open_fds) {
+		if ((unmount_flags & (WIMLIB_UNMOUNT_FLAG_COMMIT |
+				      WIMLIB_UNMOUNT_FLAG_FORCE))
+				 == WIMLIB_UNMOUNT_FLAG_COMMIT)
+		{
+			status = WIMLIB_ERR_MOUNTED_IMAGE_IS_BUSY;
+			goto out_send_status;
+		}
+		close_all_fds(wimfs_ctx);
 	}
 
-	if (!WIFEXITED(status)) {
-		ERROR("'fusermount' did not terminate normally!");
-		return WIMLIB_ERR_FUSERMOUNT;
+	if (unmount_flags & WIMLIB_UNMOUNT_FLAG_COMMIT)
+		status = commit_image(wimfs_ctx, unmount_flags, mq);
+	else
+		status = 0;
+	fuse_exit(fuse_ctx->fuse);
+out_send_status:
+	if (mq != (mqd_t)-1) {
+		mq_send(mq, (const char *)&status, sizeof(int), 1);
+		mq_close(mq);
 	}
-
-	status = WEXITSTATUS(status);
-
-	if (status == 0)
-		return 0;
-
-	if (status != WIMLIB_ERR_FUSERMOUNT)
-		return WIMLIB_ERR_FUSERMOUNT;
-
-	/* Try again, but with the `umount' program.  This is required on other
-	 * FUSE implementations such as FreeBSD's that do not have a
-	 * `fusermount' program. */
-	ERROR("Falling back to 'umount'.  Note: you may need to be "
-	      "root for this to work");
-	pid = fork();
-	if (pid == -1) {
-		ERROR_WITH_ERRNO("Failed to fork()");
-		return WIMLIB_ERR_FORK;
-	}
-	if (pid == 0) {
-		/* Child */
-		char *argv[10];
-		char **argp = argv;
-		*argp++ = "umount";
-		if (lazy)
-			*argp++ = "-l";
-		*argp++ = (char*)dir;
-		*argp = NULL;
-		execvp("umount", argv);
-		ERROR_WITH_ERRNO("Failed to execute `umount'");
-		exit(WIMLIB_ERR_FUSERMOUNT);
-	}
-
-	/* Parent */
-	ret = waitpid(pid, &status, 0);
-	if (ret == -1) {
-		ERROR_WITH_ERRNO("Failed to wait for `umount' process to "
-				 "terminate");
-		return WIMLIB_ERR_FUSERMOUNT;
-	}
-
-	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-		ERROR("`umount' did not successfully complete");
-		return WIMLIB_ERR_FUSERMOUNT;
-	}
-
 	return 0;
 }
 
 static int
 wimfs_chmod(const char *path, mode_t mask)
 {
-	struct wim_dentry *dentry;
+	const struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_inode *inode;
-	struct wimfs_context *ctx = wimfs_get_context();
 	struct wimlib_unix_data unix_data;
-	int ret;
 
 	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA))
-		return -EPERM;
+		return -EOPNOTSUPP;
 
-	ret = wim_pathname_to_stream(ctx->wim, path, LOOKUP_FLAG_DIRECTORY_OK,
-				     &dentry, NULL, NULL);
-	if (ret)
-		return ret;
+	inode = wim_pathname_to_inode(ctx->wim, path);
+	if (!inode)
+		return -errno;
 
-	inode = dentry->d_inode;
-
-	unix_data.uid = ctx->default_uid;
-	unix_data.gid = ctx->default_gid;
+	unix_data.uid = ctx->owner_uid;
+	unix_data.gid = ctx->owner_gid;
 	unix_data.mode = mask;
 	unix_data.rdev = 0;
+
 	if (!inode_set_unix_data(inode, &unix_data, UNIX_DATA_MODE))
 		return -ENOMEM;
 
@@ -1650,163 +1132,173 @@ wimfs_chmod(const char *path, mode_t mask)
 static int
 wimfs_chown(const char *path, uid_t uid, gid_t gid)
 {
-	struct wim_dentry *dentry;
+	const struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_inode *inode;
-	struct wimfs_context *ctx = wimfs_get_context();
-	int which;
 	struct wimlib_unix_data unix_data;
-	int ret;
+	int which;
 
 	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA))
-		return -EPERM;
+		return -EOPNOTSUPP;
 
-	ret = wim_pathname_to_stream(ctx->wim, path, LOOKUP_FLAG_DIRECTORY_OK,
-				     &dentry, NULL, NULL);
-	if (ret)
-		return ret;
-
-	inode = dentry->d_inode;
+	inode = wim_pathname_to_inode(ctx->wim, path);
+	if (!inode)
+		return -errno;
 
 	which = 0;
 
 	if (uid != (uid_t)-1)
 		which |= UNIX_DATA_UID;
 	else
-		uid = ctx->default_uid;
+		uid = ctx->owner_uid;
 
 	if (gid != (gid_t)-1)
 		which |= UNIX_DATA_GID;
 	else
-		gid = ctx->default_gid;
-
+		gid = ctx->owner_gid;
 
 	unix_data.uid = uid;
 	unix_data.gid = gid;
 	unix_data.mode = inode_default_unix_mode(inode);
 	unix_data.rdev = 0;
+
 	if (!inode_set_unix_data(inode, &unix_data, which))
 		return -ENOMEM;
 
 	return 0;
 }
 
-/* Called when the filesystem is unmounted. */
-static void
-wimfs_destroy(void *p)
-{
-	struct wimfs_context *wimfs_ctx = wimfs_get_context();
-	if (open_message_queues(wimfs_ctx, true) == 0) {
-		struct daemon_msg_handler_context handler_ctx = {
-			.hdr = {
-				.timeout_seconds = 5,
-			},
-			.wimfs_ctx = wimfs_ctx,
-		};
-		message_loop(wimfs_ctx->unmount_to_daemon_mq,
-			     &daemon_msg_handler_callbacks,
-			     &handler_ctx.hdr);
-	}
-}
-
 static int
-wimfs_fgetattr(const char *path, struct stat *stbuf,
-	       struct fuse_file_info *fi)
+wimfs_fgetattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi)
 {
-	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
+	struct wimfs_fd *fd = WIMFS_FD(fi);
 	return inode_to_stbuf(fd->f_inode, fd->f_lte, stbuf);
 }
 
 static int
 wimfs_ftruncate(const char *path, off_t size, struct fuse_file_info *fi)
 {
-	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
-	int ret = ftruncate(fd->staging_fd.fd, size);
-	if (ret)
+	struct wimfs_fd *fd = WIMFS_FD(fi);
+	if (ftruncate(fd->f_staging_fd.fd, size))
 		return -errno;
 	touch_inode(fd->f_inode);
 	fd->f_lte->size = size;
 	return 0;
 }
 
-/*
- * Fills in a `struct stat' that corresponds to a file or directory in the WIM.
- */
 static int
 wimfs_getattr(const char *path, struct stat *stbuf)
 {
+	const struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_dentry *dentry;
 	struct wim_lookup_table_entry *lte;
 	int ret;
-	struct wimfs_context *ctx = wimfs_get_context();
 
 	ret = wim_pathname_to_stream(ctx->wim, path,
 				     get_lookup_flags(ctx) |
 					LOOKUP_FLAG_DIRECTORY_OK,
 				     &dentry, &lte, NULL);
-	if (ret != 0)
+	if (ret)
 		return ret;
 	return inode_to_stbuf(dentry->d_inode, lte, stbuf);
 }
 
-#ifdef ENABLE_XATTR
-/* Read an alternate data stream through the XATTR interface, or get its size */
+static int
+copy_xattr(char *dest, size_t destsize, const void *src, size_t srcsize)
+{
+	if (!destsize)
+		return srcsize;
+	if (destsize < srcsize)
+		return -ERANGE;
+	memcpy(dest, src, srcsize);
+	return srcsize;
+}
+
 static int
 wimfs_getxattr(const char *path, const char *name, char *value,
 	       size_t size)
 {
-	int ret;
+	struct fuse_context *fuse_ctx = fuse_get_context();
+	const struct wimfs_context *ctx = WIMFS_CTX(fuse_ctx);
 	struct wim_inode *inode;
 	struct wim_ads_entry *ads_entry;
-	u64 stream_size;
 	struct wim_lookup_table_entry *lte;
-	struct wimfs_context *ctx = wimfs_get_context();
+
+	if (!strncmp(name, "wimfs.", 6)) {
+		/* Handle some magical extended attributes.  These really should
+		 * be ioctls, but directory ioctls aren't supported until
+		 * libfuse 2.9, and even then they are broken.  */
+		name += 6;
+		if (!strcmp(name, "wim_filename")) {
+			return copy_xattr(value, size, ctx->wim->filename,
+					  strlen(ctx->wim->filename));
+		}
+		if (!strcmp(name, "wim_info")) {
+			struct wimlib_wim_info info;
+
+			wimlib_get_wim_info(ctx->wim, &info);
+
+			return copy_xattr(value, size, &info, sizeof(info));
+		}
+		if (!strcmp(name, "mounted_image")) {
+			return copy_xattr(value, size,
+					  &ctx->wim->current_image, sizeof(int));
+		}
+		if (!strcmp(name, "mount_flags")) {
+			return copy_xattr(value, size,
+					  &ctx->mount_flags, sizeof(int));
+		}
+		if (!strcmp(name, "unmount")) {
+			struct wimfs_unmount_info info;
+			memset(&info, 0, sizeof(info));
+			return unmount_wimfs(&info);
+		}
+		return -ENOATTR;
+	}
 
 	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
 		return -ENOTSUP;
 
-	if (strlen(name) <= 5 || memcmp(name, "user.", 5) != 0)
+	if (strncmp(name, "user.", 5))
 		return -ENOATTR;
 	name += 5;
+
+	/* Querying a named data stream  */
 
 	inode = wim_pathname_to_inode(ctx->wim, path);
 	if (!inode)
 		return -errno;
 
-	ads_entry = inode_get_ads_entry(inode, name, NULL);
+	ads_entry = inode_get_ads_entry(inode, name);
 	if (!ads_entry)
-		return -ENOATTR;
+		return (errno == ENOENT) ? -ENOATTR : -errno;
 
 	lte = ads_entry->lte;
-	stream_size = lte->size;
+	if (!lte)
+		return 0;
 
-	if (size == 0)
-		return stream_size;
+	if (unlikely(lte->size > INT_MAX))
+		return -EFBIG;
 
-	if (stream_size > size)
-		return -ERANGE;
+	if (size) {
+		if (lte->size > size)
+			return -ERANGE;
 
-	ret = read_full_stream_into_buf(lte, value);
-	if (ret) {
-		if (errno)
+		if (read_full_stream_into_buf(lte, value))
 			return -errno;
-		else
-			return -EIO;
 	}
-	return stream_size;
+	return lte->size;
 }
-#endif
 
-/* Create a hard link */
 static int
-wimfs_link(const char *to, const char *from)
+wimfs_link(const char *existing_path, const char *new_path)
 {
-	struct wim_dentry *from_dentry, *from_dentry_parent;
-	const char *link_name;
-	struct wim_inode *inode;
 	WIMStruct *wim = wimfs_get_WIMStruct();
-	int ret;
+	const char *new_name;
+	struct wim_inode *inode;
+	struct wim_dentry *dir;
+	struct wim_dentry *new_alias;
 
-	inode = wim_pathname_to_inode(wim, to);
+	inode = wim_pathname_to_inode(wim, existing_path);
 	if (!inode)
 		return -errno;
 
@@ -1814,149 +1306,156 @@ wimfs_link(const char *to, const char *from)
 				   FILE_ATTRIBUTE_REPARSE_POINT))
 		return -EPERM;
 
-	from_dentry_parent = get_parent_dentry(wim, from, WIMLIB_CASE_SENSITIVE);
-	if (!from_dentry_parent)
+	new_name = path_basename(new_path);
+
+	dir = get_parent_dentry(wim, new_path, WIMLIB_CASE_SENSITIVE);
+	if (!dir)
 		return -errno;
-	if (!dentry_is_directory(from_dentry_parent))
+
+	if (!dentry_is_directory(dir))
 		return -ENOTDIR;
 
-	link_name = path_basename(from);
-	if (get_dentry_child_with_name(from_dentry_parent, link_name,
-				       WIMLIB_CASE_SENSITIVE))
+	if (get_dentry_child_with_name(dir, new_name, WIMLIB_CASE_SENSITIVE))
 		return -EEXIST;
 
-	ret = new_dentry(link_name, &from_dentry);
-	if (ret)
+	if (new_dentry(new_name, &new_alias))
 		return -ENOMEM;
 
+	new_alias->d_inode = inode;
+	inode_add_dentry(new_alias, inode);
+	dentry_add_child(dir, new_alias);
 	inode->i_nlink++;
 	inode_ref_streams(inode);
-	from_dentry->d_inode = inode;
-	inode_add_dentry(from_dentry, inode);
-	dentry_add_child(from_dentry_parent, from_dentry);
 	return 0;
 }
 
-#ifdef ENABLE_XATTR
 static int
 wimfs_listxattr(const char *path, char *list, size_t size)
 {
-	size_t needed_size;
-	struct wim_inode *inode;
-	struct wimfs_context *ctx = wimfs_get_context();
-	u16 i;
-	char *p;
-	bool size_only = (size == 0);
+	const struct wimfs_context *ctx = wimfs_get_context();
+	const struct wim_inode *inode;
+	char *p = list;
+	char *end = list + size;
+	int total_size = 0;
 
 	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
 		return -ENOTSUP;
 
-	/* List alternate data streams, or get the list size */
+	/* List named data streams, or get the list size.  We report each named
+	 * data stream "X" as an extended attribute "user.X".  */
 
 	inode = wim_pathname_to_inode(ctx->wim, path);
 	if (!inode)
 		return -errno;
 
-	p = list;
-	for (i = 0; i < inode->i_num_ads; i++) {
-
-		if (!ads_entry_is_named_stream(&inode->i_ads_entries[i]))
-			continue;
-
+	for (u16 i = 0; i < inode->i_num_ads; i++) {
+		const struct wim_ads_entry *entry;
 		char *stream_name_mbs;
 		size_t stream_name_mbs_nbytes;
-		int ret;
 
-		ret = utf16le_to_tstr(inode->i_ads_entries[i].stream_name,
-				      inode->i_ads_entries[i].stream_name_nbytes,
-				      &stream_name_mbs,
-				      &stream_name_mbs_nbytes);
-		if (ret)
+		entry = &inode->i_ads_entries[i];
+
+		if (!entry->stream_name_nbytes)
+			continue;
+
+		if (utf16le_to_tstr(entry->stream_name,
+				    entry->stream_name_nbytes,
+				    &stream_name_mbs,
+				    &stream_name_mbs_nbytes))
 			return -errno;
 
-		needed_size = stream_name_mbs_nbytes + 6;
-		if (!size_only) {
-			if (needed_size > size) {
+		if (unlikely(INT_MAX - total_size < stream_name_mbs_nbytes + 6)) {
+			FREE(stream_name_mbs);
+			return -EFBIG;
+		}
+
+		total_size += stream_name_mbs_nbytes + 6;
+		if (size) {
+			if (end - p < stream_name_mbs_nbytes + 6) {
 				FREE(stream_name_mbs);
 				return -ERANGE;
 			}
-			sprintf(p, "user.%s", stream_name_mbs);
-			size -= needed_size;
+			p = mempcpy(p, "user.", 5);
+			p = mempcpy(p, stream_name_mbs, stream_name_mbs_nbytes);
+			*p++ = '\0';
 		}
-		p += needed_size;
 		FREE(stream_name_mbs);
 	}
-	return p - list;
+	return total_size;
 }
-#endif
 
-
-/* Create a directory in the WIM image. */
 static int
 wimfs_mkdir(const char *path, mode_t mode)
 {
+	/* Note: according to fuse.h, mode may not include S_IFDIR  */
 	return create_dentry(fuse_get_context(), path, mode | S_IFDIR, 0,
 			     FILE_ATTRIBUTE_DIRECTORY, NULL);
 }
 
-/* Create a non-directory, non-symbolic-link file or alternate data stream in
- * the WIM image.  */
 static int
 wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
-	const char *stream_name;
 	struct fuse_context *fuse_ctx = fuse_get_context();
 	struct wimfs_context *wimfs_ctx = WIMFS_CTX(fuse_ctx);
+	const char *stream_name;
 
 	if ((wimfs_ctx->mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)
-	     && (stream_name = path_stream_name(path))) {
-
-		if (!S_ISREG(mode))
-			return -EPERM;
-
-		/* Make an alternate data stream */
+	     && (stream_name = path_stream_name(path)))
+	{
+		struct wim_ads_entry *old_entry;
 		struct wim_ads_entry *new_entry;
 		struct wim_inode *inode;
+		char *p;
 
-		char *p = (char*)stream_name - 1;
-		wimlib_assert(*p == ':');
+		/* Create a named data stream.  */
+
+		if (!S_ISREG(mode))
+			return -EOPNOTSUPP;
+
+		p = (char *)stream_name - 1;
+
 		*p = '\0';
-
 		inode = wim_pathname_to_inode(wimfs_ctx->wim, path);
+		*p = ':';
 		if (!inode)
 			return -errno;
-		if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)
-			return -ENOENT;
-		if (inode_get_ads_entry(inode, stream_name, NULL))
+
+		old_entry = inode_get_ads_entry(inode, stream_name);
+		if (old_entry)
 			return -EEXIST;
+		if (errno != ENOENT)
+			return -errno;
+
 		new_entry = inode_add_ads(inode, stream_name);
 		if (!new_entry)
-			return -ENOMEM;
+			return -errno;
 		return 0;
 	} else {
+		/* Create a regular file, device node, named pipe, or socket.
+		 */
+
 		if (!S_ISREG(mode) &&
 		    !(wimfs_ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA))
 			return -EPERM;
 
-		/* Make a regular file, device node, named pipe, or socket.  */
+		/* Note: we still use FILE_ATTRIBUTE_NORMAL for device nodes,
+		 * named pipes, and sockets.  The real mode is in the UNIX
+		 * metadata.  */
 		return create_dentry(fuse_ctx, path, mode, rdev,
 				     FILE_ATTRIBUTE_NORMAL, NULL);
 	}
 }
 
-/* Open a file.  */
 static int
 wimfs_open(const char *path, struct fuse_file_info *fi)
 {
-	struct wim_dentry *dentry;
-	struct wim_lookup_table_entry *lte;
-	int ret;
-	struct wimfs_fd *fd;
-	struct wim_inode *inode;
-	u16 stream_idx;
-	u32 stream_id;
 	struct wimfs_context *ctx = wimfs_get_context();
-	struct wim_lookup_table_entry **back_ptr;
+	struct wim_dentry *dentry;
+	struct wim_inode *inode;
+	struct wim_lookup_table_entry *lte;
+	u16 stream_idx;
+	struct wimfs_fd *fd;
+	int ret;
 
 	ret = wim_pathname_to_stream(ctx->wim, path, get_lookup_flags(ctx),
 				     &dentry, &lte, &stream_idx);
@@ -1965,59 +1464,51 @@ wimfs_open(const char *path, struct fuse_file_info *fi)
 
 	inode = dentry->d_inode;
 
-	if (stream_idx == 0) {
-		stream_id = 0;
-		back_ptr = &inode->i_lte;
-	} else {
-		stream_id = inode->i_ads_entries[stream_idx - 1].stream_id;
-		back_ptr = &inode->i_ads_entries[stream_idx - 1].lte;
-	}
-
 	/* The file resource may be in the staging directory (read-write mounts
 	 * only) or in the WIM.  If it's in the staging directory, we need to
 	 * open a native file descriptor for the corresponding file.  Otherwise,
 	 * we can read the file resource directly from the WIM file if we are
 	 * opening it read-only, but we need to extract the resource to the
-	 * staging directory if we are opening it writable. */
+	 * staging directory if we are opening it writable.  */
 
 	if (flags_writable(fi->flags) &&
             (!lte || lte->resource_location != RESOURCE_IN_STAGING_FILE)) {
-		u64 size = (lte) ? lte->size : 0;
-		ret = extract_resource_to_staging_dir(inode, stream_id,
-						      &lte, size, ctx);
+		ret = extract_resource_to_staging_dir(inode,
+						      stream_idx,
+						      &lte,
+						      lte ? lte->size : 0,
+						      ctx);
 		if (ret)
 			return ret;
-		*back_ptr = lte;
 	}
 
-	ret = alloc_wimfs_fd(inode, stream_id, lte, &fd);
+	ret = alloc_wimfs_fd(inode, inode_stream_idx_to_id(inode, stream_idx),
+			     lte, &fd);
 	if (ret)
 		return ret;
 
 	if (lte && lte->resource_location == RESOURCE_IN_STAGING_FILE) {
 		int raw_fd;
 
-		raw_fd = open(lte->staging_file_name, fi->flags);
+		raw_fd = openat(lte->staging_dir_fd, lte->staging_file_name,
+				(fi->flags & O_ACCMODE) | O_NOFOLLOW);
 		if (raw_fd < 0) {
-			int errno_save = errno;
 			close_wimfs_fd(fd);
-			return -errno_save;
+			return -errno;
 		}
-		filedes_init(&fd->staging_fd, raw_fd);
+		filedes_init(&fd->f_staging_fd, raw_fd);
 	}
 	fi->fh = (uintptr_t)fd;
 	return 0;
 }
 
-/* Opens a directory. */
 static int
 wimfs_opendir(const char *path, struct fuse_file_info *fi)
 {
+	WIMStruct *wim = wimfs_get_WIMStruct();
 	struct wim_inode *inode;
+	struct wimfs_fd *fd;
 	int ret;
-	struct wimfs_fd *fd = NULL;
-	struct wimfs_context *ctx = wimfs_get_context();
-	WIMStruct *wim = ctx->wim;
 
 	inode = wim_pathname_to_inode(wim, path);
 	if (!inode)
@@ -2025,78 +1516,64 @@ wimfs_opendir(const char *path, struct fuse_file_info *fi)
 	if (!inode_is_directory(inode))
 		return -ENOTDIR;
 	ret = alloc_wimfs_fd(inode, 0, NULL, &fd);
+	if (ret)
+		return ret;
 	fi->fh = (uintptr_t)fd;
-	return ret;
+	return 0;
 }
 
-
-/*
- * Read data from a file in the WIM or in the staging directory.
- */
 static int
 wimfs_read(const char *path, char *buf, size_t size,
 	   off_t offset, struct fuse_file_info *fi)
 {
-	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
+	struct wimfs_fd *fd = WIMFS_FD(fi);
+	const struct wim_lookup_table_entry *lte;
 	ssize_t ret;
-	u64 stream_size;
 
-	if (!fd)
-		return -EBADF;
-
-	if (size == 0)
+	lte = fd->f_lte;
+	if (!lte)
 		return 0;
 
-	if (fd->f_lte)
-		stream_size = fd->f_lte->size;
-	else
-		stream_size = 0;
-
-	if (offset > stream_size)
-		return -EOVERFLOW;
-
-	size = min(size, stream_size - offset);
-	if (size == 0)
+	if (offset >= lte->size)
 		return 0;
 
-	switch (fd->f_lte->resource_location) {
-	case RESOURCE_IN_STAGING_FILE:
-		ret = raw_pread(&fd->staging_fd, buf, size, offset);
-		if (ret == -1)
-			ret = -errno;
-		break;
+	if (size > lte->size - offset)
+		size = lte->size - offset;
+
+	if (!size)
+		return 0;
+
+	switch (lte->resource_location) {
 	case RESOURCE_IN_WIM:
-		if (read_partial_wim_stream_into_buf(fd->f_lte, size,
-						     offset, buf))
-			ret = errno ? -errno : -EIO;
+		if (read_partial_wim_stream_into_buf(lte, size, offset, buf))
+			ret = -errno;
 		else
 			ret = size;
 		break;
+	case RESOURCE_IN_STAGING_FILE:
+		ret = raw_pread(&fd->f_staging_fd, buf, size, offset);
+		if (ret < 0)
+			ret = -errno;
+		break;
 	case RESOURCE_IN_ATTACHED_BUFFER:
-		memcpy(buf, fd->f_lte->attached_buffer + offset, size);
+		memcpy(buf, lte->attached_buffer + offset, size);
 		ret = size;
 		break;
 	default:
-		ERROR("Invalid resource location");
-		ret = -EIO;
+		ret = -EINVAL;
 		break;
 	}
 	return ret;
 }
 
-/* Fills in the entries of the directory specified by @path using the
- * FUSE-provided function @filler.  */
 static int
 wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	      off_t offset, struct fuse_file_info *fi)
 {
-	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
-	struct wim_inode *inode;
-	struct wim_dentry *child;
+	struct wimfs_fd *fd = WIMFS_FD(fi);
+	const struct wim_inode *inode;
+	const struct wim_dentry *child;
 	int ret;
-
-	if (!fd)
-		return -EBADF;
 
 	inode = fd->f_inode;
 
@@ -2126,13 +1603,14 @@ wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	return 0;
 }
 
-
 static int
 wimfs_readlink(const char *path, char *buf, size_t buf_len)
 {
-	struct wimfs_context *ctx = wimfs_get_context();
-	struct wim_inode *inode = wim_pathname_to_inode(ctx->wim, path);
-	int ret;
+	WIMStruct *wim = wimfs_get_WIMStruct();
+	const struct wim_inode *inode;
+	ssize_t ret;
+
+	inode = wim_pathname_to_inode(wim, path);
 	if (!inode)
 		return -errno;
 	if (!inode_is_symlink(inode))
@@ -2141,7 +1619,6 @@ wimfs_readlink(const char *path, char *buf, size_t buf_len)
 		return -EINVAL;
 	ret = wim_inode_readlink(inode, buf, buf_len - 1, NULL);
 	if (ret >= 0) {
-		wimlib_assert(ret <= buf_len - 1);
 		buf[ret] = '\0';
 		ret = 0;
 	} else if (ret == -ENAMETOOLONG) {
@@ -2150,52 +1627,42 @@ wimfs_readlink(const char *path, char *buf, size_t buf_len)
 	return ret;
 }
 
-/* Close a file. */
+/* We use this for both release() and releasedir(), since in both cases we
+ * simply need to close the file descriptor.  */
 static int
 wimfs_release(const char *path, struct fuse_file_info *fi)
 {
-	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
-	return close_wimfs_fd(fd);
+	return close_wimfs_fd(WIMFS_FD(fi));
 }
 
-/* Close a directory */
-static int
-wimfs_releasedir(const char *path, struct fuse_file_info *fi)
-{
-	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
-	return close_wimfs_fd(fd);
-}
-
-#ifdef ENABLE_XATTR
-/* Remove an alternate data stream through the XATTR interface */
 static int
 wimfs_removexattr(const char *path, const char *name)
 {
+	struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_inode *inode;
 	struct wim_ads_entry *ads_entry;
-	u16 ads_idx;
-	struct wimfs_context *ctx = wimfs_get_context();
 
 	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
 		return -ENOTSUP;
 
-	if (strlen(name) < 5 || memcmp(name, "user.", 5) != 0)
+	if (strncmp(name, "user.", 5))
 		return -ENOATTR;
 	name += 5;
+
+	/* Removing a named data stream.  */
 
 	inode = wim_pathname_to_inode(ctx->wim, path);
 	if (!inode)
 		return -errno;
 
-	ads_entry = inode_get_ads_entry(inode, name, &ads_idx);
+	ads_entry = inode_get_ads_entry(inode, name);
 	if (!ads_entry)
-		return -ENOATTR;
-	inode_remove_ads(inode, ads_idx, ctx->wim->lookup_table);
+		return (errno == ENOENT) ? -ENOATTR : -errno;
+
+	inode_remove_ads(inode, ads_entry, ctx->wim->lookup_table);
 	return 0;
 }
-#endif
 
-/* Renames a file or directory.  See rename (3) */
 static int
 wimfs_rename(const char *from, const char *to)
 {
@@ -2203,12 +1670,11 @@ wimfs_rename(const char *from, const char *to)
 			       WIMLIB_CASE_SENSITIVE, NULL);
 }
 
-/* Remove a directory */
 static int
 wimfs_rmdir(const char *path)
 {
-	struct wim_dentry *dentry;
 	WIMStruct *wim = wimfs_get_WIMStruct();
+	struct wim_dentry *dentry;
 
 	dentry = get_dentry(wim, path, WIMLIB_CASE_SENSITIVE);
 	if (!dentry)
@@ -2224,49 +1690,58 @@ wimfs_rmdir(const char *path)
 	return 0;
 }
 
-#ifdef ENABLE_XATTR
-/* Write an alternate data stream through the XATTR interface */
 static int
 wimfs_setxattr(const char *path, const char *name,
 	       const char *value, size_t size, int flags)
 {
-	struct wim_ads_entry *existing_ads_entry;
-	struct wim_inode *inode;
-	u16 ads_idx;
 	struct wimfs_context *ctx = wimfs_get_context();
-	int ret;
+	struct wim_inode *inode;
+	struct wim_ads_entry *existing_entry;
+
+	if (!strncmp(name, "wimfs.", 6)) {
+		/* Handle some magical extended attributes.  These really should
+		 * be ioctls, but directory ioctls aren't supported until
+		 * libfuse 2.9, and even then they are broken.  */
+		name += 6;
+		if (!strcmp(name, "unmount")) {
+			if (size < sizeof(struct wimfs_unmount_info))
+				return -EINVAL;
+			return unmount_wimfs((const void *)value);
+		}
+		return -ENOATTR;
+	}
 
 	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
 		return -ENOTSUP;
 
-	if (strlen(name) <= 5 || memcmp(name, "user.", 5) != 0)
+	if (strncmp(name, "user.", 5))
 		return -ENOATTR;
 	name += 5;
+
+	/* Setting the contents of a named data stream.  */
 
 	inode = wim_pathname_to_inode(ctx->wim, path);
 	if (!inode)
 		return -errno;
 
-	existing_ads_entry = inode_get_ads_entry(inode, name, &ads_idx);
-	if (existing_ads_entry) {
+	existing_entry = inode_get_ads_entry(inode, name);
+	if (existing_entry) {
 		if (flags & XATTR_CREATE)
 			return -EEXIST;
 	} else {
+		if (errno != ENOENT)
+			return -errno;
 		if (flags & XATTR_REPLACE)
 			return -ENOATTR;
 	}
 
-	ret = inode_add_ads_with_data(inode, name, value,
-				      size, ctx->wim->lookup_table);
-	if (ret == 0) {
-		if (existing_ads_entry)
-			inode_remove_ads(inode, ads_idx, ctx->wim->lookup_table);
-	} else {
-		ret = -ENOMEM;
-	}
-	return ret;
+	if (!inode_add_ads_with_data(inode, name, value,
+				     size, ctx->wim->lookup_table))
+		return -errno;
+	if (existing_entry)
+		inode_remove_ads(inode, existing_entry, ctx->wim->lookup_table);
+	return 0;
 }
-#endif
 
 static int
 wimfs_symlink(const char *to, const char *from)
@@ -2278,89 +1753,77 @@ wimfs_symlink(const char *to, const char *from)
 
 	ret = create_dentry(fuse_ctx, from, S_IFLNK | 0777, 0,
 			    FILE_ATTRIBUTE_REPARSE_POINT, &dentry);
-	if (ret == 0) {
-		dentry->d_inode->i_reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
-		ret = wim_inode_set_symlink(dentry->d_inode, to,
-					    wimfs_ctx->wim->lookup_table);
-		if (ret) {
-			remove_dentry(dentry, wimfs_ctx->wim->lookup_table);
-			if (ret == WIMLIB_ERR_NOMEM)
-				ret = -ENOMEM;
-			else
-				ret = -EIO;
-		}
+	if (ret)
+		return ret;
+	dentry->d_inode->i_reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
+	ret = wim_inode_set_symlink(dentry->d_inode, to,
+				    wimfs_ctx->wim->lookup_table);
+	if (ret) {
+		remove_dentry(dentry, wimfs_ctx->wim->lookup_table);
+		if (ret == WIMLIB_ERR_NOMEM)
+			ret = -ENOMEM;
+		else
+			ret = -EINVAL;
 	}
 	return ret;
 }
 
-
-/* Reduce the size of a file */
 static int
 wimfs_truncate(const char *path, off_t size)
 {
+	const struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_dentry *dentry;
 	struct wim_lookup_table_entry *lte;
-	int ret;
 	u16 stream_idx;
-	u32 stream_id;
-	struct wim_inode *inode;
-	struct wimfs_context *ctx = wimfs_get_context();
+	int ret;
+	int fd;
 
 	ret = wim_pathname_to_stream(ctx->wim, path, get_lookup_flags(ctx),
 				     &dentry, &lte, &stream_idx);
 
-	if (ret != 0)
+	if (ret)
 		return ret;
 
-	if (lte == NULL && size == 0)
+	if (!lte && !size)
 		return 0;
 
-	if (lte != NULL && lte->resource_location == RESOURCE_IN_STAGING_FILE) {
-		ret = truncate(lte->staging_file_name, size);
-		if (ret)
-			ret = -errno;
-		else
-			lte->size = size;
-	} else {
-		/* File in WIM.  Extract it to the staging directory, but only
-		 * the first @size bytes of it. */
-		struct wim_lookup_table_entry **back_ptr;
-
-		inode = dentry->d_inode;
-		if (stream_idx == 0) {
-			stream_id = 0;
-			back_ptr = &inode->i_lte;
-		} else {
-			stream_id = inode->i_ads_entries[stream_idx - 1].stream_id;
-			back_ptr = &inode->i_ads_entries[stream_idx - 1].lte;
-		}
-		ret = extract_resource_to_staging_dir(inode, stream_id,
-						      &lte, size, ctx);
-		*back_ptr = lte;
+	if (!lte || lte->resource_location != RESOURCE_IN_STAGING_FILE) {
+		return extract_resource_to_staging_dir(dentry->d_inode,
+						       stream_idx, &lte,
+						       size, ctx);
 	}
-	return ret;
+
+	/* Truncate the staging file.  */
+	fd = openat(lte->staging_dir_fd, lte->staging_file_name,
+		    O_WRONLY | O_NOFOLLOW);
+	if (fd < 0)
+		return -errno;
+	ret = ftruncate(fd, size);
+	if (close(fd) || ret)
+		return -errno;
+	lte->size = size;
+	return 0;
 }
 
-/* Unlink a non-directory or alternate data stream */
 static int
 wimfs_unlink(const char *path)
 {
+	const struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_dentry *dentry;
-	struct wim_lookup_table_entry *lte;
-	int ret;
 	u16 stream_idx;
-	struct wimfs_context *ctx = wimfs_get_context();
+	int ret;
 
 	ret = wim_pathname_to_stream(ctx->wim, path, get_lookup_flags(ctx),
-				     &dentry, &lte, &stream_idx);
+				     &dentry, NULL, &stream_idx);
 
-	if (ret != 0)
+	if (ret)
 		return ret;
 
 	if (inode_stream_name_nbytes(dentry->d_inode, stream_idx) == 0)
 		remove_dentry(dentry, ctx->wim->lookup_table);
 	else
-		inode_remove_ads(dentry->d_inode, stream_idx - 1,
+		inode_remove_ads(dentry->d_inode,
+				 &dentry->d_inode->i_ads_entries[stream_idx - 1],
 				 ctx->wim->lookup_table);
 	return 0;
 }
@@ -2374,8 +1837,8 @@ wimfs_unlink(const char *path)
 static int
 wimfs_utimens(const char *path, const struct timespec tv[2])
 {
-	struct wim_inode *inode;
 	WIMStruct *wim = wimfs_get_WIMStruct();
+	struct wim_inode *inode;
 
 	inode = wim_pathname_to_inode(wim, path);
 	if (!inode)
@@ -2399,50 +1862,33 @@ wimfs_utimens(const char *path, const struct timespec tv[2])
 static int
 wimfs_utime(const char *path, struct utimbuf *times)
 {
-	struct wim_inode *inode;
 	WIMStruct *wim = wimfs_get_WIMStruct();
+	struct wim_inode *inode;
 
 	inode = wim_pathname_to_inode(wim, path);
 	if (!inode)
 		return -errno;
 
-	inode->i_last_write_time = unix_timestamp_to_wim(times->modtime);
 	inode->i_last_access_time = unix_timestamp_to_wim(times->actime);
+	inode->i_last_write_time = unix_timestamp_to_wim(times->modtime);
 	return 0;
 }
 #endif /* !HAVE_UTIMENSAT */
 
-/* Writes to a file in the WIM filesystem.
- * It may be an alternate data stream, but here we don't even notice because we
- * just get a lookup table entry. */
 static int
 wimfs_write(const char *path, const char *buf, size_t size,
 	    off_t offset, struct fuse_file_info *fi)
 {
-	struct wimfs_fd *fd = (struct wimfs_fd*)(uintptr_t)fi->fh;
-	int ret;
+	struct wimfs_fd *fd = WIMFS_FD(fi);
+	ssize_t ret;
 
-	if (!fd)
-		return -EBADF;
-
-	wimlib_assert(fd->f_lte != NULL);
-	wimlib_assert(fd->f_lte->staging_file_name != NULL);
-	wimlib_assert(filedes_valid(&fd->staging_fd));
-	wimlib_assert(fd->f_inode != NULL);
-
-	/* Write the data. */
-	ret = raw_pwrite(&fd->staging_fd, buf, size, offset);
-	if (ret == -1)
+	ret = raw_pwrite(&fd->f_staging_fd, buf, size, offset);
+	if (ret < 0)
 		return -errno;
 
-	/* Update file size */
-	if (offset + size > fd->f_lte->size) {
-		DEBUG("Update file size %"PRIu64 " => %"PRIu64"",
-		      fd->f_lte->size, offset + size);
+	if (offset + size > fd->f_lte->size)
 		fd->f_lte->size = offset + size;
-	}
 
-	/* Update timestamps */
 	touch_inode(fd->f_inode);
 	return ret;
 }
@@ -2450,17 +1896,12 @@ wimfs_write(const char *path, const char *buf, size_t size,
 static struct fuse_operations wimfs_operations = {
 	.chmod       = wimfs_chmod,
 	.chown       = wimfs_chown,
-	.destroy     = wimfs_destroy,
 	.fgetattr    = wimfs_fgetattr,
 	.ftruncate   = wimfs_ftruncate,
 	.getattr     = wimfs_getattr,
-#ifdef ENABLE_XATTR
 	.getxattr    = wimfs_getxattr,
-#endif
 	.link        = wimfs_link,
-#ifdef ENABLE_XATTR
 	.listxattr   = wimfs_listxattr,
-#endif
 	.mkdir       = wimfs_mkdir,
 	.mknod       = wimfs_mknod,
 	.open        = wimfs_open,
@@ -2469,15 +1910,11 @@ static struct fuse_operations wimfs_operations = {
 	.readdir     = wimfs_readdir,
 	.readlink    = wimfs_readlink,
 	.release     = wimfs_release,
-	.releasedir  = wimfs_releasedir,
-#ifdef ENABLE_XATTR
+	.releasedir  = wimfs_release,
 	.removexattr = wimfs_removexattr,
-#endif
 	.rename      = wimfs_rename,
 	.rmdir       = wimfs_rmdir,
-#ifdef ENABLE_XATTR
 	.setxattr    = wimfs_setxattr,
-#endif
 	.symlink     = wimfs_symlink,
 	.truncate    = wimfs_truncate,
 	.unlink      = wimfs_unlink,
@@ -2488,9 +1925,9 @@ static struct fuse_operations wimfs_operations = {
 #endif
 	.write       = wimfs_write,
 
-	/* wimfs keeps file descriptor structures (struct wimfs_fd), so there is
-	 * no need to have the file path provided on operations such as read()
-	 * where only the file descriptor is needed. */
+	/* We keep track of file descriptor structures (struct wimfs_fd), so
+	 * there is no need to have the file path provided on operations such as
+	 * read().  */
 #if FUSE_MAJOR_VERSION > 2 || (FUSE_MAJOR_VERSION == 2 && FUSE_MINOR_VERSION >= 8)
 	.flag_nullpath_ok = 1,
 #endif
@@ -2500,24 +1937,18 @@ static struct fuse_operations wimfs_operations = {
 #endif
 };
 
-
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 		   int mount_flags, const char *staging_dir)
 {
-	int argc;
-	char *argv[16];
 	int ret;
-	char *dir_copy;
 	struct wim_image_metadata *imd;
 	struct wimfs_context ctx;
-	struct wim_inode *inode;
+	char *fuse_argv[16];
+	int fuse_argc;
 
-	DEBUG("Mount: wim = %p, image = %d, dir = %s, flags = %d, ",
-	      wim, image, dir, mount_flags);
-
-	if (!wim || !dir)
+	if (!wim || !dir || !*dir)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (mount_flags & ~(WIMLIB_MOUNT_FLAG_READWRITE |
@@ -2529,139 +1960,76 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 			    WIMLIB_MOUNT_FLAG_ALLOW_OTHER))
 		return WIMLIB_ERR_INVALID_PARAM;
 
+	/* For read-write mount, check for write access to the WIM.  */
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 		ret = can_delete_from_wim(wim);
 		if (ret)
 			return ret;
 	}
 
+	/* Select the image to mount.  */
 	ret = select_wim_image(wim, image);
 	if (ret)
 		return ret;
 
-	DEBUG("Selected image %d", image);
-
+	/* Get the metadata for the image to mount.  */
 	imd = wim_get_current_image_metadata(wim);
 
 	if (imd->modified) {
-		/* wimfs_read() only supports a limited number of stream
-		 * locations, not including RESOURCE_IN_FILE_ON_DISK,
-		 * RESOURCE_IN_NTFS_VOLUME, etc. that might appear if files were
-		 * added to the WIM image.  */
-		ERROR("Cannot mount an image with newly added files!");
+		/* To avoid complicating things, we don't support mounting
+		 * images to which in-memory modifications have already been
+		 * made.  */
+		ERROR("Cannot mount a modified WIM image!");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
 
-	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
-		ret = lock_wim(wim, wim->in_fd.fd);
-		if (ret)
-			return ret;
-	}
+	ret = lock_wim_for_append(wim, wim->in_fd.fd);
+	if (ret)
+		return ret;
 
-	/* Use default stream interface if one was not specified */
+	/* If the user did not specify an interface for accessing named
+	 * data streams, use the default (extended attributes).  */
 	if (!(mount_flags & (WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_NONE |
-		       WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR |
-		       WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)))
+			     WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR |
+			     WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)))
 		mount_flags |= WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR;
 
-	DEBUG("Initializing struct wimfs_context");
-	init_wimfs_context(&ctx);
+	/* Start initializing the wimfs_context.  */
+	memset(&ctx, 0, sizeof(struct wimfs_context));
 	ctx.wim = wim;
 	ctx.mount_flags = mount_flags;
-	ctx.image_inode_list = &imd->inode_list;
-	ctx.default_uid = getuid();
-	ctx.default_gid = getgid();
-	wimlib_assert(list_empty(&imd->unhashed_streams));
 	if (mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)
 		ctx.default_lookup_flags = LOOKUP_FLAG_ADS_OK;
-
-	DEBUG("Unlinking message queues in case they already exist");
-	ret = set_message_queue_names(&ctx, dir);
-	if (ret)
-		goto out_unlock;
-	unlink_message_queues(&ctx);
-
-	DEBUG("Preparing arguments to fuse_main()");
-
-	dir_copy = STRDUP(dir);
-	if (!dir_copy) {
-		ret = WIMLIB_ERR_NOMEM;
-		goto out_free_message_queue_names;
-	}
-
-	argc = 0;
-	argv[argc++] = "wimlib";
-	argv[argc++] = dir_copy;
-
-	/* disable multi-threaded operation */
-	argv[argc++] = "-s";
-
-	if (mount_flags & WIMLIB_MOUNT_FLAG_DEBUG)
-		argv[argc++] = "-d";
-
-	/*
-	 * We provide the use_ino option to the FUSE mount because we are going
-	 * to assign inode numbers ourselves. */
-	char optstring[256] =
-		"use_ino"
-		",subtype=wimfs"
-		",attr_timeout=0"
-#if FUSE_MAJOR_VERSION > 2 || (FUSE_MAJOR_VERSION == 2 && FUSE_MINOR_VERSION >= 8)
-		",hard_remove"
-#endif
-		",default_permissions"
-		;
-	argv[argc++] = "-o";
-	argv[argc++] = optstring;
-	if ((mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)) {
-		/* Read-write mount.  Make the staging directory */
+	/* For read-write mount, create the staging directory.  */
+	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 		ret = make_staging_dir(&ctx, staging_dir);
 		if (ret)
-			goto out_free_dir_copy;
-	} else {
-		/* Read-only mount */
-		strcat(optstring, ",ro");
+			goto out_unlock;
 	}
-	if (mount_flags & WIMLIB_MOUNT_FLAG_ALLOW_OTHER)
-		strcat(optstring, ",allow_other");
-	argv[argc] = NULL;
+	ctx.owner_uid = getuid();
+	ctx.owner_gid = getgid();
 
-#ifdef ENABLE_DEBUG
-	{
-		int i;
-		DEBUG("FUSE command line (argc = %d): ", argc);
-		for (i = 0; i < argc; i++) {
-			fputs(argv[i], stdout);
-			putchar(' ');
-		}
-		putchar('\n');
-		fflush(stdout);
-	}
-#endif
-
-	/* Assign inode numbers.  Also, if a read-write mount was requested,
-	 * mark the dentry tree as modified, and add each stream referenced by
-	 * files in the image to a list and preemptively double the number of
-	 * references to each.  The latter is done to allow implementing the
-	 * WIMLIB_UNMOUNT_FLAG_NEW_IMAGE semantics.  */
-	ctx.next_ino = 1;
+	/* Add each stream referenced by files in the image to a list and
+	 * preemptively double the number of references to each.  The latter is
+	 * done to allow implementing the WIMLIB_UNMOUNT_FLAG_NEW_IMAGE
+	 * semantics.  */
 	INIT_LIST_HEAD(&ctx.orig_stream_list);
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
-		imd->modified = 1;
-		image_for_each_inode(inode, imd) {
-			inode->i_ino = ctx.next_ino++;
-			for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-				struct wim_lookup_table_entry *lte;
+		unsigned i;
+		struct wim_inode *inode;
+		struct wim_lookup_table_entry *lte;
 
-				lte = inode_stream_lte(inode, i, wim->lookup_table);
+		image_for_each_inode(inode, imd) {
+			for (i = 0; i <= inode->i_num_ads; i++) {
+				lte = inode_stream_lte(inode, i,
+						       wim->lookup_table);
 				if (lte)
 					lte->out_refcnt = 0;
 			}
 		}
-		image_for_each_inode(inode, imd) {
-			for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-				struct wim_lookup_table_entry *lte;
 
+		image_for_each_inode(inode, imd) {
+			for (i = 0; i <= inode->i_num_ads; i++) {
 				lte = inode_stream_lte(inode, i,
 						       wim->lookup_table);
 				if (lte) {
@@ -2673,103 +2041,342 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 				}
 			}
 		}
-	} else {
-		image_for_each_inode(inode, imd)
-			inode->i_ino = ctx.next_ino++;
 	}
 
-	DEBUG("(next_ino = %"PRIu64")", ctx.next_ino);
+	/* Assign new inode numbers.  */
+	reassign_inode_numbers(&ctx);
 
-	DEBUG("Calling fuse_main()");
+	/* If a read-write mount, mark the image as modified.  */
+	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)
+		imd->modified = 1;
 
-	ret = fuse_main(argc, argv, &wimfs_operations, &ctx);
+	/* Build the FUSE command line.  */
 
-	DEBUG("Returned from fuse_main() (ret = %d)", ret);
+	fuse_argc = 0;
+	fuse_argv[fuse_argc++] = "wimlib";
+	fuse_argv[fuse_argc++] = (char *)dir;
 
-	if (ret) {
+	/* Disable multi-threaded operation.  */
+	fuse_argv[fuse_argc++] = "-s";
+
+	/* Enable FUSE debug mode (don't fork) if requested by the user.  */
+	if (mount_flags & WIMLIB_MOUNT_FLAG_DEBUG)
+		fuse_argv[fuse_argc++] = "-d";
+
+	/*
+	 * Build the FUSE mount options:
+	 *
+	 * use_ino
+	 *	FUSE will use the inode numbers we provide.  We want this,
+	 *	because we have inodes and will number them ourselves.
+	 *
+	 * subtype=wimfs
+	 *	Name for our filesystem (main type is "fuse").
+	 *
+	 * hard_remove
+	 *	If an open file is unlinked, unlink it for real rather than
+	 *	renaming it to a hidden file.  Our code supports this; an
+	 *	unlinked inode is retained until all its file descriptors have
+	 *	been closed.
+	 *
+	 * default_permissions
+	 *	FUSE will perform permission checking.  Useful when
+	 *	WIMLIB_MOUNT_FLAG_UNIX_DATA is provided and the WIM image
+	 *	contains the UNIX permissions for each file.
+	 *
+	 * kernel_cache
+	 *	Cache the contents of files.  This will speed up repeated access
+	 *	to files on a mounted WIM image, since they won't need to be
+	 *	decompressed repeatedly.  This option is valid because data in
+	 *	the WIM image should never be changed externally.  (Although, if
+	 *	someone really wanted to they could modify the WIM file or mess
+	 *	with the staging directory; but then they're asking for
+	 *	trouble.)
+	 *
+	 * entry_timeout=1000000000
+	 *	Cache positive name lookups indefinitely, since names can only
+	 *	be added, removed, or modified through the mounted filesystem
+	 *	itself.
+	 *
+	 * negative_timeout=1000000000
+	 *	Cache negative name lookups indefinitely, since names can only
+	 *	be added, removed, or modified through the mounted filesystem
+	 *	itself.
+	 *
+	 * attr_timeout=0
+	 *	Don't cache file/directory attributes.  This is needed as a
+	 *	workaround for the fact that when caching attributes, the high
+	 *	level interface to libfuse considers a file which has several
+	 *	hard-linked names as several different files.  (Otherwise, we
+	 *	could cache our file/directory attributes indefinitely, since
+	 *	they can only be changed through the mounted filesystem itself.)
+	 */
+	char optstring[256] =
+		"use_ino"
+		",subtype=wimfs"
+		",attr_timeout=0"
+		",hard_remove"
+		",default_permissions"
+		",kernel_cache"
+		",entry_timeout=1000000000"
+		",negative_timeout=1000000000"
+		",attr_timeout=0"
+		;
+	fuse_argv[fuse_argc++] = "-o";
+	fuse_argv[fuse_argc++] = optstring;
+	if (!(mount_flags & WIMLIB_MOUNT_FLAG_READWRITE))
+		strcat(optstring, ",ro");
+	if (mount_flags & WIMLIB_MOUNT_FLAG_ALLOW_OTHER)
+		strcat(optstring, ",allow_other");
+	fuse_argv[fuse_argc] = NULL;
+
+	/* Mount our filesystem.  */
+	ret = fuse_main(fuse_argc, fuse_argv, &wimfs_operations, &ctx);
+
+	/* Cleanup and return.  */
+	if (ret)
 		ret = WIMLIB_ERR_FUSE;
-	} else {
-		if (ctx.have_status)
-			ret = ctx.status;
-		else
-			ret = WIMLIB_ERR_TIMEOUT;
-	}
-	if (ctx.daemon_to_unmount_mq != (mqd_t)(-1)) {
-		send_unmount_finished_msg(ctx.daemon_to_unmount_mq, ret);
-		close_message_queues(&ctx);
-	}
-
 	release_extra_refcnts(&ctx);
-
-	/* Try to delete the staging directory if a deletion wasn't yet
-	 * attempted due to an earlier error */
-	if (ctx.staging_dir_name)
+	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)
 		delete_staging_dir(&ctx);
-out_free_dir_copy:
-	FREE(dir_copy);
 out_unlock:
-	wim->wim_locked = 0;
-out_free_message_queue_names:
-	free_message_queue_names(&ctx);
+	unlock_wim_for_append(wim, wim->in_fd.fd);
 	return ret;
+}
+
+struct commit_progress_thread_args {
+	mqd_t mq;
+	wimlib_progress_func_t progfunc;
+	void *progctx;
+	int status;
+};
+
+static void *
+commit_progress_thread_proc(void *_args)
+{
+	struct commit_progress_thread_args *args = _args;
+	struct commit_progress_report report;
+	ssize_t ret;
+
+	args->status = WIMLIB_ERR_NOT_A_MOUNTPOINT;
+	for (;;) {
+		ret = mq_receive(args->mq,
+				 (char *)&report, sizeof(report), NULL);
+		if (ret < 0) {
+			if (errno == EINTR)
+				continue;
+			break;
+		}
+		if (ret == sizeof(int)) {
+			args->status = *(int *)&report;
+			break;
+		}
+		if (ret < sizeof(report))
+			continue;
+		call_progress(args->progfunc, report.msg,
+			      &report.info, args->progctx);
+	}
+	return NULL;
+}
+
+static void
+generate_message_queue_name(char name[WIMFS_MQUEUE_NAME_LEN + 1])
+{
+	name[0] = '/';
+	memcpy(name + 1, "wimfs-", 6);
+	randomize_char_array_with_alnum(name + 7, WIMFS_MQUEUE_NAME_LEN - 7);
+	name[WIMFS_MQUEUE_NAME_LEN] = '\0';
+}
+
+static mqd_t
+create_message_queue(const char *name, bool have_progfunc)
+{
+	bool am_root = (getuid() == 0);
+	mode_t umask_save = 0;
+	mode_t mode = 0600;
+	struct mq_attr attr;
+	mqd_t mq;
+
+	memset(&attr, 0, sizeof(attr));
+	attr.mq_maxmsg = 8;
+	if (have_progfunc)
+		attr.mq_msgsize = sizeof(struct commit_progress_report);
+	else
+		attr.mq_msgsize = sizeof(int);
+
+	if (am_root) {
+		/* Filesystem mounted as normal user with --allow-other should
+		 * be able to send messages to root user, if they're doing the
+		 * unmount.  */
+		umask_save = umask(0);
+		mode = 0666;
+	}
+	mq = mq_open(name, O_RDWR | O_CREAT | O_EXCL, mode, &attr);
+	if (am_root)
+		umask(umask_save);
+	return mq;
+}
+
+/* Unmount a read-write mounted WIM image, committing the changes.  */
+static int
+do_unmount_commit(const char *dir, int unmount_flags,
+		  wimlib_progress_func_t progfunc, void *progctx)
+{
+	struct wimfs_unmount_info unmount_info;
+	mqd_t mq;
+	struct commit_progress_thread_args args;
+	pthread_t commit_progress_tid;
+	int ret;
+
+	memset(&unmount_info, 0, sizeof(unmount_info));
+	unmount_info.unmount_flags = unmount_flags;
+	generate_message_queue_name(unmount_info.mq_name);
+
+	mq = create_message_queue(unmount_info.mq_name, progfunc != NULL);
+	if (mq == (mqd_t)-1) {
+		ERROR_WITH_ERRNO("Can't create POSIX message queue");
+		return WIMLIB_ERR_MQUEUE;
+	}
+
+	/* The current thread will be stuck in setxattr() until the image is
+	 * committed.  Create a thread to handle the progress messages.  */
+	if (progfunc) {
+		args.mq = mq;
+		args.progfunc = progfunc;
+		args.progctx = progctx;
+		ret = pthread_create(&commit_progress_tid, NULL,
+				     commit_progress_thread_proc, &args);
+		if (ret) {
+			errno = ret;
+			ERROR_WITH_ERRNO("Can't create thread");
+			ret = WIMLIB_ERR_NOMEM;
+			goto out_delete_mq;
+		}
+		unmount_info.unmount_flags |= WIMLIB_UNMOUNT_FLAG_SEND_PROGRESS;
+	}
+
+	if (!setxattr(dir, "wimfs.unmount",
+		     (const char *)&unmount_info, sizeof(unmount_info), 0))
+		ret = 0;
+	else if (errno == EACCES || errno == EPERM)
+		ret = WIMLIB_ERR_NOT_PERMITTED_TO_UNMOUNT;
+	else
+		ret = WIMLIB_ERR_NOT_A_MOUNTPOINT;
+
+	if (progfunc) {
+		/* Terminate the progress thread and retrieve final unmount
+		 * status.  */
+
+		int tmp = -1;
+		mq_send(mq, (const char *)&tmp, sizeof(int), 1);
+
+		pthread_join(commit_progress_tid, NULL);
+		if (!ret && args.status != -1)
+			ret = args.status;
+	} else if (!ret) {
+		/* Retrieve the final unmount status.  */
+
+		int tmp = -1;
+		int len;
+
+		mq_send(mq, (const char *)&tmp, sizeof(int), 1);
+		len = mq_receive(mq, (char *)&tmp, sizeof(int), NULL);
+
+		if (len == 4 && tmp != -1)
+			ret = tmp;
+		else
+			ret = WIMLIB_ERR_NOT_A_MOUNTPOINT;
+	}
+out_delete_mq:
+	mq_close(mq);
+	mq_unlink(unmount_info.mq_name);
+	return ret;
+}
+
+/* Unmount a read-only or read-write mounted WIM image, discarding any changes.
+ */
+static int
+do_unmount_discard(const char *dir)
+{
+	if (!getxattr(dir, "wimfs.unmount", NULL, 0))
+		return 0;
+	else if (errno == EACCES || errno == EPERM)
+		return WIMLIB_ERR_NOT_PERMITTED_TO_UNMOUNT;
+	else
+		return WIMLIB_ERR_NOT_A_MOUNTPOINT;
+}
+
+static int
+begin_unmount(const char *dir, int unmount_flags, int *mount_flags_ret,
+	      wimlib_progress_func_t progfunc, void *progctx)
+{
+	int mount_flags;
+	int mounted_image;
+	int wim_filename_len;
+	union wimlib_progress_info progress;
+
+	if (getxattr(dir, "wimfs.mount_flags",
+		     &mount_flags, sizeof(int)) != sizeof(int))
+		return WIMLIB_ERR_NOT_A_MOUNTPOINT;
+
+	*mount_flags_ret = mount_flags;
+
+	if (!progfunc)
+		return 0;
+
+	if (getxattr(dir, "wimfs.mounted_image",
+		     &mounted_image, sizeof(int)) != sizeof(int))
+		return WIMLIB_ERR_NOT_A_MOUNTPOINT;
+
+	wim_filename_len = getxattr(dir, "wimfs.wim_filename", NULL, 0);
+	if (wim_filename_len < 0)
+		return WIMLIB_ERR_NOT_A_MOUNTPOINT;
+
+	char wim_filename[wim_filename_len + 1];
+	if (getxattr(dir, "wimfs.wim_filename",
+		     wim_filename, wim_filename_len) != wim_filename_len)
+		return WIMLIB_ERR_NOT_A_MOUNTPOINT;
+	wim_filename[wim_filename_len] = '\0';
+
+	progress.unmount.mountpoint = dir;
+	progress.unmount.mounted_wim = wim_filename;
+	progress.unmount.mounted_image = mounted_image;
+	progress.unmount.mount_flags = mount_flags;
+	progress.unmount.unmount_flags = unmount_flags;
+
+	return call_progress(progfunc, WIMLIB_PROGRESS_MSG_UNMOUNT_BEGIN,
+			     &progress, progctx);
 }
 
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
-wimlib_unmount_image_with_progress(const tchar *dir, int unmount_flags,
+wimlib_unmount_image_with_progress(const char *dir, int unmount_flags,
 				   wimlib_progress_func_t progfunc, void *progctx)
 {
+	int mount_flags;
 	int ret;
-	struct wimfs_context wimfs_ctx;
+
+	wimlib_global_init(WIMLIB_INIT_FLAG_ASSUME_UTF8);
 
 	if (unmount_flags & ~(WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY |
 			      WIMLIB_UNMOUNT_FLAG_COMMIT |
 			      WIMLIB_UNMOUNT_FLAG_REBUILD |
 			      WIMLIB_UNMOUNT_FLAG_RECOMPRESS |
-			      WIMLIB_UNMOUNT_FLAG_LAZY |
+			      WIMLIB_UNMOUNT_FLAG_FORCE |
 			      WIMLIB_UNMOUNT_FLAG_NEW_IMAGE))
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	init_wimfs_context(&wimfs_ctx);
+	ret = begin_unmount(dir, unmount_flags, &mount_flags,
+			    progfunc, progctx);
+	if (ret)
+		return ret;
 
-	ret = set_message_queue_names(&wimfs_ctx, dir);
-	if (ret != 0)
-		goto out;
-
-	ret = open_message_queues(&wimfs_ctx, false);
-	if (ret != 0)
-		goto out_free_message_queue_names;
-
-	ret = send_unmount_request_msg(wimfs_ctx.unmount_to_daemon_mq,
-				       unmount_flags,
-				       progfunc != NULL);
-	if (ret != 0)
-		goto out_close_message_queues;
-
-	ret = execute_fusermount(dir, (unmount_flags & WIMLIB_UNMOUNT_FLAG_LAZY) != 0);
-	if (ret != 0)
-		goto out_close_message_queues;
-
-	struct unmount_msg_handler_context handler_ctx = {
-		.hdr = {
-			.timeout_seconds = 5,
-		},
-		.daemon_pid = 0,
-		.progfunc = progfunc,
-		.progctx = progctx,
-	};
-
-	ret = message_loop(wimfs_ctx.daemon_to_unmount_mq,
-			   &unmount_msg_handler_callbacks,
-			   &handler_ctx.hdr);
-	if (ret == 0)
-		ret = handler_ctx.status;
-out_close_message_queues:
-	close_message_queues(&wimfs_ctx);
-out_free_message_queue_names:
-	free_message_queue_names(&wimfs_ctx);
-out:
-	return ret;
+	if ((unmount_flags & WIMLIB_UNMOUNT_FLAG_COMMIT) &&
+	    (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE))
+		return do_unmount_commit(dir, unmount_flags,
+					 progfunc, progctx);
+	else
+		return do_unmount_discard(dir);
 }
 
 #else /* WITH_FUSE */
@@ -2802,7 +2409,6 @@ wimlib_mount_image(WIMStruct *wim, int image, const tchar *dir,
 }
 
 #endif /* !WITH_FUSE */
-
 
 WIMLIBAPI int
 wimlib_unmount_image(const tchar *dir, int unmount_flags)
