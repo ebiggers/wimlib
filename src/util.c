@@ -193,17 +193,8 @@ static const tchar *error_strings[] = {
 		= T("The WIM is already locked for writing"),
 	[WIMLIB_ERR_DECOMPRESSION]
 		= T("Failed to decompress compressed data"),
-	[WIMLIB_ERR_DELETE_STAGING_DIR]
-		= T("Failed to delete staging directory"),
-	[WIMLIB_ERR_FILESYSTEM_DAEMON_CRASHED]
-		= T("The process servicing the mounted WIM has crashed"),
-	[WIMLIB_ERR_FORK]
-		= T("Failed to fork another process"),
 	[WIMLIB_ERR_FUSE]
 		= T("An error was returned by fuse_main()"),
-	[WIMLIB_ERR_FUSERMOUNT]
-		= T("Could not execute the `fusermount' program, or it exited "
-			"with a failure status"),
 	[WIMLIB_ERR_GLOB_HAD_NO_MATCHES]
 		= T("The provided file glob did not match any files"),
 	[WIMLIB_ERR_ICONV_NOT_AVAILABLE]
@@ -232,6 +223,8 @@ static const tchar *error_strings[] = {
 		= T("The WIM's integrity table is invalid"),
 	[WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY]
 		= T("An entry in the WIM's lookup table is invalid"),
+	[WIMLIB_ERR_INVALID_METADATA_RESOURCE]
+		= T("The metadata resource is invalid"),
 	[WIMLIB_ERR_INVALID_MULTIBYTE_STRING]
 		= T("A string was not valid in the current locale's character encoding"),
 	[WIMLIB_ERR_INVALID_OVERLAY]
@@ -246,11 +239,6 @@ static const tchar *error_strings[] = {
 		= T("The reparse data of a reparse point was invalid"),
 	[WIMLIB_ERR_INVALID_RESOURCE_HASH]
 		= T("The SHA1 message digest of a WIM resource did not match the expected value"),
-	[WIMLIB_ERR_INVALID_METADATA_RESOURCE]
-		= T("The metadata resource is invalid"),
-	[WIMLIB_ERR_INVALID_UNMOUNT_MESSAGE]
-		= T("The version of wimlib that has mounted a WIM image is incompatible with the "
-		  "version being used to unmount it"),
 	[WIMLIB_ERR_INVALID_UTF8_STRING]
 		= T("A string provided as input by the user was not a valid UTF-8 string"),
 	[WIMLIB_ERR_INVALID_UTF16_STRING]
@@ -277,12 +265,12 @@ static const tchar *error_strings[] = {
 		= T("Expected a directory"),
 	[WIMLIB_ERR_NOTEMPTY]
 		= T("Directory was not empty"),
-	[WIMLIB_ERR_NOT_A_WIM_FILE]
-		= T("The file did not begin with the magic characters that "
-			"identify a WIM file"),
 	[WIMLIB_ERR_NOT_A_REGULAR_FILE]
 		= T("One of the specified paths to extract did not "
 		    "correspond to a regular file"),
+	[WIMLIB_ERR_NOT_A_WIM_FILE]
+		= T("The file did not begin with the magic characters that "
+			"identify a WIM file"),
 	[WIMLIB_ERR_NO_FILENAME]
 		= T("The WIM is not identified with a filename"),
 	[WIMLIB_ERR_NOT_PIPABLE]
@@ -322,8 +310,6 @@ static const tchar *error_strings[] = {
 		= T("The WIM is part of an invalid split WIM"),
 	[WIMLIB_ERR_STAT]
 		= T("Could not read the metadata for a file or directory"),
-	[WIMLIB_ERR_TIMEOUT]
-		= T("Timed out while waiting for a message to arrive from another process"),
 	[WIMLIB_ERR_UNEXPECTED_END_OF_FILE]
 		= T("Unexpectedly reached the end of the file"),
 	[WIMLIB_ERR_UNICODE_STRING_NOT_REPRESENTABLE]
@@ -334,8 +320,6 @@ static const tchar *error_strings[] = {
 		= T("The requested operation is unsupported"),
 	[WIMLIB_ERR_UNSUPPORTED_FILE]
 		= T("A file in the directory tree to archive was not of a supported type"),
-	[WIMLIB_ERR_VOLUME_LACKS_FEATURES]
-		= T("The volume did not support a feature necessary to complete the operation"),
 	[WIMLIB_ERR_WIM_IS_READONLY]
 		= T("The WIM is read-only (file permissions, header flag, or split WIM)"),
 	[WIMLIB_ERR_WRITE]
