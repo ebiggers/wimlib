@@ -1342,7 +1342,9 @@ begin_extract_stream_instance(const struct wim_lookup_table_entry *stream,
 					    &info, ctx->common.progctx);
 			FREE(dentry->_full_path);
 			dentry->_full_path = NULL;
-			return ret;
+			if (ret)
+				return ret;
+			/* Go on and open the file for normal extraction.  */
 		} else {
 			FREE(dentry->_full_path);
 			dentry->_full_path = NULL;
