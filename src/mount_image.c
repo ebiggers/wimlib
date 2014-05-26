@@ -195,12 +195,6 @@ wimfs_get_WIMStruct(void)
 	return wimfs_get_context()->wim;
 }
 
-static inline int
-get_lookup_flags(const struct wimfs_context *ctx)
-{
-	return ctx->default_lookup_flags;
-}
-
 /* Is write permission requested on the file?  */
 static inline bool
 flags_writable(int open_flags)
@@ -354,6 +348,81 @@ wim_pathname_to_inode(WIMStruct *wim, const char *path)
 	if (!dentry)
 		return NULL;
 	return dentry->d_inode;
+}
+
+/* Can look up named data stream with colon syntax  */
+#define LOOKUP_FLAG_ADS_OK		0x01
+
+/* Can look up directory (otherwise get -ENOTDIR)  */
+#define LOOKUP_FLAG_DIRECTORY_OK	0x02
+
+/*
+ * Translate a path into the corresponding dentry, lookup table entry, and
+ * stream index in the mounted WIM image.
+ *
+ * Returns 0 or a -errno code.  All of @dentry_ret, @lte_ret, and
+ * @stream_idx_ret are optional.
+ */
+static int
+wim_pathname_to_stream(const struct wimfs_context *ctx, const char *path,
+		       int lookup_flags,
+		       struct wim_dentry **dentry_ret,
+		       struct wim_lookup_table_entry **lte_ret,
+		       u16 *stream_idx_ret)
+{
+	WIMStruct *wim = ctx->wim;
+	struct wim_dentry *dentry;
+	struct wim_lookup_table_entry *lte;
+	u16 stream_idx;
+	const tchar *stream_name = NULL;
+	struct wim_inode *inode;
+	tchar *p = NULL;
+
+	lookup_flags |= ctx->default_lookup_flags;
+
+	if (lookup_flags & LOOKUP_FLAG_ADS_OK) {
+		stream_name = path_stream_name(path);
+		if (stream_name) {
+			p = (tchar*)stream_name - 1;
+			*p = T('\0');
+		}
+	}
+
+	dentry = get_dentry(wim, path, WIMLIB_CASE_SENSITIVE);
+	if (p)
+		*p = T(':');
+	if (!dentry)
+		return -errno;
+
+	inode = dentry->d_inode;
+
+	if (!inode->i_resolved)
+		if (inode_resolve_streams(inode, wim->lookup_table, false))
+			return -EIO;
+
+	if (!(lookup_flags & LOOKUP_FLAG_DIRECTORY_OK)
+	      && inode_is_directory(inode))
+		return -EISDIR;
+
+	if (stream_name) {
+		struct wim_ads_entry *ads_entry;
+
+		ads_entry = inode_get_ads_entry(inode, stream_name);
+		if (!ads_entry)
+			return -errno;
+
+		stream_idx = ads_entry - inode->i_ads_entries + 1;
+		lte = ads_entry->lte;
+	} else {
+		lte = inode_unnamed_stream_resolved(inode, &stream_idx);
+	}
+	if (dentry_ret)
+		*dentry_ret = dentry;
+	if (lte_ret)
+		*lte_ret = lte;
+	if (stream_idx_ret)
+		*stream_idx_ret = stream_idx;
+	return 0;
 }
 
 /*
@@ -1199,9 +1268,7 @@ wimfs_getattr(const char *path, struct stat *stbuf)
 	struct wim_lookup_table_entry *lte;
 	int ret;
 
-	ret = wim_pathname_to_stream(ctx->wim, path,
-				     get_lookup_flags(ctx) |
-					LOOKUP_FLAG_DIRECTORY_OK,
+	ret = wim_pathname_to_stream(ctx, path, LOOKUP_FLAG_DIRECTORY_OK,
 				     &dentry, &lte, NULL);
 	if (ret)
 		return ret;
@@ -1477,8 +1544,7 @@ wimfs_open(const char *path, struct fuse_file_info *fi)
 	struct wimfs_fd *fd;
 	int ret;
 
-	ret = wim_pathname_to_stream(ctx->wim, path, get_lookup_flags(ctx),
-				     &dentry, &lte, &stream_idx);
+	ret = wim_pathname_to_stream(ctx, path, 0, &dentry, &lte, &stream_idx);
 	if (ret)
 		return ret;
 
@@ -1801,9 +1867,7 @@ wimfs_truncate(const char *path, off_t size)
 	int ret;
 	int fd;
 
-	ret = wim_pathname_to_stream(ctx->wim, path, get_lookup_flags(ctx),
-				     &dentry, &lte, &stream_idx);
-
+	ret = wim_pathname_to_stream(ctx, path, 0, &dentry, &lte, &stream_idx);
 	if (ret)
 		return ret;
 
@@ -1836,9 +1900,7 @@ wimfs_unlink(const char *path)
 	u16 stream_idx;
 	int ret;
 
-	ret = wim_pathname_to_stream(ctx->wim, path, get_lookup_flags(ctx),
-				     &dentry, NULL, &stream_idx);
-
+	ret = wim_pathname_to_stream(ctx, path, 0, &dentry, NULL, &stream_idx);
 	if (ret)
 		return ret;
 

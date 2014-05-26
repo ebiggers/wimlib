@@ -220,20 +220,6 @@ extern struct wim_dentry *
 get_parent_dentry(struct WIMStruct *wim, const tchar *path,
 		  CASE_SENSITIVITY_TYPE case_type);
 
-#ifdef WITH_FUSE
-
-#define LOOKUP_FLAG_ADS_OK		0x00000001
-#define LOOKUP_FLAG_DIRECTORY_OK	0x00000002
-
-extern int
-wim_pathname_to_stream(WIMStruct *wim,
-		       const tchar *path,
-		       int lookup_flags,
-		       struct wim_dentry **dentry_ret,
-		       struct wim_lookup_table_entry **lte_ret,
-		       u16 *stream_idx_ret);
-#endif
-
 extern int
 calculate_dentry_full_path(struct wim_dentry *dentry);
 
