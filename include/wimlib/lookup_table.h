@@ -351,19 +351,6 @@ lte_is_partial(const struct wim_lookup_table_entry * lte)
 	       lte->size != lte->rspec->uncompressed_size;
 }
 
-static inline bool
-lte_filename_valid(const struct wim_lookup_table_entry *lte)
-{
-	return     lte->resource_location == RESOURCE_IN_FILE_ON_DISK
-	#ifdef __WIN32__
-		|| lte->resource_location == RESOURCE_WIN32_ENCRYPTED
-	#endif
-	#ifdef WITH_FUSE
-		|| lte->resource_location == RESOURCE_IN_STAGING_FILE
-	#endif
-		;
-}
-
 static inline const struct stream_owner *
 stream_owners(struct wim_lookup_table_entry *stream)
 {
