@@ -36,6 +36,7 @@ Version 1.7.0-BETA:
 	The <ARCH> element in WIM XML data will now be exported correctly.
 
 	On Windows, sparse file attributes are no longer set on extracted files.
+	Oddly enough, this actually saves disk space in some cases.
 
 	On UNIX, configuring with --disable-xattr or --enable-xattr is no longer
 	supported.  Mounting WIM images now always requires extended attribute
@@ -61,13 +62,19 @@ Version 1.7.0-BETA:
 		  wimlib_extract_files(), and wimlib_print_metadata().
 
 		- Removed extraction flags: WIMLIB_EXTRACT_FLAG_HARDLINK,
-		  WIMLIB_EXTRACT_FLAG_SYMLINK, and
-		  WIMLIB_EXTRACT_FLAG_FILE_ORDER.
+		  WIMLIB_EXTRACT_FLAG_SYMLINK, WIMLIB_EXTRACT_FLAG_FILE_ORDER,
+		  and WIMLIB_EXTRACT_FLAG_SEQUENTIAL.
 
 		- Removed progress messages:
 		  WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS,
 		  WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN,
-		  WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_END.
+		  WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_END.  Numbering
+		  stays the same.
+
+		- Removed some error codes.  Numbering stays the same.
+
+		- Replaced WIMLIB_UNMOUNT_FLAG_LAZY with
+		  WIMLIB_UNMOUNT_FLAG_FORCE.
 
 		- WIM paths passed to progress functions now have a leading
 		  slash.
