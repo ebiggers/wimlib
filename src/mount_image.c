@@ -2097,9 +2097,9 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	ctx.owner_gid = getgid();
 
 	/* Add each stream referenced by files in the image to a list and
-	 * preemptively double the number of references to each.  The latter is
-	 * done to allow implementing the WIMLIB_UNMOUNT_FLAG_NEW_IMAGE
-	 * semantics.  */
+	 * preemptively double the number of references to each.  This is done
+	 * to allow implementing the WIMLIB_UNMOUNT_FLAG_NEW_IMAGE semantics.
+	 */
 	INIT_LIST_HEAD(&ctx.orig_stream_list);
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 		unsigned i;
