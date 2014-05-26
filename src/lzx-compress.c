@@ -1592,11 +1592,7 @@ lzx_compress(const void *uncompressed_data, size_t uncompressed_size,
 	 * Although this could be disabled by default in all cases, it only
 	 * takes around 2-3% of the running time of the slow algorithm to do the
 	 * verification.  */
-	if (ctx->params.algorithm == WIMLIB_LZX_ALGORITHM_SLOW
-	#if defined(ENABLE_LZX_DEBUG) || defined(ENABLE_VERIFY_COMPRESSION)
-	    || 1
-	#endif
-	    )
+#if defined(ENABLE_LZX_DEBUG) || defined(ENABLE_VERIFY_COMPRESSION)
 	{
 		struct wimlib_decompressor *decompressor;
 
@@ -1630,6 +1626,7 @@ lzx_compress(const void *uncompressed_data, size_t uncompressed_size,
 				"data verification!");
 		}
 	}
+#endif
 	return compressed_size;
 }
 
