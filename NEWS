@@ -33,6 +33,8 @@ Version 1.7.0-BETA:
 	The 'mkwinpeimg' script now supports writing the ISO image to standard
 	output.
 
+	The <ARCH> element in WIM XML data will now be exported correctly.
+
 	On Windows, sparse file attributes are no longer set on extracted files.
 
 	On UNIX, configuring with --disable-xattr or --enable-xattr is no longer

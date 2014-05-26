@@ -90,6 +90,9 @@ struct image_info {
 	tchar *display_description;
 	tchar *flags;
 	bool wimboot;
+
+	/* Note: must update clone_image_info() if adding new fields here  */
+
 	struct wim_lookup_table *lookup_table; /* temporary field */
 };
 
@@ -1001,6 +1004,8 @@ clone_windows_info(const struct windows_info *old, struct windows_info *new)
 {
 	int ret;
 
+	new->arch = old->arch;
+
 	ret = dup_strings_from_specs(old, new, windows_info_xml_string_specs,
 				     ARRAY_LEN(windows_info_xml_string_specs));
 	if (ret)
@@ -1063,6 +1068,7 @@ clone_image_info(const struct image_info *old, struct image_info *new)
 		if (ret)
 			return ret;
 	}
+	new->wimboot = old->wimboot;
 	return 0;
 }
 
