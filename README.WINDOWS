@@ -23,7 +23,7 @@ ZIP file containing the following items:
     PDF documentation for wimlib-imagex in the 'doc' directory.
 
   * Various DLL (.dll) files, including the wimlib library itself
-    (libwim-9.dll).  The C header wimlib.h is not included; download the source
+    (libwim-15.dll).  The C header wimlib.h is not included; download the source
     if you want it.
 
   * License files for all software included.  These are all free software

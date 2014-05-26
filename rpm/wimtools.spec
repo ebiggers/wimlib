@@ -10,7 +10,7 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 
 
 Group:  Applications/System
-Requires: libwim9
+Requires: libwim15
 %description
 Tools to extract, create, modify, and mount WIM (Windows Imaging) files.  WIM is
 an archive format designed primarily for archiving Windows filesystems.  It
@@ -29,19 +29,19 @@ WIM file, such as the install.wim distributed on the Windows installation media.
 This package also contains a script to make a customized Windows PE image based
 on the capabilities provided by wimlib-imagex.
 
-%package -n libwim9-devel
+%package -n libwim15-devel
 Summary:  Development files for wimlib
 Group:  Development/Libraries
-%description -n libwim9-devel
+%description -n libwim15-devel
 Development files for wimlib
 
-%package -n libwim9
+%package -n libwim15
 Summary:  Library to extract, create, modify, and mount WIM files
 Group:  System Environment/Libraries
 Requires:  fuse
 BuildRequires: libxml2-devel, fuse, fuse-devel, openssl-devel, libattr-devel
 BuildRequires: ntfs-3g-devel, ntfsprogs, libtool, pkgconfig
-%description -n libwim9
+%description -n libwim15
 wimlib is a C library for extracting, creating, modifying, and mounting WIM
 (Windows Imaging) files.  WIM is an archive format designed primarily for
 archiving Windows filesystems.  It features single-instancing and LZ77-based
@@ -51,8 +51,8 @@ files, available on both UNIX-like systems and Windows, that provides features
 similar to Microsoft's WIMGAPI, as well as additional features such as support
 for pipable WIM files and programatically making changes to WIM images without
 mounting them.
-%post -n libwim9 -p /sbin/ldconfig
-%postun -n libwim9 -p /sbin/ldconfig
+%post -n libwim15 -p /sbin/ldconfig
+%postun -n libwim15 -p /sbin/ldconfig
 
 %prep
 %setup -q -n wimlib-%{version}
@@ -78,7 +78,7 @@ rm -rf %{buildroot}
 %doc %{_mandir}/man1/*.1.gz
 %doc README AUTHORS COPYING
 
-%files -n libwim9-devel
+%files -n libwim15-devel
 %defattr(-, root, root)
 %{_libdir}/libwim.a
 %{_libdir}/libwim.so
@@ -86,7 +86,7 @@ rm -rf %{buildroot}
 %{_includedir}/wimlib.h
 %{_libdir}/pkgconfig/wimlib.pc
 
-%files -n libwim9
+%files -n libwim15
 %defattr(-, root, root)
 %{_libdir}/libwim.so.*
 %doc COPYING
