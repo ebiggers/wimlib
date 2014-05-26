@@ -419,7 +419,7 @@ calculate_dentry_full_path(struct wim_dentry *dentry)
 	do {
 		ulen += d->file_name_nbytes / sizeof(utf16lechar);
 		ulen++;
-		d = d->parent;  /* assumes d == d->parent for root  */
+		d = d->d_parent;  /* assumes d == d->d_parent for root  */
 	} while (!dentry_is_root(d));
 
 	utf16lechar ubuf[ulen];
@@ -430,7 +430,7 @@ calculate_dentry_full_path(struct wim_dentry *dentry)
 		p -= d->file_name_nbytes / sizeof(utf16lechar);
 		memcpy(p, d->file_name, d->file_name_nbytes);
 		*--p = cpu_to_le16(WIM_PATH_SEPARATOR);
-		d = d->parent;  /* assumes d == d->parent for root  */
+		d = d->d_parent;  /* assumes d == d->d_parent for root  */
 	} while (!dentry_is_root(d));
 
 	wimlib_assert(p == ubuf);
@@ -880,7 +880,7 @@ new_dentry(const tchar *name, struct wim_dentry **dentry_ret)
 			return ret;
 		}
 	}
-	dentry->parent = dentry;
+	dentry->d_parent = dentry;
 	*dentry_ret = dentry;
 	return 0;
 }
@@ -1102,7 +1102,7 @@ dentry_add_child(struct wim_dentry *parent, struct wim_dentry *child)
 	} else {
 		INIT_LIST_HEAD(&child->d_ci_conflict_list);
 	}
-	child->parent = parent;
+	child->d_parent = parent;
 	return NULL;
 }
 
@@ -1115,7 +1115,7 @@ unlink_dentry(struct wim_dentry *dentry)
 	if (dentry_is_root(dentry))
 		return;
 
-	dir = dentry->parent->d_inode;
+	dir = dentry->d_parent->d_inode;
 
 	dir_unindex_child(dir, dentry);
 
@@ -1369,8 +1369,8 @@ read_dentry_tree_recursive(const u8 * restrict buf, size_t buf_len,
 
 	/* Check for cyclic directory structure, which would cause infinite
 	 * recursion if not handled.  */
-	for (struct wim_dentry *d = dir->parent;
-	     !dentry_is_root(d); d = d->parent)
+	for (struct wim_dentry *d = dir->d_parent;
+	     !dentry_is_root(d); d = d->d_parent)
 	{
 		if (unlikely(d->subdir_offset == cur_offset)) {
 			ERROR("Cyclic directory structure detected: children "

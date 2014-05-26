@@ -540,7 +540,7 @@ touch_inode(struct wim_inode *inode)
 static void
 touch_parent(struct wim_dentry *dentry)
 {
-	touch_inode(dentry->parent->d_inode);
+	touch_inode(dentry->d_parent->d_inode);
 }
 
 /*

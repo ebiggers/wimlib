@@ -113,7 +113,7 @@ unix_dentry_path_length(const struct wim_dentry *dentry)
 	d = dentry;
 	do {
 		len += d->d_extraction_name_nchars + 1;
-		d = d->parent;
+		d = d->d_parent;
 	} while (!dentry_is_root(d) && will_extract_dentry(d));
 
 	return len;
@@ -161,7 +161,7 @@ unix_build_extraction_path(const struct wim_dentry *dentry,
 		p -= d->d_extraction_name_nchars;
 		memcpy(p, d->d_extraction_name, d->d_extraction_name_nchars);
 		*--p = '/';
-		d = d->parent;
+		d = d->d_parent;
 	} while (!dentry_is_root(d) && will_extract_dentry(d));
 
 	return pathbuf;

@@ -285,7 +285,7 @@ ntfs_3g_restore_dos_name(ntfs_inode *ni, ntfs_inode *dir_ni,
 		goto out_close;
 
 	if (!dir_ni)
-		dir_ni = ntfs_inode_open(vol, dentry->parent->d_inode->i_mft_no);
+		dir_ni = ntfs_inode_open(vol, dentry->d_parent->d_inode->i_mft_no);
 	if (!ni)
 		ni = ntfs_inode_open(vol, dentry->d_inode->i_mft_no);
 	if (dir_ni && ni) {
@@ -307,7 +307,7 @@ ntfs_3g_restore_dos_name(ntfs_inode *ni, ntfs_inode *dir_ni,
 	/* Unlike most other NTFS-3g functions, ntfs_set_ntfs_dos_name()
 	 * changes the directory's last modification timestamp...
 	 * Change it back.  */
-	return ntfs_3g_restore_timestamps(vol, dentry->parent->d_inode);
+	return ntfs_3g_restore_timestamps(vol, dentry->d_parent->d_inode);
 
 out_close:
 	/* ntfs_inode_close() can take a NULL argument, but it's probably best
@@ -543,7 +543,7 @@ ntfs_3g_add_link(ntfs_inode *ni, struct wim_dentry *dentry)
 	int res;
 
 	/* Open the inode of the parent directory.  */
-	dir_ni = ntfs_inode_open(ni->vol, dentry->parent->d_inode->i_mft_no);
+	dir_ni = ntfs_inode_open(ni->vol, dentry->d_parent->d_inode->i_mft_no);
 	if (!dir_ni)
 		goto fail;
 
@@ -578,10 +578,10 @@ ntfs_3g_create_nondirectory(struct wim_inode *inode,
 
 	/* Create first link.  */
 
-	dir_ni = ntfs_inode_open(ctx->vol, first_dentry->parent->d_inode->i_mft_no);
+	dir_ni = ntfs_inode_open(ctx->vol, first_dentry->d_parent->d_inode->i_mft_no);
 	if (!dir_ni) {
 		ERROR_WITH_ERRNO("Can't open \"%s\" in NTFS volume",
-				 dentry_full_path(first_dentry->parent));
+				 dentry_full_path(first_dentry->d_parent));
 		return WIMLIB_ERR_NTFS_3G;
 	}
 
@@ -619,7 +619,7 @@ ntfs_3g_create_nondirectory(struct wim_inode *inode,
 		/* Close the directory in which the first link was created.  */
 		if (ntfs_inode_close(dir_ni)) {
 			ERROR_WITH_ERRNO("Failed to close \"%s\" in NTFS volume",
-					 dentry_full_path(first_dentry->parent));
+					 dentry_full_path(first_dentry->d_parent));
 			ret = WIMLIB_ERR_NTFS_3G;
 			goto out_close_ni;
 		}

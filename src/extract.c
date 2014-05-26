@@ -442,7 +442,7 @@ remove_contained_trees(struct wim_dentry **trees, size_t num_trees)
 	for (i = 0; i < num_trees; i++) {
 		struct wim_dentry *d = trees[i];
 		while (!dentry_is_root(d)) {
-			d = d->parent;
+			d = d->d_parent;
 			if (d->tmp_flag)
 				goto tree_contained;
 		}
@@ -509,7 +509,7 @@ build_dentry_list(struct list_head *dentry_list, struct wim_dentry **trees,
 			place_after = dentry_list;
 			ancestor = dentry;
 			do {
-				ancestor = ancestor->parent;
+				ancestor = ancestor->d_parent;
 				if (will_extract_dentry(ancestor)) {
 					place_after = &ancestor->d_extraction_list_node;
 					break;
@@ -518,7 +518,7 @@ build_dentry_list(struct list_head *dentry_list, struct wim_dentry **trees,
 
 			ancestor = dentry;
 			do {
-				ancestor = ancestor->parent;
+				ancestor = ancestor->d_parent;
 				if (will_extract_dentry(ancestor))
 					break;
 				list_add(&ancestor->d_extraction_list_node, place_after);

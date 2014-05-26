@@ -212,13 +212,13 @@ do_unlink(struct wim_dentry *subject, struct wim_dentry *parent,
 {
 	if (parent) {
 		/* Unlink @subject from its @parent.  */
-		wimlib_assert(subject->parent == parent);
+		wimlib_assert(subject->d_parent == parent);
 		unlink_dentry(subject);
 	} else {
 		/* Unset @subject as the root of the image.  */
 		*root_p = NULL;
 	}
-	subject->parent = subject;
+	subject->d_parent = subject;
 }
 
 static void
@@ -362,7 +362,7 @@ journaled_unlink(struct update_command_journal *j, struct wim_dentry *subject)
 	if (dentry_is_root(subject))
 		parent = NULL;
 	else
-		parent = subject->parent;
+		parent = subject->d_parent;
 
 	prim.type = UNLINK_DENTRY;
 	prim.link.subject = subject;
@@ -521,7 +521,7 @@ handle_conflict(struct wim_dentry *branch, struct wim_dentry *existing,
 		struct wim_dentry *parent;
 		int ret;
 
-		parent = existing->parent;
+		parent = existing->d_parent;
 
 		ret = calculate_dentry_full_path(existing);
 		if (ret)
@@ -936,7 +936,7 @@ is_ancestor(const struct wim_dentry *d1, const struct wim_dentry *d2)
 			return true;
 		if (dentry_is_root(d2))
 			return false;
-		d2 = d2->parent;
+		d2 = d2->d_parent;
 	}
 }
 
@@ -983,7 +983,7 @@ rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to,
 			if (dentry_has_children(dst))
 				return -ENOTEMPTY;
 		}
-		parent_of_dst = dst->parent;
+		parent_of_dst = dst->d_parent;
 	} else {
 		/* Destination does not exist */
 		parent_of_dst = get_parent_dentry(wim, to, case_type);

@@ -65,7 +65,7 @@ struct wim_dentry {
 	struct list_head d_ci_conflict_list;
 
 	/* The parent of this directory entry. */
-	struct wim_dentry *parent;
+	struct wim_dentry *d_parent;
 
 	/* Linked list node that places this dentry in the list of aliases for
 	 * its inode (d_inode) */
@@ -285,7 +285,7 @@ write_dentry_tree(struct wim_dentry *root, u8 *p);
 static inline bool
 dentry_is_root(const struct wim_dentry *dentry)
 {
-	return dentry->parent == dentry;
+	return dentry->d_parent == dentry;
 }
 
 static inline bool

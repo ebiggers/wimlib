@@ -357,7 +357,7 @@ dentry_extraction_path_length(const struct wim_dentry *dentry)
 	d = dentry;
 	do {
 		len += d->d_extraction_name_nchars + 1;
-		d = d->parent;
+		d = d->d_parent;
 	} while (!dentry_is_root(d) && will_extract_dentry(d));
 
 	return --len;  /* No leading slash  */
@@ -426,8 +426,8 @@ build_extraction_path(const struct wim_dentry *dentry,
 	ctx->pathbuf.Length = len * sizeof(wchar_t);
 	p = ctx->pathbuf.Buffer + len;
 	for (d = dentry;
-	     !dentry_is_root(d->parent) && will_extract_dentry(d->parent);
-	     d = d->parent)
+	     !dentry_is_root(d->d_parent) && will_extract_dentry(d->d_parent);
+	     d = d->d_parent)
 	{
 		p -= d->d_extraction_name_nchars;
 		wmemcpy(p, d->d_extraction_name, d->d_extraction_name_nchars);
