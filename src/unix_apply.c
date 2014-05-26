@@ -64,7 +64,7 @@ unix_get_supported_features(const char *target,
 }
 
 #define NUM_PATHBUFS 2  /* We need 2 when creating hard links  */
-#define MAX_OPEN_FDS 1024 /* TODO: Add special case for when the number of
+#define MAX_OPEN_FDS 1000 /* TODO: Add special case for when the number of
 			     identical streams exceeds this number.  */
 
 struct unix_apply_ctx {
@@ -541,6 +541,11 @@ unix_begin_extract_stream_instance(const struct wim_lookup_table_entry *stream,
 		}
 		ctx->reparse_ptr = ctx->reparse_data;
 		return 0;
+	}
+
+	if (ctx->num_open_fds == MAX_OPEN_FDS) {
+		ERROR("Can't extract data: too many open files!");
+		return WIMLIB_ERR_UNSUPPORTED;
 	}
 
 	first_dentry = inode_first_extraction_dentry(inode);

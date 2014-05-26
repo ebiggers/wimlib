@@ -1359,7 +1359,7 @@ begin_extract_stream_instance(const struct wim_lookup_table_entry *stream,
 
 	/* Too many open handles?  */
 	if (ctx->num_open_handles == MAX_OPEN_HANDLES) {
-		ERROR("Too many open handles!");
+		ERROR("Can't extract data: too many open files!");
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 

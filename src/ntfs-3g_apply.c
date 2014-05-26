@@ -726,6 +726,11 @@ ntfs_3g_begin_extract_stream_to_attr(struct wim_lookup_table_entry *stream,
 		return WIMLIB_ERR_NTFS_3G;
 	}
 
+	if (ctx->num_open_attrs == MAX_OPEN_ATTRS) {
+		ERROR("Can't extract data: too many open files!");
+		return WIMLIB_ERR_UNSUPPORTED;
+	}
+
 	attr = ntfs_attr_open(ni, AT_DATA, stream_name, stream_name_nchars);
 	if (!attr) {
 		ERROR_WITH_ERRNO("Failed to open data stream of \"%s\"",
