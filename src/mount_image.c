@@ -161,6 +161,10 @@ struct wimfs_context {
 	/* Original list of single-instance streams in the mounted image, linked
 	 * by 'struct wim_lookup_table_entry'.orig_stream_list.  */
 	struct list_head orig_stream_list;
+
+	/* Parameters for unmounting the image (can be set via extended
+	 * attribute "wimfs.unmount_info").  */
+	struct wimfs_unmount_info unmount_info;
 };
 
 #define WIMFS_CTX(fuse_ctx) ((struct wimfs_context*)(fuse_ctx)->private_data)
@@ -1132,51 +1136,64 @@ commit_image(struct wimfs_context *ctx, int unmount_flags, mqd_t mq)
 	return wimlib_overwrite(ctx->wim, write_flags, 0);
 }
 
+/* In the case of an allow_other mount, only the owner and root should be
+ * allowed to unmount the filesystem.  */
+static bool
+may_unmount_wimfs(void)
+{
+	const struct fuse_context *fuse_ctx = fuse_get_context();
+	const struct wimfs_context *wimfs_ctx = WIMFS_CTX(fuse_ctx);
+
+	return (fuse_ctx->uid == wimfs_ctx->owner_uid ||
+		fuse_ctx->uid == 0);
+}
+
 static int
-unmount_wimfs(const struct wimfs_unmount_info *info)
+unmount_wimfs(void)
 {
 	struct fuse_context *fuse_ctx = fuse_get_context();
 	struct wimfs_context *wimfs_ctx = WIMFS_CTX(fuse_ctx);
+	const struct wimfs_unmount_info *info = &wimfs_ctx->unmount_info;
 	int unmount_flags = info->unmount_flags;
 	mqd_t mq = (mqd_t)-1;
-	int status;
-
-	if (fuse_ctx->uid != wimfs_ctx->owner_uid &&
-	    fuse_ctx->uid != 0)
-		return -EPERM;
-
-	if (info->mq_name[0]) {
-		mq = mq_open(info->mq_name, O_WRONLY | O_NONBLOCK);
-		if (mq == (mqd_t)-1)
-			return -errno;
-	}
+	int ret;
 
 	/* Ignore COMMIT if the image is mounted read-only.  */
 	if (!(wimfs_ctx->mount_flags & WIMLIB_MOUNT_FLAG_READWRITE))
 		unmount_flags &= ~WIMLIB_UNMOUNT_FLAG_COMMIT;
+
+	if (unmount_flags & WIMLIB_UNMOUNT_FLAG_SEND_PROGRESS) {
+		mq = mq_open(info->mq_name, O_WRONLY | O_NONBLOCK);
+		if (mq == (mqd_t)-1) {
+			ret = WIMLIB_ERR_MQUEUE;
+			goto out;
+		}
+	}
 
 	if (wimfs_ctx->num_open_fds) {
 		if ((unmount_flags & (WIMLIB_UNMOUNT_FLAG_COMMIT |
 				      WIMLIB_UNMOUNT_FLAG_FORCE))
 				 == WIMLIB_UNMOUNT_FLAG_COMMIT)
 		{
-			status = WIMLIB_ERR_MOUNTED_IMAGE_IS_BUSY;
-			goto out_send_status;
+			ret = WIMLIB_ERR_MOUNTED_IMAGE_IS_BUSY;
+			goto out;
 		}
 		close_all_fds(wimfs_ctx);
 	}
 
 	if (unmount_flags & WIMLIB_UNMOUNT_FLAG_COMMIT)
-		status = commit_image(wimfs_ctx, unmount_flags, mq);
+		ret = commit_image(wimfs_ctx, unmount_flags, mq);
 	else
-		status = 0;
-	fuse_exit(fuse_ctx->fuse);
-out_send_status:
-	if (mq != (mqd_t)-1) {
-		mq_send(mq, (const char *)&status, sizeof(int), 1);
+		ret = 0;
+out:
+	/* Leave the image mounted if commit failed, unless this is a
+	 * forced unmount.  The user can retry without commit if they
+	 * want.  */
+	if (!ret || (unmount_flags & WIMLIB_UNMOUNT_FLAG_FORCE))
+		fuse_exit(fuse_ctx->fuse);
+	if (mq != (mqd_t)-1)
 		mq_close(mq);
-	}
-	return 0;
+	return ret;
 }
 
 static int
@@ -1290,8 +1307,7 @@ static int
 wimfs_getxattr(const char *path, const char *name, char *value,
 	       size_t size)
 {
-	struct fuse_context *fuse_ctx = fuse_get_context();
-	const struct wimfs_context *ctx = WIMFS_CTX(fuse_ctx);
+	const struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_inode *inode;
 	struct wim_ads_entry *ads_entry;
 	struct wim_lookup_table_entry *lte;
@@ -1321,9 +1337,17 @@ wimfs_getxattr(const char *path, const char *name, char *value,
 					  &ctx->mount_flags, sizeof(int));
 		}
 		if (!strcmp(name, "unmount")) {
-			struct wimfs_unmount_info info;
-			memset(&info, 0, sizeof(info));
-			return unmount_wimfs(&info);
+			if (!may_unmount_wimfs())
+				return -EPERM;
+			if (size) {
+				int status;
+
+				if (size < sizeof(int))
+					return -ERANGE;
+				status = unmount_wimfs();
+				memcpy(value, &status, sizeof(int));
+			}
+			return sizeof(int);
 		}
 		return -ENOATTR;
 	}
@@ -1790,10 +1814,14 @@ wimfs_setxattr(const char *path, const char *name,
 		 * be ioctls, but directory ioctls aren't supported until
 		 * libfuse 2.9, and even then they are broken.  */
 		name += 6;
-		if (!strcmp(name, "unmount")) {
+		if (!strcmp(name, "unmount_info")) {
+			if (!may_unmount_wimfs())
+				return -EPERM;
 			if (size < sizeof(struct wimfs_unmount_info))
 				return -EINVAL;
-			return unmount_wimfs((const void *)value);
+			memcpy(&ctx->unmount_info, value,
+			       sizeof(struct wimfs_unmount_info));
+			return 0;
 		}
 		return -ENOATTR;
 	}
@@ -2235,7 +2263,6 @@ struct commit_progress_thread_args {
 	mqd_t mq;
 	wimlib_progress_func_t progfunc;
 	void *progctx;
-	int status;
 };
 
 static void *
@@ -2245,23 +2272,16 @@ commit_progress_thread_proc(void *_args)
 	struct commit_progress_report report;
 	ssize_t ret;
 
-	args->status = WIMLIB_ERR_NOT_A_MOUNTPOINT;
 	for (;;) {
 		ret = mq_receive(args->mq,
 				 (char *)&report, sizeof(report), NULL);
-		if (ret < 0) {
-			if (errno == EINTR)
-				continue;
-			break;
+		if (ret == sizeof(report)) {
+			call_progress(args->progfunc, report.msg,
+				      &report.info, args->progctx);
+		} else {
+			if (ret == 0 || (ret < 0 && errno != EINTR))
+				break;
 		}
-		if (ret == sizeof(int)) {
-			args->status = *(int *)&report;
-			break;
-		}
-		if (ret < sizeof(report))
-			continue;
-		call_progress(args->progfunc, report.msg,
-			      &report.info, args->progctx);
 	}
 	return NULL;
 }
@@ -2304,6 +2324,50 @@ create_message_queue(const char *name, bool have_progfunc)
 	return mq;
 }
 
+/* Unmount a read-only or read-write mounted WIM image.  */
+static int
+do_unmount(const char *dir)
+{
+	int status;
+	ssize_t len;
+
+	len = getxattr(dir, "wimfs.unmount", &status, sizeof(int));
+	if (len == sizeof(int))
+		return status;
+	else if (len < 0 && (errno == EACCES || errno == EPERM))
+		return WIMLIB_ERR_NOT_PERMITTED_TO_UNMOUNT;
+	else
+		return WIMLIB_ERR_NOT_A_MOUNTPOINT;
+}
+
+static int
+set_unmount_info(const char *dir, const struct wimfs_unmount_info *unmount_info)
+{
+	if (!setxattr(dir, "wimfs.unmount_info",
+		      unmount_info, sizeof(struct wimfs_unmount_info), 0))
+		return 0;
+	else if (errno == EROFS)
+		return 0;
+	else if (errno == EACCES || errno == EPERM)
+		return WIMLIB_ERR_NOT_PERMITTED_TO_UNMOUNT;
+	else
+		return WIMLIB_ERR_NOT_A_MOUNTPOINT;
+}
+
+static int
+do_unmount_discard(const char *dir)
+{
+	int ret;
+	struct wimfs_unmount_info unmount_info;
+
+	memset(&unmount_info, 0, sizeof(unmount_info));
+
+	ret = set_unmount_info(dir, &unmount_info);
+	if (ret)
+		return ret;
+	return do_unmount(dir);
+}
+
 /* Unmount a read-write mounted WIM image, committing the changes.  */
 static int
 do_unmount_commit(const char *dir, int unmount_flags,
@@ -2317,17 +2381,17 @@ do_unmount_commit(const char *dir, int unmount_flags,
 
 	memset(&unmount_info, 0, sizeof(unmount_info));
 	unmount_info.unmount_flags = unmount_flags;
-	generate_message_queue_name(unmount_info.mq_name);
 
-	mq = create_message_queue(unmount_info.mq_name, progfunc != NULL);
-	if (mq == (mqd_t)-1) {
-		ERROR_WITH_ERRNO("Can't create POSIX message queue");
-		return WIMLIB_ERR_MQUEUE;
-	}
-
-	/* The current thread will be stuck in setxattr() until the image is
+	/* The current thread will be stuck in getxattr() until the image is
 	 * committed.  Create a thread to handle the progress messages.  */
 	if (progfunc) {
+		generate_message_queue_name(unmount_info.mq_name);
+
+		mq = create_message_queue(unmount_info.mq_name, progfunc != NULL);
+		if (mq == (mqd_t)-1) {
+			ERROR_WITH_ERRNO("Can't create POSIX message queue");
+			return WIMLIB_ERR_MQUEUE;
+		}
 		args.mq = mq;
 		args.progfunc = progfunc;
 		args.progctx = progctx;
@@ -2342,55 +2406,20 @@ do_unmount_commit(const char *dir, int unmount_flags,
 		unmount_info.unmount_flags |= WIMLIB_UNMOUNT_FLAG_SEND_PROGRESS;
 	}
 
-	if (!setxattr(dir, "wimfs.unmount",
-		     (const char *)&unmount_info, sizeof(unmount_info), 0))
-		ret = 0;
-	else if (errno == EACCES || errno == EPERM)
-		ret = WIMLIB_ERR_NOT_PERMITTED_TO_UNMOUNT;
-	else
-		ret = WIMLIB_ERR_NOT_A_MOUNTPOINT;
-
+	ret = set_unmount_info(dir, &unmount_info);
+	if (!ret)
+		ret = do_unmount(dir);
 	if (progfunc) {
-		/* Terminate the progress thread and retrieve final unmount
-		 * status.  */
-
-		int tmp = -1;
-		mq_send(mq, (const char *)&tmp, sizeof(int), 1);
-
+		/* Terminate the progress thread.  */
+		mq_send(mq, NULL, 0, 1);
 		pthread_join(commit_progress_tid, NULL);
-		if (!ret && args.status != -1)
-			ret = args.status;
-	} else if (!ret) {
-		/* Retrieve the final unmount status.  */
-
-		int tmp = -1;
-		int len;
-
-		mq_send(mq, (const char *)&tmp, sizeof(int), 1);
-		len = mq_receive(mq, (char *)&tmp, sizeof(int), NULL);
-
-		if (len == 4 && tmp != -1)
-			ret = tmp;
-		else
-			ret = WIMLIB_ERR_NOT_A_MOUNTPOINT;
 	}
 out_delete_mq:
-	mq_close(mq);
-	mq_unlink(unmount_info.mq_name);
+	if (progfunc) {
+		mq_close(mq);
+		mq_unlink(unmount_info.mq_name);
+	}
 	return ret;
-}
-
-/* Unmount a read-only or read-write mounted WIM image, discarding any changes.
- */
-static int
-do_unmount_discard(const char *dir)
-{
-	if (!getxattr(dir, "wimfs.unmount", NULL, 0))
-		return 0;
-	else if (errno == EACCES || errno == EPERM)
-		return WIMLIB_ERR_NOT_PERMITTED_TO_UNMOUNT;
-	else
-		return WIMLIB_ERR_NOT_A_MOUNTPOINT;
 }
 
 static int
