@@ -537,6 +537,12 @@ touch_inode(struct wim_inode *inode)
 	inode->i_last_write_time = now;
 }
 
+static void
+touch_parent(struct wim_dentry *dentry)
+{
+	touch_inode(dentry->parent->d_inode);
+}
+
 /*
  * Create a new file in the staging directory for a read-write mounted image.
  *
@@ -1324,6 +1330,7 @@ wimfs_link(const char *existing_path, const char *new_path)
 	new_alias->d_inode = inode;
 	inode_add_dentry(new_alias, inode);
 	dentry_add_child(dir, new_alias);
+	touch_inode(dir->d_inode);
 	inode->i_nlink++;
 	inode_ref_streams(inode);
 	return 0;
@@ -1387,9 +1394,16 @@ wimfs_listxattr(const char *path, char *list, size_t size)
 static int
 wimfs_mkdir(const char *path, mode_t mode)
 {
+	struct wim_dentry *dentry;
+	int ret;
+
 	/* Note: according to fuse.h, mode may not include S_IFDIR  */
-	return create_dentry(fuse_get_context(), path, mode | S_IFDIR, 0,
-			     FILE_ATTRIBUTE_DIRECTORY, NULL);
+	ret = create_dentry(fuse_get_context(), path, mode | S_IFDIR, 0,
+			    FILE_ATTRIBUTE_DIRECTORY, &dentry);
+	if (ret)
+		return ret;
+	touch_parent(dentry);
+	return 0;
 }
 
 static int
@@ -1433,6 +1447,8 @@ wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 	} else {
 		/* Create a regular file, device node, named pipe, or socket.
 		 */
+		struct wim_dentry *dentry;
+		int ret;
 
 		if (!S_ISREG(mode) &&
 		    !(wimfs_ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA))
@@ -1441,8 +1457,12 @@ wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 		/* Note: we still use FILE_ATTRIBUTE_NORMAL for device nodes,
 		 * named pipes, and sockets.  The real mode is in the UNIX
 		 * metadata.  */
-		return create_dentry(fuse_ctx, path, mode, rdev,
-				     FILE_ATTRIBUTE_NORMAL, NULL);
+		ret = create_dentry(fuse_ctx, path, mode, rdev,
+				    FILE_ATTRIBUTE_NORMAL, &dentry);
+		if (ret)
+			return ret;
+		touch_parent(dentry);
+		return 0;
 	}
 }
 
@@ -1686,6 +1706,7 @@ wimfs_rmdir(const char *path)
 	if (dentry_has_children(dentry))
 		return -ENOTEMPTY;
 
+	touch_parent(dentry);
 	remove_dentry(dentry, wim->lookup_table);
 	return 0;
 }
@@ -1764,6 +1785,8 @@ wimfs_symlink(const char *to, const char *from)
 			ret = -ENOMEM;
 		else
 			ret = -EINVAL;
+	} else {
+		touch_parent(dentry);
 	}
 	return ret;
 }
@@ -1819,12 +1842,14 @@ wimfs_unlink(const char *path)
 	if (ret)
 		return ret;
 
-	if (inode_stream_name_nbytes(dentry->d_inode, stream_idx) == 0)
+	if (inode_stream_name_nbytes(dentry->d_inode, stream_idx) == 0) {
+		touch_parent(dentry);
 		remove_dentry(dentry, ctx->wim->lookup_table);
-	else
+	} else {
 		inode_remove_ads(dentry->d_inode,
 				 &dentry->d_inode->i_ads_entries[stream_idx - 1],
 				 ctx->wim->lookup_table);
+	}
 	return 0;
 }
 
