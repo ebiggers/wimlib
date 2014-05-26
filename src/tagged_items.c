@@ -45,7 +45,7 @@ struct tagged_item_header {
 	/* Unique identifier for this item.  */
 	le32 tag;
 
-	/* Size of the data of this tagged item, in bytes.  This includes this
+	/* Size of the data of this tagged item, in bytes.  This excludes this
 	 * header and should be a multiple of 8.
 	 *
 	 * (Actually, the MS implementation seems to round this up to an 8 byte
@@ -98,10 +98,10 @@ inode_get_tagged_item(const struct wim_inode *inode,
 			return hdr->data;
 
 		len = (len + 7) & ~7;
-		if (len >= len_remaining)
+		if (len_remaining <= sizeof(struct tagged_item_header) + len)
 			return NULL;
-		len_remaining -= len;
-		p = hdr->data + len;
+		len_remaining -= sizeof(struct tagged_item_header) + len;
+		p += sizeof(struct tagged_item_header) + len;
 	}
 	return NULL;
 }
