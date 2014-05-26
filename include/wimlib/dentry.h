@@ -99,13 +99,15 @@ struct wim_dentry {
 	/* Used by wimlib_update_image()  */
 	u8 is_orphan : 1;
 
-	/* Temporary list field  */
-	struct list_head tmp_list;
+	union {
+		/* 'subdir_offset' is only used while reading and writing this
+		 * dentry.  See the corresponding field in `struct
+		 * wim_dentry_on_disk' for explanation.  */
+		u64 subdir_offset;
 
-	/* 'subdir_offset' is only used while reading and writing this dentry.
-	 * See the corresponding field in `struct wim_dentry_on_disk' for
-	 * explanation.  */
-	u64 subdir_offset;
+		/* Temporary list field  */
+		struct list_head tmp_list;
+	};
 
 	/* Full path to this dentry in the WIM, in platform-dependent tchars
 	 * that can be printed without conversion.  By default this field will
