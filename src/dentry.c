@@ -190,9 +190,10 @@ struct wim_dentry_on_disk {
 
 /* Calculates the unaligned length, in bytes, of an on-disk WIM dentry that has
  * a file name and short name that take the specified numbers of bytes.  This
- * excludes any alternate data stream entries that may follow the dentry. */
+ * excludes tagged items as well as any alternate data stream entries that may
+ * follow the dentry.  */
 static u64
-dentry_correct_length_unaligned(u16 file_name_nbytes, u16 short_name_nbytes)
+dentry_min_len_with_names(u16 file_name_nbytes, u16 short_name_nbytes)
 {
 	u64 length = sizeof(struct wim_dentry_on_disk);
 	if (file_name_nbytes)
@@ -200,26 +201,6 @@ dentry_correct_length_unaligned(u16 file_name_nbytes, u16 short_name_nbytes)
 	if (short_name_nbytes)
 		length += short_name_nbytes + 2;
 	return length;
-}
-
-/* Calculates the unaligned length, in bytes, of an on-disk WIM dentry, based on
- * the file name length, short name length, and optional tagged items.  Note
- * that dentry->length is ignored; also, this excludes any alternate data stream
- * entries that may follow the dentry.  */
-static u64
-dentry_correct_length_aligned(const struct wim_dentry *dentry)
-{
-	u64 len;
-
-	len = dentry_correct_length_unaligned(dentry->file_name_nbytes,
-					      dentry->short_name_nbytes);
-
-	if (dentry->d_inode->i_extra_size) {
-		len = (len + 7) & ~7;
-		len += dentry->d_inode->i_extra_size;
-	}
-
-	return (len + 7) & ~7;
 }
 
 static void
@@ -315,33 +296,33 @@ inode_needs_dummy_stream(const struct wim_inode *inode)
 }
 
 /* Calculate the total number of bytes that will be consumed when a WIM dentry
- * is written.  This includes base dentry and name fields as well as all
- * alternate data stream entries and alignment bytes.  */
+ * is written.  This includes the base dentry the name fields, any tagged items,
+ * any alternate data stream entries.  Also includes all alignment bytes between
+ * these parts.  */
 u64
 dentry_out_total_length(const struct wim_dentry *dentry)
 {
-	u64 length = dentry_correct_length_aligned(dentry);
 	const struct wim_inode *inode = dentry->d_inode;
+	u64 len;
 
-	if (inode_needs_dummy_stream(inode))
-		length += ads_entry_total_length(&(struct wim_ads_entry){});
+	len = dentry_min_len_with_names(dentry->file_name_nbytes,
+					dentry->short_name_nbytes);
+	len = (len + 7) & ~7;
 
-	for (u16 i = 0; i < inode->i_num_ads; i++)
-		length += ads_entry_total_length(&inode->i_ads_entries[i]);
+	if (inode->i_extra_size) {
+		len += inode->i_extra_size;
+		len = (len + 7) & ~7;
+	}
 
-	return length;
-}
+	if (unlikely(inode->i_num_ads)) {
+		if (inode_needs_dummy_stream(inode))
+			len += ads_entry_total_length(&(struct wim_ads_entry){});
 
-/* Calculate the aligned, total length of a dentry, including all alternate data
- * stream entries.  Uses dentry->length.  */
-static u64
-dentry_in_total_length(const struct wim_dentry *dentry)
-{
-	u64 length = dentry->length;
-	const struct wim_inode *inode = dentry->d_inode;
-	for (u16 i = 0; i < inode->i_num_ads; i++)
-		length += ads_entry_total_length(&inode->i_ads_entries[i]);
-	return (length + 7) & ~7;
+		for (u16 i = 0; i < inode->i_num_ads; i++)
+			len += ads_entry_total_length(&inode->i_ads_entries[i]);
+	}
+
+	return len;
 }
 
 static int
@@ -1158,8 +1139,9 @@ read_extra_data(const u8 *p, const u8 *end, struct wim_inode *inode)
  * follow it, from the WIM image's metadata resource.  */
 static int
 read_dentry(const u8 * restrict buf, size_t buf_len,
-	    u64 offset, struct wim_dentry **dentry_ret)
+	    u64 *offset_p, struct wim_dentry **dentry_ret)
 {
+	u64 offset = *offset_p;
 	u64 length;
 	const u8 *p;
 	const struct wim_dentry_on_disk *disk_dentry;
@@ -1221,7 +1203,6 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 	if (ret)
 		return ret;
 
-	dentry->length = length;
 	inode = dentry->d_inode;
 
 	/* Read more fields: some into the dentry, and some into the inode.  */
@@ -1268,15 +1249,15 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 	 * the length of the dentry is large enough to actually hold them.
 	 *
 	 * The calculated length here is unaligned to allow for the possibility
-	 * that the dentry->length names an unaligned length, although this
-	 * would be unexpected.  */
-	calculated_size = dentry_correct_length_unaligned(file_name_nbytes,
-							  short_name_nbytes);
+	 * that the dentry's length is unaligned, although this would be
+	 * unexpected.  */
+	calculated_size = dentry_min_len_with_names(file_name_nbytes,
+						    short_name_nbytes);
 
-	if (unlikely(dentry->length < calculated_size)) {
+	if (unlikely(length < calculated_size)) {
 		ERROR("Unexpected end of directory entry! (Expected "
 		      "at least %"PRIu64" bytes, got %"PRIu64" bytes.)",
-		      calculated_size, dentry->length);
+		      calculated_size, length);
 		ret = WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 		goto err_free_dentry;
 	}
@@ -1312,12 +1293,14 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 
 	/* Read extra data at end of dentry (but before alternate data stream
 	 * entries).  This may contain tagged items.  */
-	ret = read_extra_data(p, &buf[offset + dentry->length], inode);
+	ret = read_extra_data(p, &buf[offset + length], inode);
 	if (ret)
 		goto err_free_dentry;
 
 	/* Align the dentry length.  */
-	dentry->length = (dentry->length + 7) & ~7;
+	length = (length + 7) & ~7;
+
+	offset += length;
 
 	/* Read the alternate data streams, if present.  inode->i_num_ads tells
 	 * us how many they are, and they will directly follow the dentry in the
@@ -1327,16 +1310,22 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 	 * aligned boundary, and the alternate data stream entries seem to NOT
 	 * be included in the dentry->length field for some reason.  */
 	if (unlikely(inode->i_num_ads != 0)) {
-		ret = WIMLIB_ERR_INVALID_METADATA_RESOURCE;
-		if (offset + dentry->length > buf_len ||
-		    (ret = read_ads_entries(&buf[offset + dentry->length],
-					    inode,
-					    buf_len - offset - dentry->length)))
-		{
+		size_t orig_bytes_remaining;
+		size_t bytes_remaining;
+
+		if (offset > buf_len) {
+			ret = WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 			goto err_free_dentry;
 		}
+		bytes_remaining = buf_len - offset;
+		orig_bytes_remaining = bytes_remaining;
+		ret = read_ads_entries(&buf[offset], inode, &bytes_remaining);
+		if (ret)
+			goto err_free_dentry;
+		offset += (orig_bytes_remaining - bytes_remaining);
 	}
 
+	*offset_p = offset;  /* Sets offset of next dentry in directory  */
 	*dentry_ret = dentry;
 	return 0;
 
@@ -1386,20 +1375,13 @@ read_dentry_tree_recursive(const u8 * restrict buf, size_t buf_len,
 		int ret;
 
 		/* Read next child of @dir.  */
-		ret = read_dentry(buf, buf_len, cur_offset, &child);
+		ret = read_dentry(buf, buf_len, &cur_offset, &child);
 		if (ret)
 			return ret;
 
 		/* Check for end of directory.  */
 		if (child == NULL)
 			return 0;
-
-		/* Advance to the offset of the next child.  Note: We need to
-		 * advance by the TOTAL length of the dentry, not by the length
-		 * child->length, which although it does take into account the
-		 * padding, it DOES NOT take into account alternate stream
-		 * entries.  */
-		cur_offset += dentry_in_total_length(child);
 
 		/* All dentries except the root should be named.  */
 		if (unlikely(!dentry_has_long_name(child))) {
@@ -1480,7 +1462,7 @@ read_dentry_tree(const u8 *buf, size_t buf_len,
 
 	DEBUG("Reading dentry tree (root_offset=%"PRIu64")", root_offset);
 
-	ret = read_dentry(buf, buf_len, root_offset, &root);
+	ret = read_dentry(buf, buf_len, &root_offset, &root);
 	if (ret)
 		return ret;
 

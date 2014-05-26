@@ -514,7 +514,7 @@ inode_unnamed_stream_hash(const struct wim_inode *inode);
 
 extern int
 read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
-		 size_t nbytes_remaining);
+		 size_t *nbytes_remaining_p);
 
 extern int
 verify_inode(struct wim_inode *inode, const struct wim_security_data *sd);

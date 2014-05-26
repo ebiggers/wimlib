@@ -564,8 +564,9 @@ stream_not_found_error(const struct wim_inode *inode, const u8 *hash)
  *	Inode to load the alternate data streams into.  @inode->i_num_ads must
  *	have been set to the number of alternate data streams that are expected.
  *
- * @remaining_size:
+ * @nbytes_remaining_p:
  *	Number of bytes of data remaining in the buffer pointed to by @p.
+ *	On success this will be updated to point just past the ADS entries.
  *
  * On success, inode->i_ads_entries is set to an array of `struct
  * wim_ads_entry's of length inode->i_num_ads.  On failure, @inode is not
@@ -578,8 +579,9 @@ stream_not_found_error(const struct wim_inode *inode, const u8 *hash)
  */
 int
 read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
-		 size_t nbytes_remaining)
+		 size_t *nbytes_remaining_p)
 {
+	size_t nbytes_remaining = *nbytes_remaining_p;
 	u16 num_ads;
 	struct wim_ads_entry *ads_entries;
 	int ret;
@@ -661,7 +663,7 @@ read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
 		 * that less than @length is actually remaining in the metadata
 		 * resource. We should set the remaining bytes to 0 if this
 		 * happens. */
-		length = (length + 7) & ~(u64)7;
+		length = (length + 7) & ~7;
 		p += length;
 		if (nbytes_remaining < length)
 			nbytes_remaining = 0;
@@ -670,6 +672,7 @@ read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
 	}
 	inode->i_ads_entries = ads_entries;
 	inode->i_next_stream_id = inode->i_num_ads + 1;
+	*nbytes_remaining_p = nbytes_remaining;
 	ret = 0;
 	goto out;
 out_of_memory:

@@ -102,10 +102,9 @@ struct wim_dentry {
 	/* Temporary list field  */
 	struct list_head tmp_list;
 
-	/* 'length' and 'subdir_offset' are only used while reading and writing
-	 * this dentry; see the corresponding field in
-	 * `struct wim_dentry_on_disk' for explanation.  */
-	u64 length;
+	/* 'subdir_offset' is only used while reading and writing this dentry.
+	 * See the corresponding field in `struct wim_dentry_on_disk' for
+	 * explanation.  */
 	u64 subdir_offset;
 
 	/* Full path to this dentry in the WIM, in platform-dependent tchars
