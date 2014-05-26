@@ -379,16 +379,16 @@ wim_pathname_to_stream(const struct wimfs_context *ctx, const char *path,
 	struct wim_dentry *dentry;
 	struct wim_lookup_table_entry *lte;
 	u16 stream_idx;
-	const tchar *stream_name = NULL;
+	const char *stream_name = NULL;
 	struct wim_inode *inode;
-	tchar *p = NULL;
+	char *p = NULL;
 
 	lookup_flags |= ctx->default_lookup_flags;
 
 	if (lookup_flags & LOOKUP_FLAG_ADS_OK) {
 		stream_name = path_stream_name(path);
 		if (stream_name) {
-			p = (tchar*)stream_name - 1;
+			p = (char *)stream_name - 1;
 			*p = T('\0');
 		}
 	}
