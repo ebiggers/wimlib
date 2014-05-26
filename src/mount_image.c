@@ -31,6 +31,7 @@
 #endif
 
 #include "wimlib.h"
+#include "wimlib/error.h"
 
 #ifdef WITH_FUSE
 
