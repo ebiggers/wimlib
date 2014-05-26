@@ -32,19 +32,18 @@
 
 #if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
 extern int
-lock_wim_for_append(WIMStruct *wim, int fd);
+lock_wim_for_append(WIMStruct *wim);
 extern void
-unlock_wim_for_append(WIMStruct *wim, int fd);
+unlock_wim_for_append(WIMStruct *wim);
 #else
 static inline int
-lock_wim_for_append(WIMStruct *wim, int fd)
+lock_wim_for_append(WIMStruct *wim)
 {
 	return 0;
 }
 static inline void
-unlock_wim_for_append(WIMStruct *wim, int fd)
+unlock_wim_for_append(WIMStruct *wim)
 {
-	return 0;
 }
 #endif
 

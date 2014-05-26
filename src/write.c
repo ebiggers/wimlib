@@ -2400,12 +2400,14 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 }
 
 #if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
+
+/* Set advisory lock on WIM file (if not already done so)  */
 int
-lock_wim_for_append(WIMStruct *wim, int fd)
+lock_wim_for_append(WIMStruct *wim)
 {
 	if (wim->locked_for_append)
 		return 0;
-	if (!flock(fd, LOCK_EX | LOCK_NB)) {
+	if (!flock(wim->in_fd.fd, LOCK_EX | LOCK_NB)) {
 		wim->locked_for_append = 1;
 		return 0;
 	}
@@ -2413,11 +2415,13 @@ lock_wim_for_append(WIMStruct *wim, int fd)
 		return 0;
 	return WIMLIB_ERR_ALREADY_LOCKED;
 }
+
+/* Remove advisory lock on WIM file (if present)  */
 void
-unlock_wim_for_append(WIMStruct *wim, int fd)
+unlock_wim_for_append(WIMStruct *wim)
 {
 	if (wim->locked_for_append) {
-		flock(fd, LOCK_UN);
+		flock(wim->in_fd.fd, LOCK_UN);
 		wim->locked_for_append = 0;
 	}
 }
@@ -3060,7 +3064,7 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 	if (ret)
 		goto out_restore_memory_hdr;
 
-	ret = lock_wim_for_append(wim, wim->out_fd.fd);
+	ret = lock_wim_for_append(wim);
 	if (ret)
 		goto out_close_wim;
 
@@ -3096,8 +3100,7 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 	if (ret)
 		goto out_truncate;
 
-	/* lock was dropped when file descriptor was closed  */
-	wim->locked_for_append = 0;
+	unlock_wim_for_append(wim);
 	return 0;
 
 out_truncate:
@@ -3111,8 +3114,7 @@ out_truncate:
 out_restore_physical_hdr:
 	(void)write_wim_header_flags(hdr_save.flags, &wim->out_fd);
 out_unlock_wim:
-	/* lock is dropped when close_wim_writable() closes the file  */
-	wim->locked_for_append = 0;
+	unlock_wim_for_append(wim);
 out_close_wim:
 	(void)close_wim_writable(wim, write_flags);
 out_restore_memory_hdr:

@@ -1189,8 +1189,10 @@ out:
 	/* Leave the image mounted if commit failed, unless this is a
 	 * forced unmount.  The user can retry without commit if they
 	 * want.  */
-	if (!ret || (unmount_flags & WIMLIB_UNMOUNT_FLAG_FORCE))
+	if (!ret || (unmount_flags & WIMLIB_UNMOUNT_FLAG_FORCE)) {
+		unlock_wim_for_append(wimfs_ctx->wim);
 		fuse_exit(fuse_ctx->fuse);
+	}
 	if (mq != (mqd_t)-1)
 		mq_close(mq);
 	return ret;
@@ -2098,9 +2100,11 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
 
-	ret = lock_wim_for_append(wim, wim->in_fd.fd);
-	if (ret)
-		return ret;
+	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
+		ret = lock_wim_for_append(wim);
+		if (ret)
+			return ret;
+	}
 
 	/* If the user did not specify an interface for accessing named
 	 * data streams, use the default (extended attributes).  */
@@ -2255,7 +2259,7 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)
 		delete_staging_dir(&ctx);
 out_unlock:
-	unlock_wim_for_append(wim, wim->in_fd.fd);
+	unlock_wim_for_append(wim);
 	return ret;
 }
 
