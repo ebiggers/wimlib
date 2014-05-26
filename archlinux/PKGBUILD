@@ -18,8 +18,7 @@ source=("http://downloads.sourceforge.net/$pkgname/$pkgname-$pkgver.tar.gz")
 
 build() {
 	cd "$pkgname-$pkgver"
-	./configure --with-libcrypto --with-fuse --with-ntfs-3g \
-			--enable-xattr --prefix=/usr
+	./configure --with-libcrypto --with-fuse --with-ntfs-3g --prefix=/usr
 	make
 }
 

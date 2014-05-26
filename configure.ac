@@ -55,7 +55,6 @@ AC_CHECK_FUNCS([futimens utimensat utime flock mempcpy	\
 # HAVE_*_H macro so that the NTFS-3g headers don't get confused and try to skip
 # including certain headers.
 AC_CHECK_HEADERS([alloca.h		\
-		  attr/xattr.h		\
 		  byteswap.h		\
 		  endian.h		\
 		  errno.h		\
@@ -179,7 +178,6 @@ WINDOWS_CFLAGS=""
 WINDOWS_CPPFLAGS=""
 WINDOWS_LDFLAGS=""
 WINDOWS_LDADD=""
-ENABLE_XATTR_DEFAULT="autodetect"
 
 case "$host" in
 	*-*-mingw*)
@@ -192,7 +190,6 @@ case "$host" in
 		WINDOWS_CPPFLAGS="-D_POSIX -DUNICODE -D_UNICODE -D_CRT_NON_CONFORMING_SWPRINTFS"
 		WINDOWS_LDFLAGS="-no-undefined"
 		WINDOWS_LDADD="-lshlwapi"
-		ENABLE_XATTR_DEFAULT="no"
 		;;
 	*-*-cygwin*)
 		# Cygwin (WARNING: not well supported)
@@ -292,28 +289,6 @@ if test "x$WITH_FUSE" = "xyes"; then
 	AC_SUBST([LIBRT_LIBS], [-lrt])
 fi
 AM_CONDITIONAL([WITH_FUSE], [test "x$WITH_FUSE" = "xyes"])
-
-ENABLE_XATTR=no
-AC_ARG_ENABLE([xattr],
-	[AS_HELP_STRING([--enable-xattr], [Enable the xattr interface to access WIM
-			alternate data streams (default: autodetect)])],
-	[ENABLE_XATTR=$enableval],
-	[if test "x$ENABLE_XATTR_DEFAULT" = "xautodetect"; then
-		AC_CHECK_FUNC([setxattr],
-			[AC_CHECK_HEADER([attr/xattr.h],
-				[ENABLE_XATTR=yes],
-				[AC_MSG_WARN([Cannot find the "attr/xattr.h" header.  You will not be
-				 able to use the xattr interface to access WIM alternate data
-				 streams.])])],
-			[AC_MSG_WARN([Cannot find the setxattr() function.  You will not be
-			 able to use the xattr interface to access WIM alternate data
-			 streams.])])
-	fi])
-
-if test "x$ENABLE_XATTR" = "xyes"; then
-	AC_DEFINE([ENABLE_XATTR], [1], [Define to 1 if using the xattr
-			interface to WIM alternate data streams])
-fi
 
 AC_MSG_CHECKING([whether to use SSSE3-accelerated SHA1 ])
 AC_ARG_ENABLE([ssse3-sha1],

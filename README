@@ -280,12 +280,6 @@ This section documents the most important options that may be passed to the
 	from libcrypto (part of OpenSSL).  The default is to use libcrypto if it
 	is found on the system.
 
---enable-xattr, --disable-xattr
-	Enable or disable support for the extended-attributes interface to NTFS
-	alternate data streams in mounted WIMs.  To support these, wimlib
-	requires that the setxattr() function and the attr/xattr.h header are
-	available.  The default is to autodetect whether support is possible.
-
 --disable-multithreaded-compression
 	By default, data will be compressed using multiple threads when writing
 	a WIM, unless only 1 processor is detected.  Specify this option to

@@ -35,6 +35,10 @@ Version 1.7.0-BETA:
 
 	On Windows, sparse file attributes are no longer set on extracted files.
 
+	On UNIX, configuring with --disable-xattr or --enable-xattr is no longer
+	supported.  Mounting WIM images now always requires extended attribute
+	support.  Use --without-fuse to disable support for mounting WIM images.
+
 	The shared library version has been bumped up.  The main
 	incompatibilities are:
 

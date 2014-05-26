@@ -62,8 +62,7 @@ mounting them.
            --disable-rpath		\
 	   --with-libcrypto		\
 	   --with-ntfs-3g		\
-	   --with-fuse			\
-	   --enable-xattr
+	   --with-fuse
 make %{?_smp_mflags}
 
 %install
