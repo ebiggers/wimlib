@@ -131,7 +131,7 @@
  * it possible to implement this code:
  *
  * - divsufsort (author: Yuta Mori), for the suffix array construction code,
- *   located in a separate directory (divsufsort/).
+ *   located in a separate file (divsufsort.c).
  *
  * - "Linear-Time Longest-Common-Prefix Computation in Suffix Arrays and Its
  *   Applications" (Kasai et al. 2001), for the LCP array computation.

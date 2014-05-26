@@ -35,13 +35,10 @@
 #  include "config.h"
 #endif
 
+#include "wimlib/divsufsort.h"
 #include "wimlib/lz_sarray.h"
 #include "wimlib/util.h"
-#include "divsufsort/divsufsort.h"
 #include <string.h>
-
-#define DIVSUFSORT_TMP1_SIZE (256 * sizeof(saidx_t))	   /* bucket_A  */
-#define DIVSUFSORT_TMP2_SIZE (256 * 256 * sizeof(saidx_t)) /* bucket_B  */
 
 /* If ENABLE_LZ_DEBUG is defined, verify that the suffix array satisfies its
  * definition.
