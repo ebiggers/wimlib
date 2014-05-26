@@ -26,7 +26,6 @@ imagex_unmount() {
 }
 
 cleanup() {
-	fusermount -u $TEST_SUBDIR/tmp &> /dev/null || true
 	fusermount -u $TEST_SUBDIR/tmp.mnt &> /dev/null || true
 	rm -rf $TEST_SUBDIR
 }
@@ -67,50 +66,49 @@ for flag in "--compress=none" "--compress=maximum" "--compress=fast"; do
 	if ! imagex capture dir dir.wim $flag; then
 		error "Failed to capture WIM"
 	fi
-	mkdir tmp
-	if ! imagex mount dir.wim dir tmp; then
+	if ! imagex mount dir.wim dir tmp.mnt; then
 		error "Failed to mount test WIM read-only. " \
 		      "Please read any error messages above before reporting this test failure. "\
 		      "Perhaps you don't have FUSE installed, or the FUSE kernel module isn't" \
 		      "loaded, or you aren't a member of the FUSE group?"
 	fi
 	echo "Testing extracting file from mounted read-only WIM"
-	if ! cp tmp/write.c write.c; then
+	if ! cp tmp.mnt/write.c write.c; then
 		error "Failed to extract file from read-only mounted WIM"
 	fi
 	if ! diff -q dir/write.c write.c; then
 		error "Extracted file does not match copy in mounted WIM"
 	fi
-	if ! diff -q tmp/write.c dir/write.c; then
+	if ! diff -q tmp.mnt/write.c dir/write.c; then
 		error "Extractef file does not match original"
 	fi
 	rm -f write.c
 	echo "Testing modifying mounted read-only WIM (should fail)"
-	if rm tmp/write.c; then
+	if rm tmp.mnt/write.c; then
 		error "Removing file from read-only mounted WIM didn't fail"
 	fi
-	if touch tmp/newfile; then
+	if touch tmp.mnt/newfile; then
 		error "Creating file on read-only mounted WIM didn't fail"
 	fi
-	if echo 3 > tmp/write.c; then
+	if echo 3 > tmp.mnt/write.c; then
 		error "Writing to file on read-only mounted WIM didn't fail"
 	fi
 	echo "Testing diff of mounted read-only WIM with original directory"
-	if ! diff -q -r tmp dir; then
+	if ! diff -q -r tmp.mnt dir; then
 		error "Recursive diff of read-only mounted WIM with original directory failed"
 	fi
 	echo "Testing unmount of read-only filesystem"
-	if ! imagex_unmount tmp; then
+	if ! imagex_unmount tmp.mnt; then
 		error "Unmounting read-only WIM failed"
 	fi
 	echo "Testing unmount of read-only filesystem with --commit given"
-	if ! imagex mount dir.wim dir tmp; then
+	if ! imagex mount dir.wim dir tmp.mnt; then
 		error "Failed to re-mount WIM read-only"
 	fi
-	if ! imagex_unmount tmp --commit; then
+	if ! imagex_unmount tmp.mnt --commit; then
 		error "Failed to unmount read-only WIM with --commit flag (should be ignored)"
 	fi
-	rm -rf tmp dir.wim
+	rm -rf dir.wim
 done
 
 # imagex mountrw
@@ -118,78 +116,77 @@ echo "Testing mounting WIM read-write"
 if ! imagex capture dir dir.wim; then
 	error "Failed to capture WIM"
 fi
-mkdir tmp
-if ! imagex mountrw dir.wim dir tmp; then
+if ! imagex mountrw dir.wim dir tmp.mnt; then
 	error "Failed to mount test WIM read-write"
 fi
 echo "Testing unmounting WIM unmodified"
-if ! imagex_unmount tmp; then
+if ! imagex_unmount tmp.mnt; then
 	error "Failed to unmount test WIM unmodified"
 fi
 echo "Testing unmounting WIM unmodified with --commit and --check"
-if ! imagex mountrw dir.wim dir tmp; then
+if ! imagex mountrw dir.wim dir tmp.mnt; then
 	error "Failed to re-mount test WIM read-write"
 fi
-if ! imagex_unmount tmp --commit --check; then
+if ! imagex_unmount tmp.mnt --commit --check; then
 	error "Failed to unmount read-write mounted WIM with changes commited (no changes made)"
 fi
 echo "Testing removing file from mounted WIM"
-if ! imagex mountrw dir.wim dir tmp; then
+if ! imagex mountrw dir.wim dir tmp.mnt; then
 	error "Failed to re-mount test WIM read-write"
 fi
-if ! rm tmp/write.c; then
+if ! rm tmp.mnt/write.c; then
 	error "Failed to remove file from read-write mounted WIM"
 fi
-if test -f tmp/write.c; then
+if test -f tmp.mnt/write.c; then
 	error "Removing file from read-write mounted WIM failed"
 fi
 echo "Testing making directory in mounted WIM"
-if ! mkdir tmp/newdir; then
+if ! mkdir tmp.mnt/newdir; then
 	error "Failed to make directory in read-write mounted WIM"
 fi
-if ! test -d tmp/newdir; then
+if ! test -d tmp.mnt/newdir; then
 	error "Making directory in read-write mounted WIM failed"
 fi
 echo "Testing making new empty file in mounted WIM"
-if ! touch tmp/newdir/empty_file; then
+if ! touch tmp.mnt/newdir/empty_file; then
 	error "Could not create new empty file in read-write mounted WIM"
 fi
-if ! test -f tmp/newdir/empty_file; then
+if ! test -f tmp.mnt/newdir/empty_file; then
 	error "New empty file not created correctly in read-write mounted WIM"
 fi
-if ! test "`get_file_size tmp/newdir/empty_file`" = 0; then
+if ! test "`get_file_size tmp.mnt/newdir/empty_file`" = 0; then
 	error "New empty file in read-write mounted WIM is not empty"
 fi
 echo "Testing making new non-empty file in mounted WIM"
-if ! dd if=/dev/zero of=tmp/newdir/zeroes1 bs=1 count=4096; then
+if ! dd if=/dev/zero of=tmp.mnt/newdir/zeroes1 bs=1 count=4096; then
 	error "Failed to make new non-empty file in mounted WIM"
 fi
-if ! dd if=/dev/zero of=tmp/newdir/zeroes2 bs=4096 count=1; then
+if ! dd if=/dev/zero of=tmp.mnt/newdir/zeroes2 bs=4096 count=1; then
 	error "Failed to make new non-empty file in mounted WIM"
 fi
-if ! diff -q tmp/newdir/zeroes1 tmp/newdir/zeroes2; then
+if ! diff -q tmp.mnt/newdir/zeroes1 tmp.mnt/newdir/zeroes2; then
 	error "New files in mounted WIM not made correctly"
 fi
 echo "Unmounting WIM with changes committed and --check"
-if ! imagex_unmount tmp --commit --check; then
+if ! imagex_unmount tmp.mnt --commit --check; then
 	error "Failed to unmount read-write mounted WIM"
 fi
 if test "`imagex info dir.wim | grep Integrity | awk '{print $3}'`" != "yes"; then
 	error "Integrity information was not included"
 fi
-rm -rf tmp
-if ! imagex apply dir.wim tmp; then
+if ! imagex apply dir.wim tmp.apply; then
 	error "Failed to apply WIM we had previously mounted read-write"
 fi
-if ! diff -q tmp/newdir/zeroes1 tmp/newdir/zeroes2; then
+if ! diff -q tmp.apply/newdir/zeroes1 tmp.apply/newdir/zeroes2; then
 	error "The new non-empty files we made in the read-write mounted WIM were not extracted correctly"
 fi
-if test `get_file_size tmp/newdir/empty_file` != 0; then
+if test `get_file_size tmp.apply/newdir/empty_file` != 0; then
 	error "The new empty file we made in the read-write mounted WIM was not extracted correctly"
 fi
-if test `get_file_size tmp/newdir/zeroes1` != 4096; then
+if test `get_file_size tmp.apply/newdir/zeroes1` != 4096; then
 	error "The new non-empty files we made in the read-write mounted WIM were not extracted correctly"
 fi
+rm -rf tmp.apply/*
 
 # Now do some tests using tar.
 do_tree_cmp() {
