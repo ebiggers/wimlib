@@ -10,8 +10,6 @@
 
 struct wim_inode;
 struct wim_lookup_table;
-struct wim_lookup_table_entry;
-struct wim_security_data;
 
 /* Base size of a WIM dentry in the on-disk format, up to and including the file
  * name length.  This does not include the variable-length file name, short
