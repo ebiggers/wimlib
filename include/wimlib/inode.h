@@ -18,7 +18,7 @@ struct avl_tree_node;
 /*
  * WIM inode.
  *
- * As mentioned in the comment above `struct wim_dentry', in the WIM file that
+ * As mentioned in the comment above `struct wim_dentry', in WIM files there
  * is no on-disk analogue of a real inode, as most of these fields are
  * duplicated in the dentries.  Instead, a `struct wim_inode' is something we
  * create ourselves to simplify the handling of hard links.
