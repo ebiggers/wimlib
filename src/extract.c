@@ -114,7 +114,6 @@ dentry_is_supported(struct wim_dentry *dentry,
 
 
 #define PWM_ALLOW_WIM_HDR 0x00001
-#define PWM_SILENT_EOF	  0x00002
 
 /* Read the header from a stream in a pipable WIM.  */
 static int
@@ -164,8 +163,7 @@ read_pwm_stream_header(WIMStruct *pwm, struct wim_lookup_table_entry *lte,
 	return 0;
 
 read_error:
-	if (ret != WIMLIB_ERR_UNEXPECTED_END_OF_FILE || !(flags & PWM_SILENT_EOF))
-		ERROR_WITH_ERRNO("Error reading pipable WIM from pipe");
+	ERROR_WITH_ERRNO("Error reading pipable WIM from pipe");
 	return ret;
 }
 
