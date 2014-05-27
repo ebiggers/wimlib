@@ -129,48 +129,75 @@ bitstream_read_byte(struct input_bitstream *istream)
 	return *istream->data++;
 }
 
+
+/* Needed alignment of decode_table parameter to make_huffman_decode_table().
+ *
+ * Reason: We may fill the entries with SSE instructions without worrying
+ * about dealing with the unaligned case.  */
+#define DECODE_TABLE_ALIGNMENT 16
+
+/* Maximum supported symbol count for make_huffman_decode_table().
+ *
+ * Reason: In direct mapping entries, we store the symbol in 11 bits.  */
+#define DECODE_TABLE_MAX_SYMBOLS 2048
+
+/* Maximum supported table bits for make_huffman_decode_table().
+ *
+ * Reason: In internal binary tree nodes, offsets are encoded in 14 bits.
+ * But the real limit is 13, because we allocate entries past the end of
+ * the direct lookup part of the table for binary tree nodes.  (Note: if
+ * needed this limit could be removed by encoding the offsets relative to
+ * &decode_table[1 << table_bits].)  */
+#define DECODE_TABLE_MAX_TABLE_BITS 13
+
+/* Maximum supported codeword length for make_huffman_decode_table().
+ *
+ * Reason: In direct mapping entries, we encode the codeword length in 5
+ * bits, and the top 2 bits can't both be set because that has special
+ * meaning.  */
+#define DECODE_TABLE_MAX_CODEWORD_LEN 23
+
 /* Reads and returns the next Huffman-encoded symbol from a bitstream.  If the
  * input data is exhausted, the Huffman symbol is decoded as if the missing bits
- * are all zeroes.  */
+ * are all zeroes.
+ *
+ * XXX: This is mostly duplicated in lzms_huffman_decode_symbol() in
+ * lzms-decompress.c.  */
 static inline u16
-read_huffsym(struct input_bitstream * restrict istream,
-	     const u16 decode_table[restrict],
-	     const u8 lens[restrict],
-	     unsigned num_syms,
-	     unsigned table_bits,
-	     unsigned max_codeword_len)
+read_huffsym(struct input_bitstream *istream, const u16 decode_table[],
+	     unsigned num_syms, unsigned table_bits, unsigned max_codeword_len)
 {
+	u16 entry;
+	u16 key_bits;
 
 	bitstream_ensure_bits(istream, max_codeword_len);
 
-	/* Use the next table_bits of the input as an index into the
-	 * decode_table.  */
-	u16 key_bits = bitstream_peek_bits(istream, table_bits);
-
-	u16 sym = decode_table[key_bits];
-
-	if (likely(sym < num_syms)) {
-		/* Fast case: The decode table directly provided the symbol.  */
-		bitstream_remove_bits(istream, lens[sym]);
+	/* Index the decode table by the next table_bits bits of the input.  */
+	key_bits = bitstream_peek_bits(istream, table_bits);
+	entry = decode_table[key_bits];
+	if (likely(entry < 0xC000)) {
+		/* Fast case: The decode table directly provided the
+		 * symbol and codeword length.  The low 11 bits are the
+		 * symbol, and the high 5 bits are the codeword length.  */
+		bitstream_remove_bits(istream, entry >> 11);
+		return entry & 0x7FF;
 	} else {
-		/* Slow case: The symbol took too many bits to include directly
-		 * in the decode table, so search for it in a binary tree at the
-		 * end of the decode table.  */
+		/* Slow case: The codeword for the symbol is longer than
+		 * table_bits, so the symbol does not have an entry
+		 * directly in the first (1 << table_bits) entries of the
+		 * decode table.  Traverse the appropriate binary tree
+		 * bit-by-bit to decode the symbol.  */
 		bitstream_remove_bits(istream, table_bits);
 		do {
-			key_bits = sym + bitstream_pop_bits(istream, 1);
-		} while ((sym = decode_table[key_bits]) >= num_syms);
+			key_bits = (entry & 0x3FFF) + bitstream_pop_bits(istream, 1);
+		} while ((entry = decode_table[key_bits]) >= 0xC000);
+		return entry;
 	}
-	return sym;
 }
 
 extern int
 make_huffman_decode_table(u16 decode_table[], unsigned num_syms,
-			  unsigned num_bits, const u8 lengths[],
+			  unsigned num_bits, const u8 lens[],
 			  unsigned max_codeword_len);
-
-/* Minimum alignment for the decode_table parameter to
- * make_huffman_decode_table().  */
-#define DECODE_TABLE_ALIGNMENT 16
 
 #endif /* _WIMLIB_DECOMPRESS_H */

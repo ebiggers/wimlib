@@ -568,9 +568,11 @@ lzms_rebuild_adaptive_huffman_code(struct lzms_huffman_decoder *dec)
 static u32
 lzms_huffman_decode_symbol(struct lzms_huffman_decoder *dec)
 {
-	const u8 *lens = dec->lens;
 	const u16 *decode_table = dec->decode_table;
 	struct lzms_input_bitstream *is = dec->is;
+	u16 entry;
+	u16 key_bits;
+	u16 sym;
 
 	/* The Huffman codes used in LZMS are adaptive and must be rebuilt
 	 * whenever a certain number of symbols have been read.  Each such
@@ -588,28 +590,31 @@ lzms_huffman_decode_symbol(struct lzms_huffman_decoder *dec)
 		dec->num_syms_read = 0;
 	}
 
-	/* In the following Huffman decoding implementation, the first
-	 * LZMS_DECODE_TABLE_BITS of the input are used as an offset into a
-	 * decode table.  The entry will either provide the decoded symbol
-	 * directly, or else a "real" Huffman binary tree will be searched to
-	 * decode the symbol.  */
-
+	/* XXX: Copied from read_huffsym() (decompress_common.h), since this
+	 * uses a different input bitstream type.  Should unify the
+	 * implementations.  */
 	lzms_input_bitstream_ensure_bits(is, LZMS_MAX_CODEWORD_LEN);
 
-	u16 key_bits = lzms_input_bitstream_peek_bits(is, LZMS_DECODE_TABLE_BITS);
-	u16 sym = decode_table[key_bits];
-
-	if (sym < dec->num_syms) {
-		/* Fast case: The decode table directly provided the symbol.  */
-		lzms_input_bitstream_remove_bits(is, lens[sym]);
+	/* Index the decode table by the next table_bits bits of the input.  */
+	key_bits = lzms_input_bitstream_peek_bits(is, LZMS_DECODE_TABLE_BITS);
+	entry = decode_table[key_bits];
+	if (likely(entry < 0xC000)) {
+		/* Fast case: The decode table directly provided the symbol and
+		 * codeword length.  The low 11 bits are the symbol, and the
+		 * high 5 bits are the codeword length.  */
+		lzms_input_bitstream_remove_bits(is, entry >> 11);
+		sym = entry & 0x7FF;
 	} else {
-		/* Slow case: The symbol took too many bits to include directly
-		 * in the decode table, so search for it in a binary tree at the
-		 * end of the decode table.  */
+		/* Slow case: The codeword for the symbol is longer than
+		 * table_bits, so the symbol does not have an entry directly in
+		 * the first (1 << table_bits) entries of the decode table.
+		 * Traverse the appropriate binary tree bit-by-bit in order to
+		 * decode the symbol.  */
 		lzms_input_bitstream_remove_bits(is, LZMS_DECODE_TABLE_BITS);
 		do {
-			key_bits = sym + lzms_input_bitstream_pop_bits(is, 1);
-		} while ((sym = decode_table[key_bits]) >= dec->num_syms);
+			key_bits = (entry & 0x3FFF) + lzms_input_bitstream_pop_bits(is, 1);
+		} while ((entry = decode_table[key_bits]) >= 0xC000);
+		sym = entry;
 	}
 
 	/* Tally and return the decoded symbol.  */

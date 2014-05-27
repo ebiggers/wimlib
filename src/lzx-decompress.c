@@ -151,10 +151,9 @@ struct lzx_decompressor {
  */
 static inline u16
 read_huffsym_using_pretree(struct input_bitstream *istream,
-			   const u16 pretree_decode_table[],
-			   const u8 pretree_lens[])
+			   const u16 pretree_decode_table[])
 {
-	return read_huffsym(istream, pretree_decode_table, pretree_lens,
+	return read_huffsym(istream, pretree_decode_table,
 			    LZX_PRECODE_NUM_SYMBOLS, LZX_PRECODE_TABLEBITS,
 			    LZX_MAX_PRE_CODEWORD_LEN);
 }
@@ -166,7 +165,7 @@ read_huffsym_using_maintree(struct input_bitstream *istream,
 			    unsigned num_main_syms)
 {
 	return read_huffsym(istream, tables->maintree_decode_table,
-			    tables->maintree_lens, num_main_syms,
+			    num_main_syms,
 			    LZX_MAINCODE_TABLEBITS, LZX_MAX_MAIN_CODEWORD_LEN);
 }
 
@@ -176,7 +175,7 @@ read_huffsym_using_lentree(struct input_bitstream *istream,
 			   const struct lzx_tables *tables)
 {
 	return read_huffsym(istream, tables->lentree_decode_table,
-			    tables->lentree_lens, LZX_LENCODE_NUM_SYMBOLS,
+			    LZX_LENCODE_NUM_SYMBOLS,
 			    LZX_LENCODE_TABLEBITS, LZX_MAX_LEN_CODEWORD_LEN);
 }
 
@@ -186,7 +185,6 @@ read_huffsym_using_alignedtree(struct input_bitstream *istream,
 			       const struct lzx_tables *tables)
 {
 	return read_huffsym(istream, tables->alignedtree_decode_table,
-			    tables->alignedtree_lens,
 			    LZX_ALIGNEDCODE_NUM_SYMBOLS,
 			    LZX_ALIGNEDCODE_TABLEBITS,
 			    LZX_MAX_ALIGNED_CODEWORD_LEN);
@@ -250,8 +248,7 @@ lzx_read_code_lens(struct input_bitstream *istream, u8 lens[],
 		signed char value;
 
 		tree_code = read_huffsym_using_pretree(istream,
-						       pretree_decode_table,
-						       pretree_lens);
+						       pretree_decode_table);
 		switch (tree_code) {
 		case 17: /* Run of 0's */
 			num_zeroes = bitstream_read_bits(istream, 4);
@@ -275,8 +272,7 @@ lzx_read_code_lens(struct input_bitstream *istream, u8 lens[],
 			num_same = bitstream_read_bits(istream, 1);
 			num_same += 4;
 			code = read_huffsym_using_pretree(istream,
-							  pretree_decode_table,
-							  pretree_lens);
+							  pretree_decode_table);
 			value = (signed char)*lens - (signed char)code;
 			if (value < 0)
 				value += 17;

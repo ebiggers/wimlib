@@ -156,7 +156,7 @@ xpress_lz_decode(struct input_bitstream * restrict istream,
 
 		bitstream_ensure_bits(istream, 16);
 
-		sym = read_huffsym(istream, decode_table, lens,
+		sym = read_huffsym(istream, decode_table,
 				   XPRESS_NUM_SYMBOLS, XPRESS_TABLEBITS,
 				   XPRESS_MAX_CODEWORD_LEN);
 		if (sym < XPRESS_NUM_CHARS) {
