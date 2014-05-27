@@ -92,7 +92,6 @@ xpress_decode_match(unsigned sym, input_idx_t window_pos,
 
 	u8 len_hdr;
 	u8 offset_bsr;
-	int ret;
 	u8 *match_dest;
 	u8 *match_src;
 	unsigned i;
@@ -103,27 +102,15 @@ xpress_decode_match(unsigned sym, input_idx_t window_pos,
 	len_hdr = sym & 0xf;
 	offset_bsr = sym >> 4;
 
-	if (bitstream_ensure_bits(istream, 16))
-		return -1;
+	bitstream_ensure_bits(istream, 16);
 
 	match_offset = (1U << offset_bsr) | bitstream_pop_bits(istream, offset_bsr);
 
 	if (len_hdr == 0xf) {
-		ret = bitstream_read_byte(istream);
-		if (ret < 0)
-			return ret;
-		match_len = ret;
+		match_len = bitstream_read_byte(istream);
 		if (unlikely(match_len == 0xff)) {
-			ret = bitstream_read_byte(istream);
-			if (ret < 0)
-				return ret;
-			match_len = ret;
-
-			ret = bitstream_read_byte(istream);
-			if (ret < 0)
-				return ret;
-
-			match_len |= (ret << 8);
+			match_len = bitstream_read_byte(istream);
+			match_len |= (unsigned)bitstream_read_byte(istream) << 8;
 		} else {
 			match_len += 0xf;
 		}
@@ -167,14 +154,11 @@ xpress_lz_decode(struct input_bitstream * restrict istream,
 		unsigned sym;
 		int ret;
 
-		if (unlikely(bitstream_ensure_bits(istream, 16)))
-			return -1;
+		bitstream_ensure_bits(istream, 16);
 
-		if (unlikely(read_huffsym(istream, decode_table, lens,
-					  XPRESS_NUM_SYMBOLS, XPRESS_TABLEBITS,
-					  &sym, XPRESS_MAX_CODEWORD_LEN)))
-			return -1;
-
+		sym = read_huffsym(istream, decode_table, lens,
+				   XPRESS_NUM_SYMBOLS, XPRESS_TABLEBITS,
+				   XPRESS_MAX_CODEWORD_LEN);
 		if (sym < XPRESS_NUM_CHARS) {
 			/* Literal  */
 			uncompressed_data[curpos] = sym;

@@ -51,22 +51,22 @@ init_input_bitstream(struct input_bitstream *istream,
 	istream->data_bytes_left = num_data_bytes;
 }
 
-/* Ensures that the bit buffer variable for the bitstream contains @num_bits
- * bits.
+/* Ensures the bit buffer variable for the bitstream contains at least @num_bits
+ * bits.  Following this, bitstream_peek_bits() and/or bitstream_remove_bits()
+ * may be called on the bitstream to peek or remove up to @num_bits bits.
  *
- * If there are at least @num_bits bits remaining in the bitstream, 0 is
- * returned.  Otherwise, -1 is returned.  */
-static inline int
+ * If the input data is exhausted, any further bits are assumed to be 0.  */
+static inline void
 bitstream_ensure_bits(struct input_bitstream *istream, unsigned num_bits)
 {
 	for (int nbits = num_bits; (int)istream->bitsleft < nbits; nbits -= 16) {
 		u16 nextword;
 		unsigned shift;
 
-		if (unlikely(istream->data_bytes_left < 2))
-			return -1;
-
-		wimlib_assert2(istream->bitsleft <= sizeof(istream->bitbuf) * 8 - 16);
+		if (unlikely(istream->data_bytes_left < 2)) {
+			istream->bitsleft = num_bits;
+			return;
+		}
 
 		nextword = le16_to_cpu(*(const le16*)istream->data);
 		shift = sizeof(istream->bitbuf) * 8 - 16 - istream->bitsleft;
@@ -74,37 +74,33 @@ bitstream_ensure_bits(struct input_bitstream *istream, unsigned num_bits)
 		istream->data += 2;
 		istream->bitsleft += 16;
 		istream->data_bytes_left -= 2;
-
 	}
-	return 0;
 }
 
-/* Returns the next @num_bits bits in the buffer variable, which must contain at
- * least @num_bits bits, for the bitstream.  */
+/* Returns the next @num_bits bits from the bitstream, without removing them.
+ * There must be at least @num_bits remaining in the buffer variable, from a
+ * previous call to bitstream_ensure_bits().  */
 static inline u32
 bitstream_peek_bits(const struct input_bitstream *istream, unsigned num_bits)
 {
-	wimlib_assert2(istream->bitsleft >= num_bits);
-
 	if (unlikely(num_bits == 0))
 		return 0;
-
 	return istream->bitbuf >> (sizeof(istream->bitbuf) * 8 - num_bits);
 }
 
-/* Removes @num_bits bits from the buffer variable, which must contain at least
- * @num_bits bits, for the bitstream.  */
+/* Removes @num_bits from the bitstream.  There must be at least @num_bits
+ * remaining in the buffer variable, from a previous call to
+ * bitstream_ensure_bits().  */
 static inline void
 bitstream_remove_bits(struct input_bitstream *istream, unsigned num_bits)
 {
-	wimlib_assert2(istream->bitsleft >= num_bits);
-
 	istream->bitbuf <<= num_bits;
 	istream->bitsleft -= num_bits;
 }
 
-/* Gets and removes @num_bits bits from the buffer variable, which must contain
- * at least @num_bits bits, for the bitstream.  */
+/* Removes and returns @num_bits bits from the bitstream.  There must be at
+ * least @num_bits remaining in the buffer variable, from a previous call to
+ * bitstream_ensure_bits().  */
 static inline u32
 bitstream_pop_bits(struct input_bitstream *istream, unsigned num_bits)
 {
@@ -113,66 +109,39 @@ bitstream_pop_bits(struct input_bitstream *istream, unsigned num_bits)
 	return n;
 }
 
-/* Reads @num_bits bits from the input bitstream.  On success, returns 0 and
- * returns the requested bits in @n.  If there are fewer than @num_bits
- * remaining in the bitstream, -1 is returned. */
-static inline int
-bitstream_read_bits(struct input_bitstream *istream, unsigned num_bits, u32 *n)
+/* Reads and returns the next @num_bits bits from the bitstream.
+ * If the input data is exhausted, the bits are assumed to be 0.  */
+static inline u32
+bitstream_read_bits(struct input_bitstream *istream, unsigned num_bits)
 {
-	if (unlikely(bitstream_ensure_bits(istream, num_bits)))
-		return -1;
-
-	*n = bitstream_pop_bits(istream, num_bits);
-	return 0;
+	bitstream_ensure_bits(istream, num_bits);
+	return bitstream_pop_bits(istream, num_bits);
 }
 
-/* Return the next literal byte embedded in the bitstream, or -1 if the input
- * was exhausted.  */
-static inline int
+/* Reads and returns the next literal byte embedded in the bitstream.
+ * If the input data is exhausted, the byte is assumed to be 0.  */
+static inline u8
 bitstream_read_byte(struct input_bitstream *istream)
 {
-	if (unlikely(istream->data_bytes_left < 1))
-		return -1;
-
+	if (unlikely(istream->data_bytes_left == 0))
+		return 0;
 	istream->data_bytes_left--;
 	return *istream->data++;
 }
 
-/* Reads @num_bits bits from the buffer variable for a bistream without checking
- * to see if that many bits are in the buffer or not.  */
-static inline u32
-bitstream_read_bits_nocheck(struct input_bitstream *istream, unsigned num_bits)
-{
-	u32 n = bitstream_peek_bits(istream, num_bits);
-	bitstream_remove_bits(istream, num_bits);
-	return n;
-}
-
-extern int
-read_huffsym_near_end_of_input(struct input_bitstream *istream,
-			       const u16 decode_table[],
-			       const u8 lens[],
-			       unsigned num_syms,
-			       unsigned table_bits,
-			       unsigned *n);
-
-/* Read a Huffman-encoded symbol from a bitstream.  */
-static inline int
+/* Reads and returns the next Huffman-encoded symbol from a bitstream.  If the
+ * input data is exhausted, the Huffman symbol is decoded as if the missing bits
+ * are all zeroes.  */
+static inline u16
 read_huffsym(struct input_bitstream * restrict istream,
 	     const u16 decode_table[restrict],
 	     const u8 lens[restrict],
 	     unsigned num_syms,
 	     unsigned table_bits,
-	     unsigned *restrict n,
 	     unsigned max_codeword_len)
 {
-	/* If there are fewer bits remaining in the input than the maximum
-	 * codeword length, use the slow path that has extra checks.  */
-	if (unlikely(bitstream_ensure_bits(istream, max_codeword_len))) {
-		return read_huffsym_near_end_of_input(istream, decode_table,
-						      lens, num_syms,
-						      table_bits, n);
-	}
+
+	bitstream_ensure_bits(istream, max_codeword_len);
 
 	/* Use the next table_bits of the input as an index into the
 	 * decode_table.  */
@@ -189,12 +158,10 @@ read_huffsym(struct input_bitstream * restrict istream,
 		 * end of the decode table.  */
 		bitstream_remove_bits(istream, table_bits);
 		do {
-			key_bits = sym + bitstream_peek_bits(istream, 1);
-			bitstream_remove_bits(istream, 1);
+			key_bits = sym + bitstream_pop_bits(istream, 1);
 		} while ((sym = decode_table[key_bits]) >= num_syms);
 	}
-	*n = sym;
-	return 0;
+	return sym;
 }
 
 extern int

@@ -149,49 +149,46 @@ struct lzx_decompressor {
 /*
  * Reads a Huffman-encoded symbol using the pre-tree.
  */
-static inline int
+static inline u16
 read_huffsym_using_pretree(struct input_bitstream *istream,
 			   const u16 pretree_decode_table[],
-			   const u8 pretree_lens[], unsigned *n)
+			   const u8 pretree_lens[])
 {
 	return read_huffsym(istream, pretree_decode_table, pretree_lens,
-			    LZX_PRECODE_NUM_SYMBOLS, LZX_PRECODE_TABLEBITS, n,
+			    LZX_PRECODE_NUM_SYMBOLS, LZX_PRECODE_TABLEBITS,
 			    LZX_MAX_PRE_CODEWORD_LEN);
 }
 
 /* Reads a Huffman-encoded symbol using the main tree. */
-static inline int
+static inline u16
 read_huffsym_using_maintree(struct input_bitstream *istream,
 			    const struct lzx_tables *tables,
-			    unsigned *n,
 			    unsigned num_main_syms)
 {
 	return read_huffsym(istream, tables->maintree_decode_table,
 			    tables->maintree_lens, num_main_syms,
-			    LZX_MAINCODE_TABLEBITS, n, LZX_MAX_MAIN_CODEWORD_LEN);
+			    LZX_MAINCODE_TABLEBITS, LZX_MAX_MAIN_CODEWORD_LEN);
 }
 
 /* Reads a Huffman-encoded symbol using the length tree. */
-static inline int
+static inline u16
 read_huffsym_using_lentree(struct input_bitstream *istream,
-			   const struct lzx_tables *tables,
-			   unsigned *n)
+			   const struct lzx_tables *tables)
 {
 	return read_huffsym(istream, tables->lentree_decode_table,
 			    tables->lentree_lens, LZX_LENCODE_NUM_SYMBOLS,
-			    LZX_LENCODE_TABLEBITS, n, LZX_MAX_LEN_CODEWORD_LEN);
+			    LZX_LENCODE_TABLEBITS, LZX_MAX_LEN_CODEWORD_LEN);
 }
 
 /* Reads a Huffman-encoded symbol using the aligned offset tree. */
-static inline int
+static inline u16
 read_huffsym_using_alignedtree(struct input_bitstream *istream,
-			       const struct lzx_tables *tables,
-			       unsigned *n)
+			       const struct lzx_tables *tables)
 {
 	return read_huffsym(istream, tables->alignedtree_decode_table,
 			    tables->alignedtree_lens,
 			    LZX_ALIGNEDCODE_NUM_SYMBOLS,
-			    LZX_ALIGNEDCODE_TABLEBITS, n,
+			    LZX_ALIGNEDCODE_TABLEBITS,
 			    LZX_MAX_ALIGNED_CODEWORD_LEN);
 }
 
@@ -217,17 +214,13 @@ lzx_read_code_lens(struct input_bitstream *istream, u8 lens[],
 					_aligned_attribute(DECODE_TABLE_ALIGNMENT);
 	u8 pretree_lens[LZX_PRECODE_NUM_SYMBOLS];
 	unsigned i;
-	u32 len;
 	int ret;
 
 	/* Read the code lengths of the pretree codes.  There are 20 lengths of
 	 * 4 bits each. */
 	for (i = 0; i < LZX_PRECODE_NUM_SYMBOLS; i++) {
-		ret = bitstream_read_bits(istream, LZX_PRECODE_ELEMENT_SIZE,
-					  &len);
-		if (ret)
-			return ret;
-		pretree_lens[i] = len;
+		pretree_lens[i] = bitstream_read_bits(istream,
+						      LZX_PRECODE_ELEMENT_SIZE);
 	}
 
 	/* Make the decoding table for the pretree. */
@@ -256,15 +249,12 @@ lzx_read_code_lens(struct input_bitstream *istream, u8 lens[],
 		u32 num_same;
 		signed char value;
 
-		ret = read_huffsym_using_pretree(istream, pretree_decode_table,
-						 pretree_lens, &tree_code);
-		if (ret)
-			return ret;
+		tree_code = read_huffsym_using_pretree(istream,
+						       pretree_decode_table,
+						       pretree_lens);
 		switch (tree_code) {
 		case 17: /* Run of 0's */
-			ret = bitstream_read_bits(istream, 4, &num_zeroes);
-			if (ret)
-				return ret;
+			num_zeroes = bitstream_read_bits(istream, 4);
 			num_zeroes += 4;
 			while (num_zeroes--) {
 				*lens = 0;
@@ -273,9 +263,7 @@ lzx_read_code_lens(struct input_bitstream *istream, u8 lens[],
 			}
 			break;
 		case 18: /* Longer run of 0's */
-			ret = bitstream_read_bits(istream, 5, &num_zeroes);
-			if (ret)
-				return ret;
+			num_zeroes = bitstream_read_bits(istream, 5);
 			num_zeroes += 20;
 			while (num_zeroes--) {
 				*lens = 0;
@@ -284,16 +272,11 @@ lzx_read_code_lens(struct input_bitstream *istream, u8 lens[],
 			}
 			break;
 		case 19: /* Run of identical lengths */
-			ret = bitstream_read_bits(istream, 1, &num_same);
-			if (ret)
-				return ret;
+			num_same = bitstream_read_bits(istream, 1);
 			num_same += 4;
-			ret = read_huffsym_using_pretree(istream,
-							 pretree_decode_table,
-							 pretree_lens,
-							 &code);
-			if (ret)
-				return ret;
+			code = read_huffsym_using_pretree(istream,
+							  pretree_decode_table,
+							  pretree_lens);
 			value = (signed char)*lens - (signed char)code;
 			if (value < 0)
 				value += 17;
@@ -343,38 +326,29 @@ lzx_read_block_header(struct input_bitstream *istream,
 	unsigned block_type;
 	unsigned block_size;
 
-	ret = bitstream_ensure_bits(istream, 4);
-	if (ret)
-		return ret;
+	bitstream_ensure_bits(istream, 4);
 
 	/* The first three bits tell us what kind of block it is, and are one
 	 * of the LZX_BLOCKTYPE_* values.  */
-	block_type = bitstream_read_bits_nocheck(istream, 3);
+	block_type = bitstream_pop_bits(istream, 3);
 
 	/* Read the block size.  This mirrors the behavior
 	 * lzx_write_compressed_block() in lzx-compress.c; see that for more
 	 * details.  */
-	if (bitstream_read_bits_nocheck(istream, 1)) {
+	if (bitstream_pop_bits(istream, 1)) {
 		block_size = LZX_DEFAULT_BLOCK_SIZE;
 	} else {
 		u32 tmp;
 		block_size = 0;
 
-		ret = bitstream_read_bits(istream, 8, &tmp);
-		if (ret)
-			return ret;
+		tmp = bitstream_read_bits(istream, 8);
 		block_size |= tmp;
-
-		ret = bitstream_read_bits(istream, 8, &tmp);
-		if (ret)
-			return ret;
+		tmp = bitstream_read_bits(istream, 8);
 		block_size <<= 8;
 		block_size |= tmp;
 
 		if (max_window_size >= 65536) {
-			ret = bitstream_read_bits(istream, 8, &tmp);
-			if (ret)
-				return ret;
+			tmp = bitstream_read_bits(istream, 8);
 			block_size <<= 8;
 			block_size |= tmp;
 		}
@@ -386,14 +360,9 @@ lzx_read_block_header(struct input_bitstream *istream,
 		 * then build it. */
 
 		for (unsigned i = 0; i < LZX_ALIGNEDCODE_NUM_SYMBOLS; i++) {
-			u32 len;
-
-			ret = bitstream_read_bits(istream,
-						  LZX_ALIGNEDCODE_ELEMENT_SIZE,
-						  &len);
-			if (ret)
-				return ret;
-			tables->alignedtree_lens[i] = len;
+			tables->alignedtree_lens[i] =
+				bitstream_read_bits(istream,
+						    LZX_ALIGNEDCODE_ELEMENT_SIZE);
 		}
 
 		LZX_DEBUG("Building the aligned tree.");
@@ -565,12 +534,10 @@ lzx_decode_match(unsigned main_element, int block_type,
 	unsigned position_slot;
 	unsigned match_len;
 	unsigned match_offset;
-	unsigned additional_len;
 	unsigned num_extra_bits;
 	u32 verbatim_bits;
 	u32 aligned_bits;
 	unsigned i;
-	int ret;
 	u8 *match_dest;
 	u8 *match_src;
 
@@ -589,14 +556,8 @@ lzx_decode_match(unsigned main_element, int block_type,
 	 * the length tree, offset by 9 (LZX_MIN_MATCH_LEN +
 	 * LZX_NUM_PRIMARY_LENS) */
 	match_len = LZX_MIN_MATCH_LEN + length_header;
-	if (length_header == LZX_NUM_PRIMARY_LENS) {
-		ret = read_huffsym_using_lentree(istream, tables,
-						 &additional_len);
-		if (ret)
-			return ret;
-		match_len += additional_len;
-	}
-
+	if (length_header == LZX_NUM_PRIMARY_LENS)
+		match_len += read_huffsym_using_lentree(istream, tables);
 
 	/* If the position_slot is 0, 1, or 2, the match offset is retrieved
 	 * from the LRU queue.  Otherwise, the match offset is not in the LRU
@@ -639,27 +600,17 @@ lzx_decode_match(unsigned main_element, int block_type,
 			 * equal to 3.  (Note that in the case with
 			 * num_extra_bits == 3, the assignment to verbatim_bits
 			 * will just set it to 0. ) */
-			ret = bitstream_read_bits(istream, num_extra_bits - 3,
-						  &verbatim_bits);
-			if (ret)
-				return ret;
-
+			verbatim_bits = bitstream_read_bits(istream,
+							    num_extra_bits - 3);
 			verbatim_bits <<= 3;
-
-			ret = read_huffsym_using_alignedtree(istream, tables,
-							     &aligned_bits);
-			if (ret)
-				return ret;
+			aligned_bits = read_huffsym_using_alignedtree(istream,
+								      tables);
 		} else {
 			/* For non-aligned blocks, or for aligned blocks with
 			 * less than 3 extra bits, the extra bits are added
 			 * directly to the match offset, and the correction for
 			 * the alignment is taken to be 0. */
-			ret = bitstream_read_bits(istream, num_extra_bits,
-						  &verbatim_bits);
-			if (ret)
-				return ret;
-
+			verbatim_bits = bitstream_read_bits(istream, num_extra_bits);
 			aligned_bits = 0;
 		}
 
@@ -678,13 +629,13 @@ lzx_decode_match(unsigned main_element, int block_type,
 	 * currently in use, then copy the source of the match to the current
 	 * position. */
 
-	if (match_len > bytes_remaining) {
+	if (unlikely(match_len > bytes_remaining)) {
 		LZX_DEBUG("Match of length %u bytes overflows "
 			  "uncompressed block size", match_len);
 		return -1;
 	}
 
-	if (match_offset > window_pos) {
+	if (unlikely(match_offset > window_pos)) {
 		LZX_DEBUG("Match of length %u bytes references "
 			  "data before window (match_offset = %u, "
 			  "window_pos = %u)",
@@ -879,17 +830,12 @@ lzx_decompress_block(int block_type, unsigned block_size,
 {
 	unsigned main_element;
 	unsigned end;
-	int ret;
 	int match_len;
 
 	end = window_pos + block_size;
 	while (window_pos < end) {
-		ret = read_huffsym_using_maintree(istream, tables,
-						  &main_element,
-						  num_main_syms);
-		if (ret)
-			return ret;
-
+		main_element = read_huffsym_using_maintree(istream, tables,
+							   num_main_syms);
 		if (main_element < LZX_NUM_CHARS) {
 			/* literal: 0 to LZX_NUM_CHARS - 1 */
 			window[window_pos++] = main_element;
@@ -903,7 +849,7 @@ lzx_decompress_block(int block_type, unsigned block_size,
 						     tables,
 						     queue,
 						     istream);
-			if (match_len < 0)
+			if (unlikely(match_len < 0))
 				return match_len;
 			window_pos += match_len;
 		}
