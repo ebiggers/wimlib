@@ -169,7 +169,7 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 	struct filedes * const in_fd = &rspec->wim->in_fd;
 
 	/* Determine if we're reading a pipable resource from a pipe or not.  */
-	const bool is_pipe_read = !filedes_is_seekable(in_fd);
+	const bool is_pipe_read = (rspec->is_pipable && !filedes_is_seekable(in_fd));
 
 	/* Determine if the chunk table is in an altenate format.  */
 	const bool alt_chunk_table = (rspec->flags & WIM_RESHDR_FLAG_PACKED_STREAMS)
