@@ -672,15 +672,20 @@ undo_call_insn_translation(u32 *call_insn_target, s32 input_pos)
 	s32 rel_offset;
 
 	abs_offset = le32_to_cpu(*call_insn_target);
-	if (abs_offset >= -input_pos && abs_offset < LZX_WIM_MAGIC_FILESIZE) {
-		if (abs_offset >= 0) {
+	if (abs_offset >= 0) {
+		if (abs_offset < LZX_WIM_MAGIC_FILESIZE) {
 			/* "good translation" */
 			rel_offset = abs_offset - input_pos;
-		} else {
+
+			*call_insn_target = cpu_to_le32(rel_offset);
+		}
+	} else {
+		if (abs_offset >= -input_pos) {
 			/* "compensating translation" */
 			rel_offset = abs_offset + LZX_WIM_MAGIC_FILESIZE;
+
+			*call_insn_target = cpu_to_le32(rel_offset);
 		}
-		*call_insn_target = cpu_to_le32(rel_offset);
 	}
 }
 
