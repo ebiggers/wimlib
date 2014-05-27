@@ -37,7 +37,7 @@
 #include "wimlib/wim.h"
 
 #ifdef __WIN32__
-/* for read_win32_file_prefix(), read_win32_encrypted_file_prefix() */
+/* for read_winnt_file_prefix(), read_win32_encrypted_file_prefix() */
 #  include "wimlib/win32.h"
 #endif
 
@@ -171,7 +171,7 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 	/* Determine if we're reading a pipable resource from a pipe or not.  */
 	const bool is_pipe_read = (rspec->is_pipable && !filedes_is_seekable(in_fd));
 
-	/* Determine if the chunk table is in an altenate format.  */
+	/* Determine if the chunk table is in an alternate format.  */
 	const bool alt_chunk_table = (rspec->flags & WIM_RESHDR_FLAG_PACKED_STREAMS)
 					&& !is_pipe_read;
 
