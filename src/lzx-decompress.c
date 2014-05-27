@@ -7,7 +7,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013 Eric Biggers
+ * Copyright (C) 2012, 2013, 2014 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
  *
@@ -114,6 +114,10 @@
 #include "wimlib/util.h"
 
 #include <string.h>
+
+#ifdef __SSE2__
+#  include <emmintrin.h>
+#endif
 
 /* Huffman decoding tables and maps from symbols to code lengths. */
 struct lzx_tables {
@@ -711,20 +715,19 @@ lzx_decode_match(unsigned main_element, int block_type,
 }
 
 static void
-undo_call_insn_translation(u32 *call_insn_target, s32 input_pos,
-			   s32 file_size)
+undo_call_insn_translation(u32 *call_insn_target, s32 input_pos)
 {
 	s32 abs_offset;
 	s32 rel_offset;
 
 	abs_offset = le32_to_cpu(*call_insn_target);
-	if (abs_offset >= -input_pos && abs_offset < file_size) {
+	if (abs_offset >= -input_pos && abs_offset < LZX_WIM_MAGIC_FILESIZE) {
 		if (abs_offset >= 0) {
 			/* "good translation" */
 			rel_offset = abs_offset - input_pos;
 		} else {
 			/* "compensating translation" */
-			rel_offset = abs_offset + file_size;
+			rel_offset = abs_offset + LZX_WIM_MAGIC_FILESIZE;
 		}
 		*call_insn_target = cpu_to_le32(rel_offset);
 	}
@@ -753,15 +756,99 @@ undo_call_insn_translation(u32 *call_insn_target, s32 input_pos,
  * as it is used in calculating the translated jump targets.  But in WIM files,
  * this file size is always the same (LZX_WIM_MAGIC_FILESIZE == 12000000).*/
 static void
-undo_call_insn_preprocessing(u8 *uncompressed_data, s32 uncompressed_size)
+undo_call_insn_preprocessing(u8 *uncompressed_data, size_t uncompressed_size)
 {
-	for (s32 i = 0; i < uncompressed_size - 10; i++) {
-		if (uncompressed_data[i] == 0xe8) {
-			undo_call_insn_translation((u32*)&uncompressed_data[i + 1],
-						   i,
-						   LZX_WIM_MAGIC_FILESIZE);
-			i += 4;
-		}
+#ifdef __SSE2__
+
+	/* SSE2 vectorized implementation for x86_64.  This speeds up LZX
+	 * decompression by about 5-8% overall.  (Usually --- the performance
+	 * actually regresses slightly in the degenerate case that the data
+	 * consists entirely of 0xe8 bytes.)  */
+	__m128i *p128 = (__m128i *)uncompressed_data;
+	u32 valid_mask = 0xFFFFFFFF;
+
+	if (uncompressed_size >= 32 &&
+	    ((uintptr_t)uncompressed_data % 16 == 0))
+	{
+		__m128i * const end128 = p128 + uncompressed_size / 16 - 1;
+
+		/* Create a vector of all 0xe8 bytes  */
+		const __m128i e8_bytes = _mm_set1_epi8(0xe8);
+
+		/* Iterate through the 16-byte vectors in the input.  */
+		do {
+			/* Compare the current 16-byte vector with the vector of
+			 * all 0xe8 bytes.  This produces 0xff where the byte is
+			 * 0xe8 and 0x00 where it is not.  */
+			__m128i cmpresult = _mm_cmpeq_epi8(*p128, e8_bytes);
+
+			/* Map the comparison results into a single 16-bit
+			 * number.  It will contain a 1 bit when the
+			 * corresponding byte in the current 16-byte vector is
+			 * an e8 byte.  Note: the low-order bit corresponds to
+			 * the first (lowest address) byte.  */
+			u32 e8_mask = _mm_movemask_epi8(cmpresult);
+
+			if (!e8_mask) {
+				/* If e8_mask is 0, then none of these 16 bytes
+				 * have value 0xe8.  No e8 translation is
+				 * needed, and there is no restriction that
+				 * carries over to the next 16 bytes.  */
+				valid_mask = 0xFFFFFFFF;
+			} else {
+				/* At least one byte has value 0xe8.
+				 *
+				 * The AND with valid_mask accounts for the fact
+				 * that we can't start an e8 translation that
+				 * overlaps the previous one.  */
+				while ((e8_mask &= valid_mask)) {
+
+					/* Count the number of trailing zeroes
+					 * in e8_mask.  This will produce the
+					 * index of the byte, within the 16, at
+					 * which the next e8 translation should
+					 * be done.  */
+					u32 bit = __builtin_ctz(e8_mask);
+
+					/* Do the e8 translation.  */
+					u8 *p8 = (u8 *)p128 + bit;
+					undo_call_insn_translation((s32 *)(p8 + 1),
+								   p8 - uncompressed_data);
+
+					/* Don't start an e8 translation in the
+					 * next 4 bytes.  */
+					valid_mask &= ~((u32)0x1F << bit);
+				}
+				/* Moving on to the next vector.  Shift and set
+				 * valid_mask accordingly.  */
+				valid_mask >>= 16;
+				valid_mask |= 0xFFFF0000;
+			}
+		} while (++p128 < end128);
+	}
+
+	u8 *p8 = (u8 *)p128;
+	while (!(valid_mask & 1)) {
+		p8++;
+		valid_mask >>= 1;
+	}
+#else /* __SSE2__  */
+	u8 *p8 = uncompressed_data;
+#endif /* !__SSE2__  */
+
+	if (uncompressed_size > 10) {
+		/* Finish any bytes that weren't processed by the vectorized
+		 * implementation.  */
+		u8 *p8_end = uncompressed_data + uncompressed_size - 10;
+		do {
+			if (*p8 == 0xe8) {
+				undo_call_insn_translation((s32 *)(p8 + 1),
+							   p8 - uncompressed_data);
+				p8 += 5;
+			} else {
+				p8++;
+			}
+		} while (p8 < p8_end);
 	}
 }
 
