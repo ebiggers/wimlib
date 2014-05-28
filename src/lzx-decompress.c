@@ -552,22 +552,15 @@ lzx_decode_match(unsigned main_element, int block_type,
 	/* If the position_slot is 0, 1, or 2, the match offset is retrieved
 	 * from the LRU queue.  Otherwise, the match offset is not in the LRU
 	 * queue. */
-	switch (position_slot) {
-	case 0:
-		match_offset = queue->R[0];
-		break;
-	case 1:
-		match_offset = queue->R[1];
-		swap(queue->R[0], queue->R[1]);
-		break;
-	case 2:
-		/* The queue doesn't work quite the same as a real LRU queue,
-		 * since using the R2 offset doesn't bump the R1 offset down to
-		 * R2. */
-		match_offset = queue->R[2];
-		swap(queue->R[0], queue->R[2]);
-		break;
-	default:
+	if (position_slot <= 2) {
+		/* Note: This isn't a real LRU queue, since using the R2 offset
+		 * doesn't bump the R1 offset down to R2.  This quirk allows all
+		 * 3 recent offsets to be handled by the same code.  (For R0,
+		 * the swap is a no-op.)  */
+		match_offset = queue->R[position_slot];
+		queue->R[position_slot] = queue->R[0];
+		queue->R[0] = match_offset;
+	} else {
 		/* Otherwise, the offset was not encoded as one the offsets in
 		 * the queue.  Depending on the position slot, there is a
 		 * certain number of extra bits that need to be read to fully
@@ -612,7 +605,6 @@ lzx_decode_match(unsigned main_element, int block_type,
 		queue->R[2] = queue->R[1];
 		queue->R[1] = queue->R[0];
 		queue->R[0] = match_offset;
-		break;
 	}
 
 	/* Verify that the match is in the bounds of the part of the window
