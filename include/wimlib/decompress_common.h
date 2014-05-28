@@ -165,7 +165,7 @@ bitstream_read_byte(struct input_bitstream *istream)
  * lzms-decompress.c.  */
 static inline u16
 read_huffsym(struct input_bitstream *istream, const u16 decode_table[],
-	     unsigned num_syms, unsigned table_bits, unsigned max_codeword_len)
+	     unsigned table_bits, unsigned max_codeword_len)
 {
 	u16 entry;
 	u16 key_bits;

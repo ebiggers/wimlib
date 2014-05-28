@@ -154,18 +154,15 @@ read_huffsym_using_pretree(struct input_bitstream *istream,
 			   const u16 pretree_decode_table[])
 {
 	return read_huffsym(istream, pretree_decode_table,
-			    LZX_PRECODE_NUM_SYMBOLS, LZX_PRECODE_TABLEBITS,
-			    LZX_MAX_PRE_CODEWORD_LEN);
+			    LZX_PRECODE_TABLEBITS, LZX_MAX_PRE_CODEWORD_LEN);
 }
 
 /* Reads a Huffman-encoded symbol using the main tree. */
 static inline u16
 read_huffsym_using_maintree(struct input_bitstream *istream,
-			    const struct lzx_tables *tables,
-			    unsigned num_main_syms)
+			    const struct lzx_tables *tables)
 {
 	return read_huffsym(istream, tables->maintree_decode_table,
-			    num_main_syms,
 			    LZX_MAINCODE_TABLEBITS, LZX_MAX_MAIN_CODEWORD_LEN);
 }
 
@@ -175,7 +172,6 @@ read_huffsym_using_lentree(struct input_bitstream *istream,
 			   const struct lzx_tables *tables)
 {
 	return read_huffsym(istream, tables->lentree_decode_table,
-			    LZX_LENCODE_NUM_SYMBOLS,
 			    LZX_LENCODE_TABLEBITS, LZX_MAX_LEN_CODEWORD_LEN);
 }
 
@@ -185,9 +181,7 @@ read_huffsym_using_alignedtree(struct input_bitstream *istream,
 			       const struct lzx_tables *tables)
 {
 	return read_huffsym(istream, tables->alignedtree_decode_table,
-			    LZX_ALIGNEDCODE_NUM_SYMBOLS,
-			    LZX_ALIGNEDCODE_TABLEBITS,
-			    LZX_MAX_ALIGNED_CODEWORD_LEN);
+			    LZX_ALIGNEDCODE_TABLEBITS, LZX_MAX_ALIGNED_CODEWORD_LEN);
 }
 
 /*
@@ -811,7 +805,6 @@ undo_call_insn_preprocessing(u8 *uncompressed_data, size_t uncompressed_size)
  * @block_type:	The type of the block (LZX_BLOCKTYPE_VERBATIM or
  *		LZX_BLOCKTYPE_ALIGNED)
  * @block_size:	The size of the block, in bytes.
- * @num_main_syms:	Number of symbols in the main alphabet.
  * @window:	Pointer to the decompression window.
  * @window_pos:	The current position in the window.  Will be 0 for the first
  *			block.
@@ -822,7 +815,6 @@ undo_call_insn_preprocessing(u8 *uncompressed_data, size_t uncompressed_size)
  */
 static int
 lzx_decompress_block(int block_type, unsigned block_size,
-		     unsigned num_main_syms,
 		     u8 *window,
 		     unsigned window_pos,
 		     const struct lzx_tables *tables,
@@ -835,8 +827,7 @@ lzx_decompress_block(int block_type, unsigned block_size,
 
 	end = window_pos + block_size;
 	while (window_pos < end) {
-		main_element = read_huffsym_using_maintree(istream, tables,
-							   num_main_syms);
+		main_element = read_huffsym_using_maintree(istream, tables);
 		if (main_element < LZX_NUM_CHARS) {
 			/* literal: 0 to LZX_NUM_CHARS - 1 */
 			window[window_pos++] = main_element;
@@ -929,7 +920,6 @@ lzx_decompress(const void *compressed_data, size_t compressed_size,
 				LZX_DEBUG("LZX_BLOCKTYPE_ALIGNED");
 			ret = lzx_decompress_block(block_type,
 						   block_size,
-						   ctx->num_main_syms,
 						   uncompressed_data,
 						   window_pos,
 						   &ctx->tables,
