@@ -456,9 +456,6 @@ lzx_write_match(struct output_bitstream *out, int block_type,
 	 * MIN_MATCH_LEN. */
 	if (match_len_minus_2 < LZX_NUM_PRIMARY_LENS) {
 		len_header = match_len_minus_2;
-		/* No length footer-- mark it with a special
-		 * value. */
-		len_footer = (unsigned)(-1);
 	} else {
 		len_header = LZX_NUM_PRIMARY_LENS;
 		len_footer = match_len_minus_2 - LZX_NUM_PRIMARY_LENS;
@@ -478,10 +475,9 @@ lzx_write_match(struct output_bitstream *out, int block_type,
 
 	/* If there is a length footer, output it using the
 	 * length Huffman code. */
-	if (len_footer != (unsigned)(-1)) {
+	if (len_header == LZX_NUM_PRIMARY_LENS)
 		bitstream_put_bits(out, codes->codewords.len[len_footer],
 				   codes->lens.len[len_footer]);
-	}
 
 	num_extra_bits = lzx_get_num_extra_bits(position_slot);
 
