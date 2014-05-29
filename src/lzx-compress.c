@@ -962,8 +962,8 @@ lzx_tally_match(unsigned match_len, unsigned match_offset,
 	/* The match offset shall be encoded as a position slot (itself encoded
 	 * as part of the main symbol) and a position footer.  */
 	position_slot = lzx_get_position_slot(match_offset, queue);
-	position_footer = (match_offset + LZX_OFFSET_OFFSET) &
-				((1U << lzx_get_num_extra_bits(position_slot)) - 1);
+	position_footer = (match_offset + LZX_OFFSET_OFFSET) -
+				lzx_position_base[position_slot];
 
 	/* The match length shall be encoded as a length header (itself encoded
 	 * as part of the main symbol) and an optional length footer.  */
