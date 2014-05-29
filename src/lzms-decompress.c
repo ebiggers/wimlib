@@ -304,7 +304,7 @@ struct lzms_huffman_decoder {
 	u8 lens[LZMS_MAX_NUM_SYMS];
 
 	/* The codeword of each symbol in the Huffman code.  */
-	u16 codewords[LZMS_MAX_NUM_SYMS];
+	u32 codewords[LZMS_MAX_NUM_SYMS];
 
 	/* A table for quickly decoding symbols encoded using the Huffman code.
 	 */

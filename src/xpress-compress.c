@@ -50,7 +50,7 @@ struct xpress_compressor {
 	u32 max_window_size;
 	struct xpress_match *matches;
 	input_idx_t *prev_tab;
-	u16 codewords[XPRESS_NUM_SYMBOLS];
+	u32 codewords[XPRESS_NUM_SYMBOLS];
 	u8 lens[XPRESS_NUM_SYMBOLS];
 	struct xpress_record_ctx record_ctx;
 };
@@ -71,7 +71,7 @@ struct xpress_match {
 static void
 xpress_write_match(struct xpress_match match,
 		   struct output_bitstream *restrict ostream,
-		   const u16 codewords[restrict],
+		   const u32 codewords[restrict],
 		   const u8 lens[restrict])
 {
 	u8 len_hdr = min(match.adjusted_len, 0xf);
@@ -95,7 +95,7 @@ static void
 xpress_write_matches_and_literals(struct output_bitstream *ostream,
 				  const struct xpress_match matches[restrict],
 				  input_idx_t num_matches,
-				  const u16 codewords[restrict],
+				  const u32 codewords[restrict],
 				  const u8 lens[restrict])
 {
 	for (input_idx_t i = 0; i < num_matches; i++) {

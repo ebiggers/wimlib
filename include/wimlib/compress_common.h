@@ -69,6 +69,6 @@ make_canonical_huffman_code(unsigned num_syms,
 			    unsigned max_codeword_len,
 			    const input_idx_t freq_tab[restrict],
 			    u8 lens[restrict],
-			    u16 codewords[restrict]);
+			    u32 codewords[restrict]);
 
 #endif /* _WIMLIB_COMPRESS_H */

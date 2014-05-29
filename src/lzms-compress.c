@@ -163,7 +163,7 @@ struct lzms_huffman_encoder {
 	u8 lens[LZMS_MAX_NUM_SYMS];
 
 	/* The codeword of each symbol in the Huffman code.  */
-	u16 codewords[LZMS_MAX_NUM_SYMS];
+	u32 codewords[LZMS_MAX_NUM_SYMS];
 };
 
 /* State of the LZMS compressor.  */

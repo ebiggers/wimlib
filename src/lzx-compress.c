@@ -179,9 +179,9 @@ typedef u32 block_cost_t;
 
 /* Codewords for the LZX main, length, and aligned offset Huffman codes  */
 struct lzx_codewords {
-	u16 main[LZX_MAINCODE_MAX_NUM_SYMBOLS];
-	u16 len[LZX_LENCODE_NUM_SYMBOLS];
-	u16 aligned[LZX_ALIGNEDCODE_NUM_SYMBOLS];
+	u32 main[LZX_MAINCODE_MAX_NUM_SYMBOLS];
+	u32 len[LZX_LENCODE_NUM_SYMBOLS];
+	u32 aligned[LZX_ALIGNEDCODE_NUM_SYMBOLS];
 };
 
 /* Codeword lengths (in bits) for the LZX main, length, and aligned offset
@@ -519,7 +519,7 @@ lzx_build_precode(const u8 lens[restrict],
 		  input_idx_t precode_freqs[restrict LZX_PRECODE_NUM_SYMBOLS],
 		  u8 output_syms[restrict num_syms],
 		  u8 precode_lens[restrict LZX_PRECODE_NUM_SYMBOLS],
-		  u16 precode_codewords[restrict LZX_PRECODE_NUM_SYMBOLS],
+		  u32 precode_codewords[restrict LZX_PRECODE_NUM_SYMBOLS],
 		  unsigned *num_additional_bits_ret)
 {
 	memset(precode_freqs, 0,
@@ -688,7 +688,7 @@ lzx_write_compressed_code(struct output_bitstream *out,
 	input_idx_t precode_freqs[LZX_PRECODE_NUM_SYMBOLS];
 	u8 output_syms[num_syms];
 	u8 precode_lens[LZX_PRECODE_NUM_SYMBOLS];
-	u16 precode_codewords[LZX_PRECODE_NUM_SYMBOLS];
+	u32 precode_codewords[LZX_PRECODE_NUM_SYMBOLS];
 	unsigned i;
 	unsigned num_output_syms;
 	u8 precode_sym;
