@@ -1322,7 +1322,12 @@ lzx_optimize_block(struct lzx_compressor *ctx, struct lzx_block_spec *spec,
 		spec->num_chosen_matches = 0;
 		memset(&freqs, 0, sizeof(freqs));
 
-		for (unsigned i = spec->window_pos; i < spec->window_pos + spec->block_size; ) {
+		const u8 *window_ptr = &ctx->window[spec->window_pos];
+		const u8 *window_end = &window_ptr[spec->block_size];
+		struct lzx_match *next_chosen_match =
+			&ctx->chosen_matches[spec->chosen_matches_start_pos];
+
+		while (window_ptr != window_end) {
 			struct raw_match raw_match;
 			struct lzx_match lzx_match;
 
@@ -1350,29 +1355,25 @@ lzx_optimize_block(struct lzx_compressor *ctx, struct lzx_block_spec *spec,
 					 * null value and therefore cannot
 					 * generate such matches.  */
 					BUILD_BUG_ON(LZX_MIN_MATCH_LEN != 2);
-					lzx_match.data = lzx_tally_literal(ctx->window[i],
+					lzx_match.data = lzx_tally_literal(*window_ptr++,
 									   &freqs);
-					i += 1;
-					ctx->chosen_matches[spec->chosen_matches_start_pos +
-							    spec->num_chosen_matches++]
-							    = lzx_match;
-					lzx_match.data = lzx_tally_literal(ctx->window[i],
+					*next_chosen_match++ = lzx_match;
+					lzx_match.data = lzx_tally_literal(*window_ptr++,
 									   &freqs);
-					i += 1;
 				} else {
 					lzx_match.data = lzx_tally_match(raw_match.len,
 									 raw_match.offset,
 									 &freqs,
 									 &ctx->queue);
-					i += raw_match.len;
+					window_ptr += raw_match.len;
 				}
 			} else {
-				lzx_match.data = lzx_tally_literal(ctx->window[i], &freqs);
-				i += 1;
+				lzx_match.data = lzx_tally_literal(*window_ptr++, &freqs);
 			}
-			ctx->chosen_matches[spec->chosen_matches_start_pos +
-					    spec->num_chosen_matches++] = lzx_match;
+			*next_chosen_match++ = lzx_match;
 		}
+		spec->num_chosen_matches = next_chosen_match -
+					   &ctx->chosen_matches[spec->chosen_matches_start_pos];
 
 		lzx_make_huffman_codes(&freqs, &spec->codes,
 				       ctx->num_main_syms);
