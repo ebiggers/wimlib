@@ -157,4 +157,10 @@ lzx_lru_queue_init(struct lzx_lru_queue *queue)
 		queue->R[i] = 1;
 }
 
+extern void
+lzx_do_e8_preprocessing(u8 *data, s32 size);
+
+extern void
+lzx_undo_e8_preprocessing(u8 *data, s32 size);
+
 #endif /* _WIMLIB_LZX_H */

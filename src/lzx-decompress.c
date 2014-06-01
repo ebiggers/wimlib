@@ -115,10 +115,6 @@
 
 #include <string.h>
 
-#ifdef __SSE2__
-#  include <emmintrin.h>
-#endif
-
 /* Huffman decoding tables and maps from symbols to code lengths. */
 struct lzx_tables {
 
@@ -647,149 +643,6 @@ lzx_decode_match(unsigned main_element, int block_type,
 	return match_len;
 }
 
-static void
-undo_call_insn_translation(u32 *call_insn_target, s32 input_pos)
-{
-	s32 abs_offset;
-	s32 rel_offset;
-
-	abs_offset = le32_to_cpu(*call_insn_target);
-	if (abs_offset >= 0) {
-		if (abs_offset < LZX_WIM_MAGIC_FILESIZE) {
-			/* "good translation" */
-			rel_offset = abs_offset - input_pos;
-
-			*call_insn_target = cpu_to_le32(rel_offset);
-		}
-	} else {
-		if (abs_offset >= -input_pos) {
-			/* "compensating translation" */
-			rel_offset = abs_offset + LZX_WIM_MAGIC_FILESIZE;
-
-			*call_insn_target = cpu_to_le32(rel_offset);
-		}
-	}
-}
-
-/* Undo the 'E8' preprocessing, where the targets of x86 CALL instructions were
- * changed from relative offsets to absolute offsets.
- *
- * Note that this call instruction preprocessing can and will be used on any
- * data even if it is not actually x86 machine code.  In fact, this type of
- * preprocessing appears to always be used in LZX-compressed resources in WIM
- * files; there is no bit to indicate whether it is used or not, unlike in the
- * LZX compressed format as used in cabinet files, where a bit is reserved for
- * that purpose.
- *
- * Call instruction preprocessing is disabled in the last 6 bytes of the
- * uncompressed data, which really means the 5-byte call instruction cannot
- * start in the last 10 bytes of the uncompressed data.  This is one of the
- * errors in the LZX documentation.
- *
- * Call instruction preprocessing does not appear to be disabled after the
- * 32768th chunk of a WIM stream, which is apparently is yet another difference
- * from the LZX compression used in cabinet files.
- *
- * Call instruction processing is supposed to take the file size as a parameter,
- * as it is used in calculating the translated jump targets.  But in WIM files,
- * this file size is always the same (LZX_WIM_MAGIC_FILESIZE == 12000000).*/
-static void
-undo_call_insn_preprocessing(u8 *uncompressed_data, size_t uncompressed_size)
-{
-#ifdef __SSE2__
-
-	/* SSE2 vectorized implementation for x86_64.  This speeds up LZX
-	 * decompression by about 5-8% overall.  (Usually --- the performance
-	 * actually regresses slightly in the degenerate case that the data
-	 * consists entirely of 0xe8 bytes.)  */
-	__m128i *p128 = (__m128i *)uncompressed_data;
-	u32 valid_mask = 0xFFFFFFFF;
-
-	if (uncompressed_size >= 32 &&
-	    ((uintptr_t)uncompressed_data % 16 == 0))
-	{
-		__m128i * const end128 = p128 + uncompressed_size / 16 - 1;
-
-		/* Create a vector of all 0xe8 bytes  */
-		const __m128i e8_bytes = _mm_set1_epi8(0xe8);
-
-		/* Iterate through the 16-byte vectors in the input.  */
-		do {
-			/* Compare the current 16-byte vector with the vector of
-			 * all 0xe8 bytes.  This produces 0xff where the byte is
-			 * 0xe8 and 0x00 where it is not.  */
-			__m128i cmpresult = _mm_cmpeq_epi8(*p128, e8_bytes);
-
-			/* Map the comparison results into a single 16-bit
-			 * number.  It will contain a 1 bit when the
-			 * corresponding byte in the current 16-byte vector is
-			 * an e8 byte.  Note: the low-order bit corresponds to
-			 * the first (lowest address) byte.  */
-			u32 e8_mask = _mm_movemask_epi8(cmpresult);
-
-			if (!e8_mask) {
-				/* If e8_mask is 0, then none of these 16 bytes
-				 * have value 0xe8.  No e8 translation is
-				 * needed, and there is no restriction that
-				 * carries over to the next 16 bytes.  */
-				valid_mask = 0xFFFFFFFF;
-			} else {
-				/* At least one byte has value 0xe8.
-				 *
-				 * The AND with valid_mask accounts for the fact
-				 * that we can't start an e8 translation that
-				 * overlaps the previous one.  */
-				while ((e8_mask &= valid_mask)) {
-
-					/* Count the number of trailing zeroes
-					 * in e8_mask.  This will produce the
-					 * index of the byte, within the 16, at
-					 * which the next e8 translation should
-					 * be done.  */
-					u32 bit = __builtin_ctz(e8_mask);
-
-					/* Do the e8 translation.  */
-					u8 *p8 = (u8 *)p128 + bit;
-					undo_call_insn_translation((s32 *)(p8 + 1),
-								   p8 - uncompressed_data);
-
-					/* Don't start an e8 translation in the
-					 * next 4 bytes.  */
-					valid_mask &= ~((u32)0x1F << bit);
-				}
-				/* Moving on to the next vector.  Shift and set
-				 * valid_mask accordingly.  */
-				valid_mask >>= 16;
-				valid_mask |= 0xFFFF0000;
-			}
-		} while (++p128 < end128);
-	}
-
-	u8 *p8 = (u8 *)p128;
-	while (!(valid_mask & 1)) {
-		p8++;
-		valid_mask >>= 1;
-	}
-#else /* __SSE2__  */
-	u8 *p8 = uncompressed_data;
-#endif /* !__SSE2__  */
-
-	if (uncompressed_size > 10) {
-		/* Finish any bytes that weren't processed by the vectorized
-		 * implementation.  */
-		u8 *p8_end = uncompressed_data + uncompressed_size - 10;
-		do {
-			if (*p8 == 0xe8) {
-				undo_call_insn_translation((s32 *)(p8 + 1),
-							   p8 - uncompressed_data);
-				p8 += 5;
-			} else {
-				p8++;
-			}
-		} while (p8 < p8_end);
-	}
-}
-
 /*
  * Decompresses an LZX-compressed block of data from which the header has already
  * been read.
@@ -947,7 +800,7 @@ lzx_decompress(const void *compressed_data, size_t compressed_size,
 		}
 	}
 	if (e8_preprocessing_done)
-		undo_call_insn_preprocessing(uncompressed_data, uncompressed_size);
+		lzx_undo_e8_preprocessing(uncompressed_data, uncompressed_size);
 	return 0;
 }
 

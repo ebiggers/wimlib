@@ -1491,40 +1491,6 @@ lzx_prepare_block_fast(struct lzx_compressor * ctx)
 	ctx->num_blocks = 1;
 }
 
-static void
-do_call_insn_translation(u32 *call_insn_target, int input_pos,
-			 s32 file_size)
-{
-	s32 abs_offset;
-	s32 rel_offset;
-
-	rel_offset = le32_to_cpu(*call_insn_target);
-	if (rel_offset >= -input_pos && rel_offset < file_size) {
-		if (rel_offset < file_size - input_pos) {
-			/* "good translation" */
-			abs_offset = rel_offset + input_pos;
-		} else {
-			/* "compensating translation" */
-			abs_offset = rel_offset - file_size;
-		}
-		*call_insn_target = cpu_to_le32(abs_offset);
-	}
-}
-
-/* This is the reverse of undo_call_insn_preprocessing() in lzx-decompress.c.
- * See the comment above that function for more information.  */
-static void
-do_call_insn_preprocessing(u8 data[], int size)
-{
-	for (int i = 0; i < size - 10; i++) {
-		if (data[i] == 0xe8) {
-			do_call_insn_translation((u32*)&data[i + 1], i,
-						 LZX_WIM_MAGIC_FILESIZE);
-			i += 4;
-		}
-	}
-}
-
 static size_t
 lzx_compress(const void *uncompressed_data, size_t uncompressed_size,
 	     void *compressed_data, size_t compressed_size_avail, void *_ctx)
@@ -1561,7 +1527,7 @@ lzx_compress(const void *uncompressed_data, size_t uncompressed_size,
 
 	/* Before doing any actual compression, do the call instruction (0xe8
 	 * byte) translation on the uncompressed data.  */
-	do_call_insn_preprocessing(ctx->window, ctx->window_size);
+	lzx_do_e8_preprocessing(ctx->window, ctx->window_size);
 
 	LZX_DEBUG("Preparing blocks...");
 

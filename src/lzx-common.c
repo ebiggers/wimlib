@@ -25,8 +25,13 @@
 #  include "config.h"
 #endif
 
+#include "wimlib/endianness.h"
 #include "wimlib/lzx.h"
 #include "wimlib/util.h"
+
+#ifdef __SSE2__
+#  include <emmintrin.h>
+#endif
 
 /* LZX uses what it calls 'position slots' to represent match offsets.
  * What this means is that a small 'position slot' number and a small
@@ -111,4 +116,185 @@ lzx_get_num_main_syms(u32 window_size)
 	 * length headers, and we need all (position slot, length header)
 	 * combinations).  */
 	return LZX_NUM_CHARS + (num_position_slots << 3);
+}
+
+static void
+do_translate_target(s32 *target, s32 input_pos)
+{
+	s32 abs_offset, rel_offset;
+
+	/* XXX: This assumes unaligned memory accesses are okay.  */
+	rel_offset = le32_to_cpu(*target);
+	if (rel_offset >= -input_pos && rel_offset < LZX_WIM_MAGIC_FILESIZE) {
+		if (rel_offset < LZX_WIM_MAGIC_FILESIZE - input_pos) {
+			/* "good translation" */
+			abs_offset = rel_offset + input_pos;
+		} else {
+			/* "compensating translation" */
+			abs_offset = rel_offset - LZX_WIM_MAGIC_FILESIZE;
+		}
+		*target = cpu_to_le32(abs_offset);
+	}
+}
+
+static void
+undo_translate_target(s32 *target, s32 input_pos)
+{
+	s32 abs_offset, rel_offset;
+
+	/* XXX: This assumes unaligned memory accesses are okay.  */
+	abs_offset = le32_to_cpu(*target);
+	if (abs_offset >= 0) {
+		if (abs_offset < LZX_WIM_MAGIC_FILESIZE) {
+			/* "good translation" */
+			rel_offset = abs_offset - input_pos;
+
+			*target = cpu_to_le32(rel_offset);
+		}
+	} else {
+		if (abs_offset >= -input_pos) {
+			/* "compensating translation" */
+			rel_offset = abs_offset + LZX_WIM_MAGIC_FILESIZE;
+
+			*target = cpu_to_le32(rel_offset);
+		}
+	}
+}
+
+/*
+ * Do or undo the 'E8' preprocessing used in LZX.  Before compression, the
+ * uncompressed data is preprocessed by changing the targets of x86 CALL
+ * instructions from relative offsets to absolute offsets.  After decompression,
+ * the translation is undone by changing the targets of x86 CALL instructions
+ * from absolute offsets to relative offsets.
+ *
+ * Note that despite its intent, E8 preprocessing can be done on any data even
+ * if it is not actually x86 machine code.  In fact, E8 preprocessing appears to
+ * always be used in LZX-compressed resources in WIM files; there is no bit to
+ * indicate whether it is used or not, unlike in the LZX compressed format as
+ * used in cabinet files, where a bit is reserved for that purpose.
+ *
+ * E8 preprocessing is disabled in the last 6 bytes of the uncompressed data,
+ * which really means the 5-byte call instruction cannot start in the last 10
+ * bytes of the uncompressed data.  This is one of the errors in the LZX
+ * documentation.
+ *
+ * E8 preprocessing does not appear to be disabled after the 32768th chunk of a
+ * WIM resource, which apparently is another difference from the LZX compression
+ * used in cabinet files.
+ *
+ * E8 processing is supposed to take the file size as a parameter, as it is used
+ * in calculating the translated jump targets.  But in WIM files, this file size
+ * is always the same (LZX_WIM_MAGIC_FILESIZE == 12000000).
+ */
+static
+#ifndef __SSE2__
+inline  /* Although inlining the 'process_target' function still speeds up the
+	   SSE2 case, it bloats the binary more.  */
+#endif
+void
+lzx_e8_filter(u8 *data, s32 size, void (*process_target)(s32 *, s32))
+{
+#ifdef __SSE2__
+	/* SSE2 vectorized implementation for x86_64.  This speeds up LZX
+	 * decompression by about 5-8% overall.  (Usually --- the performance
+	 * actually regresses slightly in the degenerate case that the data
+	 * consists entirely of 0xe8 bytes.  Also, this optimization affects
+	 * compression as well, but the percentage improvement is less because
+	 * LZX compression is much slower than LZX decompression. ) */
+	__m128i *p128 = (__m128i *)data;
+	u32 valid_mask = 0xFFFFFFFF;
+
+	if (size >= 32 && (uintptr_t)data % 16 == 0) {
+		__m128i * const end128 = p128 + size / 16 - 1;
+
+		/* Create a vector of all 0xe8 bytes  */
+		const __m128i e8_bytes = _mm_set1_epi8(0xe8);
+
+		/* Iterate through the 16-byte vectors in the input.  */
+		do {
+			/* Compare the current 16-byte vector with the vector of
+			 * all 0xe8 bytes.  This produces 0xff where the byte is
+			 * 0xe8 and 0x00 where it is not.  */
+			__m128i cmpresult = _mm_cmpeq_epi8(*p128, e8_bytes);
+
+			/* Map the comparison results into a single 16-bit
+			 * number.  It will contain a 1 bit when the
+			 * corresponding byte in the current 16-byte vector is
+			 * an e8 byte.  Note: the low-order bit corresponds to
+			 * the first (lowest address) byte.  */
+			u32 e8_mask = _mm_movemask_epi8(cmpresult);
+
+			if (!e8_mask) {
+				/* If e8_mask is 0, then none of these 16 bytes
+				 * have value 0xe8.  No e8 translation is
+				 * needed, and there is no restriction that
+				 * carries over to the next 16 bytes.  */
+				valid_mask = 0xFFFFFFFF;
+			} else {
+				/* At least one byte has value 0xe8.
+				 *
+				 * The AND with valid_mask accounts for the fact
+				 * that we can't start an e8 translation that
+				 * overlaps the previous one.  */
+				while ((e8_mask &= valid_mask)) {
+
+					/* Count the number of trailing zeroes
+					 * in e8_mask.  This will produce the
+					 * index of the byte, within the 16, at
+					 * which the next e8 translation should
+					 * be done.  */
+					u32 bit = __builtin_ctz(e8_mask);
+
+					/* Do (or undo) the e8 translation.  */
+					u8 *p8 = (u8 *)p128 + bit;
+					(*process_target)((s32 *)(p8 + 1),
+							  p8 - data);
+
+					/* Don't start an e8 translation in the
+					 * next 4 bytes.  */
+					valid_mask &= ~((u32)0x1F << bit);
+				}
+				/* Moving on to the next vector.  Shift and set
+				 * valid_mask accordingly.  */
+				valid_mask >>= 16;
+				valid_mask |= 0xFFFF0000;
+			}
+		} while (++p128 < end128);
+	}
+
+	u8 *p8 = (u8 *)p128;
+	while (!(valid_mask & 1)) {
+		p8++;
+		valid_mask >>= 1;
+	}
+#else /* __SSE2__  */
+	u8 *p8 = data;
+#endif /* !__SSE2__  */
+
+	if (size > 10) {
+		/* Finish any bytes that weren't processed by the vectorized
+		 * implementation.  */
+		u8 *p8_end = data + size - 10;
+		do {
+			if (*p8 == 0xe8) {
+				(*process_target)((s32 *)(p8 + 1), p8 - data);
+				p8 += 5;
+			} else {
+				p8++;
+			}
+		} while (p8 < p8_end);
+	}
+}
+
+void
+lzx_do_e8_preprocessing(u8 *data, s32 size)
+{
+	lzx_e8_filter(data, size, do_translate_target);
+}
+
+void
+lzx_undo_e8_preprocessing(u8 *data, s32 size)
+{
+	lzx_e8_filter(data, size, undo_translate_target);
 }
