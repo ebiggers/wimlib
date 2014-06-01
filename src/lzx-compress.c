@@ -1303,6 +1303,7 @@ lzx_optimize_block(struct lzx_compressor *ctx, struct lzx_block_spec *spec,
 
 	unsigned orig_window_pos = spec->window_pos;
 	unsigned orig_cached_pos = ctx->cached_matches_pos;
+	unsigned num_passes_remaining = num_passes;
 
 	LZX_ASSERT(ctx->match_window_pos == spec->window_pos);
 
@@ -1314,7 +1315,8 @@ lzx_optimize_block(struct lzx_compressor *ctx, struct lzx_block_spec *spec,
 	/* The first optimal parsing pass is done using the cost model already
 	 * set in ctx->costs.  Each later pass is done using a cost model
 	 * computed from the previous pass.  */
-	for (unsigned pass = 0; pass < num_passes; pass++) {
+	do {
+		--num_passes_remaining;
 
 		ctx->match_window_pos = orig_window_pos;
 		ctx->cached_matches_pos = orig_cached_pos;
@@ -1377,10 +1379,11 @@ lzx_optimize_block(struct lzx_compressor *ctx, struct lzx_block_spec *spec,
 
 		lzx_make_huffman_codes(&freqs, &spec->codes,
 				       ctx->num_main_syms);
-		if (pass < num_passes - 1)
+		if (num_passes_remaining)
 			lzx_set_costs(ctx, &spec->codes.lens);
 		ctx->matches_cached = true;
-	}
+	} while (num_passes_remaining);
+
 	spec->block_type = lzx_choose_verbatim_or_aligned(&freqs, &spec->codes);
 	ctx->matches_cached = false;
 }
