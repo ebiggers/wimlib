@@ -330,17 +330,16 @@ used by recent versions of Windows).  See
 http://www.tuxera.com/community/ntfs-3g-download/ for more information.
 
 The LZX decompressor (lzx-decompress.c) was originally based on code from the
-cabextract project (http://www.cabextract.org.uk) but has been rewritten.
+cabextract project (http://www.cabextract.org.uk).  The LZX compressor
+(lzx-compress.c) was originally based on code written by Matthew Russotto
+(www.russotto.net/chm/).  However I have since rewritten and made many
+improvements to both the decompressor and compressor.
 
-The LZX compressor (lzx-compress.c) was originally based on code written by
-Matthew Russotto (www.russotto.net/chm/) but has been rewritten.  It now uses
-suffix array construction code from divsufsort
-(https://code.google.com/p/libdivsufsort/) and algorithms from 7-Zip as well as
-several published papers.
+lz_hash.c contains LZ77 match-finding code that uses hash chains.  It is based
+on code from zlib but I have since rewritten it.
 
-lz_hash.c contains a hash-table-based LZ77 matchfinder that is based on code
-from zlib but has been rewritten.  This code is applicable to XPRESS, LZX, and
-LZMS, all of which are partly based on LZ77 compression.
+lz_bt.c contains LZ77 match-finding code that uses binary trees.  It is based on
+code from liblzma but I have since rewritten it.
 
 A limited number of other free programs can handle some parts of the WIM
 file format:
@@ -349,8 +348,8 @@ file format:
     other archive formats).  However, wimlib is designed specifically to handle
     WIM files and provides features previously only available in Microsoft's
     implementation, such as the ability to mount WIMs read-write as well as
-    read-only, the ability to create LZX or XPRESS compressed WIMs, and the
-    correct handling of security descriptors and hard links.
+    read-only, the ability to create compressed WIMs, and the correct handling
+    of security descriptors and hard links.
   * ImagePyX (https://github.com/maxpat78/ImagePyX) is a Python program that
     provides similar capabilities to wimlib-imagex.  One thing to note, though,
     is that it does not support compression and decompression by itself, but

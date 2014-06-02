@@ -1874,7 +1874,7 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * all streams recompressed in solid mode.
  *
  * Currently, new solid blocks will, by default, be written using LZMS
- * compression with 32 MiB (33554432 byte) chunks.  Use
+ * compression with 64 MiB (67108864 byte) chunks.  Use
  * wimlib_set_output_pack_compression_type() and/or
  * wimlib_set_output_pack_chunk_size() to change this.  This is independent of
  * the WIM's main compression type and chunk size; you can have a WIM that
@@ -4189,11 +4189,11 @@ struct wimlib_lzx_compressor_params {
 	struct wimlib_compressor_params_header hdr;
 
 	/** Relatively fast LZX compression algorithm with a decent compression
-	 * ratio; the suggested default.  */
+	 * ratio.  */
 #define WIMLIB_LZX_ALGORITHM_FAST 0
 
 	/** Slower LZX compression algorithm that provides a better compression
-	 * ratio.  */
+	 * ratio.  This is the default.  */
 #define WIMLIB_LZX_ALGORITHM_SLOW 1
 
 	/** Algorithm to use to perform the compression: either
@@ -4212,10 +4212,10 @@ struct wimlib_lzx_compressor_params {
 			uint32_t fast_reserved1[10];
 		} fast;
 
-		/** Parameters for the slow algorithm.  */
+		/** Parameters for the "slow" algorithm.  */
 		struct wimlib_lzx_slow_params {
 			/** If set to 1, the compressor can output length 2
-			 * matches.  If set 0, the compressor only outputs
+			 * matches.  If set 0, the compressor can only output
 			 * matches of length 3 or greater.  Suggested value: 1
 			 */
 			uint32_t use_len2_matches : 1;
@@ -4243,11 +4243,10 @@ struct wimlib_lzx_compressor_params {
 			 * position.  Suggested value: 50.  */
 			uint32_t max_search_depth;
 
-			/** Maximum number of potentially good matches to
-			 * consider for each position.  Suggested value: 3.  */
-			uint32_t max_matches_per_pos;
+			/* Note: max_matches_per_pos has been removed and no
+			 * longer has any effect.  */
 
-			uint32_t slow_reserved2[2];
+			uint32_t slow_reserved2[3];
 
 			/** Assumed cost of a main symbol with zero frequency.
 			 * Must be at least 1 and no more than 16.  Suggested
@@ -4294,9 +4293,10 @@ struct wimlib_lzms_compressor_params {
 	 * value: 50.  */
 	uint32_t max_search_depth;
 
-	/** Maximum number of potentially good matches to consider at each
-	 * position.  Suggested value: 3.  */
-	uint32_t max_matches_per_pos;
+	/* Note: max_matches_per_pos has been removed and no longer has any
+	 * effect.  */
+
+	uint32_t reserved1;
 
 	/** Length of the array for the near-optimal LZ parsing algorithm.  This
 	 * must be at least 1.  Suggested value: 1024.  */

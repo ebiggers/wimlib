@@ -244,19 +244,19 @@ option use a different version number in their header and are only compatible
 with WIMGAPI Windows 8 and later, and DISM Windows 8.1 and later.
 .IP ""
 The default compression type and chunk size in packed resources is LZMS with
-2^25 (33554432) byte chunks.  This is independent of the WIM's main compression
+2^26 (67108864) byte chunks.  This is independent of the WIM's main compression
 type and chunk size.
 .TP
 \fB--pack-chunk-size\fR=\fISIZE\fR, \fB--solid-chunk-size\fR=\fISIZE\fR
 Like \fB--chunk-size\fR, but set the chunk size used in packed resources.  The
-default is LZMS compression with 2^25 (33554432) byte chunks.  This option only
+default is LZMS compression with 2^26 (67108864) byte chunks.  This option only
 has an effect when \fB--pack-streams\fR is also specified.  For maximum
 compatibility with the Microsoft implementation, do not use either of these
 options.
 .TP
 \fB--pack-compress\fR=\fITYPE\fR, \fB--solid-compress\fR=\fITYPE\fR
 Like \fB--compress\fR, but set the compression format used in packed resources.
-The default is LZMS compression with 2^25 (33554432) byte chunks.  This option
+The default is LZMS compression with 2^26 (67108864) byte chunks.  This option
 only has an effect when \fB--pack-streams\fR is also specified.  For maximum
 compatibility with the Microsoft implementation, do not use either of these
 options.
