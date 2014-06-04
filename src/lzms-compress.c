@@ -124,7 +124,7 @@ struct lzms_range_encoder {
 	 * lzms_range_encoder_raw.  */
 	struct lzms_range_encoder_raw *rc;
 
-	/* Bits recently encoded by this range encoder.  This are used as in
+	/* Bits recently encoded by this range encoder.  This is used as an
 	 * index into @prob_entries.  */
 	u32 state;
 
