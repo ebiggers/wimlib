@@ -165,17 +165,9 @@ lzms_compute_slots(void)
 void
 lzms_init_slots(void)
 {
-	static bool done = false;
-	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+	static pthread_once_t once = PTHREAD_ONCE_INIT;
 
-	if (unlikely(!done)) {
-		pthread_mutex_lock(&mutex);
-		if (!done) {
-			lzms_compute_slots();
-			done = true;
-		}
-		pthread_mutex_unlock(&mutex);
-	}
+	pthread_once(&once, lzms_compute_slots);
 }
 
 static s32

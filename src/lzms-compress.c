@@ -666,17 +666,9 @@ lzms_do_init_rc_costs(void)
 static void
 lzms_init_rc_costs(void)
 {
-	static bool done = false;
-	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+	static pthread_once_t once = PTHREAD_ONCE_INIT;
 
-	if (unlikely(!done)) {
-		pthread_mutex_lock(&mutex);
-		if (!done) {
-			lzms_do_init_rc_costs();
-			done = true;
-		}
-		pthread_mutex_unlock(&mutex);
-	}
+	pthread_once(&once, lzms_do_init_rc_costs);
 }
 
 /*
