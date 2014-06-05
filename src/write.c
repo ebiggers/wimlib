@@ -451,7 +451,7 @@ begin_chunk_table(struct write_streams_ctx *ctx, u64 res_expected_size)
 		reserve_size = expected_num_chunk_entries *
 			       get_chunk_entry_size(res_expected_size,
 						    0 != (ctx->write_resource_flags &
-							  WIM_RESHDR_FLAG_PACKED_STREAMS));
+							  WRITE_RESOURCE_FLAG_PACK_STREAMS));
 		if (ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS)
 			reserve_size += sizeof(struct alt_chunk_table_header_disk);
 		memset(ctx->chunk_csizes, 0, reserve_size);
@@ -499,7 +499,7 @@ end_chunk_table(struct write_streams_ctx *ctx, u64 res_actual_size,
 
 	chunk_entry_size = get_chunk_entry_size(res_actual_size,
 						0 != (ctx->write_resource_flags &
-						      WIM_RESHDR_FLAG_PACKED_STREAMS));
+						      WRITE_RESOURCE_FLAG_PACK_STREAMS));
 
 	typedef le64 __attribute__((may_alias)) aliased_le64_t;
 	typedef le32 __attribute__((may_alias)) aliased_le32_t;

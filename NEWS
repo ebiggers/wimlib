@@ -1,7 +1,10 @@
 Only the most important changes more recent than version 0.6 are noted here.
 
 Version 1.7.0-BETA:
-	Improved compatibility with version 3584 WIM / ESD files.
+	Improved compatibility with version 3584 WIM / ESD files:
+	    - Add support for reading and writing multiple solid blocks per
+	      archive, which WIMGAPI/DISM can create when appending an image.
+	    - Correctly create solid blocks larger than 4 GiB.
 
 	Performance improvements, including for extraction.
 
