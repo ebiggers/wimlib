@@ -4039,6 +4039,7 @@ T(
 "                    DEST_WIMFILE [DEST_IMAGE_NAME [DEST_IMAGE_DESCRIPTION]]\n"
 "                    [--boot] [--check] [--nocheck] [--compress=TYPE]\n"
 "                    [--ref=\"GLOB\"] [--threads=NUM_THREADS] [--rebuild]\n"
+"                    [--wimboot]\n"
 ),
 [CMD_EXTRACT] =
 T(

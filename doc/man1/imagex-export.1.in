@@ -135,6 +135,11 @@ existed and was already pipable, or was "-" (standard output).
 Build, or rebuild, \fIDEST_WIMFILE\fR as a normal, non-pipable WIM.  This is the
 default behavior, unless \fIDEST_WIMFILE\fR already existed and was already
 pipable, or if \fIDEST_WIMFILE\fR was "-" (standard output).
+.TP
+\fB--wimboot\fR
+Mark the destination image as WIMBoot-compatible.  Also, if exporting to a new
+archive, set the compression type to that recommended for WIMBoot (currently,
+XPRESS with 4096 byte chunks).
 .SH SPLIT WIMS
 You may use \fB@IMAGEX_PROGNAME@ export\fR to export images from a split WIM.
 The \fISRC_WIMFILE\fR argument must specify the first part of the split WIM,
