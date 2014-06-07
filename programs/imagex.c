@@ -166,7 +166,7 @@ enum {
 	IMAGEX_NO_ACLS_OPTION,
 	IMAGEX_NO_ATTRIBUTES_OPTION,
 	IMAGEX_NO_REPLACE_OPTION,
-	IMAGEX_NO_WILDCARDS_OPTION,
+	IMAGEX_NO_GLOBS_OPTION,
 	IMAGEX_NULLGLOB_OPTION,
 	IMAGEX_ONE_FILE_ONLY_OPTION,
 	IMAGEX_PACK_CHUNK_SIZE_OPTION,
@@ -298,7 +298,8 @@ static const struct option extract_options[] = {
 	{T("dest-dir"),    required_argument, NULL, IMAGEX_DEST_DIR_OPTION},
 	{T("to-stdout"),   no_argument,       NULL, IMAGEX_TO_STDOUT_OPTION},
 	{T("include-invalid-names"), no_argument, NULL, IMAGEX_INCLUDE_INVALID_NAMES_OPTION},
-	{T("no-wildcards"), no_argument,      NULL, IMAGEX_NO_WILDCARDS_OPTION},
+	{T("no-wildcards"), no_argument,      NULL, IMAGEX_NO_GLOBS_OPTION},
+	{T("no-globs"),     no_argument,      NULL, IMAGEX_NO_GLOBS_OPTION},
 	{T("nullglob"),     no_argument,      NULL, IMAGEX_NULLGLOB_OPTION},
 	{T("preserve-dir-structure"), no_argument, NULL, IMAGEX_PRESERVE_DIR_STRUCTURE_OPTION},
 	{T("wimboot"),     no_argument,       NULL, IMAGEX_WIMBOOT_OPTION},
@@ -2915,7 +2916,7 @@ imagex_extract(int argc, tchar **argv, int cmd)
 			extract_flags |= WIMLIB_EXTRACT_FLAG_REPLACE_INVALID_FILENAMES;
 			extract_flags |= WIMLIB_EXTRACT_FLAG_ALL_CASE_CONFLICTS;
 			break;
-		case IMAGEX_NO_WILDCARDS_OPTION:
+		case IMAGEX_NO_GLOBS_OPTION:
 			extract_flags &= ~WIMLIB_EXTRACT_FLAG_GLOB_PATHS;
 			break;
 		case IMAGEX_NULLGLOB_OPTION:
@@ -2940,7 +2941,7 @@ imagex_extract(int argc, tchar **argv, int cmd)
 	if (!(extract_flags & (WIMLIB_EXTRACT_FLAG_GLOB_PATHS |
 			       WIMLIB_EXTRACT_FLAG_STRICT_GLOB)))
 	{
-		imagex_error(T("Can't combine --no-wildcards and --nullglob!"));
+		imagex_error(T("Can't combine --no-globs and --nullglob!"));
 		goto out_err;
 	}
 
@@ -4045,7 +4046,7 @@ T(
 "                    [--check] [--ref=\"GLOB\"] [--dest-dir=CMD_DIR]\n"
 "                    [--to-stdout] [--no-acls] [--strict-acls]\n"
 "                    [--no-attributes] [--include-invalid-names]\n"
-"                    [--no-wildcards] [--nullglob] [--preserve-dir-structure]\n"
+"                    [--no-globs] [--nullglob] [--preserve-dir-structure]\n"
 ),
 [CMD_INFO] =
 T(

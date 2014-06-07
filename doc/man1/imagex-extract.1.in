@@ -56,8 +56,8 @@ case, the default behavior may be overridden through the
 By default, each path may contain the wildcard characters '?' and '*'.  The '?'
 character matches any non-path-separator character, whereas the '*' character
 matches zero or more non-path-separator characters.  Consequently, a single
-wildcard pattern may expand to multiple actual files or directories.  Use the
-\fB--no-wildcards\fR option to disable wildcard matching and search for each
+wildcard path, or "glob", may expand to multiple actual files or directories.
+Use the \fB--no-globs\fR option to disable wildcard matching and search for each
 path literally.
 .PP
 Each \fILISTFILE\fR must be a text file (UTF-8 or UTF-16LE encoded; plain ASCII
@@ -123,18 +123,24 @@ See the documentation for this option in \fB@IMAGEX_PROGNAME@-apply\fR (1).
 \fB--include-invalid-names\fR
 See the documentation for this option in \fB@IMAGEX_PROGNAME@-apply\fR (1).
 .TP
-\fB--no-wildcards\fR
-Do not interpret wildcard characters in paths.  Each path will be searched for
-literally.
+\fB--no-globs\fR
+Do not recognize wildcard characters in paths.  Each path will be searched for
+literally.  In addition, if case insensitivity is enabled, do not allow a single
+path to match multiple files with the same case-insensitive name but different
+case-sensitive names.
+.IP
+\fB--no-wildcards\fR is also accepted as an alias for this option.
 .TP
 \fB--nullglob\fR
-If a wildcard pattern (a.k.a. a "glob") does not match any paths, ignore it and
-print a warning instead of failing with an error.  In other words, this option
-allows a wildcard pattern to successfully match zero files.  Note that this
-applies even if one of the paths does not contain wildcard characters.  Such a
-path is still treated as a "wildcard pattern", so with this option it may not
-match anything and therefore produce no error.  This option cannot be combined
-with \fB--no-wildcards\fR, as that would be meaningless.
+If a glob does not match any files, ignore it and print a warning instead of
+failing with an error.  In other words, this option allows a glob to
+successfully match zero files.
+.IP
+This option also affects paths that do not contain wildcard characters, since
+such paths are still considered globs unless \fB--no-globs\fR is enabled.  If
+case-insensitivity is enabled, such a glob could match multiple files with the
+same case-insensitive name but different case-sensitive names, whereas a
+non-glob path (with \fB--no-globs\fR) can match at most one file.
 .TP
 \fB--preserve-dir-structure\fR
 When extracting paths, preserve the archive directory structure instead of
