@@ -251,12 +251,10 @@
 
 #define LZX_DIV_BLOCK_SIZE	32768
 
-#define LZX_CACHE_PER_POS	10
+#define LZX_CACHE_PER_POS	8
 
 #define LZX_CACHE_LEN (LZX_DIV_BLOCK_SIZE * (LZX_CACHE_PER_POS + 1))
 #define LZX_CACHE_SIZE (LZX_CACHE_LEN * sizeof(struct raw_match))
-
-/* Dependent on behavior of lz_bt_get_matches().  */
 #define LZX_MAX_MATCHES_PER_POS (LZX_MAX_MATCH_LEN - LZX_MIN_MATCH_LEN + 1)
 
 /* Codewords for the LZX main, length, and aligned offset Huffman codes  */
@@ -1260,11 +1258,15 @@ lzx_get_matches(struct lzx_compressor *ctx,
 
 	cache_ptr = ctx->cache_ptr;
 	matches = cache_ptr + 1;
-	if (ctx->matches_cached) {
-		num_matches = cache_ptr->len;
+	if (likely(cache_ptr <= ctx->cache_limit)) {
+		if (ctx->matches_cached) {
+			num_matches = cache_ptr->len;
+		} else {
+			num_matches = lz_bt_get_matches(&ctx->mf, matches);
+			cache_ptr->len = num_matches;
+		}
 	} else {
-		num_matches = lz_bt_get_matches(&ctx->mf, matches);
-		cache_ptr->len = num_matches;
+		num_matches = 0;
 	}
 
 	/* Don't allow matches to span the end of an LZX block.  */
@@ -1329,11 +1331,11 @@ lzx_skip_bytes(struct lzx_compressor *ctx, unsigned n)
 	cache_ptr = ctx->cache_ptr;
 	ctx->match_window_pos += n;
 	if (ctx->matches_cached) {
-		while (n--)
+		while (n-- && cache_ptr <= ctx->cache_limit)
 			cache_ptr += 1 + cache_ptr->len;
 	} else {
 		lz_bt_skip_positions(&ctx->mf, n);
-		while (n--) {
+		while (n-- && cache_ptr <= ctx->cache_limit) {
 			cache_ptr->len = 0;
 			cache_ptr += 1;
 		}
