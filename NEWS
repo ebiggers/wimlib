@@ -6,7 +6,7 @@ Version 1.7.0-BETA:
 	      archive, which WIMGAPI/DISM can create when appending an image.
 	    - Correctly create solid blocks larger than 4 GiB.
 
-	Performance improvements, including for extraction.
+	Improved decompression, compression, and extraction performance.
 
 	'add' commands passed to wimupdate will now replace existing
 	nondirectory files by default.  Use the --no-replace option to get the
