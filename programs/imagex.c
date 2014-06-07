@@ -3002,6 +3002,15 @@ imagex_extract(int argc, tchar **argv, int cmd)
 		if (!imagex_be_quiet)
 			imagex_printf(T("Done extracting files.\n"));
 	} else if (ret == WIMLIB_ERR_PATH_DOES_NOT_EXIST) {
+		if ((extract_flags & (WIMLIB_EXTRACT_FLAG_STRICT_GLOB |
+				      WIMLIB_EXTRACT_FLAG_GLOB_PATHS))
+			== (WIMLIB_EXTRACT_FLAG_STRICT_GLOB |
+			    WIMLIB_EXTRACT_FLAG_GLOB_PATHS))
+		{
+			tfprintf(stderr,
+				 T("Note: You can use the '--nullglob' "
+				   "option to ignore missing files.\n"));
+		}
 		tfprintf(stderr, T("Note: You can use `%"TS"' to see what "
 				   "files and directories\n"
 				   "      are in the WIM image.\n"),
