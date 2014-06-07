@@ -505,7 +505,6 @@ set_compress_slow(void)
 				.nice_match_length = 96,
 				.num_optim_passes = 4,
 				.max_search_depth = 100,
-				.max_matches_per_pos = 10,
 				.main_nostat_cost = 15,
 				.len_nostat_cost = 15,
 				.aligned_nostat_cost = 7,
@@ -521,7 +520,6 @@ set_compress_slow(void)
 		.max_match_length = UINT32_MAX,
 		.nice_match_length = 96,
 		.max_search_depth = 100,
-		.max_matches_per_pos = 10,
 		.optim_array_length = 1024,
 	};
 

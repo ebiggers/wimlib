@@ -29,7 +29,6 @@ libwim_la_SOURCES =		\
 	src/decompress_common.c	\
 	src/delete_image.c	\
 	src/dentry.c		\
-	src/divsufsort.c	\
 	src/encoding.c		\
 	src/export_image.c	\
 	src/extract.c		\
@@ -44,8 +43,8 @@ libwim_la_SOURCES =		\
 	src/lzms-common.c	\
 	src/lzms-compress.c	\
 	src/lzms-decompress.c	\
+	src/lz_bt.c		\
 	src/lz_hash.c		\
-	src/lz_sarray.c		\
 	src/lzx-common.c	\
 	src/lzx-compress.c	\
 	src/lzx-decompress.c	\
@@ -85,7 +84,6 @@ libwim_la_SOURCES =		\
 	include/wimlib/decompressor_ops.h	\
 	include/wimlib/decompress_common.h	\
 	include/wimlib/dentry.h		\
-	include/wimlib/divsufsort.h	\
 	include/wimlib/encoding.h	\
 	include/wimlib/endianness.h	\
 	include/wimlib/error.h		\
@@ -98,9 +96,8 @@ libwim_la_SOURCES =		\
 	include/wimlib/list.h		\
 	include/wimlib/lookup_table.h	\
 	include/wimlib/lz.h		\
+	include/wimlib/lz_bt.h		\
 	include/wimlib/lz_hash.h	\
-	include/wimlib/lz_optimal.h	\
-	include/wimlib/lz_sarray.h	\
 	include/wimlib/lzms.h		\
 	include/wimlib/lzx.h		\
 	include/wimlib/metadata.h	\

@@ -66,9 +66,7 @@ static u32
 wim_default_pack_chunk_size(int ctype) {
 	switch (ctype) {
 	case WIMLIB_COMPRESSION_TYPE_LZMS:
-		/* Note: WIMGAPI uses 1 << 26, but lower sizes are compatible.
-		 * */
-		return 1U << 25; /* 33554432  */
+		return 1U << 26; /* 67108864  */
 	default:
 		return 1U << 15; /* 32768     */
 	}

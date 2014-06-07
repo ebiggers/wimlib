@@ -122,7 +122,7 @@ extern const u32 lzx_position_base[LZX_MAX_POSITION_SLOTS];
  * the formatted offset without actually looking at the array.
  */
 static inline unsigned
-lzx_get_position_slot_raw(unsigned formatted_offset)
+lzx_get_position_slot_raw(u32 formatted_offset)
 {
 	if (formatted_offset >= 196608) {
 		return (formatted_offset >> 17) + 34;
