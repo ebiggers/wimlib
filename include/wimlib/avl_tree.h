@@ -7,8 +7,8 @@
  * Author:  Eric Biggers
  * Year:    2014
  *
- * This file is placed into the public domain.  You can do whatever you want
- * with it.
+ * The author dedicates this file to the public domain.
+ * You can do whatever you want with this file.
  */
 
 #ifndef _AVL_TREE_H_

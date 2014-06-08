@@ -6,7 +6,7 @@
  * Author:  Eric Biggers
  * Year:    2014
  *
- * The author hereby releases this file into the public domain.
+ * The author dedicates this file to the public domain.
  * You can do whatever you want with this file.
  */
 
