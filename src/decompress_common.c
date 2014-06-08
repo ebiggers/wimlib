@@ -29,6 +29,7 @@
 
 #include "wimlib/decompress_common.h"
 #include "wimlib/error.h"
+#include "wimlib/util.h" /* for BUILD_BUG_ON()  */
 
 #include <string.h>
 
