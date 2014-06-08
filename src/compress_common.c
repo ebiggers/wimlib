@@ -552,8 +552,8 @@ gen_codewords(u32 A[restrict], u8 lens[restrict],
  * approximately (with the algorithm used here) the minimum weighted path
  * length from the root, given this constraint.
  *
- * A canonical Huffman code satisfies the properties that a codeword
- * never lexicographically precedes a shorter codeword, and the
+ * A canonical Huffman code satisfies the properties that a longer
+ * codeword never lexicographically precedes a shorter codeword, and the
  * lexicographic ordering of codewords of the same length is the same as
  * the lexicographic ordering of the corresponding symbols.  A canonical
  * Huffman code, or more generally a canonical prefix code, can be

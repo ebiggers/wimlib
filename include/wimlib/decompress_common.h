@@ -199,4 +199,4 @@ make_huffman_decode_table(u16 decode_table[], unsigned num_syms,
 			  unsigned num_bits, const u8 lens[],
 			  unsigned max_codeword_len);
 
-#endif /* _WIMLIB_DECOMPRESS_H */
+#endif /* _WIMLIB_DECOMPRESS_COMMON_H */

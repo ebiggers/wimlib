@@ -349,7 +349,7 @@ make_huffman_decode_table(u16 decode_table[const restrict],
 	}
 
 	/* If we've filled in the entire table, we are done.  Otherwise,
-	 * there are codes longer than table_bits for which we must
+	 * there are codewords longer than table_bits for which we must
 	 * generate binary trees.  */
 
 	decode_table_pos = (u16*)decode_table_ptr - decode_table;
@@ -358,11 +358,11 @@ make_huffman_decode_table(u16 decode_table[const restrict],
 		unsigned next_free_tree_slot;
 		unsigned cur_codeword;
 
-		/* First, zero out the rest of the entries.  This is
-		 * necessary so that the entries appear as "unallocated"
-		 * in the next part.  Each of these entries will
-		 * eventually be filled the representation of the root
-		 * node of a binary tree.  */
+		/* First, zero out the remaining entries.  This is
+		 * necessary so that these entries appear as
+		 * "unallocated" in the next part.  Each of these entries
+		 * will eventually be filled with the representation of
+		 * the root node of a binary tree.  */
 		j = decode_table_pos;
 		do {
 			decode_table[j] = 0;
@@ -370,7 +370,8 @@ make_huffman_decode_table(u16 decode_table[const restrict],
 
 		/* We allocate child nodes starting at the end of the
 		 * direct lookup table.  Note that there should be
-		 * 2*num_syms extra entries for this purpose.  */
+		 * 2*num_syms extra entries for this purpose, although
+		 * fewer than this may actually be needed.  */
 		next_free_tree_slot = table_num_entries;
 
 		/* Iterate through each codeword with length greater than
