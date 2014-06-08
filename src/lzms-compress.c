@@ -888,7 +888,7 @@ lzms_get_near_optimal_match(struct lzms_compressor *ctx)
 	ctx->optimum_end_idx = 0;
 
 	longest_rep_len = ctx->params.min_match_length - 1;
-	if (lz_bt_get_position(&ctx->mf) >= 1) {
+	if (lz_bt_get_position(&ctx->mf) >= LZMS_MAX_INIT_RECENT_OFFSET) {
 		u32 limit = min(ctx->params.max_match_length,
 				lz_bt_get_remaining_size(&ctx->mf));
 		for (int i = 0; i < LZMS_NUM_RECENT_OFFSETS; i++) {
@@ -984,18 +984,20 @@ lzms_get_near_optimal_match(struct lzms_compressor *ctx)
 			return lzms_match_chooser_reverse_list(ctx, cur_pos);
 
 		longest_rep_len = ctx->params.min_match_length - 1;
-		u32 limit = min(ctx->params.max_match_length,
-				lz_bt_get_remaining_size(&ctx->mf));
-		for (int i = 0; i < LZMS_NUM_RECENT_OFFSETS; i++) {
-			u32 offset = ctx->optimum[cur_pos].state.lru.recent_offsets[i];
-			const u8 *strptr = lz_bt_get_window_ptr(&ctx->mf);
-			const u8 *matchptr = strptr - offset;
-			u32 len = 0;
-			while (len < limit && strptr[len] == matchptr[len])
-				len++;
-			if (len > longest_rep_len) {
-				longest_rep_len = len;
-				longest_rep_offset = offset;
+		if (lz_bt_get_position(&ctx->mf) >= LZMS_MAX_INIT_RECENT_OFFSET) {
+			u32 limit = min(ctx->params.max_match_length,
+					lz_bt_get_remaining_size(&ctx->mf));
+			for (int i = 0; i < LZMS_NUM_RECENT_OFFSETS; i++) {
+				u32 offset = ctx->optimum[cur_pos].state.lru.recent_offsets[i];
+				const u8 *strptr = lz_bt_get_window_ptr(&ctx->mf);
+				const u8 *matchptr = strptr - offset;
+				u32 len = 0;
+				while (len < limit && strptr[len] == matchptr[len])
+					len++;
+				if (len > longest_rep_len) {
+					longest_rep_len = len;
+					longest_rep_offset = offset;
+				}
 			}
 		}
 
