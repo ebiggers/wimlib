@@ -2416,7 +2416,8 @@ do_unmount_commit(const char *dir, int unmount_flags,
 		ret = do_unmount(dir);
 	if (progfunc) {
 		/* Terminate the progress thread.  */
-		mq_send(mq, NULL, 0, 1);
+		char empty[0];
+		mq_send(mq, empty, 0, 1);
 		pthread_join(commit_progress_tid, NULL);
 	}
 out_delete_mq:
