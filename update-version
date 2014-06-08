@@ -1,13 +1,13 @@
 #!/bin/bash
 
-oldver='1\.6\.3'
+oldver='1\.7\.0'
 oldmonth=May
 oldyear=2014
 
 newmajor=1
 newminor=7
 newpatch=0
-newmonth=May
+newmonth=June
 newyear=2014
 
 

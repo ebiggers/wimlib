@@ -2,7 +2,7 @@ wimlib (1.7.0-1) unstable; urgency=low
 
   * Update to v1.7.0
 
- -- Eric Biggers <ebiggers3@gmail.com>  Fri, 23 May 2014 00:05:54 -0500
+ -- Eric Biggers <ebiggers3@gmail.com>  Sat, 07 Jun 2014 21:34:56 -0500
 
 wimlib (1.6.2-1) unstable; urgency=low
 

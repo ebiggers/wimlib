@@ -1,4 +1,4 @@
-.TH MKWINPEIMG "1" "May 2014" "mkwinpeimg (wimlib @VERSION@)" "User Commands"
+.TH MKWINPEIMG "1" "June 2014" "mkwinpeimg (wimlib @VERSION@)" "User Commands"
 .SH NAME
 mkwinpeimg \- Make a customized bootable image of Windows PE
 .SH SYNOPSIS
