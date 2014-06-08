@@ -67,9 +67,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define WIMLIB_EXTRACT_FLAG_MULTI_IMAGE 0x80000000
-#define WIMLIB_EXTRACT_FLAG_FROM_PIPE   0x40000000
-#define WIMLIB_EXTRACT_FLAG_IMAGEMODE   0x20000000
+#define WIMLIB_EXTRACT_FLAG_FROM_PIPE   0x80000000
+#define WIMLIB_EXTRACT_FLAG_IMAGEMODE   0x40000000
 
 /* Keep in sync with wimlib.h  */
 #define WIMLIB_EXTRACT_MASK_PUBLIC				\
@@ -1567,8 +1566,6 @@ extract_all_images(WIMStruct *wim, const tchar *target, int extract_flags)
 	int ret;
 	int image;
 	const tchar *image_name;
-
-	extract_flags |= WIMLIB_EXTRACT_FLAG_MULTI_IMAGE;
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
 		ERROR("Cannot extract multiple images in NTFS extraction mode.");
