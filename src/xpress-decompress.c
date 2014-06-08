@@ -144,7 +144,6 @@ static int
 xpress_lz_decode(struct input_bitstream * restrict istream,
 		 u8 uncompressed_data[restrict],
 		 unsigned uncompressed_len,
-		 const u8 lens[restrict],
 		 const u16 decode_table[restrict])
 {
 	input_idx_t curpos;
@@ -210,7 +209,7 @@ xpress_decompress(const void *compressed_data, size_t compressed_size,
 			     compressed_size - XPRESS_NUM_SYMBOLS / 2);
 
 	return xpress_lz_decode(&istream, uncompressed_data,
-				uncompressed_size, lens, decode_table);
+				uncompressed_size, decode_table);
 }
 
 const struct decompressor_ops xpress_decompressor_ops = {
