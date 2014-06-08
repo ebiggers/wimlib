@@ -1094,10 +1094,7 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	if (should_exclude_path(full_path + params->capture_root_nchars,
 				full_path_nchars - params->capture_root_nchars,
 				params->config))
-	{
-		ret = 0;
 		goto out_progress;
-	}
 
 	/* Open the file.  */
 	status = winnt_openat(cur_dir,
@@ -1256,7 +1253,6 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	if (inode->i_nlink > 1) {
 		/* Shared inode (hard link); skip reading per-inode information.
 		 */
-		ret = 0;
 		goto out_progress;
 	}
 

@@ -1152,7 +1152,6 @@ execute_update_commands(WIMStruct *wim,
 				goto rollback;
 		}
 
-		ret = WIMLIB_ERR_INVALID_PARAM;
 		switch (cmds[i].op) {
 		case WIMLIB_UPDATE_OP_ADD:
 			ret = execute_add_command(j, wim, &cmds[i], inode_table,

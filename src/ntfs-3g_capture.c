@@ -537,7 +537,6 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	if (should_exclude_path(path, path_len, params->config)) {
 		/* Exclude a file or directory tree based on the capture
 		 * configuration file.  */
-		ret = 0;
 		goto out_progress;
 	}
 
@@ -577,7 +576,6 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 
 	if (inode->i_nlink > 1) {
 		/* Shared inode; nothing more to do */
-		ret = 0;
 		goto out_progress;
 	}
 

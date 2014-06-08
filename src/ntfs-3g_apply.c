@@ -627,7 +627,6 @@ ntfs_3g_create_nondirectory(struct wim_inode *inode,
 
 	/* Create additional links if present.  */
 	next = inode->i_extraction_aliases.next;
-	ret = 0;
 	do {
 		dentry = list_entry(next, struct wim_dentry,
 				    d_extraction_alias_node);

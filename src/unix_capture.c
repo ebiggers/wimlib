@@ -337,10 +337,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 	if (should_exclude_path(full_path + params->capture_root_nchars,
 				full_path_len - params->capture_root_nchars,
 				params->config))
-	{
-		ret = 0;
 		goto out_progress;
-	}
 
 	if (params->add_flags & (WIMLIB_ADD_FLAG_DEREFERENCE |
 				 WIMLIB_ADD_FLAG_ROOT))
@@ -385,11 +382,9 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 
 	inode = tree->d_inode;
 
-	if (inode->i_nlink > 1) {
-		/* Already seen this inode?  */
-		ret = 0;
+	/* Already seen this inode?  */
+	if (inode->i_nlink > 1)
 		goto out_progress;
-	}
 
 #ifdef HAVE_STAT_NANOSECOND_PRECISION
 	inode->i_creation_time = timespec_to_wim_timestamp(stbuf.st_mtim);
