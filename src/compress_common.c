@@ -33,7 +33,6 @@
 #include "wimlib/compress_common.h"
 #include "wimlib/util.h"
 
-#include <stdlib.h>
 #include <string.h>
 
 /* Writes @num_bits bits, given by the @num_bits least significant bits of

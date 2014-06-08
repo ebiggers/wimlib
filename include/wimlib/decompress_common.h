@@ -9,7 +9,6 @@
 
 #include "wimlib/assert.h"
 #include "wimlib/compiler.h"
-#include "wimlib/error.h"
 #include "wimlib/endianness.h"
 #include "wimlib/types.h"
 
