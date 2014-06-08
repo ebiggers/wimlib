@@ -21,6 +21,8 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
+#ifdef __WIN32__
+
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #endif
@@ -2079,3 +2081,5 @@ const struct apply_operations win32_apply_ops = {
 	.extract                = win32_extract,
 	.context_size           = sizeof(struct win32_apply_ctx),
 };
+
+#endif /* __WIN32__ */

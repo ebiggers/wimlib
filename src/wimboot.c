@@ -29,6 +29,7 @@
  * along with wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
+#ifdef __WIN32__
 
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
@@ -1175,3 +1176,5 @@ out:
 	return ret;
 
 }
+
+#endif /* __WIN32__ */
