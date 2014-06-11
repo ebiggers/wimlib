@@ -1184,7 +1184,6 @@ calculate_dentry_statistics(struct wim_dentry *dentry, void *arg)
 {
 	struct image_info *info = arg;
 	const struct wim_inode *inode = dentry->d_inode;
-	struct wim_lookup_table_entry *lte;
 
 	/* Update directory count and file count.
 	 *
@@ -1195,19 +1194,19 @@ calculate_dentry_statistics(struct wim_dentry *dentry, void *arg)
 	 * points) count as regular files.  This is despite the fact that
 	 * junction points have FILE_ATTRIBUTE_DIRECTORY set.
 	 */
-	if (dentry_is_root(dentry))
-		return 0;
 
-	if (inode_is_directory(inode))
-		info->dir_count++;
-	else
-		info->file_count++;
+	if (!dentry_is_root(dentry)) {
+		if (inode_is_directory(inode))
+			info->dir_count++;
+		else
+			info->file_count++;
+	}
 
 	/*
 	 * Update total bytes and hard link bytes.
 	 *
-	 * Unfortunately there are some inconsistencies/bugs in the way this is
-	 * done.
+	 * We try to act the same as the MS implementation, even though there
+	 * are some inconsistencies/bugs in the way it operates.
 	 *
 	 * If there are no alternate data streams in the image, the "total
 	 * bytes" is the sum of the size of the un-named data stream of each
@@ -1229,20 +1228,26 @@ calculate_dentry_statistics(struct wim_dentry *dentry, void *arg)
 	 * link bytes", and this size is multiplied by the link count (NOT one
 	 * less than the link count).
 	 */
-	lte = inode_unnamed_lte(inode, info->lookup_table);
-	if (lte) {
-		info->total_bytes += lte->size;
-		if (!dentry_is_first_in_inode(dentry))
-			info->hard_link_bytes += lte->size;
-	}
+	if (!(inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
+				     FILE_ATTRIBUTE_REPARSE_POINT)))
+	{
+		struct wim_lookup_table_entry *lte;
 
-	if (inode->i_nlink >= 2 && dentry_is_first_in_inode(dentry)) {
-		for (unsigned i = 0; i < inode->i_num_ads; i++) {
-			if (inode->i_ads_entries[i].stream_name_nbytes) {
-				lte = inode_stream_lte(inode, i + 1, info->lookup_table);
-				if (lte) {
-					info->hard_link_bytes += inode->i_nlink *
-								 lte->size;
+		lte = inode_unnamed_lte(inode, info->lookup_table);
+		if (lte) {
+			info->total_bytes += lte->size;
+			if (!dentry_is_first_in_inode(dentry))
+				info->hard_link_bytes += lte->size;
+		}
+
+		if (inode->i_nlink >= 2 && dentry_is_first_in_inode(dentry)) {
+			for (unsigned i = 0; i < inode->i_num_ads; i++) {
+				if (inode->i_ads_entries[i].stream_name_nbytes) {
+					lte = inode_stream_lte(inode, i + 1, info->lookup_table);
+					if (lte) {
+						info->hard_link_bytes += inode->i_nlink *
+									 lte->size;
+					}
 				}
 			}
 		}
