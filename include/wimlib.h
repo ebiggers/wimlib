@@ -717,20 +717,18 @@ union wimlib_progress_info {
 			WIMLIB_SCAN_DENTRY_UNSUPPORTED,
 
 			/** The file is an absolute symbolic link or junction
-			 * point and it is being excluded from capture because
-			 * it points outside of the capture directory and
-			 * reparse-point fixups are enabled.  (Reparse point
-			 * fixups can be disabled by using the flag
-			 * ::WIMLIB_ADD_FLAG_NORPFIX.)  */
-			WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK,
-
-			/** The file is an absolute symbolic link or junction
 			 * that points into the capture directory, and
 			 * reparse-point fixups are enabled, so its target is
 			 * being adjusted.  (Reparse point fixups can be
 			 * disabled with the flag ::WIMLIB_ADD_FLAG_NORPFIX.)
 			 */
 			WIMLIB_SCAN_DENTRY_FIXED_SYMLINK,
+
+			/** Reparse-point fixups are enabled, but the file is an
+			 * absolute symbolic link or junction that does
+			 * <b>not</b> point into the capture directory, so its
+			 * target is <b>not</b> being adjusted.  */
+			WIMLIB_SCAN_DENTRY_NOT_FIXED_SYMLINK,
 		} status;
 
 		union {
@@ -740,9 +738,9 @@ union wimlib_progress_info {
 			const wimlib_tchar *wim_target_path;
 
 			/** For ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY and a status
-			 * of @p WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK or @p
-			 * WIMLIB_SCAN_DENTRY_FIXED_SYMLINK, this is the target
-			 * of the absolute symbolic link or junction.  */
+			 * of @p WIMLIB_SCAN_DENTRY_FIXED_SYMLINK or @p
+			 * WIMLIB_SCAN_DENTRY_NOT_FIXED_SYMLINK, this is the
+			 * target of the absolute symbolic link or junction.  */
 			const wimlib_tchar *symlink_target;
 		};
 
@@ -1378,8 +1376,7 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 /** Reparse-point fixups:  Modify absolute symbolic links (or junction points,
  * in the case of Windows) that point inside the directory being captured to
  * instead be absolute relative to the directory being captured, rather than the
- * current root; also exclude absolute symbolic links that point outside the
- * directory tree being captured.
+ * current root.
  *
  * Without this flag, the default is to do this if WIM_HDR_FLAG_RP_FIX is set in
  * the WIM header or if this is the first image being added.

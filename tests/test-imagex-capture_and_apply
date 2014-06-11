@@ -170,9 +170,9 @@ if [[ `readlink out.dir/absrootlink` != "/" ]] ||
 	error "imagex capture --rpfix failed to fix absolute link to capture root"
 fi
 
-if [[ -e out.dir/absnonexistent ]] ||
-   [[ -e out.dir/absoutoftree ]]; then
-	error "imagex capture --rpfix failed to exclude out of tree absolute links"
+if [[ ! -L out.dir/absnonexistent ]] ||
+   [[ ! -L out.dir/absoutoftree ]]; then
+	error "imagex capture --rpfix failed to also capture out of tree absolute links"
 fi
 if [[ `readlink out.dir/relalink` != "file" ]]; then
 	error "imagex capture --rpfix failed to capture relative symlink"

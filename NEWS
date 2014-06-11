@@ -12,6 +12,10 @@ Version 1.7.0-BETA:
 	nondirectory files by default.  Use the --no-replace option to get the
 	old behavior.
 
+	In reparse-point fixup mode (the default for capture), symbolic links
+	and junctions that point outside the tree being captured are no longer
+	excluded from capture.
+
 	Added support for "WIMBoot" capture and extraction.  See the
 	documentation for the new '--wimboot' option to wimcapture and wimapply
 	for more information.

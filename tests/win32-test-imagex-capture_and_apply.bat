@@ -330,17 +330,6 @@ del tmp1 tmp2
 md in.dir
 cd in.dir
 
-echo Testing rpfix exclude
-mklink otherlink c:\some\other\directory > nul
-cd ..
-%WIMLIB_IMAGEX% capture in.dir test.wim > nul
-%WIMLIB_IMAGEX% apply test.wim out.dir > nul
-rd out.dir
-if %errorlevel% neq 0 exit /b %errorlevel%
-rd /s /q in.dir
-md in.dir
-cd in.dir
-
 echo Testing rpfix relative
 echo 1 > file
 mklink relink file > nul

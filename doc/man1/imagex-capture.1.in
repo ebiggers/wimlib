@@ -371,10 +371,8 @@ although the Administrator should have permission to read everything anyway.
 Set whether to fix targets of absolute symbolic links (reparse points in Windows
 terminology) or not.  When enabled (\fB--rpfix\fR), absolute symbolic links that
 point inside the directory tree being captured will be adjusted to be absolute
-relative to the root of the directory tree being captured.  In addition,
-absolute symbolic links that point outside the directory tree being captured
-will be ignored and not be captured at all.  When disabled (\fB--norpfix\fR),
-absolute symbolic links will be captured exactly as is.
+relative to the root of the directory tree being captured.  When disabled
+(\fB--norpfix\fR), absolute symbolic links will be captured exactly as is.
 .IP ""
 The default behavior for \fB@IMAGEX_PROGNAME@ capture\fR is equivalent to
 \fB--rpfix\fR.  The default behavior for \fB@IMAGEX_PROGNAME@ append\fR will be

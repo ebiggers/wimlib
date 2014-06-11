@@ -453,9 +453,6 @@ out_free_buf:
 
 /* Reparse point fixup status code  */
 enum rp_status {
-	/* Reparse point should be excluded from capture  */
-	RP_EXCLUDED	= -0,
-
 	/* Reparse point will be captured literally (no fixup)  */
 	RP_NOT_FIXED	= -1,
 
@@ -650,14 +647,13 @@ winnt_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
 						    capture_root_ino,
 						    capture_root_dev);
 	if (!rel_target) {
-		/* Target points outside of the tree being captured.  Exclude
-		 * this reparse point from the capture (but inform the library
-		 * user).  */
+		/* Target points outside of the tree being captured.  Don't
+		 * adjust it.  */
 		ret = winnt_rpfix_progress(params, path, &rpdata,
-					   WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK);
+					   WIMLIB_SCAN_DENTRY_NOT_FIXED_SYMLINK);
 		if (ret)
 			return ret;
-		return RP_EXCLUDED;
+		return RP_NOT_FIXED;
 	}
 
 	if (rel_target == rpdata.substitute_name) {
@@ -722,7 +718,7 @@ winnt_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
  *	On success, the length of the reparse point buffer in bytes is written
  *	to this location.
  *
- * On success, returns a nonpositive `enum rp_status' value.
+ * On success, returns a negative `enum rp_status' value.
  * On failure, returns a positive error code.
  */
 static int
@@ -1201,9 +1197,6 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		ret = winnt_get_reparse_data(h, full_path, params,
 					     rpbuf, &rpbuflen);
 		switch (ret) {
-		case RP_EXCLUDED:
-			ret = 0;
-			goto out;
 		case RP_FIXED:
 			not_rpfixed = 0;
 			break;

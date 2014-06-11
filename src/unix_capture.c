@@ -251,8 +251,7 @@ unix_fixup_abslink(char *dest, u64 ino, u64 dev)
 }
 
 static int
-unix_scan_symlink(struct wim_dentry **root_p, const char *full_path,
-		  int dirfd, const char *relpath,
+unix_scan_symlink(const char *full_path, int dirfd, const char *relpath,
 		  struct wim_inode *inode, struct add_image_params *params)
 {
 	char deref_name_buf[4096];
@@ -281,31 +280,33 @@ unix_scan_symlink(struct wim_dentry **root_p, const char *full_path,
 	if ((params->add_flags & WIMLIB_ADD_FLAG_RPFIX) &&
 	     dest[0] == '/')
 	{
+		char *fixed_dest;
+
 		/* RPFIX (reparse point fixup) mode:  Change target of absolute
 		 * symbolic link to be "absolute" relative to the tree being
 		 * captured.  */
-		dest = unix_fixup_abslink(dest,
-					  params->capture_root_ino,
-					  params->capture_root_dev);
+		fixed_dest = unix_fixup_abslink(dest,
+						params->capture_root_ino,
+						params->capture_root_dev);
 		params->progress.scan.cur_path = full_path;
 		params->progress.scan.symlink_target = deref_name_buf;
-		if (dest) {
-			/* Successfully fixed the link target.  */
+		if (fixed_dest) {
+			/* Link points inside the tree being captured, so it was
+			 * fixed.  */
 			inode->i_not_rpfixed = 0;
+			dest = fixed_dest;
 			ret = do_capture_progress(params,
 						  WIMLIB_SCAN_DENTRY_FIXED_SYMLINK,
 						  NULL);
-			if (ret)
-				return ret;
 		} else {
-			/* Link points outside of the tree being captured.
-			 * Exclude it.  */
-			free_dentry(*root_p);
-			*root_p = NULL;
-			return do_capture_progress(params,
-						   WIMLIB_SCAN_DENTRY_EXCLUDED_SYMLINK,
-						   NULL);
+			/* Link points outside the tree being captured, so it
+			 * was not fixed.  */
+			ret = do_capture_progress(params,
+						  WIMLIB_SCAN_DENTRY_NOT_FIXED_SYMLINK,
+						  NULL);
 		}
+		if (ret)
+			return ret;
 	}
 	ret = wim_inode_set_symlink(inode, dest, params->lookup_table);
 	if (ret)
@@ -422,10 +423,8 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 		ret = unix_scan_directory(tree, full_path, full_path_len,
 					  dirfd, relpath, params);
 	} else if (S_ISLNK(stbuf.st_mode)) {
-		ret = unix_scan_symlink(&tree, full_path, dirfd, relpath,
+		ret = unix_scan_symlink(full_path, dirfd, relpath,
 					inode, params);
-		if (!tree)
-			goto out;
 	}
 
 	if (ret)

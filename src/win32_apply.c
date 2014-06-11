@@ -1476,7 +1476,7 @@ skip_nt_toplevel_component(const wchar_t *path, size_t path_nchars)
  * The path has an explicit length and is not necessarily null terminated.
  *
  * If the path just something like \??\e: then the returned pointer will point
- * just past the colon; in this case the length of the result will be 0
+ * just past the colon.  In this case the length of the result will be 0
  * characters.  */
 static const wchar_t *
 get_device_relative_path(const wchar_t *path, size_t path_nchars)
