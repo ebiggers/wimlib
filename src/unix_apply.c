@@ -630,13 +630,17 @@ unix_end_extract_stream(struct wim_lookup_table_entry *stream, int status,
 			/* We finally have the symlink data, so we can create
 			 * the symlink.  */
 			const char *path;
+			bool rpfix;
+
+			rpfix = (ctx->common.extract_flags &
+				 WIMLIB_EXTRACT_FLAG_RPFIX) &&
+					!inode->i_not_rpfixed;
 
 			path = unix_build_inode_extraction_path(inode, ctx);
 			ret = unix_create_symlink(inode, path,
 						  ctx->reparse_data,
 						  stream->size,
-						  (ctx->common.extract_flags &
-						   WIMLIB_EXTRACT_FLAG_RPFIX),
+						  rpfix,
 						  ctx->target_abspath,
 						  ctx->target_abspath_nchars);
 			if (ret) {
