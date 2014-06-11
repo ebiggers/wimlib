@@ -1471,7 +1471,13 @@ skip_nt_toplevel_component(const wchar_t *path, size_t path_nchars)
 
 /* Given a Windows NT namespace path, such as \??\e:\Windows\System32, return a
  * pointer to the suffix of the path that is device-relative, such as
- * Windows\System32.  */
+ * Windows\System32.
+ *
+ * The path has an explicit length and is not necessarily null terminated.
+ *
+ * If the path just something like \??\e: then the returned pointer will point
+ * just past the colon; in this case the length of the result will be 0
+ * characters.  */
 static const wchar_t *
 get_device_relative_path(const wchar_t *path, size_t path_nchars)
 {
@@ -1484,7 +1490,7 @@ get_device_relative_path(const wchar_t *path, size_t path_nchars)
 
 	path = wmemchr(path, L'\\', (end - path));
 	if (!path)
-		return orig_path;
+		return end;
 	do {
 		path++;
 	} while (path != end && *path == L'\\');
@@ -1533,14 +1539,18 @@ try_rpfix(u8 *rpbuf, u16 *rpbuflen_p, struct win32_apply_ctx *ctx)
 
 	target_ntpath_nchars = ctx->target_ntpath.Length / sizeof(wchar_t);
 
-	fixed_subst_name_nchars = target_ntpath_nchars + 1 + relpath_nchars;
+	fixed_subst_name_nchars = target_ntpath_nchars;
+	if (relpath_nchars)
+		fixed_subst_name_nchars += 1 + relpath_nchars;
 	wchar_t fixed_subst_name[fixed_subst_name_nchars];
 
 	wmemcpy(fixed_subst_name, ctx->target_ntpath.Buffer,
 		target_ntpath_nchars);
-	fixed_subst_name[target_ntpath_nchars] = L'\\';
-	wmemcpy(&fixed_subst_name[target_ntpath_nchars + 1],
-		relpath, relpath_nchars);
+	if (relpath_nchars) {
+		fixed_subst_name[target_ntpath_nchars] = L'\\';
+		wmemcpy(&fixed_subst_name[target_ntpath_nchars + 1],
+			relpath, relpath_nchars);
+	}
 	/* Doesn't need to be null-terminated.  */
 
 	/* Print name should be Win32, but not all NT names can even be
