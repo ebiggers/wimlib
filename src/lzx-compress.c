@@ -1058,7 +1058,7 @@ lzx_write_all_blocks(struct lzx_compressor *ctx, struct output_bitstream *ostrea
 
 /* Constructs an LZX match from a literal byte and updates the main code symbol
  * frequencies.  */
-static u32
+static inline u32
 lzx_tally_literal(u8 lit, struct lzx_freqs *freqs)
 {
 	freqs->main[lit]++;
@@ -1069,7 +1069,7 @@ lzx_tally_literal(u8 lit, struct lzx_freqs *freqs)
  * queue and the frequency of symbols in the main, length, and aligned offset
  * alphabets.  The return value is a 32-bit number that provides the match in an
  * intermediate representation documented below.  */
-static u32
+static inline u32
 lzx_tally_match(unsigned match_len, u32 match_offset,
 		struct lzx_freqs *freqs, struct lzx_lru_queue *queue)
 {
@@ -1857,33 +1857,33 @@ lzx_optimize_block(struct lzx_compressor *ctx, struct lzx_block_spec *spec,
 	const struct lzx_lru_queue orig_queue = ctx->queue;
 	unsigned num_passes_remaining = num_passes;
 	struct lzx_freqs freqs;
+	const u8 *window_ptr;
+	const u8 *window_end;
+	struct lzx_match *next_chosen_match;
+	struct raw_match raw_match;
+	struct lzx_match lzx_match;
 
 	LZX_ASSERT(num_passes >= 1);
 	LZX_ASSERT(lz_bt_get_position(&ctx->mf) == spec->window_pos);
 
 	ctx->match_window_end = spec->window_pos + spec->block_size;
-	spec->chosen_matches = &ctx->chosen_matches[spec->window_pos];
 	ctx->matches_cached = false;
 
 	/* The first optimal parsing pass is done using the cost model already
 	 * set in ctx->costs.  Each later pass is done using a cost model
-	 * computed from the previous pass.  */
-	do {
-		const u8 *window_ptr;
-		const u8 *window_end;
-		struct lzx_match *next_chosen_match;
+	 * computed from the previous pass.
+	 *
+	 * To improve performance we only generate the array containing the
+	 * matches and literals in intermediate form on the final pass.  */
 
-		--num_passes_remaining;
+	while (--num_passes_remaining) {
 		ctx->match_window_pos = spec->window_pos;
 		ctx->cache_ptr = ctx->cached_matches;
 		memset(&freqs, 0, sizeof(freqs));
 		window_ptr = &ctx->window[spec->window_pos];
 		window_end = window_ptr + spec->block_size;
-		next_chosen_match = spec->chosen_matches;
 
 		while (window_ptr != window_end) {
-			struct raw_match raw_match;
-			struct lzx_match lzx_match;
 
 			raw_match = lzx_get_near_optimal_match(ctx);
 
@@ -1891,27 +1891,48 @@ lzx_optimize_block(struct lzx_compressor *ctx, struct lzx_block_spec *spec,
 				     raw_match.offset == ctx->max_window_size -
 							 LZX_MIN_MATCH_LEN));
 			if (raw_match.len >= LZX_MIN_MATCH_LEN) {
-				lzx_match.data = lzx_tally_match(raw_match.len,
-								 raw_match.offset,
-								 &freqs,
-								 &ctx->queue);
+				lzx_tally_match(raw_match.len, raw_match.offset,
+						&freqs, &ctx->queue);
 				window_ptr += raw_match.len;
 			} else {
-				lzx_match.data = lzx_tally_literal(*window_ptr,
-								   &freqs);
+				lzx_tally_literal(*window_ptr, &freqs);
 				window_ptr += 1;
 			}
-			*next_chosen_match++ = lzx_match;
 		}
-		spec->num_chosen_matches = next_chosen_match - spec->chosen_matches;
 		lzx_make_huffman_codes(&freqs, &spec->codes, ctx->num_main_syms);
-		if (num_passes_remaining) {
-			lzx_set_costs(ctx, &spec->codes.lens);
-			ctx->queue = orig_queue;
-			ctx->matches_cached = true;
-		}
-	} while (num_passes_remaining);
+		lzx_set_costs(ctx, &spec->codes.lens);
+		ctx->queue = orig_queue;
+		ctx->matches_cached = true;
+	}
 
+	ctx->match_window_pos = spec->window_pos;
+	ctx->cache_ptr = ctx->cached_matches;
+	memset(&freqs, 0, sizeof(freqs));
+	window_ptr = &ctx->window[spec->window_pos];
+	window_end = window_ptr + spec->block_size;
+
+	spec->chosen_matches = &ctx->chosen_matches[spec->window_pos];
+	next_chosen_match = spec->chosen_matches;
+
+	while (window_ptr != window_end) {
+		raw_match = lzx_get_near_optimal_match(ctx);
+
+		LZX_ASSERT(!(raw_match.len == LZX_MIN_MATCH_LEN &&
+			     raw_match.offset == ctx->max_window_size -
+						 LZX_MIN_MATCH_LEN));
+		if (raw_match.len >= LZX_MIN_MATCH_LEN) {
+			lzx_match.data = lzx_tally_match(raw_match.len,
+							 raw_match.offset,
+							 &freqs, &ctx->queue);
+			window_ptr += raw_match.len;
+		} else {
+			lzx_match.data = lzx_tally_literal(*window_ptr, &freqs);
+			window_ptr += 1;
+		}
+		*next_chosen_match++ = lzx_match;
+	}
+	spec->num_chosen_matches = next_chosen_match - spec->chosen_matches;
+	lzx_make_huffman_codes(&freqs, &spec->codes, ctx->num_main_syms);
 	spec->block_type = lzx_choose_verbatim_or_aligned(&freqs, &spec->codes);
 }
 
