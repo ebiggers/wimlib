@@ -72,12 +72,20 @@ wimlib_wcsdup(const wchar_t *str) _malloc_attribute;
 extern char *
 wimlib_strdup(const char *str) _malloc_attribute;
 
+extern void *
+wimlib_aligned_malloc(size_t size, size_t alignment) _malloc_attribute;
+
+extern void
+wimlib_aligned_free(void *ptr);
+
 #define	MALLOC	wimlib_malloc
 #define	FREE	wimlib_free_memory
 #define	REALLOC	wimlib_realloc
 #define	CALLOC	wimlib_calloc
 #define	STRDUP	wimlib_strdup
 #define	WCSDUP  wimlib_wcsdup
+#define	ALIGNED_MALLOC	wimlib_aligned_malloc
+#define	ALIGNED_FREE	wimlib_aligned_free
 
 extern void *
 memdup(const void *mem, size_t size) _malloc_attribute;
