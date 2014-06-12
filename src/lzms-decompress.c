@@ -1032,7 +1032,7 @@ lzms_free_decompressor(void *_ctx)
 {
 	struct lzms_decompressor *ctx = _ctx;
 
-	FREE(ctx);
+	ALIGNED_FREE(ctx);
 }
 
 static int
@@ -1042,7 +1042,8 @@ lzms_create_decompressor(size_t max_block_size,
 {
 	struct lzms_decompressor *ctx;
 
-	ctx = MALLOC(sizeof(struct lzms_decompressor));
+	ctx = ALIGNED_MALLOC(sizeof(struct lzms_decompressor),
+			     DECODE_TABLE_ALIGNMENT);
 	if (ctx == NULL)
 		return WIMLIB_ERR_NOMEM;
 

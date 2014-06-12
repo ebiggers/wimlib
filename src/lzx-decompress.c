@@ -809,7 +809,7 @@ lzx_free_decompressor(void *_ctx)
 {
 	struct lzx_decompressor *ctx = _ctx;
 
-	FREE(ctx);
+	ALIGNED_FREE(ctx);
 }
 
 static int
@@ -822,7 +822,8 @@ lzx_create_decompressor(size_t max_window_size,
 	if (!lzx_window_size_valid(max_window_size))
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	ctx = MALLOC(sizeof(struct lzx_decompressor));
+	ctx = ALIGNED_MALLOC(sizeof(struct lzx_decompressor),
+			     DECODE_TABLE_ALIGNMENT);
 	if (ctx == NULL)
 		return WIMLIB_ERR_NOMEM;
 
