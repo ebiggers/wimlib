@@ -6,6 +6,7 @@
  * */
 
 #include "wimlib/assert.h"
+#include "wimlib/compiler.h"
 #include "wimlib/util.h"
 #include "wimlib/types.h"
 
@@ -142,7 +143,13 @@ extern unsigned lzx_get_num_main_syms(u32 window_size);
 /* Least-recently used queue for match offsets.  */
 struct lzx_lru_queue {
 	u32 R[LZX_NUM_RECENT_OFFSETS];
-};
+}
+#ifdef __x86_64__
+_aligned_attribute(8)  /* Improves performance of LZX compression by 1% - 2%;
+			  specifically, this speeds up
+			  lzx_get_near_optimal_match().  */
+#endif
+;
 
 /* In the LZX format, an offset of n bytes is actually encoded
  * as (n + LZX_OFFSET_OFFSET).  */
