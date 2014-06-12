@@ -1170,7 +1170,7 @@ lzx_literal_cost(u8 c, const struct lzx_costs * costs)
  * well as costs for the codewords in the main, length, and aligned Huffman
  * codes, return the approximate number of bits it will take to represent this
  * match in the compressed output.  Take into account the match offset LRU
- * queue and optionally update it.  */
+ * queue and also updates it.  */
 static u32
 lzx_match_cost(unsigned length, u32 offset, const struct lzx_costs *costs,
 	       struct lzx_lru_queue *queue)
@@ -1448,7 +1448,6 @@ lzx_get_near_optimal_match(struct lzx_compressor *ctx)
 {
 	unsigned num_matches;
 	const struct raw_match *matches;
-	const struct raw_match *matchptr;
 	struct raw_match match;
 	unsigned longest_len;
 	unsigned longest_rep_len;
@@ -1522,18 +1521,54 @@ lzx_get_near_optimal_match(struct lzx_compressor *ctx)
 	ctx->optimum[1].prev.link = 0;
 
 	/* Calculate the cost to reach any position up to and including that
-	 * reached by the longest match.  */
-	matchptr = matches;
-	for (unsigned len = 2; len <= longest_len; len++) {
-		u32 offset = matchptr->offset;
+	 * reached by the longest match.
+	 *
+	 * Note: We consider only the lowest-offset match that reaches each
+	 * position.
+	 *
+	 * Note: Some of the cost calculation stays the same for each offset,
+	 * regardless of how many lengths it gets used for.  Therefore, to
+	 * improve performance, we hand-code the cost calculation instead of
+	 * calling lzx_match_cost() to do a from-scratch cost evaluation at each
+	 * length.  */
+	for (unsigned i = 0, len = 2; i < num_matches; i++) {
+		u32 offset;
+		struct lzx_lru_queue queue;
+		u32 position_cost;
+		unsigned position_slot;
+		unsigned num_extra_bits;
 
-		ctx->optimum[len].queue = ctx->queue;
-		ctx->optimum[len].prev.link = 0;
-		ctx->optimum[len].prev.match_offset = offset;
-		ctx->optimum[len].cost = lzx_match_cost(len, offset, &ctx->costs,
-							&ctx->optimum[len].queue);
-		if (len == matchptr->len)
-			matchptr++;
+		offset = matches[i].offset;
+		queue = ctx->queue;
+		position_cost = 0;
+
+		position_slot = lzx_get_position_slot(offset, &queue);
+		num_extra_bits = lzx_get_num_extra_bits(position_slot);
+		if (num_extra_bits >= 3) {
+			position_cost += num_extra_bits - 3;
+			position_cost += ctx->costs.aligned[(offset + LZX_OFFSET_OFFSET) & 7];
+		} else {
+			position_cost += num_extra_bits;
+		}
+
+		do {
+			unsigned len_header;
+			unsigned main_symbol;
+			u32 cost;
+
+			cost = position_cost;
+
+			len_header = min(len - LZX_MIN_MATCH_LEN, LZX_NUM_PRIMARY_LENS);
+			main_symbol = ((position_slot << 3) | len_header) + LZX_NUM_CHARS;
+			cost += ctx->costs.main[main_symbol];
+			if (len_header == LZX_NUM_PRIMARY_LENS)
+				cost += ctx->costs.len[len - LZX_MIN_MATCH_LEN - LZX_NUM_PRIMARY_LENS];
+
+			ctx->optimum[len].queue = queue;
+			ctx->optimum[len].prev.link = 0;
+			ctx->optimum[len].prev.match_offset = offset;
+			ctx->optimum[len].cost = cost;
+		} while (++len <= matches[i].len);
 	}
 	end_pos = longest_len;
 
@@ -1683,25 +1718,59 @@ lzx_get_near_optimal_match(struct lzx_compressor *ctx)
 			ctx->optimum[cur_pos + 1].prev.link = cur_pos;
 		}
 
-		/* Consider coding a match.  */
-		matchptr = matches;
-		for (unsigned len = 2; len <= longest_len; len++) {
+		/* Consider coding a match.
+		 *
+		 * The hard-coded cost calculation is done for the same reason
+		 * stated in the comment for the similar loop earlier.
+		 * Actually, it is *this* one that has the biggest effect on
+		 * performance; overall LZX compression is > 10% faster with
+		 * this code compared to calling lzx_match_cost() with each
+		 * length.  */
+		for (unsigned i = 0, len = 2; i < num_matches; i++) {
 			u32 offset;
 			struct lzx_lru_queue queue;
+			u32 position_cost;
+			unsigned position_slot;
+			unsigned num_extra_bits;
 
-			offset = matchptr->offset;
+			offset = matches[i].offset;
 			queue = ctx->optimum[cur_pos].queue;
+			position_cost = ctx->optimum[cur_pos].cost;
 
-			cost = ctx->optimum[cur_pos].cost +
-				lzx_match_cost(len, offset, &ctx->costs, &queue);
-			if (cost < ctx->optimum[cur_pos + len].cost) {
-				ctx->optimum[cur_pos + len].queue = queue;
-				ctx->optimum[cur_pos + len].prev.link = cur_pos;
-				ctx->optimum[cur_pos + len].prev.match_offset = offset;
-				ctx->optimum[cur_pos + len].cost = cost;
+			position_slot = lzx_get_position_slot(offset, &queue);
+			num_extra_bits = lzx_get_num_extra_bits(position_slot);
+			if (num_extra_bits >= 3) {
+				position_cost += num_extra_bits - 3;
+				position_cost += ctx->costs.aligned[
+						(offset + LZX_OFFSET_OFFSET) & 7];
+			} else {
+				position_cost += num_extra_bits;
 			}
-			if (len == matchptr->len)
-				matchptr++;
+
+			do {
+				unsigned len_header;
+				unsigned main_symbol;
+				u32 cost;
+
+				cost = position_cost;
+
+				len_header = min(len - LZX_MIN_MATCH_LEN,
+						 LZX_NUM_PRIMARY_LENS);
+				main_symbol = ((position_slot << 3) | len_header) +
+						LZX_NUM_CHARS;
+				cost += ctx->costs.main[main_symbol];
+				if (len_header == LZX_NUM_PRIMARY_LENS) {
+					cost += ctx->costs.len[len -
+							LZX_MIN_MATCH_LEN -
+							LZX_NUM_PRIMARY_LENS];
+				}
+				if (cost < ctx->optimum[cur_pos + len].cost) {
+					ctx->optimum[cur_pos + len].queue = queue;
+					ctx->optimum[cur_pos + len].prev.link = cur_pos;
+					ctx->optimum[cur_pos + len].prev.match_offset = offset;
+					ctx->optimum[cur_pos + len].cost = cost;
+				}
+			} while (++len <= matches[i].len);
 		}
 
 		if (longest_rep_len >= LZX_MIN_MATCH_LEN) {
