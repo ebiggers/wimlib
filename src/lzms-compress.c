@@ -726,7 +726,7 @@ lzms_offset_cost(const struct lzms_huffman_encoder *enc, u32 offset)
 }
 
 static u32
-lzms_length_cost(const struct lzms_huffman_encoder *enc, u32 length)
+lzms_get_length_cost(const struct lzms_huffman_encoder *enc, u32 length)
 {
 	u32 slot;
 	u32 num_extra_bits;
@@ -774,9 +774,8 @@ lzms_get_literal_cost(struct lzms_compressor *ctx,
 }
 
 static u32
-lzms_get_lz_match_cost(struct lzms_compressor *ctx,
-		       struct lzms_adaptive_state *state,
-		       u32 length, u32 offset)
+lzms_get_lz_match_cost_nolen(struct lzms_compressor *ctx,
+			     struct lzms_adaptive_state *state, u32 offset)
 {
 	u32 cost = 0;
 	int recent_offset_idx;
@@ -819,12 +818,20 @@ lzms_get_lz_match_cost(struct lzms_compressor *ctx,
 			state->lru.recent_offsets[i] = state->lru.recent_offsets[i + 1];
 	}
 
-	cost += lzms_length_cost(&ctx->length_encoder, length);
 
 	state->lru.upcoming_offset = offset;
 	lzms_update_lz_lru_queues(&state->lru);
 
 	return cost;
+}
+
+static u32
+lzms_get_lz_match_cost(struct lzms_compressor *ctx,
+		       struct lzms_adaptive_state *state,
+		       u32 length, u32 offset)
+{
+	return lzms_get_lz_match_cost_nolen(ctx, state, offset) +
+	       lzms_get_length_cost(&ctx->length_encoder, length);
 }
 
 static struct raw_match
@@ -870,7 +877,6 @@ lzms_get_near_optimal_match(struct lzms_compressor *ctx)
 	u32 longest_len;
 	u32 longest_rep_len;
 	u32 longest_rep_offset;
-	struct raw_match *matchptr;
 	unsigned cur_pos;
 	unsigned end_pos;
 	struct lzms_adaptive_state initial_state;
@@ -938,18 +944,26 @@ lzms_get_near_optimal_match(struct lzms_compressor *ctx)
 						     *(lz_bt_get_window_ptr(&ctx->mf) - 1));
 	ctx->optimum[1].prev.link = 0;
 
-	matchptr = matches;
-	for (u32 len = 2; len <= longest_len; len++) {
-		u32 offset = matchptr->offset;
+	for (u32 i = 0, len = 2; i < num_matches; i++) {
+		u32 offset = matches[i].offset;
+		struct lzms_adaptive_state state;
+		u32 position_cost;
 
-		ctx->optimum[len].state = initial_state;
-		ctx->optimum[len].prev.link = 0;
-		ctx->optimum[len].prev.match_offset = offset;
-		ctx->optimum[len].cost = lzms_get_lz_match_cost(ctx,
-								&ctx->optimum[len].state,
-								len, offset);
-		if (len == matchptr->len)
-			matchptr++;
+		state = initial_state;
+		position_cost = 0;
+		position_cost += lzms_get_lz_match_cost_nolen(ctx, &state, offset);
+
+		do {
+			u32 cost;
+
+			cost = position_cost;
+			cost += lzms_get_length_cost(&ctx->length_encoder, len);
+
+			ctx->optimum[len].state = state;
+			ctx->optimum[len].prev.link = 0;
+			ctx->optimum[len].prev.match_offset = offset;
+			ctx->optimum[len].cost = cost;
+		} while (++len <= matches[i].len);
 	}
 	end_pos = longest_len;
 
@@ -1047,23 +1061,28 @@ lzms_get_near_optimal_match(struct lzms_compressor *ctx)
 			ctx->optimum[cur_pos + 1].prev.link = cur_pos;
 		}
 
-		matchptr = matches;
-		for (u32 len = 2; len <= longest_len; len++) {
-			u32 offset;
+		for (u32 i = 0, len = 2; i < num_matches; i++) {
+			u32 offset = matches[i].offset;
+			struct lzms_adaptive_state state;
+			u32 position_cost;
 
-			offset = matchptr->offset;
 			state = ctx->optimum[cur_pos].state;
+			position_cost = ctx->optimum[cur_pos].cost;
+			position_cost += lzms_get_lz_match_cost_nolen(ctx, &state, offset);
 
-			cost = ctx->optimum[cur_pos].cost +
-				lzms_get_lz_match_cost(ctx, &state, len, offset);
-			if (cost < ctx->optimum[cur_pos + len].cost) {
-				ctx->optimum[cur_pos + len].state = state;
-				ctx->optimum[cur_pos + len].prev.link = cur_pos;
-				ctx->optimum[cur_pos + len].prev.match_offset = offset;
-				ctx->optimum[cur_pos + len].cost = cost;
-			}
-			if (len == matchptr->len)
-				matchptr++;
+			do {
+				u32 cost;
+
+				cost = position_cost;
+				cost += lzms_get_length_cost(&ctx->length_encoder, len);
+
+				if (cost < ctx->optimum[cur_pos + len].cost) {
+					ctx->optimum[cur_pos + len].state = state;
+					ctx->optimum[cur_pos + len].prev.link = cur_pos;
+					ctx->optimum[cur_pos + len].prev.match_offset = offset;
+					ctx->optimum[cur_pos + len].cost = cost;
+				}
+			} while (++len <= matches[i].len);
 		}
 
 		if (longest_rep_len >= ctx->params.min_match_length) {
