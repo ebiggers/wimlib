@@ -296,9 +296,9 @@ inode_needs_dummy_stream(const struct wim_inode *inode)
 }
 
 /* Calculate the total number of bytes that will be consumed when a WIM dentry
- * is written.  This includes the base dentry the name fields, any tagged items,
- * any alternate data stream entries.  Also includes all alignment bytes between
- * these parts.  */
+ * is written.  This includes the base dentry, the name fields, any tagged items,
+ * and any alternate data stream entries.  Also includes all alignment bytes
+ * between these parts.  */
 u64
 dentry_out_total_length(const struct wim_dentry *dentry)
 {
