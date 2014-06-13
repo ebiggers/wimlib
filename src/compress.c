@@ -113,7 +113,8 @@ wimlib_get_compressor_needed_memory(enum wimlib_compression_type ctype,
 		params = compressor_default_params[ctype];
 	}
 
-	return ops->get_needed_memory(max_block_size, params);
+	return sizeof(struct wimlib_compressor) +
+		ops->get_needed_memory(max_block_size, params);
 }
 
 
