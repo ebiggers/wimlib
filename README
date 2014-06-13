@@ -355,18 +355,17 @@ file format:
     is that it does not support compression and decompression by itself, but
     instead relies on external native code, such as the codecs from wimlib.
 
-A very early version of wimlib is being used to deploy Windows 7 from the
-Ultimate Deployment Appliance.  For more information see
-http://www.ultimatedeployment.org/.
+If you are looking for an archive format that provides features similar to WIM
+but was designed primarily for UNIX, you may want to consider SquashFS
+(http://squashfs.sourceforge.net/).  However, you may find that wimlib works
+surprisingly well on UNIX.  It will store hard links and symbolic links, and it
+has optional support for storing UNIX owners, groups, modes, and special files
+such as device nodes and FIFOs.  Actually, I use it to back up my own files on
+Linux!
 
-If you are looking for a UNIX archive format that provides features similar to
-WIM, I recommend you take a look at SquashFS (http://squashfs.sourceforge.net/).
+			     LICENSE AND DISCLAIMER
 
-                                    LICENSE
-
-As of version 1.0.0, wimlib and all programs and scripts distributed with it are
-released under the GNU GPL version 3.0 or later.  See COPYING for details.
-Some individual source files are also released under more permissive licenses.
+See COPYING for information about the license.
 
 wimlib is independently developed and does not contain any code, data, or files
 copyrighted by Microsoft.  It is not known to be affected by any patents.
@@ -375,8 +374,6 @@ On UNIX-like systems, if you do not want wimlib to be dynamically linked with
 libcrypto (OpenSSL), configure with --without-libcrypto.  This replaces the SHA1
 implementation with built-in code and there will be no difference in
 functionality.
-
-                                   DISCLAIMER
 
 wimlib comes with no warranty whatsoever.  Please submit a bug report (to
 ebiggers3@gmail.com) if you find a bug in wimlib and/or wimlib-imagex.
