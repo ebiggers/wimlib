@@ -241,6 +241,10 @@ EXTRA_DIST =					\
 	debian					\
 	rpm					\
 	examples				\
+	COPYING					\
+	COPYING.GPLv3				\
+	COPYING.LGPLv3				\
+	README					\
 	README.WINDOWS				\
 	tests/common_tests.sh			\
 	tests/tests-common.sh			\
