@@ -32,11 +32,13 @@ fi
 
 make -j2
 
-rm -f $DESTDIR/{libwim-*.dll,doc/*,README*,NEWS*,wim*.bat,wim*.cmd}
+rm -f $DESTDIR/{libwim-*.dll,doc/*,wim*.bat,wim*.cmd}
+
+TEXTFILES=(NEWS README* COPYING*)
 
 cp .libs/imagex.exe $DESTDIR/wimlib-imagex.exe
 cp .libs/libwim-*.dll $DESTDIR
-cp README* NEWS $DESTDIR
+cp "${TEXTFILES[@]}" $DESTDIR
 
 function genman() {
 	local name=$1
@@ -65,7 +67,7 @@ done
 
 genman wimlib-imagex
 
-for fil in $DESTDIR/{README*,NEWS}; do
+for fil in "${TEXTFILES[@]/#/$DESTDIR/}"; do
 	sed < $fil > ${fil}.txt -e 's/$/\r/g'
 	rm $fil
 done
