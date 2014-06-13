@@ -1,5 +1,8 @@
 /*
  * capturewim.c - A program to capture a directory tree into a WIM file.
+ *
+ * The author dedicates this file to the public domain.
+ * You can do whatever you want with this file.
  */
 
 #include <wimlib.h>

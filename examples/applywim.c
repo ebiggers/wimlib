@@ -1,5 +1,8 @@
 /*
  * applywim.c - A program to extract the first image from a WIM file.
+ *
+ * The author dedicates this file to the public domain.
+ * You can do whatever you want with this file.
  */
 
 #include <wimlib.h>

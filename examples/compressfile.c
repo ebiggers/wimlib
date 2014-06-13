@@ -26,6 +26,9 @@
  *
  * The compressed file format created here is simply a series of compressed
  * chunks.  A real format would need to have checksums and other metadata.
+ *
+ * The author dedicates this file to the public domain.
+ * You can do whatever you want with this file.
  */
 
 #define _GNU_SOURCE
