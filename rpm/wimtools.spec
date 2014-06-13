@@ -76,7 +76,7 @@ rm -rf %{buildroot}
 %defattr(-, root, root)
 %{_bindir}/*
 %doc %{_mandir}/man1/*.1.gz
-%doc README AUTHORS COPYING
+%doc README COPYING COPYING.GPLv3
 
 %files -n libwim15-devel
 %defattr(-, root, root)
@@ -89,4 +89,4 @@ rm -rf %{buildroot}
 %files -n libwim15
 %defattr(-, root, root)
 %{_libdir}/libwim.so.*
-%doc COPYING
+%doc COPYING COPYING.GPLv3 COPYING.LGPLv3
