@@ -1,16 +1,17 @@
-Only the most important changes more recent than version 0.6 are noted here.
-
 Version 1.7.0-BETA:
+	Improved compression, decompression, and extraction performance.
+
 	Improved compatibility with version 3584 WIM / ESD files:
 	    - Add support for reading and writing multiple solid blocks per
 	      archive, which WIMGAPI/DISM can create when appending an image.
 	    - Correctly create solid blocks larger than 4 GiB.
 
-	Improved decompression, compression, and extraction performance.
-
 	'add' commands passed to wimupdate will now replace existing
 	nondirectory files by default.  Use the --no-replace option to get the
 	old behavior.
+
+	The license for the library now contains an exception that allows using
+	it under the LGPL.  See the COPYING file for details.
 
 	In reparse-point fixup mode (the default for capture), symbolic links
 	and junctions that point outside the tree being captured are no longer
@@ -40,14 +41,15 @@ Version 1.7.0-BETA:
 	The 'mkwinpeimg' script now supports writing the ISO image to standard
 	output.
 
-	The <ARCH> element in WIM XML data will now be exported correctly.
+	The <ARCH> element in WIM XML data is now exported correctly.
 
 	On Windows, sparse file attributes are no longer set on extracted files.
 	Oddly enough, this actually saves disk space in some cases.
 
 	On UNIX, configuring with --disable-xattr or --enable-xattr is no longer
 	supported.  Mounting WIM images now always requires extended attribute
-	support.  Use --without-fuse to disable support for mounting WIM images.
+	support.  Use --without-fuse to disable support for mounting WIM images;
+	this will also disable the need for extended attribute support.
 
 	The shared library version has been bumped up.  The main
 	incompatibilities are:
@@ -56,14 +58,21 @@ Version 1.7.0-BETA:
 		  WIMLIB_COMPRESSION_TYPE_LZX is now 2 (so it's the same as
 		  WIMGAPI).
 
-		- Progress functions, including their prototypes as well as how
-		  they are provided to the library, have been changed.
+		- User-provided progress functions are now registered using a
+		  separate function, wimlib_register_progress_function().  The
+		  'progress_func' argument to many functions no longer exists.
+
+		- The return value from user-provided progress functions is now
+		  significant.
+
+		- A context argument has been added to the prototype of
+		  user-provided progress functions.
 
 		- 'struct wimlib_capture_config' has been removed.  The library
 		  now takes the path to the configuration file directly.  This
 		  affects wimlib_add_image(), wimlib_add_image_multisource(),
-		  and wimlib_update_image().  However no code changes are
-		  necessary if a NULL configuration was being used.
+		  and wimlib_update_image().  However, a NULL value passed in
+		  the argument retains the same meaning.
 
 		- Removed deprecated functions: some (de)compression functions,
 		  wimlib_extract_files(), and wimlib_print_metadata().
@@ -72,7 +81,7 @@ Version 1.7.0-BETA:
 		  WIMLIB_EXTRACT_FLAG_SYMLINK, WIMLIB_EXTRACT_FLAG_FILE_ORDER,
 		  and WIMLIB_EXTRACT_FLAG_SEQUENTIAL.
 
-		- Removed progress messages:
+		- Removed some progress messages:
 		  WIMLIB_PROGRESS_MSG_APPLY_TIMESTAMPS,
 		  WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_BEGIN,
 		  WIMLIB_PROGRESS_MSG_EXTRACT_DIR_STRUCTURE_END.  Numbering
