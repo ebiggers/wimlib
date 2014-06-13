@@ -31,28 +31,45 @@
 /**
  * @mainpage
  *
- * @section sec_intro Introduction
- *
  * This is the documentation for the library interface of wimlib 1.7.0, a C
  * library for creating, modifying, extracting, and mounting files in the
  * Windows Imaging Format.  This documentation is intended for developers only.
  * If you have installed wimlib and want to know how to use the @b wimlib-imagex
- * program, please see the README file or manual pages.
+ * program, please see the manual pages and also the <a
+ * href="http://sourceforge.net/p/wimlib/code/ci/master/tree/README">README
+ * file</a>.
  *
- * @section sec_installing_and_compiling Installing and Compiling
+ * @section sec_installing Installing
  *
- * wimlib uses the GNU autotools, so, on UNIX-like systems, it should be easy to
- * install with <code>configure && make && sudo make install</code>; however,
- * please see the README for more information about installing it.
+ * @subsection UNIX
  *
- * To use wimlib in your program after installing it, include wimlib.h and link
- * your program with @c -lwim.
+ * Download the source code from <a
+ * href="http://sourceforge.net/projects/wimlib/files">http://sourceforge.net/projects/wimlib/files</a>.
+ * Install the library by running <c>configure && make && sudo make install</c>.
+ * See the README for information about configuration options.  To use wimlib in
+ * your program after installing it, include wimlib.h and link your program with
+ * <c>-lwim</c>.
  *
- * As of wimlib 1.5.0, wimlib.h is also compatible with C++.
+ * @subsection Windows
  *
- * Note: before calling any other function declared in wimlib.h,
- * wimlib_global_init() can (and in some cases, must) be called.  See its
- * documentation for more details.
+ * Download the Windows binary distribution with the appropriate architecture
+ * (i686 or x86_64 --- also called "x86" and "amd64" respectively) from <a
+ * href="http://sourceforge.net/projects/wimlib/files">http://sourceforge.net/projects/wimlib/files</a>.
+ * Link your program with the libwim-15.dll file.  Make sure to also download
+ * the source code so you can get wimlib.h, as it is not included in the binary
+ * distribution.  If you need to access the DLL from other programming
+ * languages, note that the calling convention is "cdecl".
+ *
+ * @section sec_examples Examples
+ *
+ * Several examples are located in the <a
+ * href="http://sourceforge.net/p/wimlib/code/ci/master/tree/examples">examples</a>
+ * directory of the source distribution.
+ *
+ * There is also the <a
+ * href="http://sourceforge.net/p/wimlib/code/ci/master/tree/programs/imagex.c">
+ * source code of <b>wimlib-imagex</b></a>, which is complicated but uses most
+ * capabilities of wimlib.
  *
  * @section sec_basic_wim_handling_concepts Basic WIM handling concepts
  *
@@ -87,6 +104,10 @@
  * general by allowing functions to be composed in different ways.  For example,
  * you can make multiple changes to a WIM and commit them all to the underlying
  * file in only one overwrite operation, which is more efficient.
+ *
+ * Note: before calling any other function declared in wimlib.h,
+ * wimlib_global_init() can (and in some cases, must) be called.  See its
+ * documentation for more details.
  *
  * @section sec_cleaning_up Cleaning up
  *
