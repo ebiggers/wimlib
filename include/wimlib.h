@@ -424,9 +424,6 @@ typedef char wimlib_tchar;
  * Specifies the compression type of a WIM file.
  */
 enum wimlib_compression_type {
-	/** An invalid compression type. */
-	WIMLIB_COMPRESSION_TYPE_INVALID = -1,
-
 	/** The WIM does not include any compressed resources. */
 	WIMLIB_COMPRESSION_TYPE_NONE = 0,
 

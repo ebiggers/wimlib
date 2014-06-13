@@ -1261,9 +1261,8 @@ remove_zero_length_streams(struct list_head *stream_list)
  *
  * @out_ctype
  *	Compression format to use to write the output streams, specified as one
- *	of the WIMLIB_COMPRESSION_TYPE_* constants, excepting
- *	WIMLIB_COMPRESSION_TYPE_INVALID but including
- *	WIMLIB_COMPRESSION_TYPE_NONE.
+ *	of the WIMLIB_COMPRESSION_TYPE_* constants.
+ *	WIMLIB_COMPRESSION_TYPE_NONE is allowed.
  *
  * @out_chunk_size
  *	Chunk size to use to write the streams.  It must be a valid chunk size

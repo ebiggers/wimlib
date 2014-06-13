@@ -549,8 +549,6 @@ static int
 set_out_ctype(int ctype, u8 *out_ctype_p)
 {
 	switch (ctype) {
-	case WIMLIB_COMPRESSION_TYPE_INVALID:
-		break;
 	case WIMLIB_COMPRESSION_TYPE_NONE:
 	case WIMLIB_COMPRESSION_TYPE_LZX:
 	case WIMLIB_COMPRESSION_TYPE_XPRESS:

@@ -46,6 +46,8 @@
 #  include <alloca.h>
 #endif
 
+#define WIMLIB_COMPRESSION_TYPE_INVALID (-1)
+
 #ifdef __WIN32__
 #  include "imagex-win32.h"
 #  define print_security_descriptor     win32_print_security_descriptor
