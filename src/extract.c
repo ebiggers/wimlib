@@ -612,12 +612,14 @@ dentry_calculate_extraction_name(struct wim_dentry *dentry,
 	if (dentry_is_root(dentry))
 		return 0;
 
+#ifdef WITH_NTFS_3G
 	if (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
 		dentry->d_extraction_name = dentry->file_name;
 		dentry->d_extraction_name_nchars = dentry->file_name_nbytes /
 						   sizeof(utf16lechar);
 		return 0;
 	}
+#endif
 
 	if (!ctx->supported_features.case_sensitive_filenames) {
 		struct wim_dentry *other;
