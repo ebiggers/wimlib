@@ -131,7 +131,9 @@ read_pwm_stream_header(WIMStruct *pwm, struct wim_lookup_table_entry *lte,
 	if (ret)
 		goto read_error;
 
-	if ((flags & PWM_ALLOW_WIM_HDR) && buf.stream_hdr.magic == PWM_MAGIC) {
+	if ((flags & PWM_ALLOW_WIM_HDR) &&
+	    le64_to_cpu(buf.stream_hdr.magic) == PWM_MAGIC)
+	{
 		BUILD_BUG_ON(sizeof(buf.pwm_hdr) < sizeof(buf.stream_hdr));
 		ret = full_read(&pwm->in_fd, &buf.stream_hdr + 1,
 				sizeof(buf.pwm_hdr) - sizeof(buf.stream_hdr));
