@@ -90,8 +90,8 @@ xpress_decode_match(unsigned sym, input_idx_t window_pos,
 		    struct input_bitstream * restrict istream)
 {
 
-	u8 len_hdr;
-	u8 offset_bsr;
+	unsigned len_hdr;
+	unsigned offset_bsr;
 	u8 *match_dest;
 	u8 *match_src;
 	unsigned i;
