@@ -89,12 +89,8 @@ xpress_decode_match(unsigned sym, input_idx_t window_pos,
 		    input_idx_t window_len, u8 window[restrict],
 		    struct input_bitstream * restrict istream)
 {
-
 	unsigned len_hdr;
 	unsigned offset_bsr;
-	u8 *match_dest;
-	u8 *match_src;
-	unsigned i;
 	unsigned match_len;
 	unsigned match_offset;
 
@@ -119,21 +115,14 @@ xpress_decode_match(unsigned sym, input_idx_t window_pos,
 	}
 	match_len += XPRESS_MIN_MATCH_LEN;
 
-
-	/* Verify the match is in bounds, then copy its data to the current
-	 * position.  */
-
-	if (window_pos + match_len > window_len)
+	if (unlikely(match_len > window_len - window_pos))
 		return -1;
 
-	if (match_offset > window_pos)
+	if (unlikely(match_offset > window_pos))
 		return -1;
 
-	match_dest = window + window_pos;
-	match_src = match_dest - match_offset;
-
-	for (i = 0; i < match_len; i++)
-		match_dest[i] = match_src[i];
+	lz_copy(&window[window_pos], match_len, match_offset,
+		&window[window_len]);
 
 	return match_len;
 }

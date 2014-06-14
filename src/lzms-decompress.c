@@ -664,7 +664,6 @@ static int
 lzms_copy_lz_match(struct lzms_decompressor *ctx, u32 length, u32 offset)
 {
 	u8 *out_next;
-	u8 *matchptr;
 
 	if (length > ctx->out_end - ctx->out_next) {
 		LZMS_DEBUG("Match overrun!");
@@ -676,11 +675,10 @@ lzms_copy_lz_match(struct lzms_decompressor *ctx, u32 length, u32 offset)
 	}
 
 	out_next = ctx->out_next;
-	matchptr = out_next - offset;
-	while (length--)
-		*out_next++ = *matchptr++;
 
-	ctx->out_next = out_next;
+	lz_copy(out_next, length, offset, ctx->out_end);
+	ctx->out_next = out_next + length;
+
 	return 0;
 }
 

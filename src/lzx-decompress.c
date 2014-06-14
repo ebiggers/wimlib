@@ -523,9 +523,6 @@ lzx_decode_match(unsigned main_element, int block_type,
 	unsigned num_extra_bits;
 	u32 verbatim_bits;
 	u32 aligned_bits;
-	unsigned i;
-	u8 *match_dest;
-	u8 *match_src;
 
 	/* The main element is offset by 256 because values under 256 indicate a
 	 * literal value. */
@@ -621,24 +618,8 @@ lzx_decode_match(unsigned main_element, int block_type,
 		return -1;
 	}
 
-	match_dest = window + window_pos;
-	match_src = match_dest - match_offset;
-
-#if 0
-	printf("Match: src %u, dst %u, len %u\n", match_src - window,
-						match_dest - window,
-						match_len);
-	putchar('|');
-	for (i = 0; i < match_len; i++) {
-		match_dest[i] = match_src[i];
-		putchar(match_src[i]);
-	}
-	putchar('|');
-	putchar('\n');
-#else
-	for (i = 0; i < match_len; i++)
-		match_dest[i] = match_src[i];
-#endif
+	lz_copy(&window[window_pos], match_len, match_offset,
+		&window[window_pos + bytes_remaining]);
 
 	return match_len;
 }
