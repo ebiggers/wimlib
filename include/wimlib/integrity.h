@@ -8,10 +8,19 @@
 #define WIM_INTEGRITY_NOT_OK -1
 #define WIM_INTEGRITY_NONEXISTENT -2
 
+struct integrity_table;
+
+extern int
+read_integrity_table(WIMStruct *wim, u64 num_checked_bytes,
+		     struct integrity_table **table_ret);
+
+#define free_integrity_table(table) FREE(table)
+
 extern int
 write_integrity_table(WIMStruct *wim,
 		      off_t new_lookup_table_end,
-		      off_t old_lookup_table_end);
+		      off_t old_lookup_table_end,
+		      struct integrity_table *old_table);
 
 extern int
 check_wim_integrity(WIMStruct *wim);

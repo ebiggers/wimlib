@@ -107,7 +107,7 @@ calculate_chunk_sha1(struct filedes *in_fd, size_t this_chunk_size,
  *	WIMLIB_ERR_READ
  *	WIMLIB_ERR_UNEXPECTED_END_OF_FILE
  */
-static int
+int
 read_integrity_table(WIMStruct *wim, u64 num_checked_bytes,
 		     struct integrity_table **table_ret)
 {
@@ -146,7 +146,6 @@ read_integrity_table(WIMStruct *wim, u64 num_checked_bytes,
 	return 0;
 
 invalid:
-	ERROR("Integrity table is invalid");
 	return WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
 }
 
@@ -282,12 +281,7 @@ out_free_new_table:
  * chunks of the file).
  *
  * This function can optionally re-use entries from an older integrity table.
- * To do this, ensure that @wim->hdr.integrity_table_reshdr is the resource
- * header for the older table (note: this is an input-output parameter), and set
- * @old_lookup_table_end to the offset of the byte directly following the last
- * byte checked by the old table.  If the old integrity table is invalid or
- * cannot be read, a warning is printed and the integrity information is
- * re-calculated.
+ * To do this, specify old_lookup_table_end and old_table.
  *
  * @wim:
  *	WIMStruct for the WIM file.  @wim->out_fd must be a seekable descriptor
@@ -307,18 +301,16 @@ out_free_new_table:
  *	If nonzero, the offset of the byte directly following the old lookup
  *	table in the WIM.
  *
- * Return values:
- *	WIMLIB_ERR_SUCCESS (0)
- *	WIMLIB_ERR_NOMEM
- *	WIMLIB_ERR_UNEXPECTED_END_OF_FILE
- *	WIMLIB_ERR_WRITE
+ * @old_table
+ *	Pointer to the old integrity table read into memory, or NULL if not
+ *	specified.
  */
 int
 write_integrity_table(WIMStruct *wim,
 		      off_t new_lookup_table_end,
-		      off_t old_lookup_table_end)
+		      off_t old_lookup_table_end,
+		      struct integrity_table *old_table)
 {
-	struct integrity_table *old_table;
 	struct integrity_table *new_table;
 	int ret;
 	u32 new_table_size;
@@ -329,25 +321,11 @@ write_integrity_table(WIMStruct *wim,
 
 	wimlib_assert(old_lookup_table_end <= new_lookup_table_end);
 
-	old_table = NULL;
-	if (wim_has_integrity_table(wim) && old_lookup_table_end != 0) {
-		ret = read_integrity_table(wim,
-					   old_lookup_table_end - WIM_HEADER_DISK_SIZE,
-					   &old_table);
-		if (ret == WIMLIB_ERR_INVALID_INTEGRITY_TABLE) {
-			WARNING("Old integrity table is invalid! "
-				"Ignoring it");
-		} else if (ret != 0) {
-			WARNING("Can't read old integrity table! "
-				"Ignoring it");
-		}
-	}
-
 	ret = calculate_integrity_table(&wim->out_fd, new_lookup_table_end,
 					old_table, old_lookup_table_end,
 					&new_table, wim->progfunc, wim->progctx);
 	if (ret)
-		goto out_free_old_table;
+		return ret;
 
 	new_table_size = new_table->size;
 
@@ -365,8 +343,6 @@ write_integrity_table(WIMStruct *wim,
 					     NULL,
 					     0);
 	FREE(new_table);
-out_free_old_table:
-	FREE(old_table);
 	DEBUG("ret=%d", ret);
 	return ret;
 }

@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013 Eric Biggers
+ * Copyright (C) 2012, 2013, 2014 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
  *
@@ -2264,10 +2264,6 @@ write_wim_lookup_table(WIMStruct *wim, int image, int write_flags,
  *	(private) WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE:
  *		Don't write the lookup table.
  *
- *	(private) WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE:
- *		When (if) writing the integrity table, re-use entries from the
- *		existing integrity table, if possible.
- *
  *	(private) WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML:
  *		After writing the XML data but before writing the integrity
  *		table, write a temporary WIM header and flush the stream so that
@@ -2284,6 +2280,9 @@ write_wim_lookup_table(WIMStruct *wim, int image, int write_flags,
  *		Use the existing <TOTALBYTES> stored in the in-memory XML
  *		information, rather than setting it to the offset of the XML
  *		data being written.
+ *	(private) WIMLIB_WRITE_FLAG_OVERWRITE
+ *		The existing WIM file is being updated in-place.  The entries
+ *		from its integrity table may be re-used.
  */
 static int
 finish_write(WIMStruct *wim, int image, int write_flags,
@@ -2292,9 +2291,10 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	int ret;
 	off_t hdr_offset;
 	int write_resource_flags;
-	off_t old_lookup_table_end;
+	off_t old_lookup_table_end = 0;
 	off_t new_lookup_table_end;
 	u64 xml_totalbytes;
+	struct integrity_table *old_integrity_table = NULL;
 
 	DEBUG("image=%d, write_flags=%08x", image, write_flags);
 
@@ -2313,15 +2313,36 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 				wim->hdr.boot_idx - 1]->metadata_lte->out_reshdr);
 	}
 
-	/* Write lookup table.  (Save old position first.)  */
-	old_lookup_table_end = wim->hdr.lookup_table_reshdr.offset_in_wim +
-			       wim->hdr.lookup_table_reshdr.size_in_wim;
+	/* If overwriting the WIM file containing an integrity table in-place,
+	 * we'd like to re-use the information in the old integrity table
+	 * instead of recalculating it.  But we might overwrite the old
+	 * integrity table when we expand the XML data.  Read it into memory
+	 * just in case.  */
+	if ((write_flags & (WIMLIB_WRITE_FLAG_OVERWRITE |
+			    WIMLIB_WRITE_FLAG_CHECK_INTEGRITY)) ==
+		(WIMLIB_WRITE_FLAG_OVERWRITE |
+		 WIMLIB_WRITE_FLAG_CHECK_INTEGRITY)
+	    && wim_has_integrity_table(wim))
+	{
+		old_lookup_table_end = wim->hdr.lookup_table_reshdr.offset_in_wim +
+				       wim->hdr.lookup_table_reshdr.size_in_wim;
+		(void)read_integrity_table(wim,
+					   old_lookup_table_end - WIM_HEADER_DISK_SIZE,
+					   &old_integrity_table);
+		/* If we couldn't read the old integrity table, we can still
+		 * re-calculate the full integrity table ourselves.  Hence the
+		 * ignoring of the return value.  */
+	}
+
+	/* Write lookup table.  */
 	if (!(write_flags & WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE)) {
 		ret = write_wim_lookup_table(wim, image, write_flags,
 					     &wim->hdr.lookup_table_reshdr,
 					     lookup_table_list);
-		if (ret)
+		if (ret) {
+			free_integrity_table(old_integrity_table);
 			return ret;
+		}
 	}
 
 	/* Write XML data.  */
@@ -2331,8 +2352,10 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	ret = write_wim_xml_data(wim, image, xml_totalbytes,
 				 &wim->hdr.xml_data_reshdr,
 				 write_resource_flags);
-	if (ret)
+	if (ret) {
+		free_integrity_table(old_integrity_table);
 		return ret;
+	}
 
 	/* Write integrity table (optional).  */
 	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) {
@@ -2343,20 +2366,10 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 			checkpoint_hdr.flags |= WIM_HDR_FLAG_WRITE_IN_PROGRESS;
 			ret = write_wim_header_at_offset(&checkpoint_hdr,
 							 &wim->out_fd, 0);
-			if (ret)
+			if (ret) {
+				free_integrity_table(old_integrity_table);
 				return ret;
-		}
-
-		if (!(write_flags & WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE))
-			old_lookup_table_end = 0;
-
-		if (wim->hdr.integrity_table_reshdr.offset_in_wim <
-		    wim->hdr.xml_data_reshdr.offset_in_wim +
-			wim->hdr.xml_data_reshdr.size_in_wim)
-		{
-			/* Old integrity table was partially overwritten by the
-			 * XML data.  */
-			old_lookup_table_end = 0;
+			}
 		}
 
 		new_lookup_table_end = wim->hdr.lookup_table_reshdr.offset_in_wim +
@@ -2364,7 +2377,9 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 
 		ret = write_integrity_table(wim,
 					    new_lookup_table_end,
-					    old_lookup_table_end);
+					    old_lookup_table_end,
+					    old_integrity_table);
+		free_integrity_table(old_integrity_table);
 		if (ret)
 			return ret;
 	} else {
@@ -3102,7 +3117,6 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 	if (ret)
 		goto out_truncate;
 
-	write_flags |= WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE;
 	ret = finish_write(wim, WIMLIB_ALL_IMAGES, write_flags,
 			   &lookup_table_list);
 	if (ret)
