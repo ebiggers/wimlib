@@ -38,8 +38,8 @@ struct wimlib_compressor {
 };
 
 static const struct compressor_ops *compressor_ops[] = {
-	[WIMLIB_COMPRESSION_TYPE_LZX]    = &lzx_compressor_ops,
 	[WIMLIB_COMPRESSION_TYPE_XPRESS] = &xpress_compressor_ops,
+	[WIMLIB_COMPRESSION_TYPE_LZX]    = &lzx_compressor_ops,
 	[WIMLIB_COMPRESSION_TYPE_LZMS]   = &lzms_compressor_ops,
 };
 
