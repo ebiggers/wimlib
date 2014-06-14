@@ -97,13 +97,12 @@ wimlib_get_compressor_needed_memory(enum wimlib_compression_type ctype,
 {
 	const struct compressor_ops *ops;
 	const struct wimlib_compressor_params_header *params;
+	u64 size;
 
 	if (!compressor_ctype_valid(ctype))
 		return 0;
 
 	ops = compressor_ops[ctype];
-	if (ops->get_needed_memory == NULL)
-		return 0;
 
 	if (extra_params) {
 		params = extra_params;
@@ -113,8 +112,10 @@ wimlib_get_compressor_needed_memory(enum wimlib_compression_type ctype,
 		params = compressor_default_params[ctype];
 	}
 
-	return sizeof(struct wimlib_compressor) +
-		ops->get_needed_memory(max_block_size, params);
+	size = sizeof(struct wimlib_compressor);
+	if (ops->get_needed_memory)
+		size += ops->get_needed_memory(max_block_size, params);
+	return size;
 }
 
 
