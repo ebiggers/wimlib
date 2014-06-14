@@ -44,8 +44,7 @@
  *	Flags, optional progress function, and progress data for the capture
  *	operation.
  * @status
- *	Status of the scanned file (ok, unsupported, excluded, or excluded
- *	symlink).
+ *	Status of the scanned file.
  * @inode
  *	If @status is WIMLIB_SCAN_DENTRY_OK, this is a pointer to the WIM inode
  *	that has been created for the scanned file.  The first time the file is
