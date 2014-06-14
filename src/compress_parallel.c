@@ -136,7 +136,7 @@ get_avail_memory(void)
 
 default_size:
 	WARNING("Failed to determine available memory; assuming 1 GiB");
-	return 1U << 30;
+	return 1ULL << 30;
 }
 
 static int
