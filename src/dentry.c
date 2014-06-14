@@ -197,9 +197,9 @@ dentry_min_len_with_names(u16 file_name_nbytes, u16 short_name_nbytes)
 {
 	u64 length = sizeof(struct wim_dentry_on_disk);
 	if (file_name_nbytes)
-		length += file_name_nbytes + 2;
+		length += (u32)file_name_nbytes + 2;
 	if (short_name_nbytes)
-		length += short_name_nbytes + 2;
+		length += (u32)short_name_nbytes + 2;
 	return length;
 }
 
@@ -266,7 +266,7 @@ ads_entry_total_length(const struct wim_ads_entry *entry)
 {
 	u64 len = sizeof(struct wim_ads_entry_on_disk);
 	if (entry->stream_name_nbytes)
-		len += entry->stream_name_nbytes + 2;
+		len += (u32)entry->stream_name_nbytes + 2;
 	return (len + 7) & ~7;
 }
 
@@ -430,7 +430,6 @@ dentry_full_path(struct wim_dentry *dentry)
 static int
 dentry_calculate_subdir_offset(struct wim_dentry *dentry, void *_subdir_offset_p)
 {
-
 	if (dentry_is_directory(dentry)) {
 		u64 *subdir_offset_p = _subdir_offset_p;
 		struct wim_dentry *child;
@@ -1209,7 +1208,7 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 			goto err_free_dentry;
 		}
 		dentry->file_name_nbytes = file_name_nbytes;
-		p += file_name_nbytes + 2;
+		p += (u32)file_name_nbytes + 2;
 	}
 
 	/* Read the short filename if present.  Note: if there is no short
@@ -1222,7 +1221,7 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 			goto err_free_dentry;
 		}
 		dentry->short_name_nbytes = short_name_nbytes;
-		p += short_name_nbytes + 2;
+		p += (u32)short_name_nbytes + 2;
 	}
 
 	/* Read extra data at end of dentry (but before alternate data stream
@@ -1455,7 +1454,7 @@ write_ads_entry(const struct wim_ads_entry *ads_entry,
 	p += sizeof(struct wim_ads_entry_on_disk);
 	if (ads_entry->stream_name_nbytes) {
 		p = mempcpy(p, ads_entry->stream_name,
-			    ads_entry->stream_name_nbytes + 2);
+			    (u32)ads_entry->stream_name_nbytes + 2);
 	}
 	/* Align to 8-byte boundary */
 	while ((uintptr_t)p & 7)
@@ -1528,10 +1527,10 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 	wimlib_assert(dentry_is_root(dentry) != dentry_has_long_name(dentry));
 
 	if (dentry_has_long_name(dentry))
-		p = mempcpy(p, dentry->file_name, dentry->file_name_nbytes + 2);
+		p = mempcpy(p, dentry->file_name, (u32)dentry->file_name_nbytes + 2);
 
 	if (dentry_has_short_name(dentry))
-		p = mempcpy(p, dentry->short_name, dentry->short_name_nbytes + 2);
+		p = mempcpy(p, dentry->short_name, (u32)dentry->short_name_nbytes + 2);
 
 	/* Align to 8-byte boundary */
 	while ((uintptr_t)p & 7)
