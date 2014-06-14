@@ -2350,6 +2350,15 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 		if (!(write_flags & WIMLIB_WRITE_FLAG_REUSE_INTEGRITY_TABLE))
 			old_lookup_table_end = 0;
 
+		if (wim->hdr.integrity_table_reshdr.offset_in_wim <
+		    wim->hdr.xml_data_reshdr.offset_in_wim +
+			wim->hdr.xml_data_reshdr.size_in_wim)
+		{
+			/* Old integrity table was partially overwritten by the
+			 * XML data.  */
+			old_lookup_table_end = 0;
+		}
+
 		new_lookup_table_end = wim->hdr.lookup_table_reshdr.offset_in_wim +
 				       wim->hdr.lookup_table_reshdr.size_in_wim;
 
