@@ -332,7 +332,7 @@ submit_compression_msg(struct parallel_chunk_compressor *ctx)
 
 static bool
 parallel_chunk_compressor_submit_chunk(struct chunk_compressor *_ctx,
-				       const void *chunk, size_t size)
+				       const void *chunk, u32 size)
 {
 	struct parallel_chunk_compressor *ctx = (struct parallel_chunk_compressor *)_ctx;
 	struct message *msg;

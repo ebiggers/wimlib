@@ -58,7 +58,7 @@ serial_chunk_compressor_destroy(struct chunk_compressor *_ctx)
 
 static bool
 serial_chunk_compressor_submit_chunk(struct chunk_compressor *_ctx,
-				     const void *chunk, size_t size)
+				     const void *chunk, u32 size)
 {
 	struct serial_chunk_compressor *ctx = (struct serial_chunk_compressor*)_ctx;
 

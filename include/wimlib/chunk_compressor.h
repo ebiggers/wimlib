@@ -32,7 +32,7 @@ struct chunk_compressor {
 	 * %false if the chunk compressor does not have space for the chunk at
 	 * the present time.  In the latter case, get_chunk() must be called to
 	 * retrieve a compressed chunk before trying again.  */
-	bool (*submit_chunk)(struct chunk_compressor *, const void *, size_t);
+	bool (*submit_chunk)(struct chunk_compressor *, const void *, u32);
 
 	/* Get the next chunk of compressed data.
 	 *
