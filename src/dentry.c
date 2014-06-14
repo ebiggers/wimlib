@@ -1406,12 +1406,7 @@ read_dentry_tree(const u8 *buf, size_t buf_len,
 		{
 			WARNING("The root directory has a nonempty name; "
 				"removing it.");
-			FREE(root->file_name);
-			FREE(root->short_name);
-			root->file_name = NULL;
-			root->short_name = NULL;
-			root->file_name_nbytes = 0;
-			root->short_name_nbytes = 0;
+			dentry_set_name(root, NULL);
 		}
 
 		if (unlikely(!dentry_is_directory(root))) {
