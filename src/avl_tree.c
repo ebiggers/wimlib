@@ -127,15 +127,6 @@ avl_get_balance_factor(const struct avl_tree_node *node)
 	return (int)(node->parent_balance & 3) - 1;
 }
 
-/* Sets the balance factor of the specified AVL tree node.  This must be
- * -1, 0, or 1.  */
-static AVL_INLINE void
-avl_set_balance_factor(struct avl_tree_node *node, int balance_factor)
-{
-	node->parent_balance =
-		(node->parent_balance & ~3) | (balance_factor + 1);
-}
-
 /* Adds @amount to the balance factor of the specified AVL tree node.
  * The caller must ensure this still results in a valid balance factor
  * (-1, 0, or 1).  */
@@ -380,12 +371,10 @@ avl_handle_subtree_growth(struct avl_tree_node ** const root_ptr,
 		 */
 		avl_rotate(root_ptr, parent, -sign);
 
-		/* Equivalent to:
-		 *    avl_set_balance_factor(parent, 0);  */
+		/* Equivalent to setting @parent's balance factor to 0.  */
 		avl_adjust_balance_factor(parent, -sign); /* A */
 
-		/* Equivalent to:
-		 *    avl_set_balance_factor(node, 0);  */
+		/* Equivalent to setting @node's balance factor to 0.  */
 		avl_adjust_balance_factor(node, -sign);   /* B */
 	} else {
 		/* @node (B below) is heavy in the direction opposite
