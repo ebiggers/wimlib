@@ -55,25 +55,24 @@ zero_out_hash(u8 hash[SHA1_HASH_SIZE])
 #ifdef WITH_LIBCRYPTO
 
 #include <openssl/sha.h>
+
+#define sha1_init     SHA1_Init
+#define sha1_update   SHA1_Update
+#define sha1_final    SHA1_Final
+
 static inline void
 sha1_buffer(const void *buffer, size_t len, u8 hash[SHA1_HASH_SIZE])
 {
 	SHA1(buffer, len, hash);
 }
-#define sha1_init     SHA1_Init
-#define sha1_update   SHA1_Update
-#define sha1_final    SHA1_Final
 
 #else /* WITH_LIBCRYPTO */
 
 typedef struct {
+	u64 bytecount;
 	u32 state[5];
-	u32 count[2];
 	u8 buffer[64];
 } SHA_CTX;
-
-extern void
-sha1_buffer(const void *buffer, size_t len, u8 hash[SHA1_HASH_SIZE]);
 
 extern void
 sha1_init(SHA_CTX *ctx);
@@ -83,6 +82,9 @@ sha1_update(SHA_CTX *ctx, const void *data, size_t len);
 
 extern void
 sha1_final(u8 hash[SHA1_HASH_SIZE], SHA_CTX *ctx);
+
+extern void
+sha1_buffer(const void *buffer, size_t len, u8 hash[SHA1_HASH_SIZE]);
 
 #endif /* !WITH_LIBCRYPTO */
 

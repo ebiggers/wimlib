@@ -179,8 +179,8 @@ WINDOWS_CPPFLAGS=""
 WINDOWS_LDFLAGS=""
 WINDOWS_LDADD=""
 
-case "$host" in
-	*-*-mingw*)
+case "$host_os" in
+	mingw*)
 		# Native Windows
 		WITH_NTFS_3G_DEFAULT="no"
 		WITH_FUSE_DEFAULT="no"
@@ -190,14 +190,6 @@ case "$host" in
 		WINDOWS_CPPFLAGS="-D_POSIX -DUNICODE -D_UNICODE -D_CRT_NON_CONFORMING_SWPRINTFS"
 		WINDOWS_LDFLAGS="-no-undefined"
 		WINDOWS_LDADD="-lshlwapi"
-		;;
-	*-*-cygwin*)
-		# Cygwin (WARNING: not well supported)
-		AC_MSG_WARN([wimlib has not been tested with Cygwin!  Please do
-			     a Windows-native build with MinGW-w64 instead])
-		WITH_NTFS_3G_DEFAULT="no"
-		WITH_FUSE_DEFAULT="no"
-		VISIBILITY_CFLAGS=""
 		;;
 	*)
 		# UNIX / other
@@ -303,9 +295,20 @@ AC_MSG_RESULT([$ENABLE_SSSE3_SHA1])
 if test "x$ENABLE_SSSE3_SHA1" = "xyes"; then
 	AC_DEFINE([ENABLE_SSSE3_SHA1], [1],
 			[Define to 1 if using vectorized implementation of SHA1])
-	SSSE3_SHA1_OBJ=sha1-ssse3.lo
-	AX_PROG_NASM
-	AC_SUBST([NASM], [$nasm])
+	SSSE3_SHA1_OBJ=src/sha1-ssse3.lo
+	AC_PROG_NASM
+	NASM_SYMBOL_PREFIX=""
+	NASM_WINDOWS_FLAGS=
+	if test "x$WINDOWS_NATIVE_BUILD" = "xyes"; then
+		NASM_WINDOWS_FLAGS="-DWIN_ABI"
+	fi
+	case "$host_os" in
+		darwin* | rhapsody* | nextstep* | openstep* | macos*)
+			NASM_SYMBOL_PREFIX="_"
+			;;
+	esac
+	AC_SUBST([NASM_WINDOWS_FLAGS], $NASM_WINDOWS_FLAGS)
+	AC_SUBST([NASM_SYMBOL_PREFIX], $NASM_SYMBOL_PREFIX)
 else
 	SSSE3_SHA1_OBJ=
 fi

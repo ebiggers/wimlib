@@ -146,12 +146,13 @@ endif
 
 EXTRA_libwim_la_SOURCES = src/sha1-ssse3.asm
 libwim_la_DEPENDENCIES = $(SSSE3_SHA1_OBJ)
-STRIP_FPIC = sh $(top_srcdir)/build-aux/strip_fPIC.sh
 
-sha1-ssse3.lo:src/sha1-ssse3.asm
-	$(LIBTOOL) --mode=compile --tag=CC $(STRIP_FPIC) $(NASM) -f elf64 \
-	-DINTEL_SHA1_UPDATE_DEFAULT_DISPATCH=ssse3_not_found \
-	$<
+src/sha1-ssse3.lo:src/sha1-ssse3.asm
+	$(LIBTOOL) --mode=compile --tag NASM $(srcdir)/build-aux/nasm_lt.sh \
+	$(NASM) $(NAFLAGS) $(NASM_WINDOWS_FLAGS)			    \
+	-DINTEL_SHA1_UPDATE_FUNCNAME=$(NASM_SYMBOL_PREFIX)sha1_transform_blocks_ssse3	    \
+	-DINTEL_SHA1_UPDATE_DEFAULT_DISPATCH=$(NASM_SYMBOL_PREFIX)sha1_transform_blocks_default  \
+	$< -o $@
 
 libwim_la_LIBADD =		\
 	$(LIBXML2_LIBS)		\
@@ -236,7 +237,7 @@ dist_bin_SCRIPTS = programs/mkwinpeimg
 include_HEADERS = include/wimlib.h
 
 EXTRA_DIST =					\
-	build-aux/strip_fPIC.sh			\
+	build-aux/nasm_lt.sh			\
 	archlinux				\
 	debian					\
 	rpm					\

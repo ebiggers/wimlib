@@ -32,6 +32,13 @@ typedef uint8_t  sle8;
 typedef uint16_t sle16;
 typedef uint32_t sle32;
 typedef uint64_t sle64;
+
+/* Unsigned big endian types of exact size */
+typedef uint8_t  be8;
+typedef uint16_t be16;
+typedef uint32_t be32;
+typedef uint64_t be64;
+
 #endif
 
 /* A pointer to 'utf16lechar' indicates a UTF-16LE encoded string */

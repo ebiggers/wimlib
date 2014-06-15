@@ -44,6 +44,13 @@ bswap64(u64 n)
 #    define cpu_to_le16(n) bswap16(n)
 #    define cpu_to_le32(n) bswap32(n)
 #    define cpu_to_le64(n) bswap64(n)
+
+#    define cpu_to_be16(n) (n)
+#    define cpu_to_be32(n) (n)
+#    define cpu_to_be64(n) (n)
+#    define be16_to_cpu(n) (n)
+#    define be32_to_cpu(n) (n)
+#    define be64_to_cpu(n) (n)
 #  else
 #    define cpu_to_le16(n) (n)
 #    define cpu_to_le32(n) (n)
@@ -51,6 +58,13 @@ bswap64(u64 n)
 #    define le16_to_cpu(n) (n)
 #    define le32_to_cpu(n) (n)
 #    define le64_to_cpu(n) (n)
+
+#    define be16_to_cpu(n) bswap16(n)
+#    define be32_to_cpu(n) bswap32(n)
+#    define be64_to_cpu(n) bswap64(n)
+#    define cpu_to_be16(n) bswap16(n)
+#    define cpu_to_be32(n) bswap32(n)
+#    define cpu_to_be64(n) bswap64(n)
 #  endif
 #endif /* _NTFS_ENDIANS_H */
 

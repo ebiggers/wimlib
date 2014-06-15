@@ -1,126 +1,70 @@
 /*
  * sha1.c
  *
- * Parts of this file are based on public domain code written by Steve Reid.
- */
-
-/*
- * Copyright (C) 2012, 2013 Eric Biggers
+ * Implementation of the Secure Hash Algorithm version 1 (FIPS 180-1).
  *
- * This file is part of wimlib, a library for working with WIM files.
+ * Author:  Eric Biggers
+ * Year:    2014
  *
- * wimlib is free software; you can redistribute it and/or modify it under the
- * terms of the GNU General Public License as published by the Free
- * Software Foundation; either version 3 of the License, or (at your option)
- * any later version.
+ * The default SHA-1 transform is based on public domain code by Steve Reid.
  *
- * wimlib is distributed in the hope that it will be useful, but WITHOUT ANY
- * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
- * A PARTICULAR PURPOSE. See the GNU General Public License for more
- * details.
- *
- * You should have received a copy of the GNU General Public License
- * along with wimlib; if not, see http://www.gnu.org/licenses/.
+ * The author dedicates this file to the public domain.
+ * You can do whatever you want with this file.
  */
 
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #endif
 
+#include "wimlib/endianness.h"
 #include "wimlib/sha1.h"
 
-#include <string.h>
+/* Dummy SHA-1 message digest of all 0's.  This is used in the WIM format to
+ * mean "SHA-1 not specified".  */
+const u8 zero_hash[20];
 
-/* The SHA1 support in wimlib can use an external libcrypto (part of openssl) or
- * use a built-in SHA1 function.  The built-in functions are either based on
- * Steve Reid's public domain code, or based on Intel's SSSE3 SHA1 code.
- */
-
-const u8 zero_hash[SHA1_HASH_SIZE] = {
-	0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0,
-};
-
+/* If we use libcrypto (e.g. OpenSSL) then we get all the SHA-1 functions for
+ * free.  Otherwise we need to implement them ourselves.  */
 
 #ifndef WITH_LIBCRYPTO
 
-/*  Initialize new context */
-void
-sha1_init(SHA_CTX* context)
-{
-	/* SHA1 initialization constants */
-	context->state[0] = 0x67452301;
-	context->state[1] = 0xEFCDAB89;
-	context->state[2] = 0x98BADCFE;
-	context->state[3] = 0x10325476;
-	context->state[4] = 0xC3D2E1F0;
-	context->count[0] = context->count[1] = 0;
-}
-
-#ifdef ENABLE_SSSE3_SHA1
-extern void
-sha1_update_intel(int *hash, const void* input, size_t num_blocks);
-
-void
-sha1_update(SHA_CTX *context, const void *data, size_t len)
-{
-	sha1_update_intel((int*)&context->state, data, len / 64);
-	size_t j = (context->count[0] >> 3) & 63;
-	if ((context->count[0] += len << 3) < (len << 3))
-		context->count[1]++;
-	context->count[1] += (len >> 29);
-}
-#include <stdlib.h>
-void
-ssse3_not_found()
-{
-	fprintf(stderr,
-"Cannot calculate SHA1 message digest: CPU does not support SSSE3\n"
-"instructions!  Recompile wimlib without the --enable-ssse3-sha1 flag\n"
-"to use wimlib on this CPU.\n");
-	abort();
-}
-#else /* ENABLE_SSSE3_SHA1 */
-
 #define rol(value, bits) (((value) << (bits)) | ((value) >> (32 - (bits))))
 
-/* blk0() and blk() perform the initial expand. */
-/* I got the idea of expanding during the round function from SSLeay */
-/* FIXME: can we do this in an endian-proof way? */
-#ifdef WORDS_BIGENDIAN
-#define blk0(i) block->l[i]
-#else
-#define blk0(i) (block->l[i] = (rol(block->l[i],24)&0xFF00FF00) \
-    |(rol(block->l[i],8)&0x00FF00FF))
-#endif
-#define blk(i) (block->l[i&15] = rol(block->l[(i+13)&15]^block->l[(i+8)&15] \
-    ^block->l[(i+2)&15]^block->l[i&15],1))
+#define blk0(i) (tmp[i] = be32_to_cpu(((const be32 *)block)[i]))
 
-/* (R0+R1), R2, R3, R4 are the different operations used in SHA1 */
-#define R0(v,w,x,y,z,i) z+=((w&(x^y))^y)+blk0(i)+0x5A827999+rol(v,5);w=rol(w,30);
-#define R1(v,w,x,y,z,i) z+=((w&(x^y))^y)+blk(i)+0x5A827999+rol(v,5);w=rol(w,30);
-#define R2(v,w,x,y,z,i) z+=(w^x^y)+blk(i)+0x6ED9EBA1+rol(v,5);w=rol(w,30);
-#define R3(v,w,x,y,z,i) z+=(((w|x)&y)|(w&x))+blk(i)+0x8F1BBCDC+rol(v,5);w=rol(w,30);
-#define R4(v,w,x,y,z,i) z+=(w^x^y)+blk(i)+0xCA62C1D6+rol(v,5);w=rol(w,30);
+#define blk(i) (tmp[i & 15] = rol(tmp[(i + 13) & 15] ^ \
+				  tmp[(i +  8) & 15] ^ \
+				  tmp[(i +  2) & 15] ^ \
+				  tmp[(i +  0) & 15], 1))
 
-/* Hash a single 512-bit block. This is the core of the algorithm. */
+#define R0(v, w, x, y, z, i) \
+	z += ((w & (x ^ y)) ^ y) + blk0(i) + 0x5A827999 + rol(v, 5); \
+	w = rol(w, 30);
+
+#define R1(v, w, x, y, z, i) \
+	z += ((w & (x ^ y)) ^ y) + blk(i) + 0x5A827999 + rol(v, 5); \
+	w = rol(w, 30);
+
+#define R2(v, w, x, y, z, i) \
+	z += (w ^ x ^ y) + blk(i) + 0x6ED9EBA1 + rol(v, 5); \
+	w = rol(w, 30);
+
+#define R3(v, w, x, y, z, i) \
+	z += (((w | x) & y) | (w & x)) + blk(i) + 0x8F1BBCDC + rol(v, 5); \
+	w = rol(w, 30);
+
+#define R4(v, w, x, y, z, i) \
+	z += (w ^ x ^ y) + blk(i) + 0xCA62C1D6 + rol(v, 5); \
+	w = rol(w, 30);
+
+/* Hash a single 512-bit block. This is the core of the algorithm.  */
 static void
-sha1_transform(u32 state[5], const u8 buffer[64])
+sha1_transform_default(u32 state[5], const u8 block[64])
 {
 	u32 a, b, c, d, e;
-	typedef union {
-		u8 c[64];
-		u32 l[16];
-	} CHAR64LONG16;
-	CHAR64LONG16* block;
+	u32 tmp[16];
 
-	u8 workspace[64];
-	block = (CHAR64LONG16*)workspace;
-	memcpy(block, buffer, 64);
-
-	/* Copy context->state[] to working vars */
+	/* Copy ctx->state[] to working vars */
 	a = state[0];
 	b = state[1];
 	c = state[2];
@@ -157,55 +101,104 @@ sha1_transform(u32 state[5], const u8 buffer[64])
 	state[4] += e;
 }
 
-void
-sha1_update(SHA_CTX* context, const void *data, const size_t len)
-{
-	size_t i, j;
+#ifdef ENABLE_SSSE3_SHA1
+extern void
+sha1_transform_blocks_ssse3(u32 state[5], const void *data, size_t num_blocks);
+extern void
+sha1_transform_blocks_default(u32 state[5], const void *data, size_t num_blocks);
+#  define sha1_transform_blocks sha1_transform_blocks_ssse3
+#else
+#  define sha1_transform_blocks sha1_transform_blocks_default
+#endif
 
-	j = (context->count[0] >> 3) & 63;
-	if ((context->count[0] += len << 3) < (len << 3))
-		context->count[1]++;
-	context->count[1] += (len >> 29);
-	if ((j + len) > 63) {
-		i = 64 - j;
-		memcpy(&context->buffer[j], data, i);
-		sha1_transform(context->state, context->buffer);
-		for ( ; i + 63 < len; i += 64)
-			sha1_transform(context->state, data + i);
-		j = 0;
-	} else  {
-		i = 0;
-	}
-	memcpy(&context->buffer[j], data + i, len - i);
+#ifndef ENABLE_SSSE3_SHA1
+static
+#endif
+void
+sha1_transform_blocks_default(u32 state[5], const void *data, size_t num_blocks)
+{
+	do {
+		sha1_transform_default(state, data);
+		data += 64;
+	} while (--num_blocks);
 }
 
-#endif /* !ENABLE_SSSE3_SHA1 */
-
-/* Add padding and return the message digest. */
+/* Initializes the specified SHA-1 context.
+ *
+ * After sha1_init(), call sha1_update() zero or more times to provide the data
+ * to be hashed.  Then call sha1_final() to get the final hash.  */
 void
-sha1_final(u8 md[SHA1_HASH_SIZE], SHA_CTX* context)
+sha1_init(SHA_CTX *ctx)
 {
-	u32 i;
-	u8  finalcount[8];
+	ctx->bytecount = 0;
 
-	for (i = 0; i < 8; i++) {
-		finalcount[i] = (unsigned char)((context->count[(i >= 4 ? 0 : 1)]
-					>> ((3-(i & 3)) * 8) ) & 255);  /* Endian independent */
-	}
-	sha1_update(context, (u8 *)"\200", 1);
-	while ((context->count[0] & 504) != 448) {
-		sha1_update(context, (u8 *)"\0", 1);
-	}
-	sha1_update(context, finalcount, 8);  /* Should cause a sha1_transform() */
-	for (i = 0; i < SHA1_HASH_SIZE; i++) {
-		md[i] = (u8)((context->state[i>>2] >> ((3-(i & 3)) * 8) ) & 255);
-	}
+	ctx->state[0] = 0x67452301;
+	ctx->state[1] = 0xEFCDAB89;
+	ctx->state[2] = 0x98BADCFE;
+	ctx->state[3] = 0x10325476;
+	ctx->state[4] = 0xC3D2E1F0;
 }
 
+/* Updates the SHA-1 context with @len bytes of data.  */
 void
-sha1_buffer(const void *buffer, size_t len, u8 md[SHA1_HASH_SIZE])
+sha1_update(SHA_CTX *ctx, const void *data, size_t len)
+{
+	unsigned buffered = ctx->bytecount & 63;
+
+	ctx->bytecount += len;
+
+	if (buffered) {
+		/* Previous block is unfinished.  */
+		if (len < 64 - buffered) {
+			memcpy(&ctx->buffer[buffered], data, len);
+			/* Previous block still unfinished.  */
+			return;
+		} else {
+			memcpy(&ctx->buffer[buffered], data, 64 - buffered);
+			/* Finished the previous block.  */
+			sha1_transform_blocks(ctx->state, ctx->buffer, 1);
+			data += 64 - buffered;
+			len -= 64 - buffered;
+		}
+	}
+
+	/* Process blocks directly from the input data.  */
+	if (len / 64) {
+		sha1_transform_blocks(ctx->state, data, len / 64);
+		data += len & ~63;
+		len &= 63;
+	}
+
+	/* Copy any remaining bytes to the buffer.  */
+	if (len)
+		memcpy(ctx->buffer, data, len);
+}
+
+/* Pad the message and generate the final SHA-1 message digest.  */
+void
+sha1_final(u8 md[20], SHA_CTX *ctx)
+{
+	/* Logically, we must append 1 bit, then a variable number of 0 bits,
+	 * then the message length in bits as a big-endian integer, so that the
+	 * final length is a multiple of the block size.  */
+	static const u8 padding[64] = {0x80, };
+	be64 finalcount = cpu_to_be64(ctx->bytecount << 3);
+	be32 *out = (be32 *)md;
+
+	sha1_update(ctx, padding, 64 - ((ctx->bytecount + 8) & 63));
+	sha1_update(ctx, &finalcount, 8);
+
+	for (int i = 0; i < 5; i++)
+		out[i] = cpu_to_be32(ctx->state[i]);
+}
+
+/* Calculate the SHA-1 message digest of the specified buffer.
+ * @len is the buffer length in bytes.  */
+void
+sha1_buffer(const void *buffer, size_t len, u8 md[20])
 {
 	SHA_CTX ctx;
+
 	sha1_init(&ctx);
 	sha1_update(&ctx, buffer, len);
 	sha1_final(md, &ctx);

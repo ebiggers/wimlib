@@ -51,6 +51,8 @@ Version 1.7.0-BETA:
 	support.  Use --without-fuse to disable support for mounting WIM images;
 	this will also disable the need for extended attribute support.
 
+	Configuring with --enable-ssse3-sha1 now works correctly.
+
 	The shared library version has been bumped up.  The main
 	incompatibilities are:
 
