@@ -493,7 +493,8 @@ rol  %1, 30
 
 
 ;;----------------------
-section .data align=128
+section .data
+align 128
 
 %xdefine K1 0x5a827999
 %xdefine K2 0x6ed9eba1
@@ -519,7 +520,8 @@ sha1_update_intel_dispatched:
 DQ  sha1_update_intel_init_
 
 ;;----------------------
-section .text align=4096
+section .text
+align 4096
 
 SHA1_VECTOR_ASM     sha1_update_intel_ssse3_, multiblock
 
