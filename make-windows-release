@@ -22,7 +22,8 @@ else
 	exit 2
 fi
 
-VERSION=$(grep 'This is wimlib version' README | grep -o '[0-9]\+\.[0-9]\+\.[0-9]')
+VERSION=$(grep 'This is wimlib version' README | \
+	  grep -o '\<[0-9]\+\.[0-9]\+\.[0-9]\+\(-BETA\)\?\>')
 ZIPFILE=wimlib-${VERSION}-windows-${WIMLIB_ARCH}-bin.zip
 
 if ! grep -q "./configure --host=${WIMLIB_ARCH}-w64-mingw32" config.log; then
