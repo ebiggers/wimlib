@@ -1,16 +1,11 @@
 #!/bin/bash
 
-set -e -u
+set -e
 
 WIMLIB_ARCH=i686
 if [ $# -ge 1 ]; then
 	WIMLIB_ARCH=$1
-fi
-
-if [ $# -ge 2 ]; then
-	CONF_EXTRA_ARGS="$2"
-else
-	CONF_EXTRA_ARGS=
+	shift
 fi
 
 if [[ $WIMLIB_ARCH = i686 ]] ; then
@@ -22,12 +17,14 @@ else
 	exit 2
 fi
 
+CONF_EXTRA_ARGS=("$@")
+
 VERSION=$(grep 'This is wimlib version' README | \
 	  grep -o '\<[0-9]\+\.[0-9]\+\.[0-9]\+\(-BETA\)\?\>')
 ZIPFILE=wimlib-${VERSION}-windows-${WIMLIB_ARCH}-bin.zip
 
 if ! grep -q "./configure --host=${WIMLIB_ARCH}-w64-mingw32" config.log; then
-	./configure --host=${WIMLIB_ARCH}-w64-mingw32 $CONF_EXTRA_ARGS
+	./configure --host=${WIMLIB_ARCH}-w64-mingw32 "${CONF_EXTRA_ARGS[@]}"
 	make clean
 fi
 
