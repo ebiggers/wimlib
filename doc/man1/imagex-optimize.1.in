@@ -33,8 +33,8 @@ better job than the program that wrote the original file.  A side effect of this
 is that every stream in the original WIM will be checksummed, so this can help
 verify that the WIM is intact (equivalent to applying all the images from it).
 .IP ""
-Note: as of wimlib v1.5.3, wimlib's LZX compressor usually achieves the same or
-better compression than Microsoft's, but is slightly slower.
+Note: as of wimlib v1.7.0, wimlib's LZX compressor usually achieves the same or
+better compression than Microsoft's, but is about 10% slower.
 .TP
 \fB--recompress-slow\fR, \fB--compress-slow\fR
 Spend even more time compressing the data in order to achieve a more optimal
