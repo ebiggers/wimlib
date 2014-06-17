@@ -65,74 +65,69 @@ commands and their syntax.  For additional documentation:
 
                                 COMPRESSION RATIO
 
-wimlib (and wimlib-imagex) can create XPRESS, LZX, or LZMS compressed WIM
-archives.  wimlib includes its own compression codecs and does not use the
-compression API available on some versions of Windows.  The below table provides
-the results (file size, in bytes, and time to create, in seconds) of capturing a
-WIM containing an x86 Windows PE image, using various compression types and
-options.  When applicable, the results with the equivalent Microsoft
-implementation in WIMGAPI, which is the library used by ImageX and Dism, are
-included.
+wimlib (and wimlib-imagex) can create XPRESS, LZX, or LZMS compressed WIM files.
+wimlib includes its own compression codecs and does not use the compression API
+available on some versions of Windows.
 
-  ===========================================================================
-  | Compression type       ||  wimlib (v1.6.1)       |  WIMGAPI (Windows 8) |
-  ===========================================================================
-  | None             [1]   ||  531,979,435 in 18s    |  531,980,333 in 24s  |
-  | XPRESS           [2]   ||  207,369,912 in 22s    |  209,886,010 in 39s  |
-  | LZX (quick)      [3]   ||  194,876,901 in 29s    |  N/A                 |
-  | LZX (normal)     [4]   ||  187,962,713 in 158s   |  188,163,523 in 125s |
-  | LZX (slow)       [5]   ||  186,913,423 in 358s   |  N/A                 |
-  | LZMS (non-solid) [6]   ||  176,880,594 in 182s   |  N/A                 |
-  | LZMS (solid)     [7]   ||  136,507,304 in 494s   |  126,735,608 in 623s |
-  ===========================================================================
+I have gradually been improving the compression codecs in wimlib, and in some
+cases they now outperform and outcompress the equivalent Microsoft
+implementations.  Although results will vary depending on the data being
+compressed, in the table below I present the results for a common use case:
+compressing an x86 Windows PE image.  Each row displays the compression type,
+the size of the resulting WIM file in bytes, and how many seconds it took to
+create the file.  When applicable, the results with the equivalent Microsoft
+implementation in WIMGAPI is included.
+
+  =============================================================================
+  | Compression type       ||  wimlib (v1.7.0)       |  WIMGAPI (Windows 8.1) |
+  =============================================================================
+  | None             [1]   ||  361,182,560 in 7.6s   |  361,183,674 in 11.9s  |
+  | XPRESS           [2]   ||  138,992,007 in 11.5s  |  140,416,657 in 13.9s  |
+  | LZX (quick)      [3]   ||  131,428,113 in 15.2s  |  N/A                   |
+  | LZX (normal)     [4]   ||  126,807,853 in 58.9s  |  127,259,566 in 55.2s  |
+  | LZX (slow)       [5]   ||  126,085,971 in 125s   |  N/A                   |
+  | LZMS (non-solid) [6]   ||  122,082,982 in 59.8s  |  N/A                   |
+  | LZMS (solid)     [7]   ||  92,171,126  in 260s   |  88,742,356 in 556s    |
+  =============================================================================
 
 Notes:
    [1] '--compress=none' for wimlib-imagex;
-       '/compress none' or no option for ImageX.
+       '/compress:none' for DISM.
 
    [2] '--compress=fast' or '--compress=XPRESS' for wimlib-imagex;
-       '/compress fast' or no option for ImageX.
-       Compression chunk size is 32768 (the default for XPRESS).
+       '/compress:fast' for DISM.
+       Compression chunk size is 32768 bytes, the default for XPRESS.
 
-   [3] No compression option specified to wimlib-imagex; no known equivalent for
-       WIMGAPI (ImageX uses XPRESS compression if no option specified).
-       Compression chunk size is 32768 (the default for LZX).
+   [3] No compression option specified to wimlib-imagex;
+       no known equivalent for DISM.
+       Compression chunk size is 32768 bytes, the default for LZX.
 
    [4] '--compress=maximum' or '--compress=LZX' for wimlib-imagex;
-       '/compress maximum' for ImageX.
-       Compression chunk size is 32768 (the default for LZX).
+       '/compress:maximum' for DISM.
+       Compression chunk size is 32768 bytes, the default for LZX.
 
    [5] '--compress=maximum --compress-slow' for wimlib-imagex;
-       no known equivalent for WIMGAPI.
-       Compression chunk size is 32768 (the default for LZX).
+       no known equivalent for DISM.
+       Compression chunk size is 32768 bytes, the default for LZX.
 
    [6] '--compress=recovery' or '--compress=LZMS' for wimlib-imagex;
-       no known way to create the equivalent with WIMGAPI.
-       Compression chunk size is 131072 (the default for LZMS).  Note: this
-       compression type is not generally recommended due to its limited
-       compatibility with the MS implementations.
+       no known equivalent for DISM.
+       Compression chunk size is 131072 bytes, the default for LZMS.
 
    [7] '--compress=recovery --solid' or '--compress=LZMS --solid' for
-       wimlib-imagex; WIMCreateFile with WIM_COMPRESSION_LZMS and flag
-       0x20000000 for WIMGAPI.  Compression chunk size in packed resources is
-       33554432 for wimlib, 67108864 for WIMGAPI.  Note: this compression type
-       is not generally recommended due to its limited compatibility with the MS
-       implementations.  Also, due to the large chunk size, wimlib uses about
-       500MB of memory per thread when compressing in this format.
+       wimlib-imagex.  Should be '/compress:recovery' for DISM, but it doesn't
+       work; I called WIMGAPI directly instead.
+       Compression chunk size in solid blocks is 67108864 bytes in both cases.
 
-The above timings were done on Windows 8 (x86) so that side-by-side comparisons
-with the Microsoft implementation would be possible; however, wimlib may have
-even better performance on other operating systems such as Linux.  The system
-had 2 CPUs and 2 GiB of memory available.  All times were done with the page
-cache warmed, so the times primarily measure the performance of the compression
-algorithms and not the time to read data from disk, which presumably is similar
-in each implementation.
+I did the timings on Windows 8.1 running in a virtual machine so that
+side-by-side comparisons with the Microsoft implementation would be possible.
+However, do note that wimlib may have even better performance on other operating
+systems such as Linux.  I used the 64-bit builds of both programs.
 
-Below are results for compressing the Canterbury corpus using wimlib (v1.6.1),
-WIMGAPI (Windows 8), and some other formats/programs, including the archive size
-only.  Note that the Canterbury corpus includes no duplicate files or hard
-links, which WIM handles better than most other formats by storing only distinct
-data streams.
+The compression ratio provided by wimlib is also competitive with commonly used
+archive formats.  Below are file sizes that result when the Canterbury corpus is
+compressed with wimlib (v1.7.0), WIMGAPI (Windows 8), and some other
+formats/programs:
 
      =================================================
      | Format                         | Size (bytes) |
@@ -148,19 +143,22 @@ data streams.
      | ZIP (Info-ZIP, -9)             | 732,297      |
      | WIM (wimlib, LZX quick)        | 722,196      |
      | WIM (WIMGAPI, LZX)             | 651,766      |
-     | WIM (wimlib, LZX normal)       | 639,464      |
-     | WIM (wimlib, LZX slow)         | 633,144      |
-     | WIM (wimlib, LZMS non-solid)   | 590,252      |
+     | WIM (wimlib, LZX normal)       | 649,204      |
+     | WIM (wimlib, LZX slow)         | 639,618      |
+     | WIM (wimlib, LZMS non-solid)   | 592,136      |
      | tar.bz2 (bzip, default)        | 565,008      |
      | tar.bz2 (bzip, -9)             | 565,008      |
-     | WIM (wimlib, LZMS solid)       | 534,218      |
-     | WIM (wimlib, LZMS solid, slow) | 529,904      |
+     | WIM (wimlib, LZMS solid)       | 525,270      |
+     | WIM (wimlib, LZMS solid, slow) | 521,700      |
      | WIM (WIMGAPI, LZMS solid)      | 521,232      |
      | tar.xz (xz, default)           | 486,916      |
      | tar.xz (xz, -9)                | 486,904      |
      | 7z  (7-zip, default)           | 484,700      |
      | 7z  (7-zip, -9)                | 483,239      |
      =================================================
+
+Note: WIM does even better on directory trees containing duplicate files, which
+the Canterbury corpus doesn't have.
 
                                   NTFS SUPPORT
 
