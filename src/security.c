@@ -232,7 +232,7 @@ free_wim_security_data(struct wim_security_data *sd)
 }
 
 struct sd_node {
-	int security_id;
+	int32_t security_id;
 	u8 hash[SHA1_HASH_SIZE];
 	struct avl_tree_node index_node;
 };
@@ -286,7 +286,7 @@ insert_sd_node(struct wim_sd_set *set, struct sd_node *new)
 
 /* Returns the index of the security descriptor having a SHA1 message digest of
  * @hash.  If not found, return -1. */
-static int
+static int32_t
 lookup_sd(struct wim_sd_set *set, const u8 hash[SHA1_HASH_SIZE])
 {
 	struct avl_tree_node *res;
@@ -307,11 +307,11 @@ lookup_sd(struct wim_sd_set *set, const u8 hash[SHA1_HASH_SIZE])
  * the security ID for it.  If a new security descriptor cannot be allocated,
  * return -1.
  */
-int
+int32_t
 sd_set_add_sd(struct wim_sd_set *sd_set, const char *descriptor, size_t size)
 {
 	u8 hash[SHA1_HASH_SIZE];
-	int security_id;
+	int32_t security_id;
 	struct sd_node *new;
 	u8 **descriptors;
 	u64 *sizes;
