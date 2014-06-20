@@ -68,8 +68,6 @@ struct iconv_node {
 struct iconv_list_head name = {				\
 	.from_encoding = from,				\
 	.to_encoding = to,				\
-	.list = LIST_HEAD_INIT(name.list),		\
-	.mutex = PTHREAD_MUTEX_INITIALIZER,		\
 }
 
 static iconv_t *
@@ -364,6 +362,13 @@ utf8_to_tstr_simple(const char *utf8str, tchar **out)
 }
 
 static void
+iconv_init(struct iconv_list_head *head)
+{
+	pthread_mutex_init(&head->mutex, NULL);
+	INIT_LIST_HEAD(&head->list);
+}
+
+static void
 iconv_cleanup(struct iconv_list_head *head)
 {
 	pthread_mutex_destroy(&head->mutex);
@@ -375,6 +380,19 @@ iconv_cleanup(struct iconv_list_head *head)
 		iconv_close(i->cd);
 		FREE(i);
 	}
+}
+
+void
+iconv_global_init(void)
+{
+	iconv_init(&iconv_utf8_to_tstr);
+	iconv_init(&iconv_tstr_to_utf8);
+#if !TCHAR_IS_UTF16LE
+	iconv_init(&iconv_utf16le_to_tstr);
+	iconv_init(&iconv_tstr_to_utf16le);
+	iconv_init(&iconv_utf16le_to_utf8);
+	iconv_init(&iconv_utf8_to_utf16le);
+#endif
 }
 
 void

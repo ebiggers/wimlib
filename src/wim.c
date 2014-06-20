@@ -1011,13 +1011,13 @@ wimlib_get_version(void)
 	return WIMLIB_VERSION_CODE;
 }
 
+static bool lib_initialized = false;
+
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_global_init(int init_flags)
 {
-	static bool already_inited = false;
-
-	if (already_inited)
+	if (lib_initialized)
 		return 0;
 
 	if (init_flags & ~(WIMLIB_INIT_FLAG_ASSUME_UTF8 |
@@ -1043,12 +1043,13 @@ wimlib_global_init(int init_flags)
 			return ret;
 	}
 #endif
+	iconv_global_init();
 	init_upcase();
 	if (init_flags & WIMLIB_INIT_FLAG_DEFAULT_CASE_SENSITIVE)
 		default_ignore_case = false;
 	else if (init_flags & WIMLIB_INIT_FLAG_DEFAULT_CASE_INSENSITIVE)
 		default_ignore_case = true;
-	already_inited = true;
+	lib_initialized = true;
 	return 0;
 }
 
@@ -1056,6 +1057,8 @@ wimlib_global_init(int init_flags)
 WIMLIBAPI void
 wimlib_global_cleanup(void)
 {
+	if (!lib_initialized)
+		return;
 	libxml_global_cleanup();
 	iconv_global_cleanup();
 #ifdef __WIN32__
@@ -1063,4 +1066,5 @@ wimlib_global_cleanup(void)
 #endif
 	cleanup_decompressor_params();
 	cleanup_compressor_params();
+	lib_initialized = false;
 }

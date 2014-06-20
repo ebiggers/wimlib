@@ -8,6 +8,9 @@
 #include <string.h>
 
 extern void
+iconv_global_init(void);
+
+extern void
 iconv_global_cleanup(void);
 
 extern void
