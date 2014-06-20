@@ -70,8 +70,6 @@ ntfs_3g_get_supported_features(const char *target,
 	return 0;
 }
 
-#define MAX_OPEN_ATTRS 1024
-
 struct ntfs_3g_apply_ctx {
 	/* Extract flags, the pointer to the WIMStruct, etc.  */
 	struct apply_ctx common;
@@ -79,9 +77,9 @@ struct ntfs_3g_apply_ctx {
 	/* Pointer to the open NTFS volume  */
 	ntfs_volume *vol;
 
-	ntfs_attr *open_attrs[MAX_OPEN_ATTRS];
+	ntfs_attr *open_attrs[MAX_OPEN_STREAMS];
 	unsigned num_open_attrs;
-	ntfs_inode *open_inodes[MAX_OPEN_ATTRS];
+	ntfs_inode *open_inodes[MAX_OPEN_STREAMS];
 	unsigned num_open_inodes;
 
 	struct reparse_buffer_disk rpbuf;
@@ -91,8 +89,8 @@ struct ntfs_3g_apply_ctx {
 	u64 offset;
 
 	unsigned num_reparse_inodes;
-	ntfs_inode *ntfs_reparse_inodes[MAX_OPEN_ATTRS];
-	struct wim_inode *wim_reparse_inodes[MAX_OPEN_ATTRS];
+	ntfs_inode *ntfs_reparse_inodes[MAX_OPEN_STREAMS];
+	struct wim_inode *wim_reparse_inodes[MAX_OPEN_STREAMS];
 };
 
 static size_t
@@ -725,10 +723,8 @@ ntfs_3g_begin_extract_stream_to_attr(struct wim_lookup_table_entry *stream,
 		return WIMLIB_ERR_NTFS_3G;
 	}
 
-	if (ctx->num_open_attrs == MAX_OPEN_ATTRS) {
-		ERROR("Can't extract data: too many open files!");
-		return WIMLIB_ERR_UNSUPPORTED;
-	}
+	/* This should be ensured by extract_stream_list()  */
+	wimlib_assert(ctx->num_open_attrs < MAX_OPEN_STREAMS);
 
 	attr = ntfs_attr_open(ni, AT_DATA, stream_name, stream_name_nchars);
 	if (!attr) {

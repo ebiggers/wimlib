@@ -1,6 +1,7 @@
 #ifndef _WIMLIB_APPLY_H
 #define _WIMLIB_APPLY_H
 
+#include "wimlib/file_io.h"
 #include "wimlib/list.h"
 #include "wimlib/progress.h"
 #include "wimlib/types.h"
@@ -66,7 +67,14 @@ struct apply_ctx {
 	struct list_head stream_list;
 	const struct read_stream_list_callbacks *saved_cbs;
 	struct wim_lookup_table_entry *cur_stream;
+	struct filedes tmpfile_fd;
+	tchar *tmpfile_name;
 };
+
+/* Maximum number of UNIX file descriptors, NTFS attributes, or Windows file
+ * handles that can be opened simultaneously to extract a single-instance
+ * stream to multiple destinations.  */
+#define MAX_OPEN_STREAMS 512
 
 static inline int
 extract_progress(struct apply_ctx *ctx, enum wimlib_progress_msg msg)

@@ -52,6 +52,7 @@ typedef wchar_t tchar;
 #  define tstrerror	_wcserror
 #  define taccess	_waccess
 #  define tstrdup	wcsdup
+#  define ttempnam	_wtempnam
 #  define tgetenv	_wgetenv
 #  define totlower(c)	towlower((wchar_t)(c))
 /* The following "tchar" functions do not have exact wide-character equivalents
@@ -109,6 +110,7 @@ typedef char tchar;
 #  define tstrtoul	strtoul
 #  define tmkdir	mkdir
 #  define tstrdup	strdup
+#  define ttempnam	tempnam
 #  define tgetenv	getenv
 #  define totlower(c)	tolower((unsigned char)(c))
 #  define TSTRDUP	STRDUP

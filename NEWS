@@ -1,3 +1,10 @@
+Version 1.7.1-BETA:
+	The new (as of v1.7.0) extraction code will no longer run out of file
+	handles when extracting many (1000+) identical files.
+
+	Library users can now initialize and de-initialize the library multiple
+	times in one run of an application program.
+
 Version 1.7.0:
 	Improved compression, decompression, and extraction performance.
 

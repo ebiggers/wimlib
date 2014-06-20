@@ -26,6 +26,7 @@
 #endif
 
 #include "wimlib/apply.h"
+#include "wimlib/assert.h"
 #include "wimlib/dentry.h"
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
@@ -64,8 +65,6 @@ unix_get_supported_features(const char *target,
 }
 
 #define NUM_PATHBUFS 2  /* We need 2 when creating hard links  */
-#define MAX_OPEN_FDS 1000 /* TODO: Add special case for when the number of
-			     identical streams exceeds this number.  */
 
 struct unix_apply_ctx {
 	/* Extract flags, the pointer to the WIMStruct, etc.  */
@@ -78,7 +77,7 @@ struct unix_apply_ctx {
 	unsigned which_pathbuf;
 
 	/* Currently open file descriptors for extraction  */
-	struct filedes open_fds[MAX_OPEN_FDS];
+	struct filedes open_fds[MAX_OPEN_STREAMS];
 
 	/* Number of currently open file descriptors in open_fds, starting from
 	 * the beginning of the array.  */
@@ -543,10 +542,8 @@ unix_begin_extract_stream_instance(const struct wim_lookup_table_entry *stream,
 		return 0;
 	}
 
-	if (ctx->num_open_fds == MAX_OPEN_FDS) {
-		ERROR("Can't extract data: too many open files!");
-		return WIMLIB_ERR_UNSUPPORTED;
-	}
+	/* This should be ensured by extract_stream_list()  */
+	wimlib_assert(ctx->num_open_fds < MAX_OPEN_STREAMS);
 
 	first_dentry = inode_first_extraction_dentry(inode);
 	first_path = unix_build_extraction_path(first_dentry, ctx);

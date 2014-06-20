@@ -266,20 +266,62 @@ out:
 	return ret;
 }
 
+/* Creates a temporary file opened for writing.  The open file descriptor is
+ * returned in @fd_ret and its name is returned in @name_ret (dynamically
+ * allocated).  */
 static int
-begin_extract_stream_with_progress(struct wim_lookup_table_entry *lte,
-				   u32 flags, void *_ctx)
+create_temporary_file(struct filedes *fd_ret, tchar **name_ret)
+{
+	tchar *name;
+	int open_flags;
+	int raw_fd;
+
+retry:
+	name = ttempnam(NULL, T("wimlib"));
+	if (!name) {
+		ERROR_WITH_ERRNO("Failed to create temporary filename");
+		return WIMLIB_ERR_NOMEM;
+	}
+
+	open_flags = O_WRONLY | O_CREAT | O_EXCL | O_BINARY;
+#ifdef __WIN32__
+	open_flags |= _O_SHORT_LIVED;
+#endif
+	raw_fd = topen(name, open_flags, 0600);
+
+	if (raw_fd < 0) {
+		if (errno == EEXIST) {
+			FREE(name);
+			goto retry;
+		}
+		ERROR_WITH_ERRNO("Failed to create temporary file "
+				 "\"%"TS"\"", name);
+		FREE(name);
+		return WIMLIB_ERR_OPEN;
+	}
+
+	filedes_init(fd_ret, raw_fd);
+	*name_ret = name;
+	return 0;
+}
+
+static int
+begin_extract_stream_wrapper(struct wim_lookup_table_entry *lte,
+			     u32 flags, void *_ctx)
 {
 	struct apply_ctx *ctx = _ctx;
 
 	ctx->cur_stream = lte;
 
-	return (*ctx->saved_cbs->begin_stream)(lte, flags,
-					       ctx->saved_cbs->begin_stream_ctx);
+	if (unlikely(lte->out_refcnt > MAX_OPEN_STREAMS))
+		return create_temporary_file(&ctx->tmpfile_fd, &ctx->tmpfile_name);
+	else
+		return (*ctx->saved_cbs->begin_stream)(lte, flags,
+						       ctx->saved_cbs->begin_stream_ctx);
 }
 
 static int
-consume_chunk_with_progress(const void *chunk, size_t size, void *_ctx)
+extract_chunk_wrapper(const void *chunk, size_t size, void *_ctx)
 {
 	struct apply_ctx *ctx = _ctx;
 	union wimlib_progress_info *progress = &ctx->progress;
@@ -318,8 +360,71 @@ consume_chunk_with_progress(const void *chunk, size_t size, void *_ctx)
 				ctx->next_progress = progress->extract.total_bytes;
 		}
 	}
-	return (*ctx->saved_cbs->consume_chunk)(chunk, size,
-						ctx->saved_cbs->consume_chunk_ctx);
+
+	if (unlikely(filedes_valid(&ctx->tmpfile_fd))) {
+		/* Just extracting to temporary file for now.  */
+		ret = full_write(&ctx->tmpfile_fd, chunk, size);
+		if (ret) {
+			ERROR_WITH_ERRNO("Error writing data to "
+					 "temporary file \"%"TS"\"",
+					 ctx->tmpfile_name);
+		}
+		return ret;
+	} else {
+		return (*ctx->saved_cbs->consume_chunk)(chunk, size,
+							ctx->saved_cbs->consume_chunk_ctx);
+	}
+}
+
+static int
+extract_from_tmpfile(const tchar *tmpfile_name,
+		     struct wim_lookup_table_entry *orig_lte,
+		     struct apply_ctx *ctx)
+{
+	struct wim_lookup_table_entry tmpfile_lte;
+	const struct stream_owner *owners = stream_owners(orig_lte);
+	int ret;
+
+	/* Copy the stream's data from the temporary file to each of its
+	 * destinations.
+	 *
+	 * This is executed only in the very uncommon case that a
+	 * single-instance stream is being extracted to more than
+	 * MAX_OPEN_STREAMS locations!  */
+
+	memcpy(&tmpfile_lte, orig_lte, sizeof(struct wim_lookup_table_entry));
+	tmpfile_lte.resource_location = RESOURCE_IN_FILE_ON_DISK;
+	tmpfile_lte.file_on_disk = ctx->tmpfile_name;
+	tmpfile_lte.out_refcnt = 1;
+
+	for (u32 i = 0; i < orig_lte->out_refcnt; i++) {
+		tmpfile_lte.inline_stream_owners[0] = owners[i];
+		ret = read_full_stream_with_cbs(&tmpfile_lte, ctx->saved_cbs);
+		if (ret)
+			return ret;
+	}
+	return 0;
+}
+
+static int
+end_extract_stream_wrapper(struct wim_lookup_table_entry *stream,
+			   int status, void *_ctx)
+{
+	struct apply_ctx *ctx = _ctx;
+
+	if (unlikely(filedes_valid(&ctx->tmpfile_fd))) {
+		filedes_close(&ctx->tmpfile_fd);
+		if (!status)
+			status = extract_from_tmpfile(ctx->tmpfile_name,
+						      stream, ctx);
+		filedes_invalidate(&ctx->tmpfile_fd);
+		tunlink(ctx->tmpfile_name);
+		FREE(ctx->tmpfile_name);
+		return status;
+	} else {
+		return (*ctx->saved_cbs->end_stream)(stream, status,
+						     ctx->saved_cbs->end_stream_ctx);
+	}
 }
 
 /*
@@ -332,30 +437,34 @@ consume_chunk_with_progress(const void *chunk, size_t size, void *_ctx)
  *
  * This also works if the WIM is being read from a pipe, whereas attempting to
  * read streams directly (e.g. with read_full_stream_into_buf()) will not.
+ *
+ * This also will split up streams that will need to be extracted to more than
+ * MAX_OPEN_STREAMS locations, as measured by the 'out_refcnt' of each stream.
+ * Therefore, the apply_operations implementation need not worry about running
+ * out of file descriptors, unless it might open more than one file descriptor
+ * per nominal destination (e.g. Win32 currently might because the destination
+ * file system might not support hard links).
  */
 int
 extract_stream_list(struct apply_ctx *ctx,
 		    const struct read_stream_list_callbacks *cbs)
 {
 	struct read_stream_list_callbacks wrapper_cbs = {
-		.begin_stream      = begin_extract_stream_with_progress,
+		.begin_stream      = begin_extract_stream_wrapper,
 		.begin_stream_ctx  = ctx,
-		.consume_chunk     = consume_chunk_with_progress,
+		.consume_chunk     = extract_chunk_wrapper,
 		.consume_chunk_ctx = ctx,
-		.end_stream        = cbs->end_stream,
-		.end_stream_ctx    = cbs->end_stream_ctx,
+		.end_stream        = end_extract_stream_wrapper,
+		.end_stream_ctx    = ctx,
 	};
-	if (ctx->progfunc) {
-		ctx->saved_cbs = cbs;
-		cbs = &wrapper_cbs;
-	}
+	ctx->saved_cbs = cbs;
 	if (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_FROM_PIPE) {
-		return load_streams_from_pipe(ctx, cbs);
+		return load_streams_from_pipe(ctx, &wrapper_cbs);
 	} else {
 		return read_stream_list(&ctx->stream_list,
 					offsetof(struct wim_lookup_table_entry,
 						 extraction_list),
-					cbs, VERIFY_STREAM_HASHES);
+					&wrapper_cbs, VERIFY_STREAM_HASHES);
 	}
 }
 
@@ -1229,6 +1338,7 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 		ctx->progress.extract.target = target;
 	}
 	INIT_LIST_HEAD(&ctx->stream_list);
+	filedes_invalidate(&ctx->tmpfile_fd);
 
 	ret = (*ops->get_supported_features)(target, &ctx->supported_features);
 	if (ret)

@@ -295,6 +295,10 @@ read_stream_list(struct list_head *stream_list,
 		 const struct read_stream_list_callbacks *cbs,
 		 int flags);
 
+extern int
+read_full_stream_with_cbs(struct wim_lookup_table_entry *lte,
+			  const struct read_stream_list_callbacks *cbs);
+
 /* Functions to extract streams.  */
 
 extern int

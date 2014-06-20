@@ -40,10 +40,6 @@
 #include "wimlib/xml.h"
 #include "wimlib/wimboot.h"
 
-/* TODO: Add workaround for when a stream needs to be extracted to more places
- * than this  */
-#define MAX_OPEN_HANDLES 32768
-
 struct win32_apply_ctx {
 
 	/* Extract flags, the pointer to the WIMStruct, etc.  */
@@ -105,7 +101,7 @@ struct win32_apply_ctx {
 
 	/* Array of open handles to filesystem streams currently being written
 	 */
-	HANDLE open_handles[MAX_OPEN_HANDLES];
+	HANDLE open_handles[MAX_OPEN_STREAMS];
 
 	/* Number of handles in @open_handles currently open (filled in from the
 	 * beginning of the array)  */
@@ -1359,8 +1355,10 @@ begin_extract_stream_instance(const struct wim_lookup_table_entry *stream,
 		}
 	}
 
-	/* Too many open handles?  */
-	if (ctx->num_open_handles == MAX_OPEN_HANDLES) {
+	if (ctx->num_open_handles == MAX_OPEN_STREAMS) {
+		/* XXX: Fix this.  But because of the checks in
+		 * extract_stream_list(), this can now only happen on a
+		 * filesystem that does not support hard links.  */
 		ERROR("Can't extract data: too many open files!");
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
