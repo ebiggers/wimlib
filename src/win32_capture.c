@@ -406,11 +406,18 @@ winnt_recurse_directory(HANDLE h,
 							   info->FileName[1] == L'.'))
 			{
 				wchar_t *p;
+				wchar_t *filename;
 				struct wim_dentry *child;
 
 				p = full_path + full_path_nchars;
-				*p++ = L'\\';
-				p = wmempcpy(p, info->FileName,
+				/* Only add a backslash if we don't already have
+				 * one.  This prevents a duplicate backslash
+				 * from being added when the path to the capture
+				 * dir had a trailing backslash.  */
+				if (*(p - 1) != L'\\')
+					*p++ = L'\\';
+				filename = p;
+				p = wmempcpy(filename, info->FileName,
 					     info->FileNameLength / 2);
 				*p = '\0';
 
@@ -419,7 +426,7 @@ winnt_recurse_directory(HANDLE h,
 							h,
 							full_path,
 							p - full_path,
-							full_path + full_path_nchars + 1,
+							filename,
 							info->FileNameLength / 2,
 							params,
 							stats,
