@@ -622,4 +622,42 @@ win32_global_cleanup(void)
 	cleanup_dll(&ntdll_spec);
 }
 
+/*
+ * Translates a Win32-namespace path into an NT-namespace path.
+ *
+ * On success, returns 0.  The NT-namespace path will be stored in the
+ * UNICODE_STRING structure pointed to by nt_path.  nt_path->Buffer will be set
+ * to a new buffer that must later be freed with HeapFree().  (Really
+ * RtlHeapFree(), but HeapFree() seems to be the same thing.)
+ *
+ * On failure, returns WIMLIB_ERR_NOMEM or WIMLIB_ERR_INVALID_PARAM.
+ */
+int
+win32_path_to_nt_path(const wchar_t *win32_path, UNICODE_STRING *nt_path)
+{
+	NTSTATUS status;
+
+	if (func_RtlDosPathNameToNtPathName_U_WithStatus) {
+		status = (*func_RtlDosPathNameToNtPathName_U_WithStatus)(win32_path,
+									 nt_path,
+									 NULL, NULL);
+	} else {
+		if ((*func_RtlDosPathNameToNtPathName_U)(win32_path, nt_path,
+							 NULL, NULL))
+			status = STATUS_SUCCESS;
+		else
+			status = STATUS_NO_MEMORY;
+	}
+
+	if (likely(NT_SUCCESS(status)))
+		return 0;
+
+	if (status == STATUS_NO_MEMORY)
+		return WIMLIB_ERR_NOMEM;
+
+	ERROR("\"%ls\": invalid path name (status=0x%08"PRIx32")",
+	      win32_path, (u32)status);
+	return WIMLIB_ERR_INVALID_PARAM;
+}
+
 #endif /* __WIN32__ */

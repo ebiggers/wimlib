@@ -156,6 +156,7 @@ windows_version_is_at_least(unsigned major, unsigned minor);
 #define running_on_windows_7_or_later() \
 			windows_version_is_at_least(6, 1)
 
-
+extern int
+win32_path_to_nt_path(const wchar_t *win32_path, UNICODE_STRING *nt_path);
 
 #endif /* _WIMLIB_WIN32_COMMON_H */

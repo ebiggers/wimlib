@@ -1385,9 +1385,8 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 			struct add_image_params *params)
 {
 	wchar_t *path;
-	DWORD dret;
-	size_t path_nchars;
 	int ret;
+	UNICODE_STRING ntpath;
 	struct winnt_scan_stats stats;
 
 	/* WARNING: There is no check for overflow later when this buffer is
@@ -1397,33 +1396,31 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	if (!path)
 		return WIMLIB_ERR_NOMEM;
 
-	/* Translate into full path.  */
-	dret = GetFullPathName(root_disk_path, WINDOWS_NT_MAX_PATH - 3,
-			       &path[4], NULL);
+	ret = win32_path_to_nt_path(root_disk_path, &ntpath);
+	if (ret)
+		goto out_free_path;
 
-	if (unlikely(dret == 0 || dret >= WINDOWS_NT_MAX_PATH - 3)) {
-		ERROR("Can't get full path name for \"%ls\"", root_disk_path);
-		return WIMLIB_ERR_UNSUPPORTED;
+	if (ntpath.Length < 4 * sizeof(wchar_t) ||
+	    ntpath.Length > WINDOWS_NT_MAX_PATH * sizeof(wchar_t) ||
+	    wmemcmp(ntpath.Buffer, L"\\??\\", 4))
+	{
+		ERROR("\"%ls\": unrecognized path format", root_disk_path);
+		ret = WIMLIB_ERR_INVALID_PARAM;
+		goto out_free_path;
 	}
 
-	/* Add \??\ prefix to form the NT namespace path.  */
-	wmemcpy(path, L"\\??\\", 4);
-	path_nchars = dret + 4;
+	params->capture_root_nchars = ntpath.Length / sizeof(wchar_t);
+	wmemcpy(path, ntpath.Buffer, params->capture_root_nchars);
+	path[params->capture_root_nchars] = L'\0';
 
-       /* Strip trailing slashes.  If we don't do this, we may create a path
-	* with multiple consecutive backslashes, which for some reason causes
-	* Windows to report that the file cannot be found.  */
-	while (unlikely(path[path_nchars - 1] == L'\\' &&
-			path[path_nchars - 2] != L':'))
-		path[--path_nchars] = L'\0';
-
-	params->capture_root_nchars = path_nchars;
+	HeapFree(GetProcessHeap(), 0, ntpath.Buffer);
 
 	memset(&stats, 0, sizeof(stats));
 
 	ret = winnt_build_dentry_tree_recursive(root_ret, NULL,
-						path, path_nchars, L"", 0,
-						params, &stats, 0);
+						path, params->capture_root_nchars,
+						L"", 0, params, &stats, 0);
+out_free_path:
 	FREE(path);
 	if (ret == 0)
 		winnt_do_scan_warnings(root_disk_path, &stats);

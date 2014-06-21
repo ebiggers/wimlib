@@ -510,33 +510,15 @@ current_path(struct win32_apply_ctx *ctx)
 static int
 prepare_target(struct list_head *dentry_list, struct win32_apply_ctx *ctx)
 {
+	int ret;
 	NTSTATUS status;
 	size_t path_max;
 
 	/* Open handle to the target directory (possibly creating it).  */
 
-	if (func_RtlDosPathNameToNtPathName_U_WithStatus) {
-		status = (*func_RtlDosPathNameToNtPathName_U_WithStatus)(ctx->common.target,
-									 &ctx->target_ntpath,
-									 NULL, NULL);
-	} else {
-		if ((*func_RtlDosPathNameToNtPathName_U)(ctx->common.target,
-							 &ctx->target_ntpath,
-							 NULL, NULL))
-			status = STATUS_SUCCESS;
-		else
-			status = STATUS_NO_MEMORY;
-	}
-	if (!NT_SUCCESS(status)) {
-		if (status == STATUS_NO_MEMORY) {
-			return WIMLIB_ERR_NOMEM;
-		} else {
-			ERROR("\"%ls\": invalid path name "
-			      "(status=0x%08"PRIx32")",
-			      ctx->common.target, (u32)status);
-			return WIMLIB_ERR_INVALID_PARAM;
-		}
-	}
+	ret = win32_path_to_nt_path(ctx->common.target, &ctx->target_ntpath);
+	if (ret)
+		return ret;
 
 	ctx->attr.Length = sizeof(ctx->attr);
 	ctx->attr.ObjectName = &ctx->target_ntpath;
