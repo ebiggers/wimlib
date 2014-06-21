@@ -312,10 +312,28 @@ do_write_streams_progress(struct write_streams_progress_data *progress_data,
 		if (progress_data->next_progress == progress->write_streams.total_bytes) {
 			progress_data->next_progress = ~(uint64_t)0;
 		} else {
+			/* Handle rate-limiting of messages  */
+
+			/* Send new message as soon as another 1/128 of the
+			 * total has been written.  (Arbitrary number.)  */
 			progress_data->next_progress =
-				min(progress->write_streams.total_bytes,
-				    progress->write_streams.completed_bytes +
-				        progress->write_streams.total_bytes / 100);
+				progress->write_streams.completed_bytes +
+					progress->write_streams.total_bytes / 128;
+
+			/* ... Unless that would be more than 5000000 bytes, in
+			 * which case send the next after the next 5000000
+			 * bytes.  (Another arbitrary number.)  */
+			if (progress->write_streams.completed_bytes + 5000000 <
+			    progress_data->next_progress)
+				progress_data->next_progress =
+					progress->write_streams.completed_bytes + 5000000;
+
+			/* ... But always send a message as soon as we're
+			 * completely done.  */
+			if (progress->write_streams.total_bytes <
+			    progress_data->next_progress)
+				progress_data->next_progress =
+					progress->write_streams.total_bytes;
 		}
 	}
 	return 0;
