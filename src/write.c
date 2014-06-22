@@ -43,6 +43,7 @@
 #include "wimlib/integrity.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
+#include "wimlib/paths.h"
 #include "wimlib/progress.h"
 #include "wimlib/resource.h"
 #ifdef __WIN32__
@@ -64,6 +65,7 @@
 #define WRITE_RESOURCE_FLAG_RECOMPRESS		0x00000001
 #define WRITE_RESOURCE_FLAG_PIPABLE		0x00000002
 #define WRITE_RESOURCE_FLAG_PACK_STREAMS	0x00000004
+#define WRITE_RESOURCE_FLAG_SEND_DONE_WITH_FILE	0x00000008
 
 static inline int
 write_flags_to_resource_flags(int write_flags)
@@ -76,6 +78,8 @@ write_flags_to_resource_flags(int write_flags)
 		write_resource_flags |= WRITE_RESOURCE_FLAG_PIPABLE;
 	if (write_flags & WIMLIB_WRITE_FLAG_PACK_STREAMS)
 		write_resource_flags |= WRITE_RESOURCE_FLAG_PACK_STREAMS;
+	if (write_flags & WIMLIB_WRITE_FLAG_SEND_DONE_WITH_FILE_MESSAGES)
+		write_resource_flags |= WRITE_RESOURCE_FLAG_SEND_DONE_WITH_FILE;
 	return write_resource_flags;
 }
 
@@ -390,6 +394,8 @@ struct write_streams_ctx {
 	 * pending_streams rather than the entry being read.)  */
 	bool stream_was_duplicate;
 
+	struct wim_inode *stream_inode;
+
 	/* Current uncompressed offset in the stream being read.  */
 	u64 cur_read_stream_offset;
 
@@ -636,6 +642,74 @@ end_write_resource(struct write_streams_ctx *ctx, struct wim_reshdr *out_reshdr)
 	return 0;
 }
 
+/* No more data streams of the file at @path are needed.  */
+static int
+done_with_file(const tchar *path, wimlib_progress_func_t progfunc, void *progctx)
+{
+	union wimlib_progress_info info;
+
+	info.done_with_file.path_to_file = path;
+
+	return call_progress(progfunc, WIMLIB_PROGRESS_MSG_DONE_WITH_FILE,
+			     &info, progctx);
+}
+
+/* Handle WIMLIB_WRITE_FLAG_SEND_DONE_WITH_FILE_MESSAGES mode.  */
+static int
+done_with_stream(struct wim_lookup_table_entry *stream,
+		 wimlib_progress_func_t progfunc, void *progctx,
+		 struct wim_inode *inode)
+{
+	if (stream->resource_location == RESOURCE_IN_FILE_ON_DISK
+#ifdef __WIN32__
+	    || stream->resource_location == RESOURCE_IN_WINNT_FILE_ON_DISK
+	    || stream->resource_location == RESOURCE_WIN32_ENCRYPTED
+#endif
+	   )
+	{
+		int ret;
+
+		wimlib_assert(inode->num_unread_streams > 0);
+		if (--inode->num_unread_streams > 0)
+			return 0;
+
+	#ifdef __WIN32__
+		/* XXX: This logic really should be somewhere else.  */
+
+		/* We want the path to the file, but stream->file_on_disk might
+		 * actually refer to a named data stream.  Temporarily strip the
+		 * named data stream from the path.  */
+		wchar_t *p_colon = NULL;
+		wchar_t *p_question_mark = NULL;
+		const wchar_t *p_stream_name;
+
+		p_stream_name = path_stream_name(stream->file_on_disk);
+		if (unlikely(p_stream_name)) {
+			p_colon = (wchar_t *)(p_stream_name - 1);
+			wimlib_assert(*p_colon == L':');
+			*p_colon = L'\0';
+		}
+
+		/* We also should use a fake Win32 path instead of a NT path  */
+		if (!wcsncmp(stream->file_on_disk, L"\\??\\", 4)) {
+			p_question_mark = &stream->file_on_disk[1];
+			*p_question_mark = L'\\';
+		}
+	#endif
+
+		ret = done_with_file(stream->file_on_disk, progfunc, progctx);
+
+	#ifdef __WIN32__
+		if (p_colon)
+			*p_colon = L':';
+		if (p_question_mark)
+			*p_question_mark = L'?';
+	#endif
+		return ret;
+	}
+	return 0;
+}
+
 /* Begin processing a stream for writing.  */
 static int
 write_stream_begin_read(struct wim_lookup_table_entry *lte,
@@ -648,6 +722,11 @@ write_stream_begin_read(struct wim_lookup_table_entry *lte,
 
 	ctx->cur_read_stream_offset = 0;
 	ctx->cur_read_stream_size = lte->size;
+
+	if (lte->unhashed)
+		ctx->stream_inode = lte->back_inode;
+	else
+		ctx->stream_inode = NULL;
 
 	/* As an optimization, we allow some streams to be "unhashed", meaning
 	 * their SHA1 message digests are unknown.  This is the case with
@@ -693,6 +772,14 @@ write_stream_begin_read(struct wim_lookup_table_entry *lte,
 					lte_new->out_refcnt += lte->out_refcnt;
 				if (ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PACK_STREAMS)
 					ctx->cur_write_res_size -= lte->size;
+				if (!ret && unlikely(ctx->write_resource_flags &
+						     WRITE_RESOURCE_FLAG_SEND_DONE_WITH_FILE))
+				{
+					ret = done_with_stream(lte,
+							       ctx->progress_data.progfunc,
+							       ctx->progress_data.progctx,
+							       ctx->stream_inode);
+				}
 				free_lookup_table_entry(lte);
 				if (ret)
 					return ret;
@@ -881,7 +968,8 @@ write_chunk(struct write_streams_ctx *ctx, const void *cchunk,
 
 			if (ctx->compressor != NULL &&
 			    lte->out_reshdr.size_in_wim >= lte->out_reshdr.uncompressed_size &&
-			    !(ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PIPABLE) &&
+			    !(ctx->write_resource_flags & (WRITE_RESOURCE_FLAG_PIPABLE |
+							   WRITE_RESOURCE_FLAG_SEND_DONE_WITH_FILE)) &&
 			    !(lte->flags & WIM_RESHDR_FLAG_PACKED_STREAMS))
 			{
 				/* Stream did not compress to less than its original
@@ -1024,15 +1112,31 @@ static int
 write_stream_end_read(struct wim_lookup_table_entry *lte, int status, void *_ctx)
 {
 	struct write_streams_ctx *ctx = _ctx;
-	if (status == 0)
-		wimlib_assert(ctx->cur_read_stream_offset == ctx->cur_read_stream_size);
-	if (ctx->stream_was_duplicate) {
-		free_lookup_table_entry(lte);
-	} else if (lte->unhashed && ctx->lookup_table != NULL) {
+	if (status)
+		goto out;
+
+	wimlib_assert(ctx->cur_read_stream_offset == ctx->cur_read_stream_size);
+
+	if (unlikely(ctx->write_resource_flags &
+		     WRITE_RESOURCE_FLAG_SEND_DONE_WITH_FILE) &&
+	    ctx->stream_inode != NULL)
+	{
+		status = done_with_stream(lte,
+					  ctx->progress_data.progfunc,
+					  ctx->progress_data.progctx,
+					  ctx->stream_inode);
+	}
+
+	if (!ctx->stream_was_duplicate && lte->unhashed &&
+	    ctx->lookup_table != NULL)
+	{
 		list_del(&lte->unhashed_list);
 		lookup_table_insert(ctx->lookup_table, lte);
 		lte->unhashed = 0;
 	}
+out:
+	if (ctx->stream_was_duplicate)
+		free_lookup_table_entry(lte);
 	return status;
 }
 
@@ -2066,6 +2170,17 @@ write_wim_streams(WIMStruct *wim, int image, int write_flags,
 			lte->unique_size = 0;
 			list_add_tail(&lte->lookup_table_list, lookup_table_list_ret);
 		}
+	}
+
+	/* If needed, set auxiliary information so that we can detect when
+	 * wimlib has finished using each external file.  */
+	if (unlikely(write_flags & WIMLIB_WRITE_FLAG_SEND_DONE_WITH_FILE_MESSAGES)) {
+		list_for_each_entry(lte, stream_list, write_streams_list)
+			if (lte->unhashed)
+				lte->back_inode->num_unread_streams = 0;
+		list_for_each_entry(lte, stream_list, write_streams_list)
+			if (lte->unhashed)
+				lte->back_inode->num_unread_streams++;
 	}
 
 	return wim_write_stream_list(wim,

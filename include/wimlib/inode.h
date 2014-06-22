@@ -176,6 +176,12 @@ struct wim_inode {
 		#endif
 		};
 
+		/* Used during WIM writing with
+		 * WIMLIB_WRITE_FLAG_SEND_DONE_WITH_FILE_MESSAGES:  the number
+		 * of data streams this inode has that have not yet been fully
+		 * read.  */
+		u32 num_unread_streams;
+
 #ifdef WITH_FUSE
 		struct {
 			/* Used only during image mount:  Table of file

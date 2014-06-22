@@ -620,6 +620,12 @@ enum wimlib_progress_msg {
 	/** Starting to unmount a WIM image.  @p info will point to
 	 * ::wimlib_progress_info.unmount.  */
 	WIMLIB_PROGRESS_MSG_UNMOUNT_BEGIN = 25,
+
+	/** wimlib has used a file's data for the last time (including all data
+	 * streams, if it has multiple).  @p info will point to
+	 * ::wimlib_progress_info.done_with_file.  This message is only received
+	 * if ::WIMLIB_WRITE_FLAG_SEND_DONE_WITH_FILE_MESSAGES was provided.  */
+	WIMLIB_PROGRESS_MSG_DONE_WITH_FILE = 26,
 };
 
 /** Valid return values from user-provided progress functions
@@ -1024,6 +1030,28 @@ union wimlib_progress_info {
 		/** Flags passed to wimlib_unmount_image().  */
 		uint32_t unmount_flags;
 	} unmount;
+
+	/** Valid on messages ::WIMLIB_PROGRESS_MSG_DONE_WITH_FILE.  */
+	struct wimlib_progress_info_done_with_file {
+		/* Path to the file whose data has been written to the WIM file,
+		 * or is currently being asynchronously compressed in memory,
+		 * and therefore is no longer needed by wimlib.
+		 *
+		 * WARNING: The file data will not actually be accessible in the
+		 * WIM file until the WIM file has been completely written.
+		 * Ordinarily you should <b>not</b> treat this message as a
+		 * green light to go ahead and delete the specified file, since
+		 * that would result in data loss if the WIM file cannot be
+		 * successfully created for any reason.
+		 *
+		 * If a file has multiple names (hard links),
+		 * ::WIMLIB_PROGRESS_MSG_DONE_WITH_FILE will only be received
+		 * for one name.  Also, this message will not be received for
+		 * empty files or reparse points (or symbolic links), unless
+		 * they have nonempty named data streams.
+		 */
+		const wimlib_tchar *path_to_file;
+	} done_with_file;
 };
 
 /**
@@ -1935,6 +1963,13 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * into it and the WIM's main compression type is LZMS.
  */
 #define WIMLIB_WRITE_FLAG_PACK_STREAMS			0x00001000
+
+/**
+ * Send ::WIMLIB_PROGRESS_MSG_DONE_WITH_FILE messages while writing the WIM
+ * file.  This is only needed in the unusual case that the library user needs to
+ * know exactly when wimlib has read each file for the last time.
+ */
+#define WIMLIB_WRITE_FLAG_SEND_DONE_WITH_FILE_MESSAGES	0x00002000
 
 /** @} */
 /** @addtogroup G_general

@@ -6,7 +6,10 @@ Version 1.7.1-BETA:
 	times in one run of an application program.
 
 	Library users will now receive WIMLIB_PROGRESS_MSG_WRITE_STREAMS
-	messages more frequency when writing large WIM files.
+	messages more frequently when writing large WIM files.
+
+	Added experimental new write flag:
+	WIMLIB_WRITE_FLAG_SEND_DONE_WITH_FILE_MESSAGES.
 
 Version 1.7.0:
 	Improved compression, decompression, and extraction performance.
