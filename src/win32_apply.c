@@ -1677,11 +1677,6 @@ begin_extract_stream(struct wim_lookup_table_entry *stream,
 		}
 	}
 
-	if (unlikely(ctx->num_open_handles == 0 && ctx->data_buffer_ptr == NULL)) {
-		/* The data of this stream isn't actually needed!
-		 * (This can happen in WIMBoot mode.)  */
-		return BEGIN_STREAM_STATUS_SKIP_STREAM;
-	}
 	return 0;
 
 fail:
