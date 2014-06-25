@@ -610,8 +610,8 @@ retry:
 		if (wimlib_print_errors) {
 			print_byte_field((const u8 *)hdr,
 					 sizeof(struct WimOverlay_dat_header),
-					 stderr);
-			fputc('\n', stderr);
+					 wimlib_error_file);
+			fputc('\n', wimlib_error_file);
 		}
 		ret = WIMLIB_ERR_UNSUPPORTED;
 		goto out_free_contents;
@@ -681,8 +681,9 @@ retry:
 			      path, i, entry_1->data_source_id);
 			if (wimlib_print_errors) {
 				print_byte_field((const u8 *)entry_2->wim_file_name,
-						 wim_file_name_length, stderr);
-				fputc('\n', stderr);
+						 wim_file_name_length,
+						 wimlib_error_file);
+				fputc('\n', wimlib_error_file);
 			}
 			ret = WIMLIB_ERR_UNSUPPORTED;
 			goto out_free_contents;
@@ -719,8 +720,8 @@ retry:
 			if (wimlib_print_errors) {
 				print_byte_field((const u8 *)entry_2,
 						 entry_1->entry_2_length,
-						 stderr);
-				fputc('\n', stderr);
+						 wimlib_error_file);
+				fputc('\n', wimlib_error_file);
 			}
 			ret = WIMLIB_ERR_UNSUPPORTED;
 			goto out_free_contents;

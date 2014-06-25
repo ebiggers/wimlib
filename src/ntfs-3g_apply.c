@@ -401,9 +401,10 @@ ntfs_3g_set_metadata(ntfs_inode *ni, const struct wim_inode *inode,
 				ERROR_WITH_ERRNO("Failed to set security descriptor "
 						 "on \"%s\" in NTFS volume",
 						 dentry_full_path(one_dentry));
-				fprintf(stderr, "The security descriptor is: ");
-				print_byte_field(desc, desc_size, stderr);
-				fprintf(stderr, "\n");
+				fprintf(wimlib_error_file,
+					"The security descriptor is: ");
+				print_byte_field(desc, desc_size, wimlib_error_file);
+				fprintf(wimlib_error_file, "\n");
 			}
 			return ret;
 		}

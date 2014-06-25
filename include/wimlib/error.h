@@ -34,8 +34,10 @@ wimlib_warning_with_errno(const tchar *format, ...)
 #  define WARNING(format, ...)			wimlib_warning(T(format), ## __VA_ARGS__)
 #  define WARNING_WITH_ERRNO(format, ...)	wimlib_warning_with_errno(T(format), ## __VA_ARGS__)
 extern bool wimlib_print_errors;
+extern FILE *wimlib_error_file;
 #else /* ENABLE_ERROR_MESSAGES */
 #  define wimlib_print_errors 0
+#  define wimlib_error_file NULL
 #  define ERROR(format, ...)			dummy_tprintf(T(format), ## __VA_ARGS__)
 #  define ERROR_WITH_ERRNO(format, ...)		dummy_tprintf(T(format), ## __VA_ARGS__)
 #  define WARNING(format, ...)			dummy_tprintf(T(format), ## __VA_ARGS__)

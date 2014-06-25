@@ -3662,6 +3662,39 @@ wimlib_resolve_image(WIMStruct *wim,
 		     const wimlib_tchar *image_name_or_num);
 
 /**
+ * Sets the file to which the library will print error and warning messages.
+ *
+ * This version of the function takes a C library <c>FILE *</c> opened for
+ * writing (or appending).  Use wimlib_set_error_file_by_name() to specify the
+ * file by name instead.
+ *
+ * This also enables error messages, as if by a call to
+ * wimlib_set_print_errors(true).
+ *
+ * @return 0 on success; nonzero on error.
+ * @retval ::WIMLIB_ERR_UNSUPPORTED
+ * 	wimlib was compiled using the <c>--without-error-messages</c> option.
+ */
+extern int
+wimlib_set_error_file(FILE *fp);
+
+/**
+ * Sets the path to the file to which the library will print error and warning
+ * messages.  The library will open this file for appending.
+ *
+ * This also enables error messages, as if by a call to
+ * wimlib_set_print_errors(true).
+ *
+ * @return 0 on success; nonzero on error.
+ * @retval ::WIMLIB_ERR_OPEN
+ *	The file named by @p path could not be opened for appending.
+ * @retval ::WIMLIB_ERR_UNSUPPORTED
+ * 	wimlib was compiled using the <c>--without-error-messages</c> option.
+ */
+extern int
+wimlib_set_error_file_by_name(const char *path);
+
+/**
  * @ingroup G_modifying_wims
  *
  * Changes the description of an image in the WIM.

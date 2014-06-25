@@ -66,6 +66,7 @@ utf16le_strlen(const utf16lechar *s)
 
 #ifdef ENABLE_ERROR_MESSAGES
 bool wimlib_print_errors = false;
+FILE *wimlib_error_file = NULL; /* Set in wimlib_global_init() */
 #endif
 
 #if defined(ENABLE_ERROR_MESSAGES) || defined(ENABLE_DEBUG)
@@ -79,8 +80,8 @@ wimlib_vmsg(const tchar *tag, const tchar *format,
 	{
 		int errno_save = errno;
 		fflush(stdout);
-		tfputs(tag, stderr);
-		tvfprintf(stderr, format, va);
+		tfputs(tag, wimlib_error_file);
+		tvfprintf(wimlib_error_file, format, va);
 		if (perror && errno_save != 0) {
 			tchar buf[64];
 			int res;
@@ -94,10 +95,10 @@ wimlib_vmsg(const tchar *tag, const tchar *format,
 			if (errno_save == EBUSY)
 				tstrcpy(buf, T("Resource busy"));
 		#endif
-			tfprintf(stderr, T(": %"TS), buf);
+			tfprintf(wimlib_error_file, T(": %"TS), buf);
 		}
-		tputc(T('\n'), stderr);
-		fflush(stderr);
+		tputc(T('\n'), wimlib_error_file);
+		fflush(wimlib_error_file);
 		errno = errno_save;
 	}
 }
@@ -184,6 +185,36 @@ wimlib_set_print_errors(bool show_error_messages)
 		return WIMLIB_ERR_UNSUPPORTED;
 	else
 		return 0;
+#endif
+}
+
+WIMLIBAPI int
+wimlib_set_error_file(FILE *fp)
+{
+#ifdef ENABLE_ERROR_MESSAGES
+	wimlib_error_file = fp;
+	wimlib_print_errors = true;
+	return 0;
+#else
+	return WIMLIB_ERR_UNSUPPORTED;
+#endif
+}
+
+WIMLIBAPI int
+wimlib_set_error_file_by_name(const char *path)
+{
+#ifdef ENABLE_ERROR_MESSAGES
+	FILE *fp;
+
+	fp = fopen(path, "a");
+	if (!fp)
+		return WIMLIB_ERR_OPEN;
+
+	wimlib_error_file = fp;
+	wimlib_print_errors = true;
+	return 0;
+#else
+	return WIMLIB_ERR_UNSUPPORTED;
 #endif
 }
 

@@ -12,6 +12,9 @@ Version 1.7.1-BETA:
 	Added experimental new write flag:
 	WIMLIB_WRITE_FLAG_SEND_DONE_WITH_FILE_MESSAGES.
 
+	Library users can now specify a custom file for warning and error
+	messages to be sent to, rather than the default of standard error.
+
 Version 1.7.0:
 	Improved compression, decompression, and extraction performance.
 

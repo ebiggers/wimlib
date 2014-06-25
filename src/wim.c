@@ -1020,6 +1020,11 @@ wimlib_global_init(int init_flags)
 	if (lib_initialized)
 		return 0;
 
+#ifdef ENABLE_ERROR_MESSAGES
+	if (wimlib_error_file == NULL)
+		wimlib_error_file = stderr;
+#endif
+
 	if (init_flags & ~(WIMLIB_INIT_FLAG_ASSUME_UTF8 |
 			   WIMLIB_INIT_FLAG_DONT_ACQUIRE_PRIVILEGES |
 			   WIMLIB_INIT_FLAG_STRICT_CAPTURE_PRIVILEGES |
