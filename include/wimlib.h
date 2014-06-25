@@ -895,10 +895,11 @@ union wimlib_progress_info {
 		 * potentially multiple streams per file (named data streams).
 		 * A "stream" may be the default contents of a file, a named
 		 * data stream, or a reparse data buffer.  */
-		uint64_t num_streams;
+		uint64_t total_streams;
 
-		/** Reserved.  */
-		const wimlib_tchar *reserved_2;
+		/** Number of (not necessarily unique) streams that have been
+		 * extracted so far.  */
+		uint64_t completed_streams;
 
 		/** Currently only used for
 		 * ::WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN.  */

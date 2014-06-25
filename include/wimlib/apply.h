@@ -67,6 +67,7 @@ struct apply_ctx {
 	struct list_head stream_list;
 	const struct read_stream_list_callbacks *saved_cbs;
 	struct wim_lookup_table_entry *cur_stream;
+	u64 cur_stream_offset;
 	struct filedes tmpfile_fd;
 	tchar *tmpfile_name;
 };

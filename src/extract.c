@@ -311,6 +311,7 @@ begin_extract_stream_wrapper(struct wim_lookup_table_entry *lte, void *_ctx)
 	struct apply_ctx *ctx = _ctx;
 
 	ctx->cur_stream = lte;
+	ctx->cur_stream_offset = 0;
 
 	if (unlikely(lte->out_refcnt > MAX_OPEN_STREAMS))
 		return create_temporary_file(&ctx->tmpfile_fd, &ctx->tmpfile_name);
@@ -325,9 +326,13 @@ extract_chunk_wrapper(const void *chunk, size_t size, void *_ctx)
 	union wimlib_progress_info *progress = &ctx->progress;
 	int ret;
 
+	ctx->cur_stream_offset += size;
+
 	if (likely(ctx->supported_features.hard_links)) {
 		progress->extract.completed_bytes +=
 			(u64)size * ctx->cur_stream->out_refcnt;
+		if (ctx->cur_stream_offset == ctx->cur_stream->size)
+			progress->extract.completed_streams += ctx->cur_stream->out_refcnt;
 	} else {
 		const struct stream_owner *owners = stream_owners(ctx->cur_stream);
 		for (u32 i = 0; i < ctx->cur_stream->out_refcnt; i++) {
@@ -339,6 +344,8 @@ extract_chunk_wrapper(const void *chunk, size_t size, void *_ctx)
 					    d_extraction_alias_node)
 			{
 				progress->extract.completed_bytes += size;
+				if (ctx->cur_stream_offset == ctx->cur_stream->size)
+					progress->extract.completed_streams++;
 			}
 		}
 	}
@@ -961,7 +968,7 @@ ref_stream(struct wim_lookup_table_entry *lte, u32 stream_idx,
 		return 0;
 
 	ctx->progress.extract.total_bytes += lte->size;
-	ctx->progress.extract.num_streams++;
+	ctx->progress.extract.total_streams++;
 
 	if (inode->i_visited)
 		return 0;
