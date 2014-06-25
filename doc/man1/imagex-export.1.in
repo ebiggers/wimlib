@@ -79,6 +79,10 @@ and "LZX", instead of "fast" and "maximum", respectively.
 reduced compatibility.  See the documentation for this option to
 \fB@IMAGEX_PROGNAME@ capture\fR (1) for more details.
 .TP
+\fB--recompress\fR
+Force all exported data to be recompressed, even if the destination WIM will use
+the same compression type as the source WIM.
+.TP
 \fB--compress-slow\fR
 Spend even more time compressing the data to achieve a very slightly better
 compression ratio.  This currently only has an effect for LZX ("maximum") and

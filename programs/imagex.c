@@ -271,6 +271,7 @@ static const struct option export_options[] = {
 	{T("nocheck"),     no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("no-check"),    no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("compress"),    required_argument, NULL, IMAGEX_COMPRESS_OPTION},
+	{T("recompress"),  no_argument,       NULL, IMAGEX_RECOMPRESS_OPTION},
 	{T("compress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
 	{T("pack-streams"),no_argument,       NULL, IMAGEX_PACK_STREAMS_OPTION},
 	{T("solid"),       no_argument,       NULL, IMAGEX_PACK_STREAMS_OPTION},
@@ -2611,6 +2612,9 @@ imagex_export(int argc, tchar **argv, int cmd)
 			compression_type = get_compression_type(optarg);
 			if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID)
 				goto out_err;
+			break;
+		case IMAGEX_RECOMPRESS_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
 			break;
 		case IMAGEX_COMPRESS_SLOW_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
