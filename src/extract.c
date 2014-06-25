@@ -392,12 +392,12 @@ extract_chunk_wrapper(const void *chunk, size_t size, void *_ctx)
 }
 
 static int
-extract_from_tmpfile(const tchar *tmpfile_name,
-		     struct wim_lookup_table_entry *orig_lte,
-		     struct apply_ctx *ctx)
+extract_from_tmpfile(const tchar *tmpfile_name, struct apply_ctx *ctx)
 {
 	struct wim_lookup_table_entry tmpfile_lte;
+	struct wim_lookup_table_entry *orig_lte = ctx->cur_stream;
 	const struct stream_owner *owners = stream_owners(orig_lte);
+	const struct read_stream_list_callbacks *cbs = ctx->saved_cbs;
 	int ret;
 
 	/* Copy the stream's data from the temporary file to each of its
@@ -414,9 +414,29 @@ extract_from_tmpfile(const tchar *tmpfile_name,
 
 	for (u32 i = 0; i < orig_lte->out_refcnt; i++) {
 		tmpfile_lte.inline_stream_owners[0] = owners[i];
-		ret = read_full_stream_with_cbs(&tmpfile_lte, ctx->saved_cbs);
+
+		/* Note: it usually doesn't matter whether we pass the original
+		 * stream entry to callbacks provided by the extraction backend
+		 * as opposed to the tmpfile stream entry, since they shouldn't
+		 * actually read data from the stream other than through the
+		 * read_stream_prefix() call below.  But for
+		 * WIMLIB_EXTRACT_FLAG_WIMBOOT mode on Windows it does matter
+		 * because it needs the original stream location in order to
+		 * create the external backing reference.  */
+
+		ret = (*cbs->begin_stream)(orig_lte, 0,
+					   cbs->begin_stream_ctx);
 		if (ret)
 			return ret;
+
+		/* Extra SHA-1 isn't necessary here, but it shouldn't hurt as
+		 * this case is very rare anyway.  */
+		ret = extract_stream(&tmpfile_lte, tmpfile_lte.size,
+				     cbs->consume_chunk,
+				     cbs->consume_chunk_ctx);
+
+		return (*cbs->end_stream)(orig_lte, ret,
+					  cbs->end_stream_ctx);
 	}
 	return 0;
 }
@@ -430,8 +450,7 @@ end_extract_stream_wrapper(struct wim_lookup_table_entry *stream,
 	if (unlikely(filedes_valid(&ctx->tmpfile_fd))) {
 		filedes_close(&ctx->tmpfile_fd);
 		if (!status)
-			status = extract_from_tmpfile(ctx->tmpfile_name,
-						      stream, ctx);
+			status = extract_from_tmpfile(ctx->tmpfile_name, ctx);
 		filedes_invalidate(&ctx->tmpfile_fd);
 		tunlink(ctx->tmpfile_name);
 		FREE(ctx->tmpfile_name);

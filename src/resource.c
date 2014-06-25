@@ -1167,7 +1167,7 @@ out_next_cb:
 		return (*ctx->cbs.end_stream)(lte, ret, ctx->cbs.end_stream_ctx);
 }
 
-int
+static int
 read_full_stream_with_cbs(struct wim_lookup_table_entry *lte,
 			  const struct read_stream_list_callbacks *cbs)
 {
