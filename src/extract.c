@@ -217,7 +217,7 @@ load_streams_from_pipe(struct apply_ctx *ctx,
 			lte_unbind_wim_resource_spec(found_lte);
 			lte_bind_wim_resource_spec(needed_lte, rspec);
 
-			ret = (*cbs->begin_stream)(needed_lte, 0,
+			ret = (*cbs->begin_stream)(needed_lte,
 						   cbs->begin_stream_ctx);
 			if (ret) {
 				lte_unbind_wim_resource_spec(needed_lte);
@@ -306,8 +306,7 @@ retry:
 }
 
 static int
-begin_extract_stream_wrapper(struct wim_lookup_table_entry *lte,
-			     u32 flags, void *_ctx)
+begin_extract_stream_wrapper(struct wim_lookup_table_entry *lte, void *_ctx)
 {
 	struct apply_ctx *ctx = _ctx;
 
@@ -316,8 +315,7 @@ begin_extract_stream_wrapper(struct wim_lookup_table_entry *lte,
 	if (unlikely(lte->out_refcnt > MAX_OPEN_STREAMS))
 		return create_temporary_file(&ctx->tmpfile_fd, &ctx->tmpfile_name);
 	else
-		return (*ctx->saved_cbs->begin_stream)(lte, flags,
-						       ctx->saved_cbs->begin_stream_ctx);
+		return (*ctx->saved_cbs->begin_stream)(lte, ctx->saved_cbs->begin_stream_ctx);
 }
 
 static int
@@ -424,8 +422,7 @@ extract_from_tmpfile(const tchar *tmpfile_name, struct apply_ctx *ctx)
 		 * because it needs the original stream location in order to
 		 * create the external backing reference.  */
 
-		ret = (*cbs->begin_stream)(orig_lte, 0,
-					   cbs->begin_stream_ctx);
+		ret = (*cbs->begin_stream)(orig_lte, cbs->begin_stream_ctx);
 		if (ret)
 			return ret;
 

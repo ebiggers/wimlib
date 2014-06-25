@@ -1632,8 +1632,7 @@ extract_encrypted_file(const struct wim_dentry *dentry,
 
 /* Called when starting to read a stream for extraction on Windows  */
 static int
-begin_extract_stream(struct wim_lookup_table_entry *stream,
-		     u32 flags, void *_ctx)
+begin_extract_stream(struct wim_lookup_table_entry *stream, void *_ctx)
 {
 	struct win32_apply_ctx *ctx = _ctx;
 	const struct stream_owner *owners = stream_owners(stream);

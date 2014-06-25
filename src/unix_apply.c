@@ -561,8 +561,7 @@ retry_create:
 
 /* Called when starting to read a single-instance stream for extraction  */
 static int
-unix_begin_extract_stream(struct wim_lookup_table_entry *stream,
-			  u32 flags, void *_ctx)
+unix_begin_extract_stream(struct wim_lookup_table_entry *stream, void *_ctx)
 {
 	struct unix_apply_ctx *ctx = _ctx;
 	const struct stream_owner *owners = stream_owners(stream);

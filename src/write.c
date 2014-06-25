@@ -712,8 +712,7 @@ done_with_stream(struct wim_lookup_table_entry *stream,
 
 /* Begin processing a stream for writing.  */
 static int
-write_stream_begin_read(struct wim_lookup_table_entry *lte,
-			u32 flags, void *_ctx)
+write_stream_begin_read(struct wim_lookup_table_entry *lte, void *_ctx)
 {
 	struct write_streams_ctx *ctx = _ctx;
 	int ret;
@@ -741,8 +740,6 @@ write_stream_begin_read(struct wim_lookup_table_entry *lte,
 	 * might be costly to decompress.  */
 	ctx->stream_was_duplicate = false;
 	if (ctx->lookup_table != NULL && lte->unhashed && !lte->unique_size) {
-
-		wimlib_assert(!(flags & BEGIN_STREAM_FLAG_PARTIAL_RESOURCE));
 
 		struct wim_lookup_table_entry *lte_new;
 

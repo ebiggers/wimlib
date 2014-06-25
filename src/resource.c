@@ -1017,17 +1017,12 @@ streamifier_cb(const void *chunk, size_t size, void *_ctx)
 	wimlib_assert(size <= ctx->cur_stream->size - ctx->cur_stream_offset);
 
 	if (ctx->cur_stream_offset == 0) {
-		u32 flags;
 
 		/* Starting a new stream.  */
 		DEBUG("Begin new stream (size=%"PRIu64").",
 		      ctx->cur_stream->size);
 
-		flags = BEGIN_STREAM_FLAG_PARTIAL_RESOURCE;
-		if (size == ctx->cur_stream->size)
-			flags |= BEGIN_STREAM_FLAG_WHOLE_STREAM;
 		ret = (*ctx->cbs.begin_stream)(ctx->cur_stream,
-					       flags,
 					       ctx->cbs.begin_stream_ctx);
 		if (ret)
 			return ret;
@@ -1073,8 +1068,7 @@ struct hasher_context {
 /* Callback for starting to read a stream while calculating its SHA1 message
  * digest.  */
 static int
-hasher_begin_stream(struct wim_lookup_table_entry *lte, u32 flags,
-		    void *_ctx)
+hasher_begin_stream(struct wim_lookup_table_entry *lte, void *_ctx)
 {
 	struct hasher_context *ctx = _ctx;
 
@@ -1083,8 +1077,7 @@ hasher_begin_stream(struct wim_lookup_table_entry *lte, u32 flags,
 	if (ctx->cbs.begin_stream == NULL)
 		return 0;
 	else
-		return (*ctx->cbs.begin_stream)(lte, flags,
-						ctx->cbs.begin_stream_ctx);
+		return (*ctx->cbs.begin_stream)(lte, ctx->cbs.begin_stream_ctx);
 }
 
 /* A consume_data_callback_t implementation that continues calculating the SHA1
@@ -1173,7 +1166,7 @@ read_full_stream_with_cbs(struct wim_lookup_table_entry *lte,
 {
 	int ret;
 
-	ret = (*cbs->begin_stream)(lte, 0, cbs->begin_stream_ctx);
+	ret = (*cbs->begin_stream)(lte, cbs->begin_stream_ctx);
 	if (ret)
 		return ret;
 

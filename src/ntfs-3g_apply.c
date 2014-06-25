@@ -791,8 +791,7 @@ ntfs_3g_open_inode(struct wim_inode *inode, struct ntfs_3g_apply_ctx *ctx)
 }
 
 static int
-ntfs_3g_begin_extract_stream(struct wim_lookup_table_entry *stream,
-			     u32 flags, void *_ctx)
+ntfs_3g_begin_extract_stream(struct wim_lookup_table_entry *stream, void *_ctx)
 {
 	struct ntfs_3g_apply_ctx *ctx = _ctx;
 	const struct stream_owner *owners = stream_owners(stream);
