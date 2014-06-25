@@ -1071,5 +1071,7 @@ wimlib_global_cleanup(void)
 #endif
 	cleanup_decompressor_params();
 	cleanup_compressor_params();
+
+	wimlib_set_error_file(NULL);
 	lib_initialized = false;
 }

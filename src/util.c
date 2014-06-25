@@ -67,6 +67,7 @@ utf16le_strlen(const utf16lechar *s)
 #ifdef ENABLE_ERROR_MESSAGES
 bool wimlib_print_errors = false;
 FILE *wimlib_error_file = NULL; /* Set in wimlib_global_init() */
+static bool wimlib_owns_error_file = false;
 #endif
 
 #if defined(ENABLE_ERROR_MESSAGES) || defined(ENABLE_DEBUG)
@@ -192,8 +193,11 @@ WIMLIBAPI int
 wimlib_set_error_file(FILE *fp)
 {
 #ifdef ENABLE_ERROR_MESSAGES
+	if (wimlib_owns_error_file)
+		fclose(wimlib_error_file);
 	wimlib_error_file = fp;
-	wimlib_print_errors = true;
+	wimlib_print_errors = (fp != NULL);
+	wimlib_owns_error_file = false;
 	return 0;
 #else
 	return WIMLIB_ERR_UNSUPPORTED;
@@ -209,9 +213,8 @@ wimlib_set_error_file_by_name(const char *path)
 	fp = fopen(path, "a");
 	if (!fp)
 		return WIMLIB_ERR_OPEN;
-
-	wimlib_error_file = fp;
-	wimlib_print_errors = true;
+	wimlib_set_error_file(fp);
+	wimlib_owns_error_file = true;
 	return 0;
 #else
 	return WIMLIB_ERR_UNSUPPORTED;
