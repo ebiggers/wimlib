@@ -31,6 +31,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include <io.h>	/* for _get_osfhandle()  */
+#include <fcntl.h>
 
 #include "wimlib/win32_common.h"
 
@@ -370,6 +371,35 @@ globfree(glob_t *pglob)
 	for (i = 0; i < pglob->gl_pathc; i++)
 		FREE(pglob->gl_pathv[i]);
 	FREE(pglob->gl_pathv);
+}
+
+/* Replacement for fopen(path, "a") that doesn't prevent other processes from
+ * reading the file  */
+FILE *
+win32_open_logfile(const wchar_t *path)
+{
+	HANDLE h;
+	int fd;
+	FILE *fp;
+
+	h = CreateFile(path, FILE_APPEND_DATA, FILE_SHARE_VALID_FLAGS,
+		       NULL, OPEN_ALWAYS, 0, NULL);
+	if (h == INVALID_HANDLE_VALUE)
+		return NULL;
+
+	fd = _open_osfhandle((intptr_t)h, O_APPEND);
+	if (fd < 0) {
+		CloseHandle(h);
+		return NULL;
+	}
+
+	fp = fdopen(fd, "a");
+	if (!fp) {
+		close(fd);
+		return NULL;
+	}
+
+	return fp;
 }
 
 #endif /* __WIN32__ */

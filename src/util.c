@@ -210,7 +210,11 @@ wimlib_set_error_file_by_name(const tchar *path)
 #ifdef ENABLE_ERROR_MESSAGES
 	FILE *fp;
 
-	fp = tfopen(path, "a");
+#ifdef __WIN32__
+	fp = win32_open_logfile(path);
+#else
+	fp = fopen(path, "a");
+#endif
 	if (!fp)
 		return WIMLIB_ERR_OPEN;
 	wimlib_set_error_file(fp);

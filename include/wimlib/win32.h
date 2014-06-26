@@ -47,6 +47,9 @@ win32_truncate_replacement(const tchar *path, off_t size);
 extern int
 win32_strerror_r_replacement(int errnum, tchar *buf, size_t buflen);
 
+extern FILE *
+win32_open_logfile(const wchar_t *path);
+
 extern ssize_t
 pread(int fd, void *buf, size_t count, off_t offset);
 
