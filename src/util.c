@@ -205,12 +205,12 @@ wimlib_set_error_file(FILE *fp)
 }
 
 WIMLIBAPI int
-wimlib_set_error_file_by_name(const char *path)
+wimlib_set_error_file_by_name(const tchar *path)
 {
 #ifdef ENABLE_ERROR_MESSAGES
 	FILE *fp;
 
-	fp = fopen(path, "a");
+	fp = tfopen(path, "a");
 	if (!fp)
 		return WIMLIB_ERR_OPEN;
 	wimlib_set_error_file(fp);

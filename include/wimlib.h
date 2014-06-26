@@ -3692,7 +3692,7 @@ wimlib_set_error_file(FILE *fp);
  * 	wimlib was compiled using the <c>--without-error-messages</c> option.
  */
 extern int
-wimlib_set_error_file_by_name(const char *path);
+wimlib_set_error_file_by_name(const wimlib_tchar *path);
 
 /**
  * @ingroup G_modifying_wims
