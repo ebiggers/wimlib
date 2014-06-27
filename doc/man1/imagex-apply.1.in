@@ -406,6 +406,18 @@ actually documented by Microsoft.  Before overwriting this file, wimlib will
 save the previous version in "\\System Volume
 Information\\WimOverlay.wimlib_backup", which you potentially could restore if
 you needed to.
+.IP ""
+You actually can still do a \fB--wimboot\fR extraction even if the WIM image is
+not marked as "WIMBoot-compatible".  This option causes the extracted files to
+be set as "externally backed" by the WIM file.  Microsoft's driver which
+implements this "external backing" functionality seemingly does not care whether
+the image(s) in the WIM are really marked as WIMBoot-compatible.  Therefore, the
+"WIMBoot-compatible" tag (<WIMBOOT> in the XML data) seems to be a marker for
+intent only.  In addition, the Microsoft driver can externally back files from
+WIM files that use XPRESS chunks of size 8192, 16384, and 32768, or LZX chunks
+of size 32768, in addition to the default XPRESS chunks of size 4096 that are
+created when \fB@IMAGEX_PROGNAME@ capture\fR is run with the \fB--wimboot\fR
+option.
 .SH NOTES
 \fIData integrity\fR:  WIM files include SHA1 message digests for file data.
 \fB@IMAGEX_PROGNAME@ apply\fR calculates the SHA1 message digest of every file

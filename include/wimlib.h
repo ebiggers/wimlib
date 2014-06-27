@@ -1406,12 +1406,18 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 /** @addtogroup G_modifying_wims
  * @{ */
 
-/** Directly capture an NTFS volume rather than a generic directory.  This flag
- * cannot be combined with ::WIMLIB_ADD_FLAG_DEREFERENCE or
- * ::WIMLIB_ADD_FLAG_UNIX_DATA.   */
+/** UNIX-like systems only: Directly capture an NTFS volume rather than a
+ * generic directory.  This requires that wimlib was compiled with support for
+ * libntfs-3g.
+ *
+ * This flag cannot be combined with ::WIMLIB_ADD_FLAG_DEREFERENCE or
+ * ::WIMLIB_ADD_FLAG_UNIX_DATA.
+ *
+ * Do not use this flag on Windows, where wimlib already supports all
+ * Windows-native filesystems, including NTFS, through the Windows APIs.  */
 #define WIMLIB_ADD_FLAG_NTFS			0x00000001
 
-/** Follow symlinks; archive and dump the files they point to.  Currently only
+/** Follow symbolic links when scanning the directory tree.  Currently only
  * supported on UNIX-like systems.  */
 #define WIMLIB_ADD_FLAG_DEREFERENCE		0x00000002
 
@@ -1420,65 +1426,72 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * scanned.  */
 #define WIMLIB_ADD_FLAG_VERBOSE			0x00000004
 
-/** Mark the image being added as the bootable image of the WIM.  Not valid for
- * wimlib_update_image().  */
+/** Mark the image being added as the bootable image of the WIM.  This flag is
+ * valid only for wimlib_add_image() and wimlib_add_image_multisource().
+ *
+ * Note that you can also change the bootable image of a WIM using
+ * wimlib_set_wim_info().
+ *
+ * Note: ::WIMLIB_ADD_FLAG_BOOT does something different from, and independent
+ * from, ::WIMLIB_ADD_FLAG_WIMBOOT.  */
 #define WIMLIB_ADD_FLAG_BOOT			0x00000008
 
 /** UNIX-like systems only: Store the UNIX owner, group, mode, and device ID
- * (major and minor number) of each file.  See the documentation for the
+ * (major and minor number) of each file.  Also allows capturing special files
+ * such as device nodes and FIFOs.  See the documentation for the
  * <b>--unix-data</b> option to <b>wimlib-imagex capture</b> for more
  * information.  */
 #define WIMLIB_ADD_FLAG_UNIX_DATA		0x00000010
 
 /** Do not capture security descriptors.  Only has an effect in NTFS capture
- * mode, or in Windows native builds. */
+ * mode, or in Windows native builds.  */
 #define WIMLIB_ADD_FLAG_NO_ACLS			0x00000020
 
 /** Fail immediately if the full security descriptor of any file or directory
  * cannot be accessed.  Only has an effect in Windows native builds.  The
  * default behavior without this flag is to first try omitting the SACL from the
  * security descriptor, then to try omitting the security descriptor entirely.
- * */
+ */
 #define WIMLIB_ADD_FLAG_STRICT_ACLS		0x00000040
 
 /** Call the progress function with the message
  * ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY when a directory or file is excluded from
  * capture.  This is a subset of the messages provided by
- * ::WIMLIB_ADD_FLAG_VERBOSE. */
+ * ::WIMLIB_ADD_FLAG_VERBOSE.  */
 #define WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE		0x00000080
 
-/** Reparse-point fixups:  Modify absolute symbolic links (or junction points,
- * in the case of Windows) that point inside the directory being captured to
- * instead be absolute relative to the directory being captured, rather than the
- * current root.
+/** Reparse-point fixups:  Modify absolute symbolic links (and junctions, in the
+ * case of Windows) that point inside the directory being captured to instead be
+ * absolute relative to the directory being captured.
  *
- * Without this flag, the default is to do this if WIM_HDR_FLAG_RP_FIX is set in
- * the WIM header or if this is the first image being added.
- * WIM_HDR_FLAG_RP_FIX is set if the first image in a WIM is captured with
- * reparse point fixups enabled and currently cannot be unset. */
+ * Without this flag, the default is to do reparse-point fixups if
+ * WIM_HDR_FLAG_RP_FIX is set in the WIM header or if this is the first image
+ * being added.  WIM_HDR_FLAG_RP_FIX is set if the first image in a WIM is
+ * captured with reparse point fixups enabled and currently cannot be unset. */
 #define WIMLIB_ADD_FLAG_RPFIX			0x00000100
 
-/** Don't do reparse point fixups.  The default behavior is described in the
- * documentation for ::WIMLIB_ADD_FLAG_RPFIX. */
+/** Don't do reparse point fixups.  See ::WIMLIB_ADD_FLAG_RPFIX.  */
 #define WIMLIB_ADD_FLAG_NORPFIX			0x00000200
 
 /** Do not automatically exclude unsupported files or directories from capture;
  * e.g. encrypted files in NTFS-3g capture mode, or device files and FIFOs on
- * UNIX-like systems.  Instead, fail with ::WIMLIB_ERR_UNSUPPORTED_FILE when
- * such a file is encountered.  */
+ * UNIX-like systems when not also using ::WIMLIB_ADD_FLAG_UNIX_DATA.  Instead,
+ * fail with ::WIMLIB_ERR_UNSUPPORTED_FILE when such a file is encountered.  */
 #define WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE	0x00000400
 
 /**
  * Automatically select a capture configuration appropriate for capturing
  * filesystems containing Windows operating systems.  For example,
- * "pagefile.sys" and "System Volume Information" will be excluded.
+ * "/pagefile.sys" and "System Volume Information" will be excluded.
  *
- * When this flag is specified, the corresponding @p config parameter or member
- * must be @c NULL.
+ * When this flag is specified, the corresponding @p config parameter (for
+ * wimlib_add_image()) or member (for wimlib_update_image()) must be @c NULL.
+ * Otherwise, ::WIMLIB_ERR_INVALID_PARAM will be returned.
  *
- * Note that the default behavior--- that is, when this flag is not specified
- * and @p config is @c NULL--- is to use no capture configuration, meaning that
- * no files are excluded from capture.
+ * Note that the default behavior--- that is, when neither
+ * ::WIMLIB_ADD_FLAG_WINCONFIG nor ::WIMLIB_ADD_FLAG_WIMBOOT is specified and @p
+ * config is @c NULL--- is to use no capture configuration, meaning that no
+ * files are excluded from capture.
  */
 #define WIMLIB_ADD_FLAG_WINCONFIG		0x00000800
 
@@ -1500,6 +1513,9 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  *
  * since that makes access to the data faster (at the cost of a worse
  * compression ratio compared to the 32768-byte LZX chunks usually used).
+ *
+ * Note: ::WIMLIB_ADD_FLAG_WIMBOOT does something different from, and
+ * independent from, ::WIMLIB_ADD_FLAG_BOOT.
  */
 #define WIMLIB_ADD_FLAG_WIMBOOT			0x00001000
 
