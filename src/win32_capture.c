@@ -1396,6 +1396,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	int ret;
 	UNICODE_STRING ntpath;
 	struct winnt_scan_stats stats;
+	size_t ntpath_nchars;
 
 	/* WARNING: There is no check for overflow later when this buffer is
 	 * being used!  But it's as long as the maximum path length understood
@@ -1417,16 +1418,20 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 		goto out_free_path;
 	}
 
-	params->capture_root_nchars = ntpath.Length / sizeof(wchar_t);
-	wmemcpy(path, ntpath.Buffer, params->capture_root_nchars);
-	path[params->capture_root_nchars] = L'\0';
+	ntpath_nchars = ntpath.Length / sizeof(wchar_t);
+	wmemcpy(path, ntpath.Buffer, ntpath_nchars);
+	path[ntpath_nchars] = L'\0';
+
+	params->capture_root_nchars = ntpath_nchars;
+	if (path[ntpath_nchars - 1] == L'\\')
+		params->capture_root_nchars--;
 
 	HeapFree(GetProcessHeap(), 0, ntpath.Buffer);
 
 	memset(&stats, 0, sizeof(stats));
 
 	ret = winnt_build_dentry_tree_recursive(root_ret, NULL,
-						path, params->capture_root_nchars,
+						path, ntpath_nchars,
 						L"", 0, params, &stats, 0);
 out_free_path:
 	FREE(path);
