@@ -2,6 +2,9 @@
  * compress_common.h
  *
  * Header for compression code shared by multiple compression formats.
+ *
+ * The author dedicates this file to the public domain.
+ * You can do whatever you want with this file.
  */
 
 #ifndef _WIMLIB_COMPRESS_COMMON_H
@@ -71,4 +74,4 @@ make_canonical_huffman_code(unsigned num_syms,
 			    u8 lens[restrict],
 			    u32 codewords[restrict]);
 
-#endif /* _WIMLIB_COMPRESS_H */
+#endif /* _WIMLIB_COMPRESS_COMMON_H */

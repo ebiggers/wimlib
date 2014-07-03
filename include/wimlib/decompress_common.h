@@ -2,6 +2,9 @@
  * decompress_common.h
  *
  * Header for decompression code shared by multiple compression formats.
+ *
+ * The author dedicates this file to the public domain.
+ * You can do whatever you want with this file.
  */
 
 #ifndef _WIMLIB_DECOMPRESS_COMMON_H
