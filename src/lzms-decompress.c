@@ -160,18 +160,28 @@
  * have equal frequency.  Following that, each code must be rebuilt whenever a
  * certain number of symbols has been decoded with it.
  *
- * In general, multiple valid Huffman codes can be constructed from a set of
- * symbol frequencies.  Like other compression formats such as XPRESS, LZX, and
- * DEFLATE, the LZMS format solves this ambiguity by requiring that all Huffman
- * codes be constructed in canonical form.  This form requires that same-length
- * codewords be lexicographically ordered the same way as the corresponding
- * symbols and that all shorter codewords lexicographically precede longer
- * codewords.
+ * Like other compression formats such as XPRESS, LZX, and DEFLATE, the LZMS
+ * format requires that all Huffman codes be constructed in canonical form.
+ * This form requires that same-length codewords be lexicographically ordered
+ * the same way as the corresponding symbols and that all shorter codewords
+ * lexicographically precede longer codewords.  Such a code can be constructed
+ * directly from codeword lengths, although in LZMS this is not actually
+ * necessary because the codes are built using adaptive symbol frequencies.
  *
- * Codewords in all the LZMS Huffman codes are limited to 15 bits.  If the
- * canonical code for a given set of symbol frequencies has any codewords longer
- * than 15 bits, then all frequencies must be divided by 2, rounding up, and the
- * code construction must be attempted again.
+ * Even with the canonical code restriction, the same frequencies can be used to
+ * construct multiple valid Huffman codes.  Therefore, the decompressor needs to
+ * construct the right one.  Specifically, the LZMS format requires that the
+ * Huffman code be constructed as if the well-known priority queue algorithm is
+ * used and frequency ties are always broken in favor of leaf nodes.  See
+ * make_canonical_huffman_code() in compress_common.c for more information.
+ *
+ * Codewords in LZMS are guaranteed to not exceed 15 bits.  The format otherwise
+ * places no restrictions on codeword length.  Therefore, the Huffman code
+ * construction algorithm that a correct LZMS decompressor uses need not
+ * implement length-limited code construction.  But if it does (e.g. by virtue
+ * of being shared among multiple compression algorithms), the details of how it
+ * does so are unimportant, provided that the maximum codeword length parameter
+ * is set to at least 15 bits.
  *
  * An LZMS-compressed block seemingly cannot have a compressed size greater than
  * or equal to the uncompressed size.  In such cases the block must be stored
