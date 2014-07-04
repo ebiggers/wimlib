@@ -4,6 +4,9 @@
  * Definitions for Windows Overlay File System Filter (WOF) ioctls.  See
  * http://msdn.microsoft.com/en-us/library/windows/hardware/ff540367(v=vs.85).aspx
  * for more information.
+ *
+ * The author dedicates this file to the public domain.
+ * You can do whatever you want with this file.
  */
 
 #ifndef _WOF_H_

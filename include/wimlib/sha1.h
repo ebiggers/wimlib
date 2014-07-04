@@ -1,3 +1,10 @@
+/*
+ * sha1.h
+ *
+ * The author dedicates this file to the public domain.
+ * You can do whatever you want with this file.
+ */
+
 #ifndef _WIMLIB_SHA1_H
 #define _WIMLIB_SHA1_H
 

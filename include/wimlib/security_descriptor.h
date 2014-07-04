@@ -1,3 +1,10 @@
+/*
+ * security_descriptor.h
+ *
+ * The author dedicates this file to the public domain.
+ * You can do whatever you want with this file.
+ */
+
 #ifndef _WIMLIB_SECURITY_DESCRIPTOR_H
 #define _WIMLIB_SECURITY_DESCRIPTOR_H
 
