@@ -1511,12 +1511,16 @@ check_extract_flags(const WIMStruct *wim, int *extract_flags_p)
 	}
 #endif
 
-#ifndef __WIN32__
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT) {
+#ifdef __WIN32__
+		if (!wim->filename)
+			return WIMLIB_ERR_NO_FILENAME;
+#else
 		ERROR("WIMBoot extraction is only supported on Windows!");
 		return WIMLIB_ERR_UNSUPPORTED;
-	}
 #endif
+	}
+
 
 	if ((extract_flags & (WIMLIB_EXTRACT_FLAG_RPFIX |
 			      WIMLIB_EXTRACT_FLAG_NORPFIX |
