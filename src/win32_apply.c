@@ -96,7 +96,7 @@ struct win32_apply_ctx {
 	struct reparse_buffer_disk rpbuf;
 
 	/* Temporary buffer for reparse data of "fixed" absolute symbolic links
-	 * and junction  */
+	 * and junctions  */
 	struct reparse_buffer_disk rpfixbuf;
 
 	/* Array of open handles to filesystem streams currently being written
@@ -235,7 +235,7 @@ win32_get_supported_features(const wchar_t *target,
 	return 0;
 }
 
-/* Load the patterns from [PrepopulateList] of WimBootCompresse.ini in the WIM
+/* Load the patterns from [PrepopulateList] of WimBootCompress.ini in the WIM
  * image being extracted.  */
 static int
 load_prepopulate_pats(struct win32_apply_ctx *ctx)
@@ -325,8 +325,7 @@ start_wimboot_extraction(struct win32_apply_ctx *ctx)
 	if (ret == WIMLIB_ERR_NOMEM)
 		return ret;
 
-	if (!wim_info_get_wimboot(wim->wim_info,
-				  wim->current_image))
+	if (!wim_info_get_wimboot(wim->wim_info, wim->current_image))
 		WARNING("Image is not marked as WIMBoot compatible!");
 
 	ret = hash_lookup_table(ctx->common.wim,
@@ -366,7 +365,7 @@ dentry_extraction_path_length(const struct wim_dentry *dentry)
  *
  * If the inode has no named data streams, this will be 0.  Otherwise, this will
  * be 1 plus the length of the longest-named data stream, since the data stream
- * name must be separated form the path by the ':' character.  */
+ * name must be separated from the path by the ':' character.  */
 static size_t
 inode_longest_named_data_stream_spec(const struct wim_inode *inode)
 {
@@ -663,7 +662,7 @@ adjust_compression_attribute(HANDLE h, const struct wim_dentry *dentry,
  * handle to the file.  If it does, it sets it to NULL.
  */
 static int
-maybe_clear_encryption_attribute(HANDLE *h_ret, const struct wim_dentry *dentry,
+maybe_clear_encryption_attribute(HANDLE *h_ptr, const struct wim_dentry *dentry,
 				 struct win32_apply_ctx *ctx)
 {
 	if (dentry->d_inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED)
@@ -680,7 +679,7 @@ maybe_clear_encryption_attribute(HANDLE *h_ret, const struct wim_dentry *dentry,
 	BOOL bret;
 
 	/* Get current attributes  */
-	status = (*func_NtQueryInformationFile)(*h_ret, &ctx->iosb,
+	status = (*func_NtQueryInformationFile)(*h_ptr, &ctx->iosb,
 						&info, sizeof(info),
 						FileBasicInformation);
 	if (NT_SUCCESS(status) &&
@@ -696,8 +695,8 @@ maybe_clear_encryption_attribute(HANDLE *h_ret, const struct wim_dentry *dentry,
 	 * handle to the file so we don't get ERROR_SHARING_VIOLATION.  We also
 	 * hack together a Win32 path, although we will use the \\?\ prefix so
 	 * it will actually be a NT path in disguise...  */
-	(*func_NtClose)(*h_ret);
-	*h_ret = NULL;
+	(*func_NtClose)(*h_ptr);
+	*h_ptr = NULL;
 
 	build_win32_extraction_path(dentry, ctx);
 
@@ -950,7 +949,7 @@ create_directories(struct list_head *dentry_list,
 		 * wait until later to actually set the reparse data.  */
 
 		/* If the root dentry is being extracted, it was already done so
-		 * it prepare_target().  */
+		 * in prepare_target().  */
 		if (dentry_is_root(dentry))
 			continue;
 
