@@ -807,6 +807,7 @@ update_wimoverlay_manually(const wchar_t *drive, const wchar_t *wim_path,
 		if (ret) {
 			ERROR_WITH_ERRNO("Can't rename \"%ls\" => \"%ls\"",
 					 path_main, path_wimlib_backup);
+			ret = WIMLIB_ERR_RENAME;
 			goto out_free_new_contents;
 		}
 	}
@@ -816,6 +817,7 @@ update_wimoverlay_manually(const wchar_t *drive, const wchar_t *wim_path,
 	if (ret) {
 		ERROR_WITH_ERRNO("Can't rename \"%ls\" => \"%ls\"",
 				 path_new, path_main);
+		ret = WIMLIB_ERR_RENAME;
 	}
 out_free_new_contents:
 	FREE(new_contents);
