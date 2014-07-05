@@ -9,6 +9,8 @@
 
 #include <wimlib/types.h>
 
+struct wimlib_compressor_params_header;
+
 struct compressor_ops {
 
 	bool (*params_valid)(const struct wimlib_compressor_params_header *params);

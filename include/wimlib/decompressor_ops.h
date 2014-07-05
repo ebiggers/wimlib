@@ -9,6 +9,8 @@
 
 #include <stddef.h>
 
+struct wimlib_decompressor_params_header;
+
 struct decompressor_ops {
 
 	int (*create_decompressor)(size_t max_block_size,
