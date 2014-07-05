@@ -41,7 +41,7 @@
 #include <string.h>
 
 struct xpress_record_ctx {
-	input_idx_t freqs[XPRESS_NUM_SYMBOLS];
+	u32 freqs[XPRESS_NUM_SYMBOLS];
 	struct xpress_match *matches;
 };
 
@@ -49,7 +49,7 @@ struct xpress_compressor {
 	u8 *window;
 	u32 max_window_size;
 	struct xpress_match *matches;
-	input_idx_t *prev_tab;
+	u32 *prev_tab;
 	u32 codewords[XPRESS_NUM_SYMBOLS];
 	u8 lens[XPRESS_NUM_SYMBOLS];
 	struct xpress_record_ctx record_ctx;
@@ -94,11 +94,11 @@ xpress_write_match(struct xpress_match match,
 static void
 xpress_write_matches_and_literals(struct output_bitstream *ostream,
 				  const struct xpress_match matches[restrict],
-				  input_idx_t num_matches,
+				  u32 num_matches,
 				  const u32 codewords[restrict],
 				  const u8 lens[restrict])
 {
-	for (input_idx_t i = 0; i < num_matches; i++) {
+	for (u32 i = 0; i < num_matches; i++) {
 		if (matches[i].offset) {
 			/* Real match  */
 			xpress_write_match(matches[i], ostream, codewords, lens);
@@ -159,8 +159,8 @@ xpress_compress(const void *uncompressed_data, size_t uncompressed_size,
 	struct xpress_compressor *c = _c;
 	u8 *cptr = compressed_data;
 	struct output_bitstream ostream;
-	input_idx_t num_matches;
-	input_idx_t i;
+	u32 num_matches;
+	u32 i;
 	size_t compressed_size;
 
 	/* XPRESS requires 256 bytes of overhead for the Huffman code, so it's
@@ -214,7 +214,7 @@ xpress_compress(const void *uncompressed_data, size_t uncompressed_size,
 
 	/* Flush any pending data and get the length of the compressed data.  */
 	compressed_size = flush_output_bitstream(&ostream);
-	if (compressed_size == ~(input_idx_t)0)
+	if (compressed_size == (u32)~0UL)
 		return 0;
 
 	compressed_size += XPRESS_NUM_SYMBOLS / 2;

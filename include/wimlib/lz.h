@@ -20,8 +20,8 @@
  * This can alternatively be used to represent a literal byte if @len is less
  * than the minimum match length.  */
 struct lz_match {
-	input_idx_t len;
-	input_idx_t offset;
+	u32 len;
+	u32 offset;
 };
 
 #endif /* _WIMLIB_LZ_H */

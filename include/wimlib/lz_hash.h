@@ -19,12 +19,12 @@ typedef void (*lz_record_literal_t)(u8 lit, void *ctx);
 
 extern void
 lz_analyze_block(const u8 window[restrict],
-		 input_idx_t window_size,
+		 u32 window_size,
 		 lz_record_match_t record_match,
 		 lz_record_literal_t record_literal,
 		 void *record_ctx,
 		 const struct lz_params *params,
-		 input_idx_t prev_tab[restrict]);
+		 u32 prev_tab[restrict]);
 
 
 #endif /* _WIMLIB_LZ_HASH_H  */

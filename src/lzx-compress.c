@@ -294,9 +294,9 @@ struct lzx_codes {
 
 /* Tables for tallying symbol frequencies in the three LZX alphabets  */
 struct lzx_freqs {
-	input_idx_t main[LZX_MAINCODE_MAX_NUM_SYMBOLS];
-	input_idx_t len[LZX_LENCODE_NUM_SYMBOLS];
-	input_idx_t aligned[LZX_ALIGNEDCODE_NUM_SYMBOLS];
+	u32 main[LZX_MAINCODE_MAX_NUM_SYMBOLS];
+	u32 len[LZX_LENCODE_NUM_SYMBOLS];
+	u32 aligned[LZX_ALIGNEDCODE_NUM_SYMBOLS];
 };
 
 /* LZX intermediate match/literal format  */
@@ -325,16 +325,16 @@ struct lzx_block_spec {
 	int block_type;
 
 	/* 0-based position in the window at which this block starts.  */
-	input_idx_t window_pos;
+	u32 window_pos;
 
 	/* The number of bytes of uncompressed data this block represents.  */
-	input_idx_t block_size;
+	u32 block_size;
 
 	/* The match/literal sequence for this block.  */
 	struct lzx_item *chosen_items;
 
 	/* The length of the @chosen_items sequence.  */
-	input_idx_t num_chosen_items;
+	u32 num_chosen_items;
 
 	/* Huffman codes for this block.  */
 	struct lzx_codes codes;
@@ -363,10 +363,10 @@ struct lzx_compressor {
 
 	/* Number of bytes of data to be compressed, which is the number of
 	 * bytes of data in @window that are actually valid.  */
-	input_idx_t window_size;
+	u32 window_size;
 
 	/* Allocated size of the @window.  */
-	input_idx_t max_window_size;
+	u32 max_window_size;
 
 	/* Number of symbols in the main alphabet (depends on the
 	 * @max_window_size since it determines the maximum allowed offset).  */
@@ -397,17 +397,17 @@ struct lzx_compressor {
 	struct lzx_costs costs;
 
 	/* Fast algorithm only:  Array of hash table links.  */
-	input_idx_t *prev_tab;
+	u32 *prev_tab;
 
 	/* Slow algorithm only: Binary tree match-finder.  */
 	struct lz_bt mf;
 
 	/* Position in window of next match to return.  */
-	input_idx_t match_window_pos;
+	u32 match_window_pos;
 
 	/* The end-of-block position.  We can't allow any matches to span this
 	 * position.  */
-	input_idx_t match_window_end;
+	u32 match_window_end;
 
 	/* Matches found by the match-finder are cached in the following array
 	 * to achieve a slight speedup when the same matches are needed on
@@ -453,22 +453,22 @@ struct lzx_mc_pos_data {
 			/* Position of the start of the match or literal that
 			 * was taken to get to this position in the approximate
 			 * minimum-cost parse.  */
-			input_idx_t link;
+			u32 link;
 
 			/* Offset (as in an LZ (length, offset) pair) of the
 			 * match or literal that was taken to get to this
 			 * position in the approximate minimum-cost parse.  */
-			input_idx_t match_offset;
+			u32 match_offset;
 		} prev;
 		struct {
 			/* Position at which the match or literal starting at
 			 * this position ends in the minimum-cost parse.  */
-			input_idx_t link;
+			u32 link;
 
 			/* Offset (as in an LZ (length, offset) pair) of the
 			 * match or literal starting at this position in the
 			 * approximate minimum-cost parse.  */
-			input_idx_t match_offset;
+			u32 match_offset;
 		} next;
 	};
 
@@ -643,7 +643,7 @@ static unsigned
 lzx_build_precode(const u8 lens[restrict],
 		  const u8 prev_lens[restrict],
 		  const unsigned num_syms,
-		  input_idx_t precode_freqs[restrict LZX_PRECODE_NUM_SYMBOLS],
+		  u32 precode_freqs[restrict LZX_PRECODE_NUM_SYMBOLS],
 		  u8 output_syms[restrict num_syms],
 		  u8 precode_lens[restrict LZX_PRECODE_NUM_SYMBOLS],
 		  u32 precode_codewords[restrict LZX_PRECODE_NUM_SYMBOLS],
@@ -812,7 +812,7 @@ lzx_write_compressed_code(struct output_bitstream *out,
 			  const u8 prev_lens[restrict],
 			  unsigned num_syms)
 {
-	input_idx_t precode_freqs[LZX_PRECODE_NUM_SYMBOLS];
+	u32 precode_freqs[LZX_PRECODE_NUM_SYMBOLS];
 	u8 output_syms[num_syms];
 	u8 precode_lens[LZX_PRECODE_NUM_SYMBOLS];
 	u32 precode_codewords[LZX_PRECODE_NUM_SYMBOLS];
@@ -2086,7 +2086,7 @@ lzx_compress(const void *uncompressed_data, size_t uncompressed_size,
 
 	LZX_DEBUG("Flushing bitstream...");
 	compressed_size = flush_output_bitstream(&ostream);
-	if (compressed_size == ~(input_idx_t)0) {
+	if (compressed_size == (u32)~0UL) {
 		LZX_DEBUG("Data did not compress to %zu bytes or less!",
 			  compressed_size_avail);
 		return 0;

@@ -12,12 +12,6 @@
 
 #include "wimlib/types.h"
 
-/* Variable type that can represent all possible window positions.  */
-#ifndef INPUT_IDX_T_DEFINED
-#define INPUT_IDX_T_DEFINED
-typedef u32 input_idx_t;
-#endif
-
 /* Structure to keep track of the current state sending bits and bytes to the
  * compressed output buffer.  */
 struct output_bitstream {
@@ -47,7 +41,7 @@ struct output_bitstream {
 	u8 *output;
 
 	/* Number of bytes remaining in the @output buffer.  */
-	input_idx_t bytes_remaining;
+	u32 bytes_remaining;
 
 	/* Set to true if the buffer has been exhausted.  */
 	bool overrun;
@@ -57,7 +51,7 @@ extern void
 init_output_bitstream(struct output_bitstream *ostream,
 		      void *data, unsigned num_bytes);
 
-extern input_idx_t
+extern u32
 flush_output_bitstream(struct output_bitstream *ostream);
 
 extern void
@@ -70,7 +64,7 @@ bitstream_put_byte(struct output_bitstream *ostream, u8 n);
 extern void
 make_canonical_huffman_code(unsigned num_syms,
 			    unsigned max_codeword_len,
-			    const input_idx_t freq_tab[restrict],
+			    const u32 freq_tab[restrict],
 			    u8 lens[restrict],
 			    u32 codewords[restrict]);
 

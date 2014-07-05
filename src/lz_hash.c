@@ -69,7 +69,7 @@ update_hash(unsigned hash, u8 c)
  * indicating the end of the hash chain.
  */
 static inline unsigned
-insert_string(input_idx_t hash_tab[], input_idx_t prev_tab[],
+insert_string(u32 hash_tab[], u32 prev_tab[],
 	      const u8 window[], unsigned str_pos,
 	      unsigned hash)
 {
@@ -106,7 +106,7 @@ insert_string(input_idx_t hash_tab[], input_idx_t prev_tab[],
  */
 static unsigned
 longest_match(const u8 window[], unsigned bytes_remaining,
-	      unsigned strstart, const input_idx_t prev_tab[],
+	      unsigned strstart, const u32 prev_tab[],
 	      unsigned cur_match, unsigned prev_len,
 	      unsigned *match_start_ret,
 	      const struct lz_params *params,
@@ -199,12 +199,12 @@ longest_match(const u8 window[], unsigned bytes_remaining,
  */
 void
 lz_analyze_block(const u8 window[restrict],
-		 input_idx_t window_size,
+		 u32 window_size,
 		 lz_record_match_t record_match,
 		 lz_record_literal_t record_literal,
 		 void *record_ctx,
 		 const struct lz_params *params,
-		 input_idx_t prev_tab[restrict])
+		 u32 prev_tab[restrict])
 {
 	unsigned cur_input_pos = 0;
 	unsigned hash          = 0;
@@ -214,7 +214,7 @@ lz_analyze_block(const u8 window[restrict],
 	unsigned match_len     = params->min_match - 1;
 	unsigned match_start   = 0;
 	bool match_available = false;
-	input_idx_t hash_tab[HASH_SIZE];
+	u32 hash_tab[HASH_SIZE];
 	unsigned min_start_pos = 1;
 
 	ZERO_ARRAY(hash_tab);

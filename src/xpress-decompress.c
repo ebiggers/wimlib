@@ -85,8 +85,8 @@
  * Returns the match length, or -1 if the data is invalid.
  */
 static int
-xpress_decode_match(unsigned sym, input_idx_t window_pos,
-		    input_idx_t window_len, u8 window[restrict],
+xpress_decode_match(unsigned sym, u32 window_pos,
+		    u32 window_len, u8 window[restrict],
 		    struct input_bitstream * restrict istream)
 {
 	unsigned len_hdr;
@@ -135,7 +135,7 @@ xpress_lz_decode(struct input_bitstream * restrict istream,
 		 unsigned uncompressed_len,
 		 const u16 decode_table[restrict])
 {
-	input_idx_t curpos;
+	u32 curpos;
 	unsigned match_len;
 
 	for (curpos = 0; curpos < uncompressed_len; curpos += match_len) {

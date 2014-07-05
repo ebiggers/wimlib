@@ -15,11 +15,6 @@
 #include "wimlib/endianness.h"
 #include "wimlib/types.h"
 
-#ifndef INPUT_IDX_T_DEFINED
-#define INPUT_IDX_T_DEFINED
-typedef u32 input_idx_t;
-#endif
-
 /* Structure to encapsulate a block of in-memory data that is being interpreted
  * as a stream of bits.
  *
@@ -39,13 +34,13 @@ struct input_bitstream {
 	const u8 *data;
 
 	/* Number of bytes of data that are left.  */
-	input_idx_t data_bytes_left;
+	u32 data_bytes_left;
 };
 
 /* Initializes a bitstream to receive its input from @data. */
 static inline void
 init_input_bitstream(struct input_bitstream *istream,
-		     const void *data, input_idx_t num_data_bytes)
+		     const void *data, u32 num_data_bytes)
 {
 	istream->bitbuf          = 0;
 	istream->bitsleft        = 0;

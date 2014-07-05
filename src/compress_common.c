@@ -80,11 +80,11 @@ bitstream_put_byte(struct output_bitstream *ostream, u8 n)
  *
  * Returns -1 if the stream has overrun; otherwise returns the total number of
  * bytes in the output.  */
-input_idx_t
+u32
 flush_output_bitstream(struct output_bitstream *ostream)
 {
 	if (unlikely(ostream->overrun))
-		return ~(input_idx_t)0;
+		return (u32)~0UL;
 
 	*(le16*)ostream->bit_output =
 		cpu_to_le16((u16)((u32)ostream->bitbuf << ostream->free_bits));
