@@ -300,7 +300,7 @@ struct lzx_freqs {
 };
 
 /* LZX intermediate match/literal format  */
-struct lzx_match {
+struct lzx_item {
 	/* Bit     Description
 	 *
 	 * 31      1 if a match, 0 if a literal.
@@ -331,10 +331,10 @@ struct lzx_block_spec {
 	input_idx_t block_size;
 
 	/* The match/literal sequence for this block.  */
-	struct lzx_match *chosen_matches;
+	struct lzx_item *chosen_items;
 
-	/* The length of the @chosen_matches sequence.  */
-	input_idx_t num_chosen_matches;
+	/* The length of the @chosen_items sequence.  */
+	input_idx_t num_chosen_items;
 
 	/* Huffman codes for this block.  */
 	struct lzx_codes codes;
@@ -377,7 +377,7 @@ struct lzx_compressor {
 
 	/* Space for the sequences of matches/literals that were chosen for each
 	 * block.  */
-	struct lzx_match *chosen_matches;
+	struct lzx_item *chosen_items;
 
 	/* Information about the LZX blocks the preprocessed input was divided
 	 * into.  */
@@ -557,7 +557,7 @@ lzx_make_huffman_codes(const struct lzx_freqs *freqs,
  */
 static void
 lzx_write_match(struct output_bitstream *out, int block_type,
-		struct lzx_match match, const struct lzx_codes *codes)
+		struct lzx_item match, const struct lzx_codes *codes)
 {
 	/* low 8 bits are the match length minus 2 */
 	unsigned match_len_minus_2 = match.data & 0xff;
@@ -883,12 +883,12 @@ lzx_write_compressed_code(struct output_bitstream *out,
 static void
 lzx_write_matches_and_literals(struct output_bitstream *ostream,
 			       int block_type,
-			       const struct lzx_match match_tab[],
+			       const struct lzx_item match_tab[],
 			       unsigned match_count,
 			       const struct lzx_codes *codes)
 {
 	for (unsigned i = 0; i < match_count; i++) {
-		struct lzx_match match = match_tab[i];
+		struct lzx_item match = match_tab[i];
 
 		/* The high bit of the 32-bit intermediate representation
 		 * indicates whether the item is an actual LZ-style match (1) or
@@ -943,8 +943,8 @@ lzx_write_compressed_block(int block_type,
 			   unsigned block_size,
 			   unsigned max_window_size,
 			   unsigned num_main_syms,
-			   struct lzx_match * chosen_matches,
-			   unsigned num_chosen_matches,
+			   struct lzx_item * chosen_items,
+			   unsigned num_chosen_items,
 			   const struct lzx_codes * codes,
 			   const struct lzx_codes * prev_codes,
 			   struct output_bitstream * ostream)
@@ -1022,7 +1022,7 @@ lzx_write_compressed_block(int block_type,
 
 	/* Write the actual matches and literals.  */
 	lzx_write_matches_and_literals(ostream, block_type,
-				       chosen_matches, num_chosen_matches,
+				       chosen_items, num_chosen_items,
 				       codes);
 
 	LZX_DEBUG("Done writing block.");
@@ -1037,17 +1037,17 @@ lzx_write_all_blocks(struct lzx_compressor *ctx, struct output_bitstream *ostrea
 	for (unsigned i = 0; i < ctx->num_blocks; i++) {
 		const struct lzx_block_spec *spec = &ctx->block_specs[i];
 
-		LZX_DEBUG("Writing block %u/%u (type=%d, size=%u, num_chosen_matches=%u)...",
+		LZX_DEBUG("Writing block %u/%u (type=%d, size=%u, num_chosen_items=%u)...",
 			  i + 1, ctx->num_blocks,
 			  spec->block_type, spec->block_size,
-			  spec->num_chosen_matches);
+			  spec->num_chosen_items);
 
 		lzx_write_compressed_block(spec->block_type,
 					   spec->block_size,
 					   ctx->max_window_size,
 					   ctx->num_main_syms,
-					   spec->chosen_matches,
-					   spec->num_chosen_matches,
+					   spec->chosen_items,
+					   spec->num_chosen_items,
 					   &spec->codes,
 					   prev_codes,
 					   ostream);
@@ -1121,7 +1121,7 @@ lzx_tally_match(unsigned match_len, u32 match_offset,
 		freqs->aligned[position_footer & 7]++;
 
 	/* Pack the position slot, position footer, and match length into an
-	 * intermediate representation.  See `struct lzx_match' for details.
+	 * intermediate representation.  See `struct lzx_item' for details.
 	 */
 	LZX_ASSERT(LZX_MAX_POSITION_SLOTS <= 64);
 	LZX_ASSERT(lzx_get_num_extra_bits(LZX_MAX_POSITION_SLOTS - 1) <= 17);
@@ -1139,7 +1139,7 @@ lzx_tally_match(unsigned match_len, u32 match_offset,
 struct lzx_record_ctx {
 	struct lzx_freqs freqs;
 	struct lzx_lru_queue queue;
-	struct lzx_match *matches;
+	struct lzx_item *matches;
 };
 
 static void
@@ -1859,9 +1859,9 @@ lzx_optimize_block(struct lzx_compressor *ctx, struct lzx_block_spec *spec,
 	struct lzx_freqs freqs;
 	const u8 *window_ptr;
 	const u8 *window_end;
-	struct lzx_match *next_chosen_match;
+	struct lzx_item *next_chosen_match;
 	struct raw_match raw_match;
-	struct lzx_match lzx_match;
+	struct lzx_item lzx_item;
 
 	LZX_ASSERT(num_passes >= 1);
 	LZX_ASSERT(lz_bt_get_position(&ctx->mf) == spec->window_pos);
@@ -1911,8 +1911,8 @@ lzx_optimize_block(struct lzx_compressor *ctx, struct lzx_block_spec *spec,
 	window_ptr = &ctx->window[spec->window_pos];
 	window_end = window_ptr + spec->block_size;
 
-	spec->chosen_matches = &ctx->chosen_matches[spec->window_pos];
-	next_chosen_match = spec->chosen_matches;
+	spec->chosen_items = &ctx->chosen_items[spec->window_pos];
+	next_chosen_match = spec->chosen_items;
 
 	while (window_ptr != window_end) {
 		raw_match = lzx_get_near_optimal_match(ctx);
@@ -1921,17 +1921,17 @@ lzx_optimize_block(struct lzx_compressor *ctx, struct lzx_block_spec *spec,
 			     raw_match.offset == ctx->max_window_size -
 						 LZX_MIN_MATCH_LEN));
 		if (raw_match.len >= LZX_MIN_MATCH_LEN) {
-			lzx_match.data = lzx_tally_match(raw_match.len,
+			lzx_item.data = lzx_tally_match(raw_match.len,
 							 raw_match.offset,
 							 &freqs, &ctx->queue);
 			window_ptr += raw_match.len;
 		} else {
-			lzx_match.data = lzx_tally_literal(*window_ptr, &freqs);
+			lzx_item.data = lzx_tally_literal(*window_ptr, &freqs);
 			window_ptr += 1;
 		}
-		*next_chosen_match++ = lzx_match;
+		*next_chosen_match++ = lzx_item;
 	}
-	spec->num_chosen_matches = next_chosen_match - spec->chosen_matches;
+	spec->num_chosen_items = next_chosen_match - spec->chosen_items;
 	lzx_make_huffman_codes(&freqs, &spec->codes, ctx->num_main_syms);
 	spec->block_type = lzx_choose_verbatim_or_aligned(&freqs, &spec->codes);
 }
@@ -1983,7 +1983,7 @@ lzx_prepare_blocks(struct lzx_compressor * ctx)
  *
  *	ctx->block_specs[]
  *	ctx->num_blocks
- *	ctx->chosen_matches[]
+ *	ctx->chosen_items[]
  */
 static void
 lzx_prepare_block_fast(struct lzx_compressor * ctx)
@@ -2009,7 +2009,7 @@ lzx_prepare_block_fast(struct lzx_compressor * ctx)
 	/* Initialize symbol frequencies and match offset LRU queue.  */
 	memset(&record_ctx.freqs, 0, sizeof(struct lzx_freqs));
 	lzx_lru_queue_init(&record_ctx.queue);
-	record_ctx.matches = ctx->chosen_matches;
+	record_ctx.matches = ctx->chosen_items;
 
 	/* Determine series of matches/literals to output.  */
 	lz_analyze_block(ctx->window,
@@ -2025,8 +2025,8 @@ lzx_prepare_block_fast(struct lzx_compressor * ctx)
 	spec->block_type = LZX_BLOCKTYPE_ALIGNED;
 	spec->window_pos = 0;
 	spec->block_size = ctx->window_size;
-	spec->num_chosen_matches = (record_ctx.matches - ctx->chosen_matches);
-	spec->chosen_matches = ctx->chosen_matches;
+	spec->num_chosen_items = (record_ctx.matches - ctx->chosen_items);
+	spec->chosen_items = ctx->chosen_items;
 	lzx_make_huffman_codes(&record_ctx.freqs, &spec->codes,
 			       ctx->num_main_syms);
 	ctx->num_blocks = 1;
@@ -2146,7 +2146,7 @@ lzx_free_compressor(void *_ctx)
 	struct lzx_compressor *ctx = _ctx;
 
 	if (ctx) {
-		FREE(ctx->chosen_matches);
+		FREE(ctx->chosen_items);
 		FREE(ctx->cached_matches);
 		FREE(ctx->optimum);
 		lz_bt_destroy(&ctx->mf);
@@ -2274,8 +2274,8 @@ lzx_create_compressor(size_t window_size,
 				   LZX_CACHE_LEN - (LZX_MAX_MATCHES_PER_POS + 1);
 	}
 
-	ctx->chosen_matches = MALLOC(window_size * sizeof(ctx->chosen_matches[0]));
-	if (ctx->chosen_matches == NULL)
+	ctx->chosen_items = MALLOC(window_size * sizeof(ctx->chosen_items[0]));
+	if (ctx->chosen_items == NULL)
 		goto oom;
 
 	memcpy(&ctx->params, params, sizeof(struct wimlib_lzx_compressor_params));
@@ -2307,7 +2307,7 @@ lzx_get_needed_memory(size_t max_block_size,
 		sizeof(((struct lzx_compressor*)0)->block_specs[0]);
 
 	if (params->algorithm == WIMLIB_LZX_ALGORITHM_SLOW) {
-		size += max_block_size * sizeof(((struct lzx_compressor*)0)->chosen_matches[0]);
+		size += max_block_size * sizeof(((struct lzx_compressor*)0)->chosen_items[0]);
 		size += lz_bt_get_needed_memory(max_block_size);
 		size += (LZX_OPTIM_ARRAY_SIZE +
 			 min(params->alg_params.slow.nice_match_length,
