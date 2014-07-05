@@ -550,7 +550,7 @@ lzx_make_huffman_codes(const struct lzx_freqs *freqs,
  *	The type of the LZX block (LZX_BLOCKTYPE_ALIGNED or
  *	LZX_BLOCKTYPE_VERBATIM)
  * @match:
- *	The match, as a (length, offset) pair.
+ *	The match data.
  * @codes:
  *	Pointer to a structure that contains the codewords for the main, length,
  *	and aligned offset Huffman codes for the current LZX compressed block.
@@ -872,31 +872,27 @@ lzx_write_compressed_code(struct output_bitstream *out,
  * @block_type
  *	The chosen type of the LZX compressed block (LZX_BLOCKTYPE_ALIGNED or
  *	LZX_BLOCKTYPE_VERBATIM).
- * @match_tab
+ * @items
  *	The array of matches/literals to output.
- * @match_count
- *	Number of matches/literals to output (length of @match_tab).
+ * @num_items
+ *	Number of matches/literals to output (length of @items).
  * @codes
  *	The main, length, and aligned offset Huffman codes for the current
  *	LZX compressed block.
  */
 static void
-lzx_write_matches_and_literals(struct output_bitstream *ostream,
-			       int block_type,
-			       const struct lzx_item match_tab[],
-			       unsigned match_count,
-			       const struct lzx_codes *codes)
+lzx_write_items(struct output_bitstream *ostream, int block_type,
+		const struct lzx_item items[], u32 num_items,
+		const struct lzx_codes *codes)
 {
-	for (unsigned i = 0; i < match_count; i++) {
-		struct lzx_item match = match_tab[i];
-
+	for (u32 i = 0; i < num_items; i++) {
 		/* The high bit of the 32-bit intermediate representation
 		 * indicates whether the item is an actual LZ-style match (1) or
 		 * a literal byte (0).  */
-		if (match.data & 0x80000000)
-			lzx_write_match(ostream, block_type, match, codes);
+		if (items[i].data & 0x80000000)
+			lzx_write_match(ostream, block_type, items[i], codes);
 		else
-			lzx_write_literal(ostream, match.data, codes);
+			lzx_write_literal(ostream, items[i].data, codes);
 	}
 }
 
@@ -1021,9 +1017,8 @@ lzx_write_compressed_block(int block_type,
 	LZX_DEBUG("Writing matches and literals...");
 
 	/* Write the actual matches and literals.  */
-	lzx_write_matches_and_literals(ostream, block_type,
-				       chosen_items, num_chosen_items,
-				       codes);
+	lzx_write_items(ostream, block_type,
+			chosen_items, num_chosen_items, codes);
 
 	LZX_DEBUG("Done writing block.");
 }
