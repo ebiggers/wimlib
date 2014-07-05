@@ -37,7 +37,7 @@ struct lz_bt {
 	u32 max_search_depth;
 };
 
-struct raw_match;
+struct lz_match;
 
 extern u64
 lz_bt_get_needed_memory(lz_bt_pos_t max_window_size);
@@ -54,7 +54,7 @@ extern void
 lz_bt_load_window(struct lz_bt *mf, const u8 *window, lz_bt_pos_t window_size);
 
 extern lz_bt_len_t
-lz_bt_get_matches(struct lz_bt *mf, struct raw_match *matches);
+lz_bt_get_matches(struct lz_bt *mf, struct lz_match *matches);
 
 static inline lz_bt_pos_t
 lz_bt_get_position(const struct lz_bt *mf)

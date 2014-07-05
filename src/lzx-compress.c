@@ -254,7 +254,7 @@
 #define LZX_CACHE_PER_POS	8
 
 #define LZX_CACHE_LEN (LZX_DIV_BLOCK_SIZE * (LZX_CACHE_PER_POS + 1))
-#define LZX_CACHE_SIZE (LZX_CACHE_LEN * sizeof(struct raw_match))
+#define LZX_CACHE_SIZE (LZX_CACHE_LEN * sizeof(struct lz_match))
 #define LZX_MAX_MATCHES_PER_POS (LZX_MAX_MATCH_LEN - LZX_MIN_MATCH_LEN + 1)
 
 /* Codewords for the LZX main, length, and aligned offset Huffman codes  */
@@ -414,10 +414,10 @@ struct lzx_compressor {
 	 * subsequent passes.  This is suboptimal because different matches may
 	 * be preferred with different cost models, but seems to be a worthwhile
 	 * speedup.  */
-	struct raw_match *cached_matches;
-	struct raw_match *cache_ptr;
+	struct lz_match *cached_matches;
+	struct lz_match *cache_ptr;
 	bool matches_cached;
-	struct raw_match *cache_limit;
+	struct lz_match *cache_limit;
 
 	/* Match-chooser state.
 	 * When matches have been chosen, optimum_cur_idx is set to the position
@@ -1248,10 +1248,10 @@ lzx_set_costs(struct lzx_compressor * ctx, const struct lzx_lens * lens)
  * value is the number of matches found.  */
 static unsigned
 lzx_get_matches(struct lzx_compressor *ctx,
-		const struct raw_match **matches_ret)
+		const struct lz_match **matches_ret)
 {
-	struct raw_match *cache_ptr;
-	struct raw_match *matches;
+	struct lz_match *cache_ptr;
+	struct lz_match *matches;
 	unsigned num_matches;
 
 	LZX_ASSERT(ctx->match_window_pos < ctx->match_window_end);
@@ -1324,7 +1324,7 @@ lzx_get_matches(struct lzx_compressor *ctx,
 static void
 lzx_skip_bytes(struct lzx_compressor *ctx, unsigned n)
 {
-	struct raw_match *cache_ptr;
+	struct lz_match *cache_ptr;
 
 	LZX_ASSERT(n <= ctx->match_window_end - ctx->match_window_pos);
 
@@ -1349,7 +1349,7 @@ lzx_skip_bytes(struct lzx_compressor *ctx, unsigned n)
  *
  * Returns the first match in the list.
  */
-static struct raw_match
+static struct lz_match
 lzx_match_chooser_reverse_list(struct lzx_compressor *ctx, unsigned cur_pos)
 {
 	unsigned prev_link, saved_prev_link;
@@ -1375,7 +1375,7 @@ lzx_match_chooser_reverse_list(struct lzx_compressor *ctx, unsigned cur_pos)
 
 	ctx->optimum_cur_idx = ctx->optimum[0].next.link;
 
-	return (struct raw_match)
+	return (struct lz_match)
 		{ .len = ctx->optimum_cur_idx,
 		  .offset = ctx->optimum[0].next.match_offset,
 		};
@@ -1443,12 +1443,12 @@ lzx_match_chooser_reverse_list(struct lzx_compressor *ctx, unsigned cur_pos)
  * The return value is a (length, offset) pair specifying the match or literal
  * chosen.  For literals, the length is 0 or 1 and the offset is meaningless.
  */
-static struct raw_match
+static struct lz_match
 lzx_get_near_optimal_match(struct lzx_compressor *ctx)
 {
 	unsigned num_matches;
-	const struct raw_match *matches;
-	struct raw_match match;
+	const struct lz_match *matches;
+	struct lz_match match;
 	unsigned longest_len;
 	unsigned longest_rep_len;
 	u32 longest_rep_offset;
@@ -1493,7 +1493,7 @@ lzx_get_near_optimal_match(struct lzx_compressor *ctx)
 	/* If there's a long match with a recent offset, take it.  */
 	if (longest_rep_len >= ctx->params.alg_params.slow.nice_match_length) {
 		lzx_skip_bytes(ctx, longest_rep_len);
-		return (struct raw_match) {
+		return (struct lz_match) {
 			.len = longest_rep_len,
 			.offset = longest_rep_offset,
 		};
@@ -1860,7 +1860,7 @@ lzx_optimize_block(struct lzx_compressor *ctx, struct lzx_block_spec *spec,
 	const u8 *window_ptr;
 	const u8 *window_end;
 	struct lzx_item *next_chosen_match;
-	struct raw_match raw_match;
+	struct lz_match lz_match;
 	struct lzx_item lzx_item;
 
 	LZX_ASSERT(num_passes >= 1);
@@ -1885,15 +1885,15 @@ lzx_optimize_block(struct lzx_compressor *ctx, struct lzx_block_spec *spec,
 
 		while (window_ptr != window_end) {
 
-			raw_match = lzx_get_near_optimal_match(ctx);
+			lz_match = lzx_get_near_optimal_match(ctx);
 
-			LZX_ASSERT(!(raw_match.len == LZX_MIN_MATCH_LEN &&
-				     raw_match.offset == ctx->max_window_size -
+			LZX_ASSERT(!(lz_match.len == LZX_MIN_MATCH_LEN &&
+				     lz_match.offset == ctx->max_window_size -
 							 LZX_MIN_MATCH_LEN));
-			if (raw_match.len >= LZX_MIN_MATCH_LEN) {
-				lzx_tally_match(raw_match.len, raw_match.offset,
+			if (lz_match.len >= LZX_MIN_MATCH_LEN) {
+				lzx_tally_match(lz_match.len, lz_match.offset,
 						&freqs, &ctx->queue);
-				window_ptr += raw_match.len;
+				window_ptr += lz_match.len;
 			} else {
 				lzx_tally_literal(*window_ptr, &freqs);
 				window_ptr += 1;
@@ -1915,16 +1915,16 @@ lzx_optimize_block(struct lzx_compressor *ctx, struct lzx_block_spec *spec,
 	next_chosen_match = spec->chosen_items;
 
 	while (window_ptr != window_end) {
-		raw_match = lzx_get_near_optimal_match(ctx);
+		lz_match = lzx_get_near_optimal_match(ctx);
 
-		LZX_ASSERT(!(raw_match.len == LZX_MIN_MATCH_LEN &&
-			     raw_match.offset == ctx->max_window_size -
+		LZX_ASSERT(!(lz_match.len == LZX_MIN_MATCH_LEN &&
+			     lz_match.offset == ctx->max_window_size -
 						 LZX_MIN_MATCH_LEN));
-		if (raw_match.len >= LZX_MIN_MATCH_LEN) {
-			lzx_item.data = lzx_tally_match(raw_match.len,
-							 raw_match.offset,
+		if (lz_match.len >= LZX_MIN_MATCH_LEN) {
+			lzx_item.data = lzx_tally_match(lz_match.len,
+							 lz_match.offset,
 							 &freqs, &ctx->queue);
-			window_ptr += raw_match.len;
+			window_ptr += lz_match.len;
 		} else {
 			lzx_item.data = lzx_tally_literal(*window_ptr, &freqs);
 			window_ptr += 1;

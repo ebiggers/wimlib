@@ -175,7 +175,7 @@ struct lzms_compressor {
 	struct lz_bt mf;
 
 	/* Temporary space to store found matches.  */
-	struct raw_match *matches;
+	struct lz_match *matches;
 
 	/* Match-chooser data.  */
 	struct lzms_mc_pos_data *optimum;
@@ -744,7 +744,7 @@ lzms_get_length_cost(const struct lzms_huffman_encoder *enc, u32 length)
 }
 
 static u32
-lzms_get_matches(struct lzms_compressor *ctx, struct raw_match **matches_ret)
+lzms_get_matches(struct lzms_compressor *ctx, struct lz_match **matches_ret)
 {
 	*matches_ret = ctx->matches;
 	return lz_bt_get_matches(&ctx->mf, ctx->matches);
@@ -834,7 +834,7 @@ lzms_get_lz_match_cost(struct lzms_compressor *ctx,
 	       lzms_get_length_cost(&ctx->length_encoder, length);
 }
 
-static struct raw_match
+static struct lz_match
 lzms_match_chooser_reverse_list(struct lzms_compressor *ctx, unsigned cur_pos)
 {
 	unsigned prev_link, saved_prev_link;
@@ -860,7 +860,7 @@ lzms_match_chooser_reverse_list(struct lzms_compressor *ctx, unsigned cur_pos)
 
 	ctx->optimum_cur_idx = ctx->optimum[0].next.link;
 
-	return (struct raw_match)
+	return (struct lz_match)
 		{ .len = ctx->optimum_cur_idx,
 		  .offset = ctx->optimum[0].next.match_offset,
 		};
@@ -868,12 +868,12 @@ lzms_match_chooser_reverse_list(struct lzms_compressor *ctx, unsigned cur_pos)
 
 /* This is similar to lzx_get_near_optimal_match() in lzx-compress.c.
  * Read that one if you want to understand it.  */
-static struct raw_match
+static struct lz_match
 lzms_get_near_optimal_match(struct lzms_compressor *ctx)
 {
 	u32 num_matches;
-	struct raw_match *matches;
-	struct raw_match match;
+	struct lz_match *matches;
+	struct lz_match match;
 	u32 longest_len;
 	u32 longest_rep_len;
 	u32 longest_rep_offset;
@@ -913,7 +913,7 @@ lzms_get_near_optimal_match(struct lzms_compressor *ctx)
 
 	if (longest_rep_len >= ctx->params.nice_match_length) {
 		lzms_skip_bytes(ctx, longest_rep_len);
-		return (struct raw_match) {
+		return (struct lz_match) {
 			.len = longest_rep_len,
 			.offset = longest_rep_offset,
 		};
@@ -1131,7 +1131,7 @@ lzms_get_near_optimal_match(struct lzms_compressor *ctx)
 static void
 lzms_encode(struct lzms_compressor *ctx)
 {
-	struct raw_match match;
+	struct lz_match match;
 
 	/* Load window into the binary tree match-finder.  */
 	lz_bt_load_window(&ctx->mf, ctx->window, ctx->window_size);

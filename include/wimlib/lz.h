@@ -19,7 +19,7 @@
  *
  * This can alternatively be used to represent a literal byte if @len is less
  * than the minimum match length.  */
-struct raw_match {
+struct lz_match {
 	input_idx_t len;
 	input_idx_t offset;
 };

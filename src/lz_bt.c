@@ -242,7 +242,7 @@ do_search(const u8 window[restrict],
 	  const u32 max_depth,
 	  lz_bt_pos_t child_tab[restrict],
 	  lz_bt_pos_t cur_match,
-	  struct raw_match matches[restrict])
+	  struct lz_match matches[restrict])
 {
 	/*
 	 * Here's my explanation of how this code actually works.  Beware: this
@@ -427,7 +427,7 @@ do_search(const u8 window[restrict],
 			if (len > longest_match_len) {
 				longest_match_len = len;
 
-				matches[num_matches++] = (struct raw_match) {
+				matches[num_matches++] = (struct lz_match) {
 					.len = len,
 					.offset = cur_window_pos - cur_match,
 				};
@@ -474,7 +474,7 @@ do_search(const u8 window[restrict],
  * in the window.
  */
 lz_bt_len_t
-lz_bt_get_matches(struct lz_bt *mf, struct raw_match matches[])
+lz_bt_get_matches(struct lz_bt *mf, struct lz_match matches[])
 {
 	lz_bt_pos_t bytes_remaining;
 	lz_bt_len_t num_matches;
@@ -514,7 +514,7 @@ lz_bt_get_matches(struct lz_bt *mf, struct raw_match matches[])
 		if (cur_match != 0 && mf->cur_window[cur_match + 2] !=
 				      mf->cur_window[mf->cur_window_pos + 2])
 		{
-			matches[num_matches++] = (struct raw_match) {
+			matches[num_matches++] = (struct lz_match) {
 				.len = 2,
 				.offset = mf->cur_window_pos - cur_match,
 			};
