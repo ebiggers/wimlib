@@ -1134,7 +1134,7 @@ lzx_tally_match(unsigned match_len, u32 match_offset,
 struct lzx_record_ctx {
 	struct lzx_freqs freqs;
 	struct lzx_lru_queue queue;
-	struct lzx_item *matches;
+	struct lzx_item *items;
 };
 
 static void
@@ -1142,7 +1142,7 @@ lzx_record_match(unsigned len, unsigned offset, void *_ctx)
 {
 	struct lzx_record_ctx *ctx = _ctx;
 
-	(ctx->matches++)->data = lzx_tally_match(len, offset, &ctx->freqs, &ctx->queue);
+	(ctx->items++)->data = lzx_tally_match(len, offset, &ctx->freqs, &ctx->queue);
 }
 
 static void
@@ -1150,7 +1150,7 @@ lzx_record_literal(u8 lit, void *_ctx)
 {
 	struct lzx_record_ctx *ctx = _ctx;
 
-	(ctx->matches++)->data = lzx_tally_literal(lit, &ctx->freqs);
+	(ctx->items++)->data = lzx_tally_literal(lit, &ctx->freqs);
 }
 
 /* Returns the cost, in bits, to output a literal byte using the specified cost
@@ -2004,7 +2004,7 @@ lzx_prepare_block_fast(struct lzx_compressor * ctx)
 	/* Initialize symbol frequencies and match offset LRU queue.  */
 	memset(&record_ctx.freqs, 0, sizeof(struct lzx_freqs));
 	lzx_lru_queue_init(&record_ctx.queue);
-	record_ctx.matches = ctx->chosen_items;
+	record_ctx.items = ctx->chosen_items;
 
 	/* Determine series of matches/literals to output.  */
 	lz_analyze_block(ctx->window,
@@ -2020,7 +2020,7 @@ lzx_prepare_block_fast(struct lzx_compressor * ctx)
 	spec->block_type = LZX_BLOCKTYPE_ALIGNED;
 	spec->window_pos = 0;
 	spec->block_size = ctx->window_size;
-	spec->num_chosen_items = (record_ctx.matches - ctx->chosen_items);
+	spec->num_chosen_items = record_ctx.items - ctx->chosen_items;
 	spec->chosen_items = ctx->chosen_items;
 	lzx_make_huffman_codes(&record_ctx.freqs, &spec->codes,
 			       ctx->num_main_syms);
