@@ -1415,18 +1415,19 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	{
 		ERROR("\"%ls\": unrecognized path format", root_disk_path);
 		ret = WIMLIB_ERR_INVALID_PARAM;
-		goto out_free_path;
+	} else {
+		ntpath_nchars = ntpath.Length / sizeof(wchar_t);
+		wmemcpy(path, ntpath.Buffer, ntpath_nchars);
+		path[ntpath_nchars] = L'\0';
+
+		params->capture_root_nchars = ntpath_nchars;
+		if (path[ntpath_nchars - 1] == L'\\')
+			params->capture_root_nchars--;
+		ret = 0;
 	}
-
-	ntpath_nchars = ntpath.Length / sizeof(wchar_t);
-	wmemcpy(path, ntpath.Buffer, ntpath_nchars);
-	path[ntpath_nchars] = L'\0';
-
-	params->capture_root_nchars = ntpath_nchars;
-	if (path[ntpath_nchars - 1] == L'\\')
-		params->capture_root_nchars--;
-
 	HeapFree(GetProcessHeap(), 0, ntpath.Buffer);
+	if (ret)
+		goto out_free_path;
 
 	memset(&stats, 0, sizeof(stats));
 
