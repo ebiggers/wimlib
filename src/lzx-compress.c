@@ -279,7 +279,7 @@ struct lzx_lens {
  *
  * If a codeword has zero frequency, it must still be assigned some nonzero cost
  * --- generally a high cost, since even if it gets used in the next iteration,
- * it probably will not be used very times.  */
+ * it probably will not be used very many times.  */
 struct lzx_costs {
 	u8 main[LZX_MAINCODE_MAX_NUM_SYMBOLS];
 	u8 len[LZX_LENCODE_NUM_SYMBOLS];
@@ -2220,8 +2220,6 @@ lzx_create_compressor(size_t window_size,
 	if (!lzx_window_size_valid(window_size))
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	LZX_DEBUG("Allocating memory.");
-
 	ctx = CALLOC(1, sizeof(struct lzx_compressor));
 	if (ctx == NULL)
 		goto oom;
@@ -2262,7 +2260,7 @@ lzx_create_compressor(size_t window_size,
 				       min(params->alg_params.slow.nice_match_length,
 					   LZX_MAX_MATCH_LEN)) *
 						sizeof(ctx->optimum[0]));
-		if (!ctx->optimum)
+		if (ctx->optimum == NULL)
 			goto oom;
 	}
 
