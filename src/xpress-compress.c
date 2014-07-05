@@ -7,7 +7,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013 Eric Biggers
+ * Copyright (C) 2012, 2013, 2014 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
  *
@@ -42,13 +42,13 @@
 
 struct xpress_record_ctx {
 	u32 freqs[XPRESS_NUM_SYMBOLS];
-	struct xpress_match *matches;
+	struct xpress_item *chosen_items;
 };
 
 struct xpress_compressor {
 	u8 *window;
 	u32 max_window_size;
-	struct xpress_match *matches;
+	struct xpress_item *chosen_items;
 	u32 *prev_tab;
 	u32 codewords[XPRESS_NUM_SYMBOLS];
 	u8 lens[XPRESS_NUM_SYMBOLS];
@@ -56,7 +56,7 @@ struct xpress_compressor {
 };
 
 /* Intermediate XPRESS match/literal representation.  */
-struct xpress_match {
+struct xpress_item {
 	u16 adjusted_len;  /* Match length minus XPRESS_MIN_MATCH_LEN */
 	u16 offset;        /* Match offset */
 	/* For literals, offset == 0 and adjusted_len is the literal.  */
@@ -69,7 +69,7 @@ struct xpress_match {
  * @codewords and @lens provide the Huffman code that is being used.
  */
 static void
-xpress_write_match(struct xpress_match match,
+xpress_write_match(struct xpress_item match,
 		   struct output_bitstream *restrict ostream,
 		   const u32 codewords[restrict],
 		   const u8 lens[restrict])
@@ -92,19 +92,19 @@ xpress_write_match(struct xpress_match match,
 }
 
 static void
-xpress_write_matches_and_literals(struct output_bitstream *ostream,
-				  const struct xpress_match matches[restrict],
-				  u32 num_matches,
-				  const u32 codewords[restrict],
-				  const u8 lens[restrict])
+xpress_write_items(struct output_bitstream *ostream,
+		   const struct xpress_item items[restrict],
+		   u32 num_items,
+		   const u32 codewords[restrict],
+		   const u8 lens[restrict])
 {
-	for (u32 i = 0; i < num_matches; i++) {
-		if (matches[i].offset) {
-			/* Real match  */
-			xpress_write_match(matches[i], ostream, codewords, lens);
+	for (u32 i = 0; i < num_items; i++) {
+		if (items[i].offset) {
+			/* Match  */
+			xpress_write_match(items[i], ostream, codewords, lens);
 		} else {
-			/* Literal byte  */
-			u8 lit = matches[i].adjusted_len;
+			/* Literal  */
+			u8 lit = items[i].adjusted_len;
 			bitstream_put_bits(ostream, codewords[lit], lens[lit]);
 		}
 	}
@@ -116,7 +116,8 @@ xpress_record_literal(u8 lit, void *_ctx)
 {
 	struct xpress_record_ctx *ctx = _ctx;
 	ctx->freqs[lit]++;
-	*(ctx->matches++) = (struct xpress_match) { .offset = 0, .adjusted_len = lit };
+	*(ctx->chosen_items++) =
+		(struct xpress_item) { .offset = 0, .adjusted_len = lit };
 }
 
 static void
@@ -137,8 +138,9 @@ xpress_record_match(unsigned len, unsigned offset, void *_ctx)
 	XPRESS_ASSERT(sym < XPRESS_NUM_SYMBOLS);
 
 	ctx->freqs[sym]++;
-	*(ctx->matches++) = (struct xpress_match) { .offset = offset,
-						    .adjusted_len = adjusted_len };
+	*(ctx->chosen_items++) =
+		(struct xpress_item) { .offset = offset,
+				       .adjusted_len = adjusted_len };
 }
 
 static const struct lz_params xpress_lz_params = {
@@ -159,7 +161,7 @@ xpress_compress(const void *uncompressed_data, size_t uncompressed_size,
 	struct xpress_compressor *c = _c;
 	u8 *cptr = compressed_data;
 	struct output_bitstream ostream;
-	u32 num_matches;
+	u32 num_chosen_items;
 	u32 i;
 	size_t compressed_size;
 
@@ -183,7 +185,7 @@ xpress_compress(const void *uncompressed_data, size_t uncompressed_size,
 
 	/* Determine match/literal sequence to divide the data into.  */
 	memset(c->record_ctx.freqs, 0, sizeof(c->record_ctx.freqs));
-	c->record_ctx.matches = c->matches;
+	c->record_ctx.chosen_items = c->chosen_items;
 	lz_analyze_block(c->window,
 			 uncompressed_size,
 			 xpress_record_match,
@@ -192,7 +194,7 @@ xpress_compress(const void *uncompressed_data, size_t uncompressed_size,
 			 &xpress_lz_params,
 			 c->prev_tab);
 
-	num_matches = (c->record_ctx.matches - c->matches);
+	num_chosen_items = (c->record_ctx.chosen_items - c->chosen_items);
 
 	/* Account for end of data symbol.  */
 	c->record_ctx.freqs[XPRESS_END_OF_DATA]++;
@@ -209,8 +211,8 @@ xpress_compress(const void *uncompressed_data, size_t uncompressed_size,
 	init_output_bitstream(&ostream, cptr,
 			      compressed_size_avail - XPRESS_NUM_SYMBOLS / 2 - 1);
 
-	xpress_write_matches_and_literals(&ostream, c->matches,
-					  num_matches, c->codewords, c->lens);
+	xpress_write_items(&ostream, c->chosen_items, num_chosen_items,
+			   c->codewords, c->lens);
 
 	/* Flush any pending data and get the length of the compressed data.  */
 	compressed_size = flush_output_bitstream(&ostream);
@@ -268,7 +270,7 @@ xpress_free_compressor(void *_c)
 
 	if (c) {
 		FREE(c->window);
-		FREE(c->matches);
+		FREE(c->chosen_items);
 		FREE(c->prev_tab);
 		FREE(c);
 	}
@@ -294,8 +296,8 @@ xpress_create_compressor(size_t max_window_size,
 
 	c->max_window_size = max_window_size;
 
-	c->matches = MALLOC(max_window_size * sizeof(c->matches[0]));
-	if (c->matches == NULL)
+	c->chosen_items = MALLOC(max_window_size * sizeof(c->chosen_items[0]));
+	if (c->chosen_items == NULL)
 		goto oom;
 
 	c->prev_tab = MALLOC(max_window_size * sizeof(c->prev_tab[0]));
@@ -318,7 +320,7 @@ xpress_get_needed_memory(size_t max_window_size,
 
 	size += sizeof(struct xpress_compressor);
 	size += max_window_size + 8;
-	size += max_window_size * sizeof(((struct xpress_compressor*)0)->matches[0]);
+	size += max_window_size * sizeof(((struct xpress_compressor*)0)->chosen_items[0]);
 	size += max_window_size * sizeof(((struct xpress_compressor*)0)->prev_tab[0]);
 
 	return size;
