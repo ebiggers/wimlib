@@ -69,7 +69,6 @@
 #  include "config.h"
 #endif
 
-#include "wimlib.h"
 #include "wimlib/decompressor_ops.h"
 #include "wimlib/decompress_common.h"
 #include "wimlib/xpress.h"
