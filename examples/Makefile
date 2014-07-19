@@ -1,7 +1,7 @@
 CFLAGS := -Wall
 LDLIBS := -lwim
 
-EXE := applywim capturewim compressfile decompressfile
+EXE := applywim capturewim updatewim compressfile decompressfile
 
 all:$(EXE)
 

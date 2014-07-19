@@ -333,11 +333,8 @@ cabextract project (http://www.cabextract.org.uk).  The LZX compressor
 (www.russotto.net/chm/).  However I have since rewritten and made many
 improvements to both the decompressor and compressor.
 
-lz_hash.c contains LZ77 match-finding code that uses hash chains.  It is based
-on code from zlib but I have since rewritten it.
-
-lz_bt.c contains LZ77 match-finding code that uses binary trees.  It is based on
-code from liblzma but I have since rewritten it.
+lz_binary_trees.c contains LZ77 match-finding code that uses binary trees.  It
+is based on code from liblzma but I have since rewritten it.
 
 A limited number of other free programs can handle some parts of the WIM
 file format:

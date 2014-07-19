@@ -146,7 +146,7 @@ int main(int argc, char **argv)
 
 	/* Create a compressor for the compression type and chunk size with the
 	 * default parameters.  */
-	ret = wimlib_create_compressor(ctype, chunk_size, NULL, &compressor);
+	ret = wimlib_create_compressor(ctype, chunk_size, 0, &compressor);
 	if (ret != 0)
 		error(1, 0, "Failed to create compressor: %s",
 		      wimlib_get_error_string(ret));

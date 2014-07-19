@@ -32,48 +32,33 @@ uncompressed, but it may result in a better compression ratio if wimlib can do a
 better job than the program that wrote the original file.  A side effect of this
 is that every stream in the original WIM will be checksummed, so this can help
 verify that the WIM is intact (equivalent to applying all the images from it).
-.IP ""
-Note: as of wimlib v1.7.0, wimlib's LZX compressor usually achieves the same or
-better compression than Microsoft's, but is about 10% slower.
 .TP
-\fB--recompress-slow\fR, \fB--compress-slow\fR
-Spend even more time compressing the data in order to achieve a more optimal
-compression ratio.  For LZX ("maximum") compression, compared to the default
-\fB--recompress\fR this will make compression about twice as slow and may
-improve the compression ratio by maybe 1%, depending on the data.  For LZMS
-("recovery") compression this option also has an effect.  For XPRESS ("fast")
-compression this option has no effect; however you may use \fB--compress\fR=LZX
-\fB--recompress-slow\fR to change the compression type to LZX and recompress
-slowly, as per this option.  In any case, this option implies
-\fB--recompress\fR.
-.TP
-\fB--compress\fR=\fITYPE\fR
-Recompress the WIM file using the specified compression type.  \fITYPE\fR may be
-"none", "fast" (or "XPRESS"), or "maximum" (or "LZX").  This implies
+\fB--compress\fR=\fITYPE\fR[:\fILEVEL\fR
+Recompress the WIM file using the specified compression type, and optionally the
+specified compression level for that compression type.  This implies
 \fB--recompress\fR.
 .IP ""
-\fITYPE\fR may also be "recovery" (or "LZMS"); however, this will result in
-reduced compatibility.  See the documentation for this option to
-\fB@IMAGEX_PROGNAME@ capture\fR (1) for more details.
+See the documentation for this option to \fB@IMAGEX_PROGNAME@ capture\fR (1) for
+more details.
 .TP
 \fB--chunk-size\fR=\fISIZE\fR
 Set the WIM compression chunk size to \fISIZE\fR.  See the documentation for
 this option to \fB@IMAGEX_PROGNAME@ capture\fR (1) for more details.
 .TP
-\fB--pack-streams\fR, \fB--solid\fR
+\fB--solid\fR
 Create a "solid" archive that compresses multiple files together.  This can
 result in a higher compression ratio, but has disadvantages such as reduced
 compatibility.  See the documentation for this option to \fB@IMAGEX_PROGNAME@
 capture\fR (1) for more details.
 .TP
-\fB--pack-chunk-size\fR=\fISIZE\fR, \fB--solid-chunk-size\fR=\fISIZE\fR
-Like \fB--chunk-size\fR, but set the chunk size used in packed resources.  See
-the documentation for this option to \fB@IMAGEX_PROGNAME@ capture\fR (1) for
-more details.
+\fB--solid-chunk-size\fR=\fISIZE\fR
+Like \fB--chunk-size\fR, but set the chunk size used in solid blocks.  See the
+documentation for this option to \fB@IMAGEX_PROGNAME@ capture\fR (1) for more
+details.
 .TP
-\fB--pack-compress\fR=\fITYPE\fR, \fB--solid-compress\fR=\fITYPE\fR
-Like \fB--compress\fR, but set the compression format used in packed resources.
-See the documentation for this option to \fB@IMAGEX_PROGNAME@ capture\fR (1) for
+\fB--solid-compress\fR=\fITYPE\fR[:\fILEVEL\fR]
+Like \fB--compress\fR, but set the compression type used in solid blocks.  See
+the documentation for this option to \fB@IMAGEX_PROGNAME@ capture\fR (1) for
 more details.
 .TP
 \fB--threads\fR=\fINUM_THREADS\fR

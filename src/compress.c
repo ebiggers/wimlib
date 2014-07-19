@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2013 Eric Biggers
+ * Copyright (C) 2013, 2014 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
  *
@@ -29,12 +29,19 @@
 #endif
 
 #include "wimlib.h"
+#include "wimlib/assert.h"
+#include "wimlib/error.h"
 #include "wimlib/compressor_ops.h"
 #include "wimlib/util.h"
+
+#include <stdlib.h>
+#include <string.h>
 
 struct wimlib_compressor {
 	const struct compressor_ops *ops;
 	void *private;
+	enum wimlib_compression_type ctype;
+	size_t max_block_size;
 };
 
 static const struct compressor_ops *compressor_ops[] = {
@@ -43,9 +50,11 @@ static const struct compressor_ops *compressor_ops[] = {
 	[WIMLIB_COMPRESSION_TYPE_LZMS]   = &lzms_compressor_ops,
 };
 
-static struct wimlib_compressor_params_header *
-compressor_default_params[ARRAY_LEN(compressor_ops)] = {
-};
+/* Scale: 10 = low, 50 = medium, 100 = high */
+
+#define DEFAULT_COMPRESSION_LEVEL 50
+
+static unsigned int default_compression_levels[ARRAY_LEN(compressor_ops)];
 
 static bool
 compressor_ctype_valid(int ctype)
@@ -56,47 +65,27 @@ compressor_ctype_valid(int ctype)
 }
 
 WIMLIBAPI int
-wimlib_set_default_compressor_params(enum wimlib_compression_type ctype,
-				     const struct wimlib_compressor_params_header *params)
+wimlib_set_default_compression_level(enum wimlib_compression_type ctype,
+				     unsigned int compression_level)
 {
-	struct wimlib_compressor_params_header *dup;
+	if ((int)ctype == -1) {
+		for (int i = 0; i < ARRAY_LEN(default_compression_levels); i++)
+			default_compression_levels[i] = compression_level;
+	} else {
+		if (!compressor_ctype_valid(ctype))
+			return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
 
-	if (!compressor_ctype_valid(ctype))
-		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
-
-	if (params != NULL &&
-	    compressor_ops[ctype]->params_valid != NULL &&
-	    !compressor_ops[ctype]->params_valid(params))
-		return WIMLIB_ERR_INVALID_PARAM;
-
-	dup = NULL;
-	if (params) {
-		dup = memdup(params, params->size);
-		if (dup == NULL)
-			return WIMLIB_ERR_NOMEM;
+		default_compression_levels[ctype] = compression_level;
 	}
-
-	FREE(compressor_default_params[ctype]);
-	compressor_default_params[ctype] = dup;
 	return 0;
-}
-
-void
-cleanup_compressor_params(void)
-{
-	for (size_t i = 0; i < ARRAY_LEN(compressor_default_params); i++) {
-		FREE(compressor_default_params[i]);
-		compressor_default_params[i] = NULL;
-	}
 }
 
 WIMLIBAPI u64
 wimlib_get_compressor_needed_memory(enum wimlib_compression_type ctype,
 				    size_t max_block_size,
-				    const struct wimlib_compressor_params_header *extra_params)
+				    unsigned int compression_level)
 {
 	const struct compressor_ops *ops;
-	const struct wimlib_compressor_params_header *params;
 	u64 size;
 
 	if (!compressor_ctype_valid(ctype))
@@ -104,30 +93,29 @@ wimlib_get_compressor_needed_memory(enum wimlib_compression_type ctype,
 
 	ops = compressor_ops[ctype];
 
-	if (extra_params) {
-		params = extra_params;
-		if (ops->params_valid && !ops->params_valid(params))
-			return 0;
-	} else {
-		params = compressor_default_params[ctype];
-	}
+	if (compression_level == 0)
+		compression_level = default_compression_levels[ctype];
+	if (compression_level == 0)
+		compression_level = DEFAULT_COMPRESSION_LEVEL;
 
 	size = sizeof(struct wimlib_compressor);
 	if (ops->get_needed_memory)
-		size += ops->get_needed_memory(max_block_size, params);
+		size += ops->get_needed_memory(max_block_size, compression_level);
 	return size;
 }
-
 
 WIMLIBAPI int
 wimlib_create_compressor(enum wimlib_compression_type ctype,
 			 size_t max_block_size,
-			 const struct wimlib_compressor_params_header *extra_params,
+			 unsigned int compression_level,
 			 struct wimlib_compressor **c_ret)
 {
 	struct wimlib_compressor *c;
 
 	if (c_ret == NULL)
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	if (max_block_size == 0)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (!compressor_ctype_valid(ctype))
@@ -138,21 +126,19 @@ wimlib_create_compressor(enum wimlib_compression_type ctype,
 		return WIMLIB_ERR_NOMEM;
 	c->ops = compressor_ops[ctype];
 	c->private = NULL;
+	c->ctype = ctype;
+	c->max_block_size = max_block_size;
 	if (c->ops->create_compressor) {
-		const struct wimlib_compressor_params_header *params;
 		int ret;
 
-		if (extra_params) {
-			params = extra_params;
-			if (c->ops->params_valid && !c->ops->params_valid(params)) {
-				FREE(c);
-				return WIMLIB_ERR_INVALID_PARAM;
-			}
-		} else {
-			params = compressor_default_params[ctype];
-		}
+		if (compression_level == 0)
+			compression_level = default_compression_levels[ctype];
+		if (compression_level == 0)
+			compression_level = DEFAULT_COMPRESSION_LEVEL;
+
 		ret = c->ops->create_compressor(max_block_size,
-						params, &c->private);
+						compression_level,
+						&c->private);
 		if (ret) {
 			FREE(c);
 			return ret;
@@ -167,9 +153,65 @@ wimlib_compress(const void *uncompressed_data, size_t uncompressed_size,
 		void *compressed_data, size_t compressed_size_avail,
 		struct wimlib_compressor *c)
 {
-	return c->ops->compress(uncompressed_data, uncompressed_size,
-				compressed_data, compressed_size_avail,
-				c->private);
+	size_t compressed_size;
+
+	wimlib_assert(uncompressed_size <= c->max_block_size);
+
+	compressed_size = c->ops->compress(uncompressed_data,
+					   uncompressed_size,
+					   compressed_data,
+					   compressed_size_avail,
+					   c->private);
+
+	/* (Optional) Verify that we really get the same thing back when
+	 * decompressing.  Should always be the case, unless there's a bug.  */
+#ifdef ENABLE_VERIFY_COMPRESSION
+	if (compressed_size != 0) {
+		struct wimlib_decompressor *d;
+		int res;
+		u8 *buf;
+
+		buf = MALLOC(uncompressed_size);
+		if (!buf) {
+			WARNING("Unable to verify results of %s compression "
+				"(can't allocate buffer)",
+				wimlib_get_compression_type_string(c->ctype));
+			return 0;
+		}
+
+		res = wimlib_create_decompressor(c->ctype,
+						 c->max_block_size, &d);
+		if (res) {
+			WARNING("Unable to verify results of %s compression "
+				"(can't create decompressor)",
+				wimlib_get_compression_type_string(c->ctype));
+			FREE(buf);
+			return 0;
+		}
+
+		res = wimlib_decompress(compressed_data, compressed_size,
+					buf, uncompressed_size, d);
+		wimlib_free_decompressor(d);
+		if (res) {
+			ERROR("Failed to decompress our %s-compressed data",
+			      wimlib_get_compression_type_string(c->ctype));
+			FREE(buf);
+			abort();
+		}
+
+		res = memcmp(uncompressed_data, buf, uncompressed_size);
+		FREE(buf);
+
+		if (res) {
+			ERROR("Our %s-compressed data did not decompress "
+			      "to original",
+			      wimlib_get_compression_type_string(c->ctype));
+			abort();
+		}
+	}
+#endif /* ENABLE_VERIFY_COMPRESSION */
+
+	return compressed_size;
 }
 
 WIMLIBAPI void

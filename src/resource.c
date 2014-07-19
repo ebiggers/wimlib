@@ -207,7 +207,7 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 		rspec->wim->decompressor_ctype = WIMLIB_COMPRESSION_TYPE_NONE;
 		rspec->wim->decompressor = NULL;
 	} else {
-		ret = wimlib_create_decompressor(ctype, chunk_size, NULL,
+		ret = wimlib_create_decompressor(ctype, chunk_size,
 						 &decompressor);
 		if (ret) {
 			if (ret != WIMLIB_ERR_NOMEM)

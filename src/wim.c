@@ -38,8 +38,6 @@
 #include "wimlib/security.h"
 #include "wimlib/wim.h"
 #include "wimlib/xml.h"
-#include "wimlib/compressor_ops.h"
-#include "wimlib/decompressor_ops.h"
 #include "wimlib/version.h"
 
 #ifdef __WIN32__
@@ -66,7 +64,7 @@ static u32
 wim_default_pack_chunk_size(int ctype) {
 	switch (ctype) {
 	case WIMLIB_COMPRESSION_TYPE_LZMS:
-		return 1U << 26; /* 67108864  */
+		return 1U << 25; /* 33554432  */
 	default:
 		return 1U << 15; /* 32768     */
 	}
@@ -126,9 +124,8 @@ wim_chunk_size_valid(u32 chunk_size, int ctype)
 	switch (ctype) {
 	case WIMLIB_COMPRESSION_TYPE_LZX:
 		return order >= 15 && order <= 21;
-
 	case WIMLIB_COMPRESSION_TYPE_XPRESS:
-		return order >= 12 && order <= 26;
+		return order >= 12 && order <= 16;
 	case WIMLIB_COMPRESSION_TYPE_LZMS:
 		return order >= 15 && order <= 30;
 	}
@@ -1069,8 +1066,6 @@ wimlib_global_cleanup(void)
 #ifdef __WIN32__
 	win32_global_cleanup();
 #endif
-	cleanup_decompressor_params();
-	cleanup_compressor_params();
 
 	wimlib_set_error_file(NULL);
 	lib_initialized = false;

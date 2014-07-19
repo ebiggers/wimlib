@@ -1044,9 +1044,7 @@ lzms_free_decompressor(void *_ctx)
 }
 
 static int
-lzms_create_decompressor(size_t max_block_size,
-			 const struct wimlib_decompressor_params_header *params,
-			 void **ctx_ret)
+lzms_create_decompressor(size_t max_block_size, void **ctx_ret)
 {
 	struct lzms_decompressor *ctx;
 

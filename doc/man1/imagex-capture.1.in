@@ -192,29 +192,20 @@ a WIM file created with \fB@IMAGEX_PROGNAME@ capture\fR, while a WIM file
 updated with \fB@IMAGEX_PROGNAME@ append\fR will be written with an integrity
 table if and only if one was present before.
 .TP
-\fB--compress\fR=\fITYPE\fR
-Specifies the compression type for the new WIM file.  This flag is only valid
-for \fB@IMAGEX_PROGNAME@ capture\fR, since the compression mode for
-\fB@IMAGEX_PROGNAME@ append\fR must be the same as that of the existing
-WIM (and is automatically set as such).  \fITYPE\fR may be "none",
-"fast", or "maximum".  As of wimlib v1.5.3, the default is LZX compression, but
-in a special mode that is somewhere in between "fast" and "maximum" in terms of
-speed and compression ratio.  Use \fB--compress\fR=\fImaximum\fR to explicitly
-request a better compression ratio at the cost of more time spent compressing.
+\fB--compress\fR=\fITYPE\fR[:\fILEVEL\fR]
+Specifies the compression format for the new WIM file.  \fITYPE\fR may be
+"none", "XPRESS" (alias: "fast"), "LZX" (alias: "maximum"), or "LZMS" (alias:
+"recovery").  \fITYPE\fR is matched case-insensitively.  The default is "LZX".
 .IP ""
-You may also specify the actual names of the compression algorithms, "XPRESS"
-and "LZX", instead of "fast" and "maximum", respectively.
+You can optionally also specify an integer compression \fILEVEL\fR.  The
+compression level specifies how hard the compression algorithm for the specified
+compression \fITYPE\fR will work to compress the data.  The values are scaled so
+that 20 is quick compression, 50 is medium compression, and 100 is high
+compression.  However, you can choose any value, and not just these particular
+values.  The default is 50.
 .IP ""
-As of wimlib v1.6.0, a third compression type, "recovery" or "LZMS", is also
-available.  Its use is generally not recommended because other than wimlib
-itself, it is only compatible with WIMGAPI Windows 8 and later, and DISM Windows
-8.1 and later.  However, LZMS is the compression algorithm used by default in
-packed resources created if the \fB--pack-streams\fR option is specified.
-.TP
-\fB--compress-slow\fR
-Spend even more time compressing the data to achieve a very slightly better
-compression ratio.  This currently only has an effect for LZX ("maximum", the
-default) and LZMS ("recovery") compression.
+Be careful if you choose LZMS compression.  It is not compatible with wimlib
+before v1.6.0, WIMGAPI before Windows 8, DISM before Windows 8.1, and 7-Zip.
 .TP
 \fB--chunk-size\fR=\fISIZE\fR
 Set the WIM compression chunk size to \fISIZE\fR bytes.  Larger chunks mean larger
@@ -225,7 +216,7 @@ decide to use this option regardless, you may choose a chunk size that is
 allowed by the compression format.  All formats only allow power-of-2 chunk
 sizes.  For LZX ("maximum") compression the maximum allowed chunk size is 2^21
 (2097152), for XPRESS ("fast") compression the maximum allowed chunk size is
-2^26 (67108864), and for LZMS ("recovery") compression the maximum allowed chunk
+2^16 (65536), and for LZMS ("recovery") compression the maximum allowed chunk
 size is 2^30 (1073741824).
 .IP ""
 Beware that Microsoft's implementation has limited support for non-default chunk
@@ -234,7 +225,7 @@ open it and crash, or open it and report the data is invalid, or even extract
 the data incorrectly.  In addition, wimlib versions before 1.6.0 do not support
 alternate chunk sizes.
 .TP
-\fB--pack-streams\fR, \fB--solid\fR
+\fB--solid\fR
 Create a "solid" archive that compresses multiple unique streams ("files")
 together, rather than each unique stream ("file") independently.  This can
 result in a significantly better compression ratio, but this format greatly
@@ -243,23 +234,21 @@ mounted with \fB@IMAGEX_PROGNAME@ mount\fR.  Also, WIMs created using this
 option use a different version number in their header and are only compatible
 with WIMGAPI Windows 8 and later, and DISM Windows 8.1 and later.
 .IP ""
-The default compression type and chunk size in packed resources is LZMS with
-2^26 (67108864) byte chunks.  This is independent of the WIM's main compression
-type and chunk size.
+The default compression type and chunk size in solid blocks is LZMS with 2^25
+(33554432) byte chunks.  This is independent of the WIM's main compression type
+and chunk size.
 .TP
-\fB--pack-chunk-size\fR=\fISIZE\fR, \fB--solid-chunk-size\fR=\fISIZE\fR
-Like \fB--chunk-size\fR, but set the chunk size used in packed resources.  The
-default is LZMS compression with 2^26 (67108864) byte chunks.  This option only
-has an effect when \fB--pack-streams\fR is also specified.  For maximum
-compatibility with the Microsoft implementation, do not use either of these
-options.
+\fB--solid-chunk-size\fR=\fISIZE\fR
+Like \fB--chunk-size\fR, but set the chunk size used in solid blocks.  The
+default is LZMS compression with 2^25 (33554432) byte chunks.  This option only
+has an effect when \fB--solid\fR is also specified.  For maximum compatibility
+with the Microsoft implementation, do not use either of these options.
 .TP
-\fB--pack-compress\fR=\fITYPE\fR, \fB--solid-compress\fR=\fITYPE\fR
-Like \fB--compress\fR, but set the compression format used in packed resources.
-The default is LZMS compression with 2^26 (67108864) byte chunks.  This option
-only has an effect when \fB--pack-streams\fR is also specified.  For maximum
-compatibility with the Microsoft implementation, do not use either of these
-options.
+\fB--solid-compress\fR=\fITYPE\fR[:\fILEVEL\fR]
+Like \fB--compress\fR, but set the compression type used in solid blocks.  The
+default is LZMS compression with 2^25 (33554432) byte chunks.  This option only
+has an effect when \fB--solid\fR is also specified.  For maximum compatibility
+with the Microsoft implementation, do not use either of these options.
 .TP
 \fB--threads\fR=\fINUM_THREADS\fR
 Number of threads to use for compressing data.  Default: autodetect (number of
@@ -587,7 +576,7 @@ created only if \fIWIMFILE\fR was specified as "-" (standard output) or if
 the \fB--pipable\fR flag was specified.
 .IP \[bu]
 WIMs captured with a non-default chunk size (with the \fB--chunk-size\fR option)
-or as solid archives (with the \fB--pack-streams\fR option) or with LZMS
+or as solid archives (with the \fB--solid\fR option) or with LZMS
 compression (with \fB--compress\fR=LZMS or \fB--compress\fR=recovery) have
 varying levels of compatibility with Microsoft's software.  Generally, more
 recent versions of Microsoft's software are more compatible.

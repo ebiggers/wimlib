@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2013 Eric Biggers
+ * Copyright (C) 2013, 2014 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
  *
@@ -43,10 +43,6 @@ static const struct decompressor_ops *decompressor_ops[] = {
 	[WIMLIB_COMPRESSION_TYPE_LZMS]   = &lzms_decompressor_ops,
 };
 
-static struct wimlib_decompressor_params_header *
-decompressor_default_params[ARRAY_LEN(decompressor_ops)] = {
-};
-
 static bool
 decompressor_ctype_valid(int ctype)
 {
@@ -56,39 +52,8 @@ decompressor_ctype_valid(int ctype)
 }
 
 WIMLIBAPI int
-wimlib_set_default_decompressor_params(enum wimlib_compression_type ctype,
-				       const struct wimlib_decompressor_params_header *params)
-{
-	struct wimlib_decompressor_params_header *dup;
-
-	if (!decompressor_ctype_valid(ctype))
-		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
-
-	dup = NULL;
-	if (params) {
-		dup = memdup(params, params->size);
-		if (dup == NULL)
-			return WIMLIB_ERR_NOMEM;
-	}
-
-	FREE(decompressor_default_params[ctype]);
-	decompressor_default_params[ctype] = dup;
-	return 0;
-}
-
-void
-cleanup_decompressor_params(void)
-{
-	for (size_t i = 0; i < ARRAY_LEN(decompressor_default_params); i++) {
-		FREE(decompressor_default_params[i]);
-		decompressor_default_params[i] = NULL;
-	}
-}
-
-WIMLIBAPI int
 wimlib_create_decompressor(enum wimlib_compression_type ctype,
 			   size_t max_block_size,
-			   const struct wimlib_decompressor_params_header *extra_params,
 			   struct wimlib_decompressor **dec_ret)
 {
 	struct wimlib_decompressor *dec;
@@ -105,15 +70,9 @@ wimlib_create_decompressor(enum wimlib_compression_type ctype,
 	dec->ops = decompressor_ops[ctype];
 	dec->private = NULL;
 	if (dec->ops->create_decompressor) {
-		const struct wimlib_decompressor_params_header *params;
 		int ret;
 
-		if (extra_params)
-			params = extra_params;
-		else
-			params = decompressor_default_params[ctype];
 		ret = dec->ops->create_decompressor(max_block_size,
-						    params,
 						    &dec->private);
 		if (ret) {
 			FREE(dec);

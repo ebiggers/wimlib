@@ -1,13 +1,32 @@
 /*
- * lz_bt.c
+ * lz_binary_trees.c
  *
  * Binary tree match-finder for Lempel-Ziv compression.
  *
- * Author:  Eric Biggers
- * Year:    2014
+ * Copyright (c) 2014 Eric Biggers.  All rights reserved.
  *
- * The author dedicates this file to the public domain.
- * You can do whatever you want with this file.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS "AS IS" AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 /*
@@ -19,16 +38,35 @@
 #  include "config.h"
 #endif
 
-#include "wimlib/lz.h"
-#include "wimlib/lz_bt.h"
+#include "wimlib/lz_mf.h"
 #include "wimlib/util.h"
-#include <string.h>
 #include <pthread.h>
+#include <string.h>
 
-#define LZ_BT_HASH_BITS		16
-#define LZ_BT_HASH_SIZE		(1 << LZ_BT_HASH_BITS)
-#define LZ_BT_HASH_MASK		(LZ_BT_HASH_SIZE - 1)
-#define LZ_BT_DIGRAM_TAB_SIZE	(256 * 256)
+/* Number of hash buckets.  This can be changed, but it should be a power of 2
+ * so that the correct hash bucket can be selected using a fast bitwise AND.  */
+#define LZ_BT_HASH_LEN		(1 << 16)
+
+/* Number of bytes from which the hash code is computed at each position.  This
+ * can be changed, provided that lz_bt_hash() is updated as well.  */
+#define LZ_BT_HASH_BYTES   3
+
+/* Number of entries in the digram table.
+ *
+ * Note:  You rarely get length-2 matches if you use length-3 hashing.  But
+ * since binary trees are typically used for higher compression ratios than hash
+ * chains, it is helpful for this match-finder to find length-2 matches as well.
+ * Therefore this match-finder also uses a digram table to find length-2 matches
+ * when the minimum match length is 2.  */
+#define LZ_BT_DIGRAM_TAB_LEN	(256 * 256)
+
+struct lz_bt {
+	struct lz_mf base;
+	u32 *hash_tab;
+	u32 *digram_tab;
+	u32 *child_tab;
+	u32 next_hash;
+};
 
 static u32 crc32_table[256];
 static pthread_once_t crc32_table_filled = PTHREAD_ONCE_INIT;
@@ -48,14 +86,9 @@ crc32_init(void)
         }
 }
 
-/*
- * Compute the hash code for the next 3-byte sequence in the window.
- *
- * @p
- *	A pointer to the next 3-byte sequence in the window.
- *
- * Returns the resulting hash code.
- */
+/* This hash function is taken from the LZMA SDK.  It seems to work well.
+
+ * TODO: Maybe use the SSE4.2 CRC32 instruction when available?  */
 static inline u32
 lz_bt_hash(const u8 *p)
 {
@@ -65,89 +98,75 @@ lz_bt_hash(const u8 *p)
 	hash ^= p[1];
 	hash ^= (u32)p[2] << 8;
 
-	return hash & LZ_BT_HASH_MASK;
+	return hash % LZ_BT_HASH_LEN;
 }
 
-/*
- * Compute the number of bytes of memory that would be needed to initialize a
- * binary tree match-finder with the specified maximum window size.
- *
- * @max_window_size
- *	The maximum window size, in bytes, to query.
- *
- * Returns the number of bytes that would be allocated by lz_bt_init(),
- * excluding the size of the 'struct lz_bt' itself.
- */
-u64
-lz_bt_get_needed_memory(lz_bt_pos_t max_window_size)
+static void
+lz_bt_set_default_params(struct lz_mf_params *params)
 {
-	u64 len;
+	if (params->min_match_len == 0)
+		params->min_match_len = 2;
 
-	len = LZ_BT_HASH_SIZE + LZ_BT_DIGRAM_TAB_SIZE;
-	len += 2 * (u64)max_window_size;
+	if (params->max_match_len == 0)
+		params->max_match_len = params->max_window_size;
 
-	return len * sizeof(lz_bt_pos_t);
+	if (params->max_search_depth == 0)
+		params->max_search_depth = 50;
+
+	if (params->nice_match_len == 0)
+		params->nice_match_len = 24;
+
+	if (params->nice_match_len < params->min_match_len)
+		params->nice_match_len = params->min_match_len;
+
+	if (params->nice_match_len > params->max_match_len)
+		params->nice_match_len = params->max_match_len;
 }
 
-/*
- * Initialize a binary tree match-finder.
- *
- * @mf
- *	The match-finder structure to initialize.
- * @max_window_size
- *	The maximum window size that shall be supported by subsequent calls to
- *	lz_bt_load_window().
- * @min_match_len
- *	The minimum length of matches that shall be produced by subsequent calls
- *	to lz_bt_get_matches().  This must be at least 2.
- * @max_match_len
- *	The maximum length of matches that shall be produced by subsequent calls
- *	to lz_bt_get_matches().  This must be at least @min_match_len.
- * @num_fast_bytes
- *	The maximum length of matches that shall be produced just using the
- *	binary tree search algorithm.  If the longest match has this length,
- *	then lz_bt_get_matches() will extend it up to @max_match_len.  This must
- *	be at least @min_match_len and no more than @max_match_len.
- * @max_search_depth
- *	The maximum depth to descend into the binary search tree before halting
- *	the search.
- *
- * Returns %true if successful; %false if out of memory.
- */
-bool
-lz_bt_init(struct lz_bt *mf,
-	   lz_bt_pos_t max_window_size,
-	   lz_bt_len_t min_match_len,
-	   lz_bt_len_t max_match_len,
-	   lz_bt_len_t num_fast_bytes,
-	   u32 max_search_depth)
+static bool
+lz_bt_params_valid(const struct lz_mf_params *params)
 {
-	u64 len;
+	return true;
+}
 
-	/* Check and set parameters.  */
-	LZ_ASSERT(min_match_len >= 2);
-	LZ_ASSERT(max_match_len >= min_match_len);
-	LZ_ASSERT(num_fast_bytes >= min_match_len);
-	LZ_ASSERT(num_fast_bytes <= max_match_len);
+static u64
+lz_bt_get_needed_memory(u32 max_window_size)
+{
+	u64 len = 0;
 
-	mf->max_window_size = max_window_size;
-	mf->min_match_len = min_match_len;
-	mf->max_match_len = max_match_len;
-	mf->num_fast_bytes = num_fast_bytes;
-	mf->max_search_depth = max_search_depth;
+	len += LZ_BT_HASH_LEN;		 /* hash_tab */
+	len += LZ_BT_DIGRAM_TAB_LEN;	 /* digram_tab */
+	len += 2 * (u64)max_window_size; /* child_tab */
+
+	return len * sizeof(u32);
+}
+
+static bool
+lz_bt_init(struct lz_mf *_mf)
+{
+	struct lz_bt *mf = (struct lz_bt *)_mf;
+	struct lz_mf_params *params = &mf->base.params;
+	size_t len = 0;
+
+	lz_bt_set_default_params(params);
 
 	/* Allocate space for 'hash_tab', 'digram_tab', and 'child_tab'.  */
-	len = LZ_BT_HASH_SIZE + (2 * (u64)max_window_size);
-	if (mf->min_match_len <= 2)
-		len += LZ_BT_DIGRAM_TAB_SIZE;
-	len *= sizeof(lz_bt_pos_t);
-	if ((size_t)len != len || !(mf->hash_tab = MALLOC(len)))
+
+	len += LZ_BT_HASH_LEN;
+	if (params->min_match_len == 2)
+		len += LZ_BT_DIGRAM_TAB_LEN;
+	len += 2 * params->max_window_size;
+
+	mf->hash_tab = MALLOC(len * sizeof(u32));
+	if (!mf->hash_tab)
 		return false;
-	if (mf->min_match_len <= 2) {
-		mf->digram_tab = mf->hash_tab + LZ_BT_HASH_SIZE;
-		mf->child_tab = mf->digram_tab + LZ_BT_DIGRAM_TAB_SIZE;
+
+	if (params->min_match_len == 2) {
+		mf->digram_tab = mf->hash_tab + LZ_BT_HASH_LEN;
+		mf->child_tab = mf->digram_tab + LZ_BT_DIGRAM_TAB_LEN;
 	} else {
-		mf->child_tab = mf->hash_tab + LZ_BT_HASH_SIZE;
+		mf->digram_tab = NULL;
+		mf->child_tab = mf->hash_tab + LZ_BT_HASH_LEN;
 	}
 
 	/* Fill in the CRC32 table if not done already.  */
@@ -156,47 +175,21 @@ lz_bt_init(struct lz_bt *mf,
 	return true;
 }
 
-/*
- * Destroy a binary tree match-finder.
- *
- * @mf
- *	The match-finder structure to destroy.
- */
-void
-lz_bt_destroy(struct lz_bt *mf)
+static void
+lz_bt_load_window(struct lz_mf *_mf, const u8 window[], u32 size)
 {
-	FREE(mf->hash_tab);
-	/* mf->hash_tab shares storage with mf->digram_tab and mf->child_tab. */
-}
-
-/*
- * Load a window into a binary tree match-finder.
- *
- * @mf
- *	The match-finder structure into which to load the window.
- * @window
- *	Pointer to the window to load.  This memory must remain available,
- *	unmodified, while the match-finder is being used.
- * @window_size
- *	The size of the window, in bytes.  This can't be larger than the
- *	@max_window_size with which lz_bt_init() was called.
- */
-void
-lz_bt_load_window(struct lz_bt *mf, const u8 *window, lz_bt_pos_t window_size)
-{
-	LZ_ASSERT(window_size <= mf->max_window_size);
+	struct lz_bt *mf = (struct lz_bt *)_mf;
 	size_t clear_len;
 
-	mf->cur_window = window;
-	mf->cur_window_pos = 0;
-	mf->cur_window_size = window_size;
+	/* Clear hash_tab and digram_tab.
+	 * Note: child_tab need not be cleared.  */
+	clear_len = LZ_BT_HASH_LEN;
+	if (mf->digram_tab)
+		clear_len += LZ_BT_DIGRAM_TAB_LEN;
+	memset(mf->hash_tab, 0, clear_len * sizeof(u32));
 
-	/* Clear the hash and digram tables.
-	 * Note: The child table need not be cleared.  */
-	clear_len = LZ_BT_HASH_SIZE;
-	if (mf->min_match_len <= 2)
-		clear_len += LZ_BT_DIGRAM_TAB_SIZE;
-	memset(mf->hash_tab, 0, clear_len * sizeof(lz_bt_pos_t));
+	if (size >= LZ_BT_HASH_BYTES)
+		mf->next_hash = lz_bt_hash(window);
 }
 
 /*
@@ -207,13 +200,6 @@ lz_bt_load_window(struct lz_bt *mf, const u8 *window, lz_bt_pos_t window_size)
  *	The window being searched.
  * @cur_window_pos
  *	The current position in the window.
- * @min_len
- *	Ignore matches shorter than this length.  This must be at least 1.
- * @max_len
- *	Don't produce any matches longer than this length.  If we find a match
- *	this long, terminate the search and return.
- * @max_depth
- *	Stop if we reach this depth in the binary tree.
  * @child_tab
  *	Table of child pointers for the binary tree.  The children of the node
  *	for position 'i' in the window are child_tab[i * 2] and child_tab[i*2 +
@@ -225,6 +211,13 @@ lz_bt_load_window(struct lz_bt *mf, const u8 *window, lz_bt_pos_t window_size)
  *	The position in the window at which the binary tree for the current hash
  *	code is rooted.  This can be 0, which indicates that the binary tree for
  *	the current hash code is empty.
+ * @min_len
+ *	Ignore matches shorter than this length.  This must be at least 1.
+ * @max_len
+ *	Don't produce any matches longer than this length.  If we find a match
+ *	this long, terminate the search and return.
+ * @max_search_depth
+ *	Stop if we reach this depth in the binary tree.
  * @matches
  *	The array in which to produce the matches.  The matches will be produced
  *	in order of increasing length and increasing offset.  No more than one
@@ -234,14 +227,14 @@ lz_bt_load_window(struct lz_bt *mf, const u8 *window, lz_bt_pos_t window_size)
  *
  * Returns the number of matches found and written to @matches.
  */
-static lz_bt_len_t
+static u32
 do_search(const u8 window[restrict],
-	  const lz_bt_pos_t cur_window_pos,
-	  const lz_bt_len_t min_len,
-	  const lz_bt_len_t max_len,
-	  const u32 max_depth,
-	  lz_bt_pos_t child_tab[restrict],
-	  lz_bt_pos_t cur_match,
+	  const u32 cur_window_pos,
+	  u32 child_tab[restrict],
+	  u32 cur_match,
+	  const u32 min_len,
+	  const u32 max_len,
+	  const u32 max_search_depth,
 	  struct lz_match matches[restrict])
 {
 	/*
@@ -327,9 +320,9 @@ do_search(const u8 window[restrict],
 	 * In degenerate cases, the binary tree might become severely
 	 * unbalanced.  To prevent excessive running times, we stop immediately
 	 * (and return any matches that happen to have been found so far) if the
-	 * current depth exceeds @max_depth.  Note that this cutoff can occur
-	 * before the longest match has been found, which is usually bad for the
-	 * compression ratio.
+	 * current depth exceeds @max_search_depth.  Note that this cutoff can
+	 * occur before the longest match has been found, which is usually bad
+	 * for the compression ratio.
 	 *
 	 * ---------------------------------------------------------------------
 	 *
@@ -397,17 +390,17 @@ do_search(const u8 window[restrict],
 	 * contain all valid positions.
 	 */
 
-	lz_bt_len_t num_matches = 0;
-	lz_bt_len_t longest_lt_match_len = 0;
-	lz_bt_len_t longest_gt_match_len = 0;
-	lz_bt_len_t longest_match_len = min_len - 1;
-	lz_bt_pos_t *pending_lt_ptr = &child_tab[cur_window_pos * 2 + 0];
-	lz_bt_pos_t *pending_gt_ptr = &child_tab[cur_window_pos * 2 + 1];
+	u32 num_matches = 0;
+	u32 longest_lt_match_len = 0;
+	u32 longest_gt_match_len = 0;
+	u32 longest_match_len = min_len - 1;
+	u32 *pending_lt_ptr = &child_tab[cur_window_pos * 2 + 0];
+	u32 *pending_gt_ptr = &child_tab[cur_window_pos * 2 + 1];
 	const u8 *strptr = &window[cur_window_pos];
-	u32 depth_remaining = max_depth;
+	u32 depth_remaining = max_search_depth;
 	for (;;) {
 		const u8 *matchptr;
-		lz_bt_len_t len;
+		u32 len;
 
 		if (depth_remaining-- == 0 || cur_match == 0) {
 			*pending_lt_ptr = 0;
@@ -429,7 +422,7 @@ do_search(const u8 window[restrict],
 
 				matches[num_matches++] = (struct lz_match) {
 					.len = len,
-					.offset = cur_window_pos - cur_match,
+					.offset = strptr - matchptr,
 				};
 
 				if (len == max_len) {
@@ -454,146 +447,84 @@ do_search(const u8 window[restrict],
 	}
 }
 
-/*
- * Retrieve a list of matches at the next position in the window.
- *
- * @mf
- *	The binary tree match-finder structure into which a window has been
- *	loaded using lz_bt_load_window().
- * @matches
- *	The array into which the matches will be returned.  The length of this
- *	array must be at least (@mf->num_fast_bytes - @mf->min_match_len + 1).
- *
- * The return value is the number of matches that were found and stored in the
- * 'matches' array.  The matches will be ordered by strictly increasing length
- * and strictly increasing offset.  No match shall have length less than
- * @min_match_len, and no match shall have length greater than @max_match_len.
- * The return value may be 0, which indicates that no matches were found.
- *
- * On completion, the binary tree match-finder is advanced to the next position
- * in the window.
- */
-lz_bt_len_t
-lz_bt_get_matches(struct lz_bt *mf, struct lz_match matches[])
+static u32
+lz_bt_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 {
-	lz_bt_pos_t bytes_remaining;
-	lz_bt_len_t num_matches;
-	lz_bt_pos_t cur_match;
+	struct lz_bt *mf = (struct lz_bt *)_mf;
+	const u32 bytes_remaining = lz_mf_get_bytes_remaining(&mf->base);
 	u32 hash;
+	u32 cur_match;
+	u32 min_len;
+	u32 num_matches = 0;
 
-	LZ_ASSERT(mf->cur_window_pos < mf->cur_window_size);
+	if (bytes_remaining <= LZ_BT_HASH_BYTES)
+		goto out;
 
-	bytes_remaining = lz_bt_get_remaining_size(mf);
+	if (mf->digram_tab) {
+		/* Search the digram table for a length 2 match.  */
 
-	/* If there are fewer than 3 bytes remaining, we can't even compute a
-	 * hash to look up a binary tree root.  If there are exactly 2 bytes
-	 * remaining we could still search for a length-2 match using the digram
-	 * table, but it's not worth bothering.  (Note: this is also useful for
-	 * LZX, since this excludes the length 2 match having the maximum
-	 * offset, which isn't allowed.)  */
-	if (bytes_remaining < 3) {
-		mf->cur_window_pos++;
-		return 0;
-	}
-
-	num_matches = 0;
-
-	/* Search the digram table for a length 2 match.  */
-	if (mf->min_match_len <= 2) {
-		u8 c1, c2;
-		u16 digram;
-
-		c1 = mf->cur_window[mf->cur_window_pos];
-		c2 = mf->cur_window[mf->cur_window_pos + 1];
-		digram = (u16)c1 | ((u16)c2 << 8);
+		const u16 digram = *(const u16 *)lz_mf_get_window_ptr(&mf->base);
 		cur_match = mf->digram_tab[digram];
-		mf->digram_tab[digram] = mf->cur_window_pos;
+		mf->digram_tab[digram] = mf->base.cur_window_pos;
 
 		/* We're only interested in matches of length exactly 2, since
-		 * those won't be found during the binary tree search.  */
-		if (cur_match != 0 && mf->cur_window[cur_match + 2] !=
-				      mf->cur_window[mf->cur_window_pos + 2])
+		 * those won't be found during the binary tree search.
+		 *
+		 * Note: it's possible to extend this match as much as possible,
+		 * then use its length plus 1 as min_len for the binary tree
+		 * search.  However I found this actually *reduced* performance
+		 * slightly, evidently because the binary tree still needs to be
+		 * searched/updated starting from the root in either case.  */
+		if (cur_match != 0 &&
+		    (mf->base.cur_window[cur_match + 2] !=
+		     mf->base.cur_window[mf->base.cur_window_pos + 2]))
 		{
 			matches[num_matches++] = (struct lz_match) {
 				.len = 2,
-				.offset = mf->cur_window_pos - cur_match,
+				.offset = mf->base.cur_window_pos - cur_match,
 			};
 		}
+		min_len = 3;
+	} else {
+		min_len = mf->base.params.min_match_len;
 	}
 
-	/* Hash the length-3 byte sequence beginning at the current position in
-	 * the window.  */
-	hash = lz_bt_hash(&mf->cur_window[mf->cur_window_pos]);
-
-	/* The corresponding hash bucket in 'hash_tab' contains the root of the
-	 * binary tree of previous window positions that have the same hash
-	 * code.  */
+	hash = mf->next_hash;
+	mf->next_hash = lz_bt_hash(lz_mf_get_window_ptr(&mf->base) + 1);
+	prefetch(&mf->hash_tab[mf->next_hash]);
 	cur_match = mf->hash_tab[hash];
+	mf->hash_tab[hash] = mf->base.cur_window_pos;
 
-	/* Update the hash bucket to point to the binary tree rooted at the
-	 * current position, which we will construct in do_search().  */
-	mf->hash_tab[hash] = mf->cur_window_pos;
-
-	/* Search the binary tree for matches.  At the same time, build the
-	 * binary tree rooted at the current position, which replaces the one we
-	 * search.  */
-	num_matches += do_search(mf->cur_window,
-				 mf->cur_window_pos,
-				 max(3, mf->min_match_len),
-				 min(bytes_remaining, mf->num_fast_bytes),
-				 mf->max_search_depth,
+	/* Search the binary tree of 'hash' for matches while re-rooting it at
+	 * the current position.  */
+	num_matches += do_search(mf->base.cur_window,
+				 mf->base.cur_window_pos,
 				 mf->child_tab,
 				 cur_match,
+				 min_len,
+				 min(bytes_remaining, mf->base.params.nice_match_len),
+				 mf->base.params.max_search_depth,
 				 &matches[num_matches]);
 
-	/* If the longest match is @num_fast_bytes in length, it may have been
+	/* If the longest match is @nice_match_len in length, it may have been
 	 * truncated.  Try extending it up to the maximum match length.  */
-	if (num_matches != 0 && matches[num_matches - 1].len == mf->num_fast_bytes) {
-		lz_bt_pos_t limit;
-		const u8 *strptr, *matchptr;
-		lz_bt_len_t len;
+	if (num_matches != 0 &&
+	    matches[num_matches - 1].len == mf->base.params.nice_match_len)
+	{
+		const u8 * const strptr = lz_mf_get_window_ptr(&mf->base);
+		const u8 * const matchptr = strptr - matches[num_matches - 1].offset;
+		const u32 len_limit = min(bytes_remaining, mf->base.params.max_match_len);
+		u32 len;
 
-		limit = min(bytes_remaining, mf->max_match_len);
-		strptr = &mf->cur_window[mf->cur_window_pos];
-		matchptr = strptr - matches[num_matches - 1].offset;
 		len = matches[num_matches - 1].len;
-		while (len < limit && strptr[len] == matchptr[len])
+		while (len < len_limit && strptr[len] == matchptr[len])
 			len++;
 		matches[num_matches - 1].len = len;
 	}
 
-#ifdef ENABLE_LZ_DEBUG
-	/* Check the matches.  */
-	for (lz_bt_len_t i = 0; i < num_matches; i++) {
-		const u8 *matchptr, *strptr;
-
-		/* Length valid?  */
-		LZ_ASSERT(matches[i].len >= mf->min_match_len);
-		LZ_ASSERT(matches[i].len <= min(mf->max_match_len, bytes_remaining));
-
-		/* Offset valid?  */
-		LZ_ASSERT(matches[i].offset >= 1);
-		LZ_ASSERT(matches[i].offset <= lz_bt_get_position(mf));
-
-		/* Lengths and offsets strictly increasing?  */
-		if (i > 0) {
-			LZ_ASSERT(matches[i].len > matches[i - 1].len);
-			LZ_ASSERT(matches[i].offset > matches[i - 1].offset);
-		}
-
-		/* Actually a match?  */
-		strptr = lz_bt_get_window_ptr(mf);
-		matchptr = strptr - matches[i].offset;
-		LZ_ASSERT(!memcmp(strptr, matchptr, matches[i].len));
-
-		/* Match can't be extended further?  */
-		LZ_ASSERT(matches[i].len == min(mf->max_match_len, bytes_remaining) ||
-			  strptr[matches[i].len] != matchptr[matches[i].len]);
-	}
-#endif /* ENABLE_LZ_DEBUG  */
-
-	/* Advance to the next position in the window.  */
-	mf->cur_window_pos++;
+out:
+	/* Advance to the next position.  */
+	mf->base.cur_window_pos++;
 
 	/* Return the number of matches found.  */
 	return num_matches;
@@ -603,20 +534,21 @@ lz_bt_get_matches(struct lz_bt *mf, struct lz_match matches[])
  * See do_search() for explanatory comments.  */
 static void
 do_skip(const u8 window[restrict],
-	const lz_bt_pos_t cur_window_pos,
-	const lz_bt_len_t max_len,
-	u32 depth_remaining,
-	lz_bt_pos_t child_tab[restrict],
-	lz_bt_pos_t cur_match)
+	const u32 cur_window_pos,
+	u32 child_tab[restrict],
+	u32 cur_match,
+	const u32 max_len,
+	const u32 max_search_depth)
 {
-	lz_bt_len_t longest_lt_match_len = 0;
-	lz_bt_len_t longest_gt_match_len = 0;
-	lz_bt_pos_t *pending_lt_ptr = &child_tab[cur_window_pos * 2 + 0];
-	lz_bt_pos_t *pending_gt_ptr = &child_tab[cur_window_pos * 2 + 1];
+	u32 longest_lt_match_len = 0;
+	u32 longest_gt_match_len = 0;
+	u32 *pending_lt_ptr = &child_tab[cur_window_pos * 2 + 0];
+	u32 *pending_gt_ptr = &child_tab[cur_window_pos * 2 + 1];
 	const u8 * const strptr = &window[cur_window_pos];
+	u32 depth_remaining = max_search_depth;
 	for (;;) {
 		const u8 *matchptr;
-		lz_bt_len_t len;
+		u32 len;
 
 		if (depth_remaining-- == 0 || cur_match == 0) {
 			*pending_lt_ptr = 0;
@@ -650,57 +582,68 @@ do_skip(const u8 window[restrict],
 	}
 }
 
-/* Skip the current position in the binary tree match-finder.  */
 static void
 lz_bt_skip_position(struct lz_bt *mf)
 {
-	lz_bt_pos_t bytes_remaining;
+	const u32 bytes_remaining = lz_mf_get_bytes_remaining(&mf->base);
 	u32 hash;
-	lz_bt_pos_t cur_match;
+	u32 cur_match;
 
-	LZ_ASSERT(mf->cur_window_pos < mf->cur_window_size);
-
-	bytes_remaining = lz_bt_get_remaining_size(mf);
-
-	/* As explained in lz_bt_get_matches(), we don't search for matches if
-	 * there are fewer than 3 bytes remaining in the window.  */
-	if (bytes_remaining < 3) {
-		mf->cur_window_pos++;
-		return;
-	}
+	if (bytes_remaining <= LZ_BT_HASH_BYTES)
+		goto out;
 
 	/* Update the digram table.  */
-	if (mf->min_match_len <= 2) {
-		u8 c1, c2;
-		u16 digram;
-
-		c1 = mf->cur_window[mf->cur_window_pos];
-		c2 = mf->cur_window[mf->cur_window_pos + 1];
-		digram = (u16)c1 | ((u16)c2 << 8);
-		mf->digram_tab[digram] = mf->cur_window_pos;
+	if (mf->digram_tab) {
+		const u16 digram = *(const u16 *)lz_mf_get_window_ptr(&mf->base);
+		mf->digram_tab[digram] = mf->base.cur_window_pos;
 	}
 
 	/* Update the hash table.  */
-	hash = lz_bt_hash(&mf->cur_window[mf->cur_window_pos]);
+	hash = mf->next_hash;
+	mf->next_hash = lz_bt_hash(lz_mf_get_window_ptr(&mf->base) + 1);
+	prefetch(&mf->hash_tab[mf->next_hash]);
 	cur_match = mf->hash_tab[hash];
-	mf->hash_tab[hash] = mf->cur_window_pos;
+	mf->hash_tab[hash] = mf->base.cur_window_pos;
 
 	/* Update the binary tree for the appropriate hash code.  */
-	do_skip(mf->cur_window,
-		mf->cur_window_pos,
-		min(bytes_remaining, mf->num_fast_bytes),
-		mf->max_search_depth,
+	do_skip(mf->base.cur_window,
+		mf->base.cur_window_pos,
 		mf->child_tab,
-		cur_match);
+		cur_match,
+		min(bytes_remaining, mf->base.params.nice_match_len),
+		mf->base.params.max_search_depth);
 
+out:
 	/* Advance to the next position.  */
-	mf->cur_window_pos++;
+	mf->base.cur_window_pos++;
 }
 
-/* Skip 'n' positions in the binary tree match-finder.  */
-void
-lz_bt_skip_positions(struct lz_bt *mf, unsigned n)
+static void
+lz_bt_skip_positions(struct lz_mf *_mf, u32 n)
 {
-	while (n--)
+	struct lz_bt *mf = (struct lz_bt *)_mf;
+
+	do {
 		lz_bt_skip_position(mf);
+	} while (--n);
 }
+
+static void
+lz_bt_destroy(struct lz_mf *_mf)
+{
+	struct lz_bt *mf = (struct lz_bt *)_mf;
+
+	FREE(mf->hash_tab);
+	/* mf->hash_tab shares storage with mf->digram_tab and mf->child_tab. */
+}
+
+const struct lz_mf_ops lz_binary_trees_ops = {
+	.params_valid      = lz_bt_params_valid,
+	.get_needed_memory = lz_bt_get_needed_memory,
+	.init		   = lz_bt_init,
+	.load_window       = lz_bt_load_window,
+	.get_matches       = lz_bt_get_matches,
+	.skip_positions    = lz_bt_skip_positions,
+	.destroy           = lz_bt_destroy,
+	.struct_size	   = sizeof(struct lz_bt),
+};

@@ -41,8 +41,7 @@
 #include "wimlib/compress_common.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
-#include "wimlib/lz.h"
-#include "wimlib/lz_bt.h"
+#include "wimlib/lz_mf.h"
 #include "wimlib/lzms.h"
 #include "wimlib/util.h"
 
@@ -158,10 +157,15 @@ struct lzms_huffman_encoder {
 	u32 codewords[LZMS_MAX_NUM_SYMS];
 };
 
+struct lzms_compressor_params {
+	u32 min_match_length;
+	u32 nice_match_length;
+	u32 max_search_depth;
+	u32 optim_array_length;
+};
+
 /* State of the LZMS compressor.  */
 struct lzms_compressor {
-	struct wimlib_lzms_compressor_params params;
-
 	/* Pointer to a buffer holding the preprocessed data to compress.  */
 	u8 *window;
 
@@ -171,8 +175,8 @@ struct lzms_compressor {
 	/* Size of the data in @buffer.  */
 	u32 window_size;
 
-	/* Binary tree match-finder.  */
-	struct lz_bt mf;
+	/* Lempel-Ziv match-finder.  */
+	struct lz_mf *mf;
 
 	/* Temporary space to store found matches.  */
 	struct lz_match *matches;
@@ -185,6 +189,9 @@ struct lzms_compressor {
 	/* Maximum block size this compressor instantiation allows.  This is the
 	 * allocated size of @window.  */
 	u32 max_block_size;
+
+	/* Compression parameters.  */
+	struct lzms_compressor_params params;
 
 	/* Raw range encoder which outputs to the beginning of the compressed
 	 * data buffer, proceeding forwards.  */
@@ -747,13 +754,13 @@ static u32
 lzms_get_matches(struct lzms_compressor *ctx, struct lz_match **matches_ret)
 {
 	*matches_ret = ctx->matches;
-	return lz_bt_get_matches(&ctx->mf, ctx->matches);
+	return lz_mf_get_matches(ctx->mf, ctx->matches);
 }
 
 static void
 lzms_skip_bytes(struct lzms_compressor *ctx, u32 n)
 {
-	lz_bt_skip_positions(&ctx->mf, n);
+	lz_mf_skip_positions(ctx->mf, n);
 }
 
 static u32
@@ -866,7 +873,7 @@ lzms_match_chooser_reverse_list(struct lzms_compressor *ctx, unsigned cur_pos)
 		};
 }
 
-/* This is similar to lzx_get_near_optimal_match() in lzx-compress.c.
+/* This is similar to lzx_choose_near_optimal_match() in lzx-compress.c.
  * Read that one if you want to understand it.  */
 static struct lz_match
 lzms_get_near_optimal_match(struct lzms_compressor *ctx)
@@ -894,12 +901,11 @@ lzms_get_near_optimal_match(struct lzms_compressor *ctx)
 	ctx->optimum_end_idx = 0;
 
 	longest_rep_len = ctx->params.min_match_length - 1;
-	if (lz_bt_get_position(&ctx->mf) >= LZMS_MAX_INIT_RECENT_OFFSET) {
-		u32 limit = min(ctx->params.max_match_length,
-				lz_bt_get_remaining_size(&ctx->mf));
+	if (lz_mf_get_position(ctx->mf) >= LZMS_MAX_INIT_RECENT_OFFSET) {
+		u32 limit = lz_mf_get_bytes_remaining(ctx->mf);
 		for (int i = 0; i < LZMS_NUM_RECENT_OFFSETS; i++) {
 			u32 offset = ctx->lru.lz.recent_offsets[i];
-			const u8 *strptr = lz_bt_get_window_ptr(&ctx->mf);
+			const u8 *strptr = lz_mf_get_window_ptr(ctx->mf);
 			const u8 *matchptr = strptr - offset;
 			u32 len = 0;
 			while (len < limit && strptr[len] == matchptr[len])
@@ -941,7 +947,7 @@ lzms_get_near_optimal_match(struct lzms_compressor *ctx)
 	ctx->optimum[1].state = initial_state;
 	ctx->optimum[1].cost = lzms_get_literal_cost(ctx,
 						     &ctx->optimum[1].state,
-						     *(lz_bt_get_window_ptr(&ctx->mf) - 1));
+						     *(lz_mf_get_window_ptr(ctx->mf) - 1));
 	ctx->optimum[1].prev.link = 0;
 
 	for (u32 i = 0, len = 2; i < num_matches; i++) {
@@ -998,12 +1004,11 @@ lzms_get_near_optimal_match(struct lzms_compressor *ctx)
 			return lzms_match_chooser_reverse_list(ctx, cur_pos);
 
 		longest_rep_len = ctx->params.min_match_length - 1;
-		if (lz_bt_get_position(&ctx->mf) >= LZMS_MAX_INIT_RECENT_OFFSET) {
-			u32 limit = min(ctx->params.max_match_length,
-					lz_bt_get_remaining_size(&ctx->mf));
+		if (lz_mf_get_position(ctx->mf) >= LZMS_MAX_INIT_RECENT_OFFSET) {
+			u32 limit = lz_mf_get_bytes_remaining(ctx->mf);
 			for (int i = 0; i < LZMS_NUM_RECENT_OFFSETS; i++) {
 				u32 offset = ctx->optimum[cur_pos].state.lru.recent_offsets[i];
-				const u8 *strptr = lz_bt_get_window_ptr(&ctx->mf);
+				const u8 *strptr = lz_mf_get_window_ptr(ctx->mf);
 				const u8 *matchptr = strptr - offset;
 				u32 len = 0;
 				while (len < limit && strptr[len] == matchptr[len])
@@ -1054,7 +1059,7 @@ lzms_get_near_optimal_match(struct lzms_compressor *ctx)
 		cost = ctx->optimum[cur_pos].cost +
 			lzms_get_literal_cost(ctx,
 					      &state,
-					      *(lz_bt_get_window_ptr(&ctx->mf) - 1));
+					      *(lz_mf_get_window_ptr(ctx->mf) - 1));
 		if (cost < ctx->optimum[cur_pos + 1].cost) {
 			ctx->optimum[cur_pos + 1].state = state;
 			ctx->optimum[cur_pos + 1].cost = cost;
@@ -1116,25 +1121,22 @@ lzms_get_near_optimal_match(struct lzms_compressor *ctx)
  *
  * Notes:
  *
- * - This uses near-optimal LZ parsing backed by a binary tree match-finder.
- *
  * - This does not output any delta matches.
  *
  * - The costs of literals and matches are estimated using the range encoder
  *   states and the semi-adaptive Huffman codes.  Except for range encoding
  *   states, costs are assumed to be constant throughout a single run of the
- *   parsing algorithm, which can parse up to @optim_array_length (from the
- *   `struct wimlib_lzms_compressor_params') bytes of data.  This introduces a
- *   source of inaccuracy because the probabilities and Huffman codes can change
- *   over this part of the data.
+ *   parsing algorithm, which can parse up to @optim_array_length bytes of data.
+ *   This introduces a source of inaccuracy because the probabilities and
+ *   Huffman codes can change over this part of the data.
  */
 static void
 lzms_encode(struct lzms_compressor *ctx)
 {
 	struct lz_match match;
 
-	/* Load window into the binary tree match-finder.  */
-	lz_bt_load_window(&ctx->mf, ctx->window, ctx->window_size);
+	/* Load window into the match-finder.  */
+	lz_mf_load_window(ctx->mf, ctx->window, ctx->window_size);
 
 	/* Reset the match-chooser.  */
 	ctx->optimum_cur_idx = 0;
@@ -1302,6 +1304,107 @@ lzms_finalize(struct lzms_compressor *ctx, u8 *cdata, size_t csize_avail)
 	return compressed_size;
 }
 
+
+static void
+lzms_build_params(unsigned int compression_level,
+		  struct lzms_compressor_params *lzms_params)
+{
+	lzms_params->min_match_length  = (compression_level >= 50) ? 2 : 3;
+	lzms_params->nice_match_length = ((u64)compression_level * 32) / 50;
+	lzms_params->max_search_depth  = ((u64)compression_level * 50) / 50;
+	lzms_params->optim_array_length = 224 + compression_level * 16;
+}
+
+static void
+lzms_build_mf_params(const struct lzms_compressor_params *lzms_params,
+		     u32 max_window_size, struct lz_mf_params *mf_params)
+{
+	memset(mf_params, 0, sizeof(*mf_params));
+
+	mf_params->algorithm = LZ_MF_DEFAULT;
+	mf_params->max_window_size = max_window_size;
+	mf_params->min_match_len = lzms_params->min_match_length;
+	mf_params->max_search_depth = lzms_params->max_search_depth;
+	mf_params->nice_match_len = lzms_params->nice_match_length;
+}
+
+static void
+lzms_free_compressor(void *_ctx);
+
+static u64
+lzms_get_needed_memory(size_t max_block_size, unsigned int compression_level)
+{
+	struct lzms_compressor_params params;
+
+	lzms_build_params(compression_level, &params);
+
+	u64 size = 0;
+
+	size += sizeof(struct lzms_compressor);
+	size += max_block_size;
+	size += lz_mf_get_needed_memory(LZ_MF_DEFAULT, max_block_size);
+	size += params.max_search_depth * sizeof(struct lz_match);
+	size += (params.optim_array_length + params.nice_match_length) *
+		sizeof(struct lzms_mc_pos_data);
+
+	return size;
+}
+
+static int
+lzms_create_compressor(size_t max_block_size, unsigned int compression_level,
+		       void **ctx_ret)
+{
+	struct lzms_compressor *ctx;
+	struct lzms_compressor_params params;
+	struct lz_mf_params mf_params;
+
+	if (max_block_size >= INT32_MAX)
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	lzms_build_params(compression_level, &params);
+	lzms_build_mf_params(&params, max_block_size, &mf_params);
+	if (!lz_mf_params_valid(&mf_params))
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	ctx = CALLOC(1, sizeof(struct lzms_compressor));
+	if (!ctx)
+		goto oom;
+
+	ctx->params = params;
+	ctx->max_block_size = max_block_size;
+
+	ctx->window = MALLOC(max_block_size);
+	if (!ctx->window)
+		goto oom;
+
+	ctx->mf = lz_mf_alloc(&mf_params);
+	if (!ctx->mf)
+		goto oom;
+
+	ctx->matches = MALLOC(params.max_search_depth * sizeof(struct lz_match));
+	if (!ctx->matches)
+		goto oom;
+
+	ctx->optimum = MALLOC((params.optim_array_length +
+			       params.nice_match_length) *
+				sizeof(struct lzms_mc_pos_data));
+	if (!ctx->optimum)
+		goto oom;
+
+	/* Initialize position and length slot data if not done already.  */
+	lzms_init_slots();
+
+	/* Initialize range encoding cost table if not done already.  */
+	lzms_init_rc_costs();
+
+	*ctx_ret = ctx;
+	return 0;
+
+oom:
+	lzms_free_compressor(ctx);
+	return WIMLIB_ERR_NOMEM;
+}
+
 static size_t
 lzms_compress(const void *uncompressed_data, size_t uncompressed_size,
 	      void *compressed_data, size_t compressed_size_avail, void *_ctx)
@@ -1311,15 +1414,6 @@ lzms_compress(const void *uncompressed_data, size_t uncompressed_size,
 
 	LZMS_DEBUG("uncompressed_size=%zu, compressed_size_avail=%zu",
 		   uncompressed_size, compressed_size_avail);
-
-	/* Make sure the uncompressed size is compatible with this compressor.
-	 */
-	if (uncompressed_size > ctx->max_block_size) {
-		LZMS_DEBUG("Can't compress %zu bytes: LZMS context "
-			   "only supports %u bytes",
-			   uncompressed_size, ctx->max_block_size);
-		return 0;
-	}
 
 	/* Don't bother compressing extremely small inputs.  */
 	if (uncompressed_size < 4) {
@@ -1358,47 +1452,6 @@ lzms_compress(const void *uncompressed_data, size_t uncompressed_size,
 	LZMS_DEBUG("Compressed %zu => %zu bytes",
 		   uncompressed_size, compressed_size);
 
-#if defined(ENABLE_VERIFY_COMPRESSION) || defined(ENABLE_LZMS_DEBUG)
-	/* Verify that we really get the same thing back when decompressing.  */
-	{
-		struct wimlib_decompressor *decompressor;
-
-		LZMS_DEBUG("Verifying LZMS compression.");
-
-		if (0 == wimlib_create_decompressor(WIMLIB_COMPRESSION_TYPE_LZMS,
-						    ctx->max_block_size,
-						    NULL,
-						    &decompressor))
-		{
-			int ret;
-			ret = wimlib_decompress(compressed_data,
-						compressed_size,
-						ctx->window,
-						uncompressed_size,
-						decompressor);
-			wimlib_free_decompressor(decompressor);
-
-			if (ret) {
-				ERROR("Failed to decompress data we "
-				      "compressed using LZMS algorithm");
-				wimlib_assert(0);
-				return 0;
-			}
-			if (memcmp(uncompressed_data, ctx->window,
-				   uncompressed_size))
-			{
-				ERROR("Data we compressed using LZMS algorithm "
-				      "didn't decompress to original");
-				wimlib_assert(0);
-				return 0;
-			}
-		} else {
-			WARNING("Failed to create decompressor for "
-				"data verification!");
-		}
-	}
-#endif /* ENABLE_LZMS_DEBUG || ENABLE_VERIFY_COMPRESSION  */
-
 	return compressed_size;
 }
 
@@ -1409,140 +1462,14 @@ lzms_free_compressor(void *_ctx)
 
 	if (ctx) {
 		FREE(ctx->window);
+		lz_mf_free(ctx->mf);
 		FREE(ctx->matches);
-		lz_bt_destroy(&ctx->mf);
 		FREE(ctx->optimum);
 		FREE(ctx);
 	}
 }
 
-static const struct wimlib_lzms_compressor_params lzms_default = {
-	.hdr = {
-		.size = sizeof(struct wimlib_lzms_compressor_params),
-	},
-	.min_match_length = 2,
-	.max_match_length = UINT32_MAX,
-	.nice_match_length = 32,
-	.max_search_depth = 50,
-	.optim_array_length = 1024,
-};
-
-static bool
-lzms_params_valid(const struct wimlib_compressor_params_header *);
-
-static const struct wimlib_lzms_compressor_params *
-lzms_get_params(const struct wimlib_compressor_params_header *_params)
-{
-	const struct wimlib_lzms_compressor_params *params =
-		(const struct wimlib_lzms_compressor_params*)_params;
-
-	if (params == NULL)
-		params = &lzms_default;
-
-	LZMS_ASSERT(lzms_params_valid(&params->hdr));
-
-	return params;
-}
-
-static int
-lzms_create_compressor(size_t max_block_size,
-		       const struct wimlib_compressor_params_header *_params,
-		       void **ctx_ret)
-{
-	struct lzms_compressor *ctx;
-	const struct wimlib_lzms_compressor_params *params = lzms_get_params(_params);
-
-	if (max_block_size == 0 || max_block_size >= INT32_MAX) {
-		LZMS_DEBUG("Invalid max_block_size (%u)", max_block_size);
-		return WIMLIB_ERR_INVALID_PARAM;
-	}
-
-	ctx = CALLOC(1, sizeof(struct lzms_compressor));
-	if (ctx == NULL)
-		goto oom;
-
-	ctx->window = MALLOC(max_block_size);
-	if (ctx->window == NULL)
-		goto oom;
-
-	ctx->matches = MALLOC(min(params->max_match_length -
-					params->min_match_length + 1,
-				  params->max_search_depth + 2) *
-				sizeof(ctx->matches[0]));
-	if (ctx->matches == NULL)
-		goto oom;
-
-	if (!lz_bt_init(&ctx->mf,
-			max_block_size,
-			params->min_match_length,
-			params->max_match_length,
-			params->nice_match_length,
-			params->max_search_depth))
-		goto oom;
-
-	ctx->optimum = MALLOC((params->optim_array_length +
-			       min(params->nice_match_length,
-				   params->max_match_length)) *
-					sizeof(ctx->optimum[0]));
-	if (!ctx->optimum)
-		goto oom;
-
-	/* Initialize position and length slot data if not done already.  */
-	lzms_init_slots();
-
-	/* Initialize range encoding cost table if not done already.  */
-	lzms_init_rc_costs();
-
-	ctx->max_block_size = max_block_size;
-	memcpy(&ctx->params, params, sizeof(*params));
-
-	*ctx_ret = ctx;
-	return 0;
-
-oom:
-	lzms_free_compressor(ctx);
-	return WIMLIB_ERR_NOMEM;
-}
-
-static u64
-lzms_get_needed_memory(size_t max_block_size,
-		       const struct wimlib_compressor_params_header *_params)
-{
-	const struct wimlib_lzms_compressor_params *params = lzms_get_params(_params);
-
-	u64 size = 0;
-
-	size += max_block_size;
-	size += sizeof(struct lzms_compressor);
-	size += lz_bt_get_needed_memory(max_block_size);
-	size += (params->optim_array_length +
-		 min(params->nice_match_length,
-		     params->max_match_length)) *
-			 sizeof(((struct lzms_compressor *)0)->optimum[0]);
-	size += min(params->max_match_length - params->min_match_length + 1,
-		    params->max_search_depth + 2) *
-		sizeof(((struct lzms_compressor*)0)->matches[0]);
-	return size;
-}
-
-static bool
-lzms_params_valid(const struct wimlib_compressor_params_header *_params)
-{
-	const struct wimlib_lzms_compressor_params *params =
-		(const struct wimlib_lzms_compressor_params*)_params;
-
-	if (params->hdr.size != sizeof(*params) ||
-	    params->max_match_length < params->min_match_length ||
-	    params->min_match_length < 2 ||
-	    params->optim_array_length == 0 ||
-	    min(params->max_match_length, params->nice_match_length) > 65536)
-		return false;
-
-	return true;
-}
-
 const struct compressor_ops lzms_compressor_ops = {
-	.params_valid	    = lzms_params_valid,
 	.get_needed_memory  = lzms_get_needed_memory,
 	.create_compressor  = lzms_create_compressor,
 	.compress	    = lzms_compress,

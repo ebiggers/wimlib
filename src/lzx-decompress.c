@@ -794,9 +794,7 @@ lzx_free_decompressor(void *_ctx)
 }
 
 static int
-lzx_create_decompressor(size_t max_window_size,
-			const struct wimlib_decompressor_params_header *params,
-			void **ctx_ret)
+lzx_create_decompressor(size_t max_window_size, void **ctx_ret)
 {
 	struct lzx_decompressor *ctx;
 

@@ -121,7 +121,7 @@ new_serial_chunk_compressor(int out_ctype, u32 out_chunk_size,
 	ctx->base.get_chunk = serial_chunk_compressor_get_chunk;
 
 	ret = wimlib_create_compressor(out_ctype, out_chunk_size,
-				       NULL, &ctx->compressor);
+				       0, &ctx->compressor);
 	if (ret)
 		goto err;
 

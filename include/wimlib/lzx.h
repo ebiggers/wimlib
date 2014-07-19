@@ -147,7 +147,7 @@ struct lzx_lru_queue {
 #ifdef __x86_64__
 _aligned_attribute(8)  /* Improves performance of LZX compression by 1% - 2%;
 			  specifically, this speeds up
-			  lzx_get_near_optimal_match().  */
+			  lzx_choose_near_optimal_match().  */
 #endif
 ;
 

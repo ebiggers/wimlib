@@ -1,19 +1,51 @@
 Version 1.7.1-BETA:
+	Made more improvements to the compression algorithms.
+
+	The default compression mode for wimcapture is now LZX compression in
+	its default mode, which is the the same as '--compress=maximum'.
+
+	You can now specify an optional integer compression level to the
+	'--compress' or '--solid-compress' options; e.g.  '--compress=lzx:75'.
+	Currently, the default level in all cases is 50.  This capability
+	deprecates the '--compress-slow' (or '--recompress-slow') option to
+	several wimlib-imagex commands.
+
+	The '--pack-streams', '--pack-compress', and '--pack-chunk-size' options
+	to several wimlib-imagex commands have been deprecated in favor of more
+	"standard" names: '--solid', '--solid-compress', and
+	'--solid-chunk-size', respectively.
+
+	The XPRESS compressor no longer supports chunks larger than 65536 bytes.
+	There is little point in having larger chunks, since the LZ77 sliding
+	window for XPRESS cannot be larger than 65536 bytes.  This change does
+	not affect the default XPRESS chunk size, which is 32768.
+
 	The new (as of v1.7.0) extraction code will no longer run out of file
 	handles when extracting many (1000+) identical files.
 
-	Library users can now initialize and de-initialize the library multiple
-	times in one run of an application program.
+	Library changes:
 
-	Library users will now receive WIMLIB_PROGRESS_MSG_WRITE_STREAMS and
-	WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS messages more frequently when
-	writing or extracting large WIM files.
+		Custom compressor parameters have been removed from the library
+		in favor of the simpler level-based API.
 
-	Added experimental new write flag:
-	WIMLIB_WRITE_FLAG_SEND_DONE_WITH_FILE_MESSAGES.
+		Decompressor parameters have been removed entirely.
 
-	Library users can now specify a custom file for warning and error
-	messages to be sent to, rather than the default of standard error.
+		The maximum XPRESS chunk size has been reduced, as mentioned
+		above.
+
+		Library users can now initialize and de-initialize the library
+		multiple times in one run of an application program.
+
+		Library users will now receive WIMLIB_PROGRESS_MSG_WRITE_STREAMS
+		and WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS messages more frequently
+		when writing or extracting large WIM files.
+
+		Added experimental new write flag:
+		WIMLIB_WRITE_FLAG_SEND_DONE_WITH_FILE_MESSAGES.
+
+		Library users can now specify a custom file for warning and
+		error messages to be sent to, rather than the default of
+		standard error.
 
 Version 1.7.0:
 	Improved compression, decompression, and extraction performance.

@@ -171,9 +171,6 @@ enum {
 	IMAGEX_NO_GLOBS_OPTION,
 	IMAGEX_NULLGLOB_OPTION,
 	IMAGEX_ONE_FILE_ONLY_OPTION,
-	IMAGEX_PACK_CHUNK_SIZE_OPTION,
-	IMAGEX_PACK_COMPRESS_OPTION,
-	IMAGEX_PACK_STREAMS_OPTION,
 	IMAGEX_PATH_OPTION,
 	IMAGEX_PIPABLE_OPTION,
 	IMAGEX_PRESERVE_DIR_STRUCTURE_OPTION,
@@ -184,6 +181,9 @@ enum {
 	IMAGEX_RESUME_OPTION,
 	IMAGEX_RPFIX_OPTION,
 	IMAGEX_SOFT_OPTION,
+	IMAGEX_SOLID_OPTION,
+	IMAGEX_SOLID_CHUNK_SIZE_OPTION,
+	IMAGEX_SOLID_COMPRESS_OPTION,
 	IMAGEX_SOURCE_LIST_OPTION,
 	IMAGEX_STAGING_DIR_OPTION,
 	IMAGEX_STREAMS_INTERFACE_OPTION,
@@ -225,12 +225,12 @@ static const struct option capture_or_append_options[] = {
 	{T("compress"),    required_argument, NULL, IMAGEX_COMPRESS_OPTION},
 	{T("compress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
 	{T("chunk-size"),  required_argument, NULL, IMAGEX_CHUNK_SIZE_OPTION},
-	{T("pack-chunk-size"), required_argument, NULL, IMAGEX_PACK_CHUNK_SIZE_OPTION},
-	{T("solid-chunk-size"),required_argument, NULL, IMAGEX_PACK_CHUNK_SIZE_OPTION},
-	{T("pack-compress"), required_argument, NULL, IMAGEX_PACK_COMPRESS_OPTION},
-	{T("solid-compress"),required_argument, NULL, IMAGEX_PACK_COMPRESS_OPTION},
-	{T("pack-streams"), no_argument,      NULL, IMAGEX_PACK_STREAMS_OPTION},
-	{T("solid"),       no_argument,      NULL, IMAGEX_PACK_STREAMS_OPTION},
+	{T("solid"),       no_argument,      NULL, IMAGEX_SOLID_OPTION},
+	{T("pack-streams"), no_argument,      NULL, IMAGEX_SOLID_OPTION},
+	{T("solid-compress"),required_argument, NULL, IMAGEX_SOLID_COMPRESS_OPTION},
+	{T("pack-compress"), required_argument, NULL, IMAGEX_SOLID_COMPRESS_OPTION},
+	{T("solid-chunk-size"),required_argument, NULL, IMAGEX_SOLID_CHUNK_SIZE_OPTION},
+	{T("pack-chunk-size"), required_argument, NULL, IMAGEX_SOLID_CHUNK_SIZE_OPTION},
 	{T("config"),      required_argument, NULL, IMAGEX_CONFIG_OPTION},
 	{T("dereference"), no_argument,       NULL, IMAGEX_DEREFERENCE_OPTION},
 	{T("flags"),       required_argument, NULL, IMAGEX_FLAGS_OPTION},
@@ -273,13 +273,13 @@ static const struct option export_options[] = {
 	{T("compress"),    required_argument, NULL, IMAGEX_COMPRESS_OPTION},
 	{T("recompress"),  no_argument,       NULL, IMAGEX_RECOMPRESS_OPTION},
 	{T("compress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
-	{T("pack-streams"),no_argument,       NULL, IMAGEX_PACK_STREAMS_OPTION},
-	{T("solid"),       no_argument,       NULL, IMAGEX_PACK_STREAMS_OPTION},
 	{T("chunk-size"),  required_argument, NULL, IMAGEX_CHUNK_SIZE_OPTION},
-	{T("pack-chunk-size"), required_argument, NULL, IMAGEX_PACK_CHUNK_SIZE_OPTION},
-	{T("solid-chunk-size"),required_argument, NULL, IMAGEX_PACK_CHUNK_SIZE_OPTION},
-	{T("pack-compress"), required_argument, NULL, IMAGEX_PACK_COMPRESS_OPTION},
-	{T("solid-compress"),required_argument, NULL, IMAGEX_PACK_COMPRESS_OPTION},
+	{T("solid"),       no_argument,       NULL, IMAGEX_SOLID_OPTION},
+	{T("pack-streams"),no_argument,       NULL, IMAGEX_SOLID_OPTION},
+	{T("solid-compress"),required_argument, NULL, IMAGEX_SOLID_COMPRESS_OPTION},
+	{T("pack-compress"), required_argument, NULL, IMAGEX_SOLID_COMPRESS_OPTION},
+	{T("solid-chunk-size"),required_argument, NULL, IMAGEX_SOLID_CHUNK_SIZE_OPTION},
+	{T("pack-chunk-size"), required_argument, NULL, IMAGEX_SOLID_CHUNK_SIZE_OPTION},
 	{T("ref"),         required_argument, NULL, IMAGEX_REF_OPTION},
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
 	{T("rebuild"),     no_argument,       NULL, IMAGEX_REBUILD_OPTION},
@@ -345,14 +345,14 @@ static const struct option optimize_options[] = {
 	{T("compress"),    required_argument, NULL, IMAGEX_COMPRESS_OPTION},
 	{T("recompress"),  no_argument,       NULL, IMAGEX_RECOMPRESS_OPTION},
 	{T("compress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
-	{T("recompress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
+	{T("recompress-slow"), no_argument,   NULL, IMAGEX_COMPRESS_SLOW_OPTION},
 	{T("chunk-size"),  required_argument, NULL, IMAGEX_CHUNK_SIZE_OPTION},
-	{T("pack-chunk-size"), required_argument, NULL, IMAGEX_PACK_CHUNK_SIZE_OPTION},
-	{T("solid-chunk-size"),required_argument, NULL, IMAGEX_PACK_CHUNK_SIZE_OPTION},
-	{T("pack-compress"), required_argument, NULL, IMAGEX_PACK_COMPRESS_OPTION},
-	{T("solid-compress"),required_argument, NULL, IMAGEX_PACK_COMPRESS_OPTION},
-	{T("pack-streams"),no_argument,       NULL, IMAGEX_PACK_STREAMS_OPTION},
-	{T("solid"),       no_argument,       NULL, IMAGEX_PACK_STREAMS_OPTION},
+	{T("solid"),       no_argument,       NULL, IMAGEX_SOLID_OPTION},
+	{T("pack-streams"),no_argument,       NULL, IMAGEX_SOLID_OPTION},
+	{T("solid-compress"),required_argument, NULL, IMAGEX_SOLID_COMPRESS_OPTION},
+	{T("pack-compress"), required_argument, NULL, IMAGEX_SOLID_COMPRESS_OPTION},
+	{T("solid-chunk-size"),required_argument, NULL, IMAGEX_SOLID_CHUNK_SIZE_OPTION},
+	{T("pack-chunk-size"), required_argument, NULL, IMAGEX_SOLID_CHUNK_SIZE_OPTION},
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
 	{T("pipable"),     no_argument,       NULL, IMAGEX_PIPABLE_OPTION},
 	{T("not-pipable"), no_argument,       NULL, IMAGEX_NOT_PIPABLE_OPTION},
@@ -474,64 +474,74 @@ verify_image_exists_and_is_single(int image, const tchar *image_name,
 	return ret;
 }
 
+static void
+print_available_compression_types(FILE *fp)
+{
+	static const tchar *s =
+	T(
+	"Available compression types:\n"
+	"\n"
+	"    none\n"
+	"    xpress (alias: \"fast\")\n"
+	"    lzx    (alias: \"maximum\") (default for capture)\n"
+	"    lzms   (alias: \"recovery\")\n"
+	"\n"
+	);
+	tfputs(s, fp);
+}
+
 /* Parse the argument to --compress */
 static int
-get_compression_type(const tchar *optarg)
+get_compression_type(tchar *optarg)
 {
+	int ctype;
+	unsigned int compression_level = 0;
+	tchar *plevel;
+
+	plevel = tstrchr(optarg, T(':'));
+	if (plevel) {
+		tchar *ptmp;
+		unsigned long ultmp;
+
+		*plevel++ = T('\0');
+		ultmp = tstrtoul(plevel, &ptmp, 10);
+		if (ultmp >= UINT_MAX || ultmp == 0 || *ptmp || ptmp == plevel) {
+			imagex_error(T("Compression level must be a positive integer! "
+				       "e.g. --compress=lzx:80"));
+			return WIMLIB_COMPRESSION_TYPE_INVALID;
+		}
+		compression_level = ultmp;
+	}
+
 	if (!tstrcasecmp(optarg, T("maximum")) ||
 	    !tstrcasecmp(optarg, T("lzx")) ||
 	    !tstrcasecmp(optarg, T("max")))
-		return WIMLIB_COMPRESSION_TYPE_LZX;
+		ctype = WIMLIB_COMPRESSION_TYPE_LZX;
 	else if (!tstrcasecmp(optarg, T("fast")) || !tstrcasecmp(optarg, T("xpress")))
-		return WIMLIB_COMPRESSION_TYPE_XPRESS;
+		ctype = WIMLIB_COMPRESSION_TYPE_XPRESS;
 	else if (!tstrcasecmp(optarg, T("recovery")) || !tstrcasecmp(optarg, T("lzms")))
-		return WIMLIB_COMPRESSION_TYPE_LZMS;
+		ctype = WIMLIB_COMPRESSION_TYPE_LZMS;
 	else if (!tstrcasecmp(optarg, T("none")))
-		return WIMLIB_COMPRESSION_TYPE_NONE;
+		ctype = WIMLIB_COMPRESSION_TYPE_NONE;
 	else {
-		imagex_error(T("Invalid compression type \"%"TS"\"! Must be "
-			     "\"maximum\", \"fast\", or \"none\"."), optarg);
+		imagex_error(T("Invalid compression type \"%"TS"\"!"), optarg);
+		print_available_compression_types(stderr);
 		return WIMLIB_COMPRESSION_TYPE_INVALID;
 	}
+
+	if (compression_level != 0)
+		wimlib_set_default_compression_level(ctype, compression_level);
+	return ctype;
 }
 
 static void
 set_compress_slow(void)
 {
-	static const struct wimlib_lzx_compressor_params lzx_slow_params = {
-		.hdr = {
-			.size = sizeof(struct wimlib_lzx_compressor_params),
-		},
-		.algorithm = WIMLIB_LZX_ALGORITHM_SLOW,
-		.alg_params = {
-			.slow = {
-				.use_len2_matches = 1,
-				.nice_match_length = 96,
-				.num_optim_passes = 4,
-				.max_search_depth = 100,
-				.main_nostat_cost = 15,
-				.len_nostat_cost = 15,
-				.aligned_nostat_cost = 7,
-			},
-		},
-	};
-
-	static const struct wimlib_lzms_compressor_params lzms_slow_params = {
-		.hdr = {
-			.size = sizeof(struct wimlib_lzms_compressor_params),
-		},
-		.min_match_length = 2,
-		.max_match_length = UINT32_MAX,
-		.nice_match_length = 96,
-		.max_search_depth = 100,
-		.optim_array_length = 1024,
-	};
-
-	wimlib_set_default_compressor_params(WIMLIB_COMPRESSION_TYPE_LZX,
-					     &lzx_slow_params.hdr);
-
-	wimlib_set_default_compressor_params(WIMLIB_COMPRESSION_TYPE_LZMS,
-					     &lzms_slow_params.hdr);
+#if 0
+	fprintf(stderr, "WARNING: the '--compress-slow' option is deprecated.\n"
+		        "         Use the '--compress=TYPE:LEVEL' option instead.\n");
+#endif
+	wimlib_set_default_compression_level(-1, 100);
 }
 
 struct string_set {
@@ -1661,8 +1671,8 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	int write_flags = 0;
 	int compression_type = WIMLIB_COMPRESSION_TYPE_INVALID;
 	uint32_t chunk_size = UINT32_MAX;
-	uint32_t pack_chunk_size = UINT32_MAX;
-	int pack_ctype = WIMLIB_COMPRESSION_TYPE_INVALID;
+	uint32_t solid_chunk_size = UINT32_MAX;
+	int solid_ctype = WIMLIB_COMPRESSION_TYPE_INVALID;
 	const tchar *wimfile;
 	int wim_fd;
 	const tchar *name;
@@ -1693,7 +1703,6 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	struct wimlib_capture_source *capture_sources;
 	size_t num_sources;
 	bool name_defaulted;
-	bool compress_slow = false;
 
 	for_opt(c, capture_or_append_options) {
 		switch (c) {
@@ -1717,24 +1726,24 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 				goto out_err;
 			break;
 		case IMAGEX_COMPRESS_SLOW_OPTION:
-			compress_slow = true;
+			set_compress_slow();
 			break;
 		case IMAGEX_CHUNK_SIZE_OPTION:
 			chunk_size = parse_chunk_size(optarg);
 			if (chunk_size == UINT32_MAX)
 				goto out_err;
 			break;
-		case IMAGEX_PACK_CHUNK_SIZE_OPTION:
-			pack_chunk_size = parse_chunk_size(optarg);
-			if (pack_chunk_size == UINT32_MAX)
+		case IMAGEX_SOLID_CHUNK_SIZE_OPTION:
+			solid_chunk_size = parse_chunk_size(optarg);
+			if (solid_chunk_size == UINT32_MAX)
 				goto out_err;
 			break;
-		case IMAGEX_PACK_COMPRESS_OPTION:
-			pack_ctype = get_compression_type(optarg);
-			if (pack_ctype == WIMLIB_COMPRESSION_TYPE_INVALID)
+		case IMAGEX_SOLID_COMPRESS_OPTION:
+			solid_ctype = get_compression_type(optarg);
+			if (solid_ctype == WIMLIB_COMPRESSION_TYPE_INVALID)
 				goto out_err;
 			break;
-		case IMAGEX_PACK_STREAMS_OPTION:
+		case IMAGEX_SOLID_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_PACK_STREAMS;
 			break;
 		case IMAGEX_FLAGS_OPTION:
@@ -1834,28 +1843,14 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			/* With --wimboot, default to XPRESS compression.  */
 			compression_type = WIMLIB_COMPRESSION_TYPE_XPRESS;
 		} else if (write_flags & WIMLIB_WRITE_FLAG_PACK_STREAMS) {
-			/* With --pack-streams or --solid, default to LZMS
-			 * compression.  (However, this will not affect packed
-			 * resources!)  */
+			/* With --solid, default to LZMS compression.  (However,
+			 * this will not affect solid blocks!)  */
 			compression_type = WIMLIB_COMPRESSION_TYPE_LZMS;
 		} else {
-			/* Otherwise, default to LZX compression in fast mode.
-			 */
+			/* Otherwise, default to LZX compression.  */
 			compression_type = WIMLIB_COMPRESSION_TYPE_LZX;
-			if (!compress_slow && pack_ctype != WIMLIB_COMPRESSION_TYPE_LZX) {
-				struct wimlib_lzx_compressor_params params = {
-					.hdr.size = sizeof(params),
-					.algorithm = WIMLIB_LZX_ALGORITHM_FAST,
-					.use_defaults = 1,
-				};
-				wimlib_set_default_compressor_params(WIMLIB_COMPRESSION_TYPE_LZX,
-								     &params.hdr);
-			}
 		}
 	}
-
-	if (compress_slow)
-		set_compress_slow();
 
 	if (!tstrcmp(wimfile, T("-"))) {
 		/* Writing captured WIM to standard output.  */
@@ -1985,13 +1980,13 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		if (ret)
 			goto out_free_wim;
 	}
-	if (pack_ctype != WIMLIB_COMPRESSION_TYPE_INVALID) {
-		ret = wimlib_set_output_pack_compression_type(wim, pack_ctype);
+	if (solid_ctype != WIMLIB_COMPRESSION_TYPE_INVALID) {
+		ret = wimlib_set_output_pack_compression_type(wim, solid_ctype);
 		if (ret)
 			goto out_free_wim;
 	}
-	if (pack_chunk_size != UINT32_MAX) {
-		ret = wimlib_set_output_pack_chunk_size(wim, pack_chunk_size);
+	if (solid_chunk_size != UINT32_MAX) {
+		ret = wimlib_set_output_pack_chunk_size(wim, solid_chunk_size);
 		if (ret)
 			goto out_free_wim;
 	}
@@ -2593,8 +2588,8 @@ imagex_export(int argc, tchar **argv, int cmd)
 	STRING_SET(refglobs);
 	unsigned num_threads = 0;
 	uint32_t chunk_size = UINT32_MAX;
-	uint32_t pack_chunk_size = UINT32_MAX;
-	int pack_ctype = WIMLIB_COMPRESSION_TYPE_INVALID;
+	uint32_t solid_chunk_size = UINT32_MAX;
+	int solid_ctype = WIMLIB_COMPRESSION_TYPE_INVALID;
 
 	for_opt(c, export_options) {
 		switch (c) {
@@ -2613,14 +2608,14 @@ imagex_export(int argc, tchar **argv, int cmd)
 			if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID)
 				goto out_err;
 			break;
+		case IMAGEX_COMPRESS_SLOW_OPTION:
+			set_compress_slow();
+			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
+			break;
 		case IMAGEX_RECOMPRESS_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
 			break;
-		case IMAGEX_COMPRESS_SLOW_OPTION:
-			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
-			set_compress_slow();
-			break;
-		case IMAGEX_PACK_STREAMS_OPTION:
+		case IMAGEX_SOLID_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_PACK_STREAMS;
 			break;
 		case IMAGEX_CHUNK_SIZE_OPTION:
@@ -2628,14 +2623,14 @@ imagex_export(int argc, tchar **argv, int cmd)
 			if (chunk_size == UINT32_MAX)
 				goto out_err;
 			break;
-		case IMAGEX_PACK_CHUNK_SIZE_OPTION:
-			pack_chunk_size = parse_chunk_size(optarg);
-			if (pack_chunk_size == UINT32_MAX)
+		case IMAGEX_SOLID_CHUNK_SIZE_OPTION:
+			solid_chunk_size = parse_chunk_size(optarg);
+			if (solid_chunk_size == UINT32_MAX)
 				goto out_err;
 			break;
-		case IMAGEX_PACK_COMPRESS_OPTION:
-			pack_ctype = get_compression_type(optarg);
-			if (pack_ctype == WIMLIB_COMPRESSION_TYPE_INVALID)
+		case IMAGEX_SOLID_COMPRESS_OPTION:
+			solid_ctype = get_compression_type(optarg);
+			if (solid_ctype == WIMLIB_COMPRESSION_TYPE_INVALID)
 				goto out_err;
 			break;
 		case IMAGEX_REF_OPTION:
@@ -2753,8 +2748,8 @@ imagex_export(int argc, tchar **argv, int cmd)
 
 		if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID) {
 			/* The user did not specify a compression type; default
-			 * to that of the source WIM, unless --pack-streams,
-			 * --solid, or --wimboot was specified.   */
+			 * to that of the source WIM, unless --solid or
+			 * --wimboot was specified.   */
 
 			if (write_flags & WIMLIB_WRITE_FLAG_PACK_STREAMS)
 				compression_type = WIMLIB_COMPRESSION_TYPE_LZMS;
@@ -2789,13 +2784,13 @@ imagex_export(int argc, tchar **argv, int cmd)
 		if (ret)
 			goto out_free_dest_wim;
 	}
-	if (pack_ctype != WIMLIB_COMPRESSION_TYPE_INVALID) {
-		ret = wimlib_set_output_pack_compression_type(dest_wim, pack_ctype);
+	if (solid_ctype != WIMLIB_COMPRESSION_TYPE_INVALID) {
+		ret = wimlib_set_output_pack_compression_type(dest_wim, solid_ctype);
 		if (ret)
 			goto out_free_dest_wim;
 	}
-	if (pack_chunk_size != UINT32_MAX) {
-		ret = wimlib_set_output_pack_chunk_size(dest_wim, pack_chunk_size);
+	if (solid_chunk_size != UINT32_MAX) {
+		ret = wimlib_set_output_pack_chunk_size(dest_wim, solid_chunk_size);
 		if (ret)
 			goto out_free_dest_wim;
 	}
@@ -3478,8 +3473,8 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 	int write_flags = WIMLIB_WRITE_FLAG_REBUILD;
 	int compression_type = WIMLIB_COMPRESSION_TYPE_INVALID;
 	uint32_t chunk_size = UINT32_MAX;
-	uint32_t pack_chunk_size = UINT32_MAX;
-	int pack_ctype = WIMLIB_COMPRESSION_TYPE_INVALID;
+	uint32_t solid_chunk_size = UINT32_MAX;
+	int solid_ctype = WIMLIB_COMPRESSION_TYPE_INVALID;
 	int ret;
 	WIMStruct *wim;
 	const tchar *wimfile;
@@ -3502,29 +3497,29 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 			if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID)
 				goto out_err;
 			break;
-		case IMAGEX_RECOMPRESS_OPTION:
+		case IMAGEX_COMPRESS_SLOW_OPTION:
+			set_compress_slow();
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
 			break;
-		case IMAGEX_COMPRESS_SLOW_OPTION:
+		case IMAGEX_RECOMPRESS_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
-			set_compress_slow();
 			break;
 		case IMAGEX_CHUNK_SIZE_OPTION:
 			chunk_size = parse_chunk_size(optarg);
 			if (chunk_size == UINT32_MAX)
 				goto out_err;
 			break;
-		case IMAGEX_PACK_CHUNK_SIZE_OPTION:
-			pack_chunk_size = parse_chunk_size(optarg);
-			if (pack_chunk_size == UINT32_MAX)
+		case IMAGEX_SOLID_CHUNK_SIZE_OPTION:
+			solid_chunk_size = parse_chunk_size(optarg);
+			if (solid_chunk_size == UINT32_MAX)
 				goto out_err;
 			break;
-		case IMAGEX_PACK_COMPRESS_OPTION:
-			pack_ctype = get_compression_type(optarg);
-			if (pack_ctype == WIMLIB_COMPRESSION_TYPE_INVALID)
+		case IMAGEX_SOLID_COMPRESS_OPTION:
+			solid_ctype = get_compression_type(optarg);
+			if (solid_ctype == WIMLIB_COMPRESSION_TYPE_INVALID)
 				goto out_err;
 			break;
-		case IMAGEX_PACK_STREAMS_OPTION:
+		case IMAGEX_SOLID_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_PACK_STREAMS;
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
 			break;
@@ -3569,13 +3564,13 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 		if (ret)
 			goto out_wimlib_free;
 	}
-	if (pack_ctype != WIMLIB_COMPRESSION_TYPE_INVALID) {
-		ret = wimlib_set_output_pack_compression_type(wim, pack_ctype);
+	if (solid_ctype != WIMLIB_COMPRESSION_TYPE_INVALID) {
+		ret = wimlib_set_output_pack_compression_type(wim, solid_ctype);
 		if (ret)
 			goto out_wimlib_free;
 	}
-	if (pack_chunk_size != UINT32_MAX) {
-		ret = wimlib_set_output_pack_chunk_size(wim, pack_chunk_size);
+	if (solid_chunk_size != UINT32_MAX) {
+		ret = wimlib_set_output_pack_chunk_size(wim, solid_chunk_size);
 		if (ret)
 			goto out_wimlib_free;
 	}
@@ -3993,54 +3988,68 @@ static const struct imagex_command imagex_commands[] = {
 	[CMD_UPDATE]   = {T("update"),   imagex_update},
 };
 
+#ifdef __WIN32__
+
+   /* Can be a directory or source list file.  But source list file is probably
+    * a rare use case, so just say directory.  */
+#  define SOURCE_STR T("DIRECTORY")
+
+   /* Can only be a directory  */
+#  define TARGET_STR T("DIRECTORY")
+
+#else
+   /* Can be a directory, NTFS volume, or source list file. */
+#  define SOURCE_STR T("SOURCE")
+
+   /* Can be a directory or NTFS volume.  */
+#  define TARGET_STR T("TARGET")
+
+#endif
+
 static const tchar *usage_strings[] = {
 [CMD_APPEND] =
 T(
-"    %"TS" (DIRECTORY | NTFS_VOLUME) WIMFILE\n"
-"                    [IMAGE_NAME [IMAGE_DESCRIPTION]] [--boot] [--check]\n"
-"                    [--nocheck] [--flags EDITION_ID] [--dereference]\n"
-"                    [--config=FILE] [--threads=NUM_THREADS] [--source-list]\n"
-"                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
-"                    [--update-of=[WIMFILE:]IMAGE] [--wimboot]\n"
+"    %"TS" " SOURCE_STR " WIMFILE [IMAGE_NAME [IMAGE_DESC]]\n"
+"                    [--boot] [--check] [--nocheck] [--config=FILE]\n"
+"                    [--threads=NUM_THREADS] [--no-acls] [--strict-acls]\n"
+"                    [--rpfix] [--norpfix] [--update-of=[WIMFILE:]IMAGE]\n"
+"                    [--wimboot] [--unix-data] [--dereference]\n"
 ),
 [CMD_APPLY] =
 T(
-"    %"TS" WIMFILE [(IMAGE_NUM | IMAGE_NAME | all)]\n"
-"                    (DIRECTORY | NTFS_VOLUME) [--check] [--ref=\"GLOB\"]\n"
-"                    [--no-acls] [--strict-acls] [--no-attributes]\n"
-"                    [--rpfix] [--norpfix] [--include-invalid-names]\n"
-"                    [--wimboot] [--unix-data]\n"
+"    %"TS" WIMFILE [IMAGE] " TARGET_STR "\n"
+"                    [--check] [--ref=\"GLOB\"] [--no-acls] [--strict-acls]\n"
+"                    [--no-attributes] [--rpfix] [--norpfix]\n"
+"                    [--include-invalid-names] [--wimboot] [--unix-data]\n"
 ),
 [CMD_CAPTURE] =
 T(
-"    %"TS" (DIRECTORY | NTFS_VOLUME) WIMFILE\n"
-"		     [IMAGE_NAME [IMAGE_DESCRIPTION]] [--boot] [--check]\n"
-"                    [--nocheck] [--compress=TYPE] [--flags EDITION_ID]\n"
-"                    [--dereference] [--config=FILE] [--threads=NUM_THREADS]\n"
-"                    [--source-list] [--no-acls] [--strict-acls] [--rpfix]\n"
-"                    [--norpfix] [--update-of=[WIMFILE:]IMAGE]\n"
-"                    [--delta-from=WIMFILE] [--wimboot] [--unix-data]\n"
+"    %"TS" " SOURCE_STR " WIMFILE [IMAGE_NAME [IMAGE_DESC]]\n"
+"                    [--compress=TYPE] [--boot] [--check] [--nocheck]\n"
+"                    [--config=FILE] [--threads=NUM_THREADS]\n"
+"                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
+"                    [--update-of=[WIMFILE:]IMAGE] [--delta-from=WIMFILE]\n"
+"                    [--wimboot] [--unix-data] [--dereference] [--solid]\n"
 ),
 [CMD_DELETE] =
 T(
-"    %"TS" WIMFILE (IMAGE_NUM | IMAGE_NAME | all)\n"
-"                    [--check] [--soft]\n"
+"    %"TS" WIMFILE IMAGE [--check] [--soft]\n"
 ),
 [CMD_DIR] =
 T(
-"    %"TS" WIMFILE (IMAGE_NUM | IMAGE_NAME | all) [--path=PATH] [--detailed]\n"
+"    %"TS" WIMFILE IMAGE [--path=PATH] [--detailed]\n"
 ),
 [CMD_EXPORT] =
 T(
-"    %"TS" SRC_WIMFILE (SRC_IMAGE_NUM | SRC_IMAGE_NAME | all ) \n"
-"                    DEST_WIMFILE [DEST_IMAGE_NAME [DEST_IMAGE_DESCRIPTION]]\n"
+"    %"TS" SRC_WIMFILE SRC_IMAGE DEST_WIMFILE\n"
+"                        [DEST_IMAGE_NAME [DEST_IMAGE_DESC]]\n"
 "                    [--boot] [--check] [--nocheck] [--compress=TYPE]\n"
 "                    [--ref=\"GLOB\"] [--threads=NUM_THREADS] [--rebuild]\n"
 "                    [--wimboot]\n"
 ),
 [CMD_EXTRACT] =
 T(
-"    %"TS" WIMFILE (IMAGE_NUM | IMAGE_NAME) [(PATH | @LISTFILE)...]\n"
+"    %"TS" WIMFILE IMAGE [(PATH | @LISTFILE)...]\n"
 "                    [--check] [--ref=\"GLOB\"] [--dest-dir=CMD_DIR]\n"
 "                    [--to-stdout] [--no-acls] [--strict-acls]\n"
 "                    [--no-attributes] [--include-invalid-names]\n"
@@ -4048,8 +4057,8 @@ T(
 ),
 [CMD_INFO] =
 T(
-"    %"TS" WIMFILE [(IMAGE_NUM | IMAGE_NAME) [NEW_NAME\n"
-"                    [NEW_DESC]]] [--boot] [--check] [--nocheck] [--xml]\n"
+"    %"TS" WIMFILE [IMAGE [NEW_NAME [NEW_DESC]]]\n"
+"                    [--boot] [--check] [--nocheck] [--xml]\n"
 "                    [--extract-xml FILE] [--header] [--lookup-table]\n"
 ),
 [CMD_JOIN] =
@@ -4059,22 +4068,23 @@ T(
 #if WIM_MOUNTING_SUPPORTED
 [CMD_MOUNT] =
 T(
-"    %"TS" WIMFILE [(IMAGE_NUM | IMAGE_NAME)] DIRECTORY\n"
+"    %"TS" WIMFILE [IMAGE] DIRECTORY\n"
 "                    [--check] [--streams-interface=INTERFACE]\n"
 "                    [--ref=\"GLOB\"] [--allow-other] [--unix-data]\n"
 ),
 [CMD_MOUNTRW] =
 T(
-"    %"TS" WIMFILE [(IMAGE_NUM | IMAGE_NAME)] DIRECTORY\n"
+"    %"TS" WIMFILE [IMAGE] DIRECTORY\n"
 "                    [--check] [--streams-interface=INTERFACE]\n"
 "                    [--staging-dir=CMD_DIR] [--allow-other] [--unix-data]\n"
 ),
 #endif
 [CMD_OPTIMIZE] =
 T(
-"    %"TS" WIMFILE [--check] [--nocheck] [--recompress]\n"
-"                    [--recompress-slow] [--compress=TYPE]\n"
-"                    [--threads=NUM_THREADS]\n"
+"    %"TS" WIMFILE\n"
+"                    [--recompress] [--compress=TYPE]\n"
+"                    [--threads=NUM_THREADS] [--check] [--nocheck]\n"
+"\n"
 ),
 [CMD_SPLIT] =
 T(
@@ -4083,16 +4093,17 @@ T(
 #if WIM_MOUNTING_SUPPORTED
 [CMD_UNMOUNT] =
 T(
-"    %"TS" DIRECTORY [--commit] [--force] [--new-image]\n"
-"                         [--check] [--rebuild]\n"
+"    %"TS" DIRECTORY\n"
+"                    [--commit] [--force] [--new-image] [--check] [--rebuild]\n"
 ),
 #endif
 [CMD_UPDATE] =
 T(
-"    %"TS" WIMFILE [IMAGE_NUM | IMAGE_NAME] [--check] [--rebuild]\n"
-"                    [--threads=NUM_THREADS] [DEFAULT_ADD_OPTIONS]\n"
-"                    [DEFAULT_DELETE_OPTIONS] [--command=STRING]\n"
-"                    [--wimboot-config=FILE| [< CMDFILE]\n"
+"    %"TS" WIMFILE [IMAGE]\n"
+"                    [--check] [--rebuild] [--threads=NUM_THREADS]\n"
+"                    [DEFAULT_ADD_OPTIONS] [DEFAULT_DELETE_OPTIONS]\n"
+"                    [--command=STRING] [--wimboot-config=FILE]\n"
+"                    [< CMDFILE]\n"
 ),
 };
 
@@ -4170,10 +4181,10 @@ recommend_man_page(int cmd, FILE *fp)
 {
 	const tchar *format_str;
 #ifdef __WIN32__
-	format_str = T("Uncommon options are not listed;\n"
+	format_str = T("Some uncommon options are not listed;\n"
 		       "See %"TS".pdf in the doc directory for more details.\n");
 #else
-	format_str = T("Uncommon options are not listed;\n"
+	format_str = T("Some uncommon options are not listed;\n"
 		       "Try `man %"TS"' for more details.\n");
 #endif
 	tfprintf(fp, format_str, get_cmd_string(cmd, true));
@@ -4201,10 +4212,13 @@ usage_all(FILE *fp)
 "    %"TS" --help\n"
 "    %"TS" --version\n"
 "\n"
-"    The compression TYPE may be \"maximum\", \"fast\", or \"none\".\n"
-"\n"
 	);
 	tfprintf(fp, extra, invocation_name, invocation_name);
+	tfprintf(fp,
+		 T("IMAGE can be the 1-based index or name of an image in the WIM file.\n"
+		   "For some commands IMAGE is optional if the WIM file only contains one image.\n"
+		   "For some commands IMAGE may be \"all\".\n"
+		   "\n"));
 	recommend_man_page(CMD_NONE, fp);
 }
 

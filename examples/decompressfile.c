@@ -136,7 +136,7 @@ int main(int argc, char **argv)
 
 	/* Create a decompressor for the compression type and chunk size with
 	 * the default parameters.  */
-	ret = wimlib_create_decompressor(ctype, chunk_size, NULL, &decompressor);
+	ret = wimlib_create_decompressor(ctype, chunk_size, &decompressor);
 	if (ret != 0)
 		error(1, 0, "Failed to create decompressor: %s",
 		      wimlib_get_error_string(ret));

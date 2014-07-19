@@ -9,17 +9,13 @@
 
 #include <wimlib/types.h>
 
-struct wimlib_compressor_params_header;
-
 struct compressor_ops {
 
-	bool (*params_valid)(const struct wimlib_compressor_params_header *params);
-
 	u64 (*get_needed_memory)(size_t max_block_size,
-				 const struct wimlib_compressor_params_header *params);
+				 unsigned int compression_level);
 
 	int (*create_compressor)(size_t max_block_size,
-				 const struct wimlib_compressor_params_header *params,
+				 unsigned int compression_level,
 				 void **private_ret);
 
 	size_t (*compress)(const void *uncompressed_data,
@@ -34,8 +30,5 @@ struct compressor_ops {
 extern const struct compressor_ops lzx_compressor_ops;
 extern const struct compressor_ops xpress_compressor_ops;
 extern const struct compressor_ops lzms_compressor_ops;
-
-extern void
-cleanup_compressor_params(void);
 
 #endif /* _WIMLIB_COMPRESSOR_OPS_H */
