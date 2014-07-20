@@ -333,6 +333,20 @@ start_wimboot_extraction(struct win32_apply_ctx *ctx)
 	if (ret)
 		return ret;
 
+	/* TODO: DISM seems to set HKEY_LOCAL_MACHINE\SOFTWARE\Setup
+	 * "WimBoot"=dword:00000001 in the registry of the extracted image.  Do
+	 * we need to do this too?  I'd really prefer not to be mucking around
+	 * with the extracted files, and certainly not the registry...
+	 *
+	 * It changed two other keys as well:
+	 *
+	 * [HKEY_LOCAL_MACHINE\SOFTWARE\ControlSet001\Control\ProductOptions]
+	 *         value "ProductPolicy"
+	 *
+	 * [HKEY_LOCAL_MACHINE\SOFTWARE\ControlSet001\Control\SessionManager\AppCompatCache]
+	 *         value "AppCompatCache"
+	 */
+
 	return wimboot_alloc_data_source_id(wim->filename,
 					    wim->hdr.guid,
 					    wim->current_image,
