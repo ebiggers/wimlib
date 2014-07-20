@@ -413,9 +413,10 @@ do_search(const u8 window[restrict],
 
 		if (matchptr[len] == strptr[len]) {
 
-			while (++len != max_len)
-				if (matchptr[len] != strptr[len])
-					break;
+			if (++len != max_len && matchptr[len] == strptr[len])
+				while (++len != max_len)
+					if (matchptr[len] != strptr[len])
+						break;
 
 			if (len > longest_match_len) {
 				longest_match_len = len;

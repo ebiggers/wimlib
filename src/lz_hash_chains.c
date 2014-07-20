@@ -180,27 +180,32 @@ do_search(const u8 * restrict window,
 	for (; cur_match && depth_remaining--; cur_match = prev_tab[cur_match]) {
 
 		const u8 * const matchptr = &window[cur_match];
+		u32 len;
 
-		if (matchptr[best_len] == strptr[best_len] &&
-		    matchptr[best_len - 1] == strptr[best_len - 1] &&
-		    matchptr[0] == strptr[0])
-		{
-			u32 len = 0;
+		if (matchptr[best_len] != strptr[best_len] ||
+		    matchptr[best_len - 1] != strptr[best_len - 1] ||
+		    matchptr[0] != strptr[0])
+			goto next_match;
 
-			while (++len != max_len)
-				if (matchptr[len] != strptr[len])
-					break;
+		for (len = 1; len < best_len - 1; len++)
+			if (matchptr[len] != strptr[len])
+				goto next_match;
 
-			if (len > best_len) {
-				matches[num_matches++] = (struct lz_match) {
-					.len = len,
-					.offset = strptr - matchptr,
-				};
-				best_len = len;
-				if (best_len == max_len)
-					break;
-			}
-		}
+		len = best_len;
+
+		while (++len != max_len)
+			if (matchptr[len] != strptr[len])
+				break;
+
+		matches[num_matches++] = (struct lz_match) {
+			.len = len,
+			.offset = strptr - matchptr,
+		};
+		best_len = len;
+		if (best_len == max_len)
+			break;
+	next_match:
+		;
 	}
 	return num_matches;
 }

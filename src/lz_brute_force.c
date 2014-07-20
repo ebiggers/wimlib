@@ -93,28 +93,35 @@ lz_bf_get_matches(struct lz_mf *mf, struct lz_match matches[])
 		goto out;
 
 	while (matchptr-- > mf->cur_window) {
-		if (matchptr[best_len] == strptr[best_len] &&
-		    matchptr[best_len - 1] == strptr[best_len - 1] &&
-		    matchptr[0] == strptr[0])
-		{
-			u32 len = 0;
 
-			while (++len != max_len)
-				if (matchptr[len] != strptr[len])
-					break;
+		u32 len;
 
-			if (len > best_len) {
-				matches[num_matches++] = (struct lz_match) {
-					.len = len,
-					.offset = strptr - matchptr,
-				};
-				best_len = len;
-				if (best_len == max_len)
-					break;
-				if (num_matches == mf->params.max_search_depth)
-					break;
-			}
-		}
+		if (matchptr[best_len] != strptr[best_len] ||
+		    matchptr[best_len - 1] != strptr[best_len - 1] ||
+		    matchptr[0] != strptr[0])
+			goto next_match;
+
+		for (len = 1; len < best_len - 1; len++)
+			if (matchptr[len] != strptr[len])
+				goto next_match;
+
+		len = best_len;
+
+		while (++len != max_len)
+			if (matchptr[len] != strptr[len])
+				break;
+
+		matches[num_matches++] = (struct lz_match) {
+			.len = len,
+			.offset = strptr - matchptr,
+		};
+		best_len = len;
+		if (best_len == max_len)
+			break;
+		if (num_matches == mf->params.max_search_depth)
+			break;
+	next_match:
+		;
 	}
 
 	/* If the longest match is @nice_match_len in length, it may have been
