@@ -873,10 +873,10 @@ lzms_match_chooser_reverse_list(struct lzms_compressor *ctx, unsigned cur_pos)
 		};
 }
 
-/* This is similar to lzx_choose_near_optimal_match() in lzx-compress.c.
+/* This is similar to lzx_choose_near_optimal_item() in lzx-compress.c.
  * Read that one if you want to understand it.  */
 static struct lz_match
-lzms_get_near_optimal_match(struct lzms_compressor *ctx)
+lzms_get_near_optimal_item(struct lzms_compressor *ctx)
 {
 	u32 num_matches;
 	struct lz_match *matches;
@@ -1133,7 +1133,7 @@ lzms_get_near_optimal_match(struct lzms_compressor *ctx)
 static void
 lzms_encode(struct lzms_compressor *ctx)
 {
-	struct lz_match match;
+	struct lz_match item;
 
 	/* Load window into the match-finder.  */
 	lz_mf_load_window(ctx->mf, ctx->window, ctx->window_size);
@@ -1143,11 +1143,11 @@ lzms_encode(struct lzms_compressor *ctx)
 	ctx->optimum_end_idx = 0;
 
 	while (ctx->cur_window_pos != ctx->window_size) {
-		match = lzms_get_near_optimal_match(ctx);
-		if (match.len <= 1)
+		item = lzms_get_near_optimal_item(ctx);
+		if (item.len <= 1)
 			lzms_encode_literal(ctx, ctx->window[ctx->cur_window_pos]);
 		else
-			lzms_encode_lz_match(ctx, match.len, match.offset);
+			lzms_encode_lz_match(ctx, item.len, item.offset);
 	}
 }
 

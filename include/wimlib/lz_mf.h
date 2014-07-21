@@ -83,6 +83,7 @@ struct lz_mf;
 
 /* Representation of a Lempel-Ziv match.  */
 struct lz_match {
+
 	/* The number of bytes matched.  */
 	u32 len;
 

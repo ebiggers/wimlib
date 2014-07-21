@@ -3678,6 +3678,8 @@ wimlib_resolve_image(WIMStruct *wim,
 		     const wimlib_tchar *image_name_or_num);
 
 /**
+ * @ingroup G_general
+ *
  * Sets the file to which the library will print error and warning messages.
  *
  * This version of the function takes a C library <c>FILE *</c> opened for
@@ -3695,6 +3697,8 @@ extern int
 wimlib_set_error_file(FILE *fp);
 
 /**
+ * @ingroup G_general
+ *
  * Sets the path to the file to which the library will print error and warning
  * messages.  The library will open this file for appending.
  *
@@ -4291,9 +4295,10 @@ struct wimlib_decompressor;
  * wimlib_create_compressor().
  *
  * @param ctype
- *	Compression type for which to set the default compression level.  Or, if
- *	this is the special value -1, the default compression levels for all
- *	known compression types will be set.
+ *	Compression type for which to set the default compression level, as one
+ *	of the ::wimlib_compression_type constants.  Or, if this is the special
+ *	value -1, the default compression levels for all known compression types
+ *	will be set.
  * @param compression_level
  *	The default compression level to set.  If 0, the "default default" level
  *	is restored.  Otherwise, a higher value indicates higher compression.
@@ -4306,8 +4311,7 @@ struct wimlib_decompressor;
  *	@p ctype was neither a supported compression type nor -1.
  */
 extern int
-wimlib_set_default_compression_level(enum wimlib_compression_type ctype,
-				     unsigned int compression_level);
+wimlib_set_default_compression_level(int ctype, unsigned int compression_level);
 
 /**
  * Returns the approximate number of bytes needed to allocate a compressor with

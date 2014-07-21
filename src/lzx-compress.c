@@ -109,7 +109,7 @@
  * that position at previous positions in the window.  With LZX, the minimum
  * match length is 2 and the maximum match length is 257.  The only restriction
  * on offsets is that LZX does not allow the last 2 bytes of the window to match
- * the the beginning of the window.
+ * the beginning of the window.
  *
  * There are a number of algorithms that can be used for this, including hash
  * chains, binary trees, and suffix arrays.  Binary trees generally work well

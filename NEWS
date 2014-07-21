@@ -2,7 +2,7 @@ Version 1.7.1-BETA:
 	Made more improvements to the compression algorithms.
 
 	The default compression mode for wimcapture is now LZX compression in
-	its default mode, which is the the same as '--compress=maximum'.
+	its default mode, which is the same as '--compress=maximum'.
 
 	You can now specify an optional integer compression level to the
 	'--compress' or '--solid-compress' options; e.g.  '--compress=lzx:75'.

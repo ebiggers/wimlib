@@ -65,10 +65,9 @@ compressor_ctype_valid(int ctype)
 }
 
 WIMLIBAPI int
-wimlib_set_default_compression_level(enum wimlib_compression_type ctype,
-				     unsigned int compression_level)
+wimlib_set_default_compression_level(int ctype, unsigned int compression_level)
 {
-	if ((int)ctype == -1) {
+	if (ctype == -1) {
 		for (int i = 0; i < ARRAY_LEN(default_compression_levels); i++)
 			default_compression_levels[i] = compression_level;
 	} else {

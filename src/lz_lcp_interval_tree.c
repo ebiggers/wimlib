@@ -426,7 +426,7 @@ lz_lcpit_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 		interval = next_interval;
 	}
 
-	/* We're already visited the current lcp-interval.  */
+	/* We've already visited the current lcp-interval.  */
 
 	/* Extract the LCP of this lcp-interval.  */
 	lcp = intervals[interval] & LZ_LCPIT_LCP_MASK;
