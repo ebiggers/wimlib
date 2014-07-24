@@ -1,11 +1,5 @@
 /*
- * dentry.c
- *
- * In the WIM file format, the dentries are stored in the "metadata resource"
- * section right after the security data.  Each image in the WIM file has its
- * own metadata resource with its own security data and dentry tree.  Dentries
- * in different images may share file resources by referring to the same lookup
- * table entries.
+ * dentry.c - see description below
  */
 
 /*
@@ -26,11 +20,45 @@
  * wimlib; if not, see http://www.gnu.org/licenses/.
  */
 
+/*
+ * This file contains logic to deal with WIM directory entries, or "dentries":
+ *
+ *  - Reading a dentry tree from a metadata resource in a WIM file
+ *  - Writing a dentry tree to a metadata resource in a WIM file
+ *  - Iterating through a tree of WIM dentries
+ *  - Path lookup: translating a path into a WIM dentry or inode
+ *  - Creating, modifying, and deleting WIM dentries
+ *
+ * Notes:
+ *
+ *  - A WIM file can contain multiple images, each of which has an independent
+ *    tree of dentries.  "On disk", the dentry tree for an image is stored in
+ *    the "metadata resource" for that image.
+ *
+ *  - Multiple dentries in an image may correspond to the same inode, or "file".
+ *    When this occurs, it means that the file has multiple names, or "hard
+ *    links".  A dentry is not a file, but rather the name of a file!
+ *
+ *  - Inodes are not represented explicitly in the WIM file format.  Instead,
+ *    the metadata resource provides a "hard link group ID" for each dentry.
+ *    wimlib handles pulling out actual inodes from this information, but this
+ *    occurs in inode_fixup.c and not in this file.
+ *
+ *  - wimlib does not allow *directory* hard links, so a WIM image really does
+ *    have a *tree* of dentries (and not an arbitrary graph of dentries).
+ *
+ *  - wimlib indexes dentries both case-insensitively and case-sensitively,
+ *    allowing either behavior to be used for path lookup.
+ *
+ *  - Multiple dentries in a directory might have the same case-insensitive
+ *    name.  But wimlib enforces that at most one dentry in a directory can have
+ *    a given case-sensitive name.
+ */
+
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #endif
 
-#include "wimlib.h"
 #include "wimlib/case.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
@@ -142,11 +170,8 @@ struct wim_dentry_on_disk {
 	 *    not matter, as long as they are unique.
 	 *    - However, due to bugs in Microsoft's software, it is actually NOT
 	 *    guaranteed that directory entries that share the same hard link
-	 *    group ID are actually hard linked to each either.  We have to
-	 *    handle this by using special code to use distinguishing features
-	 *    (which is possible because some information about the underlying
-	 *    inode is repeated in each dentry) to split up these fake hard link
-	 *    groups into what they actually are supposed to be.
+	 *    group ID are actually hard linked to each either.  See
+	 *    inode_fixup.c for the code that handles this.
 	 */
 	union {
 		struct {
@@ -165,33 +190,48 @@ struct wim_dentry_on_disk {
 	 * dentry on-disk. */
 	le16 num_alternate_data_streams;
 
-	/* Length of this file's UTF-16LE encoded short name (8.3 DOS-compatible
-	 * name), if present, in bytes, excluding the null terminator.  If this
-	 * file has no short name, then this field should be 0.  */
+	/* If nonzero, this is the length, in bytes, of this dentry's UTF-16LE
+	 * encoded short name (8.3 DOS-compatible name), excluding the null
+	 * terminator.  If zero, then the long name of this dentry does not have
+	 * a corresponding short name (but this does not exclude the possibility
+	 * that another dentry for the same file has a short name).  */
 	le16 short_name_nbytes;
 
-	/* Length of this file's UTF-16LE encoded "long" name, excluding the
-	 * null terminator.  If this file has no short name, then this field
-	 * should be 0.  It's expected that only the root dentry has this field
-	 * set to 0.  */
+	/* If nonzero, this is the length, in bytes, of this dentry's UTF-16LE
+	 * encoded "long" name, excluding the null terminator.  If zero, then
+	 * this file has no long name.  The root dentry should not have a long
+	 * name, but all other dentries in the image should have long names.  */
 	le16 file_name_nbytes;
 
-	/* Followed by variable length file name, in UTF16-LE, if
-	 * file_name_nbytes != 0.  Includes null terminator. */
+	/* Beginning of optional, variable-length fields  */
+
+	/* If file_name_nbytes != 0, the next field will be the UTF-16LE encoded
+	 * long file name.  This will be null-terminated, so the size of this
+	 * field will really be file_name_nbytes + 2.  */
 	/*utf16lechar file_name[];*/
 
-	/* Followed by variable length short name, in UTF16-LE, if
-	 * short_name_nbytes != 0.  Includes null terminator. */
+	/* If short_name_nbytes != 0, the next field will be the UTF-16LE
+	 * encoded short name.  This will be null-terminated, so the size of
+	 * this field will really be short_name_nbytes + 2.  */
 	/*utf16lechar short_name[];*/
 
-	/* And optionally followed by a variable-length series of tagged items;
-	 * see tagged_items.c.  */
-} _packed_attribute;
+	/* If there is still space in the dentry (according to the 'length'
+	 * field) after 8-byte alignment, then the remaining space will be a
+	 * variable-length list of tagged metadata items.  See tagged_items.c
+	 * for more information.  */
+	/* u8 tagged_items[] _aligned_attribute(8); */
 
-/* Calculates the unaligned length, in bytes, of an on-disk WIM dentry that has
- * a file name and short name that take the specified numbers of bytes.  This
- * excludes tagged items as well as any alternate data stream entries that may
- * follow the dentry.  */
+} _packed_attribute;
+	/* If num_alternate_data_streams != 0, then there are that many
+	 * alternate data stream entries following the dentry, on an 8-byte
+	 * aligned boundary.  They are not counted in the 'length' field of the
+	 * dentry.  */
+
+/* Calculate the minimum unaligned length, in bytes, of an on-disk WIM dentry
+ * that has names of the specified lengths.  (Zero length means the
+ * corresponding name actually does not exist.)  The returned value excludes
+ * tagged metadata items as well as any alternate data stream entries that may
+ * need to follow the dentry.  */
 static u64
 dentry_min_len_with_names(u16 file_name_nbytes, u16 short_name_nbytes)
 {
@@ -218,9 +258,24 @@ do_dentry_set_name(struct wim_dentry *dentry, utf16lechar *file_name,
 	}
 }
 
-/* Sets the name of a WIM dentry from a UTF-16LE string.
- * Only use this on dentries not inserted into the tree.  Use rename_wim_path()
- * to do a real rename.  */
+/*
+ * Set the name of a WIM dentry from a UTF-16LE string.
+ *
+ * This sets the long name of the dentry.  The short name will automatically be
+ * removed, since it may not be appropriate for the new long name.
+ *
+ * The @name string need not be null-terminated, since its length is specified
+ * in @name_nbytes.
+ *
+ * If @name_nbytes is 0, both the long and short names of the dentry will be
+ * removed.
+ *
+ * Only use this function on unlinked dentries, since it doesn't update the name
+ * indices.  For dentries that are currently linked into the tree, use
+ * rename_wim_path().
+ *
+ * Returns 0 or WIMLIB_ERR_NOMEM.
+ */
 int
 dentry_set_name_utf16le(struct wim_dentry *dentry, const utf16lechar *name,
 			size_t name_nbytes)
@@ -237,9 +292,21 @@ dentry_set_name_utf16le(struct wim_dentry *dentry, const utf16lechar *name,
 }
 
 
-/* Sets the name of a WIM dentry from a multibyte string.
- * Only use this on dentries not inserted into the tree.  Use rename_wim_path()
- * to do a real rename.  */
+/*
+ * Set the name of a WIM dentry from a 'tchar' string.
+ *
+ * This sets the long name of the dentry.  The short name will automatically be
+ * removed, since it may not be appropriate for the new long name.
+ *
+ * If @name is NULL or empty, both the long and short names of the dentry will
+ * be removed.
+ *
+ * Only use this function on unlinked dentries, since it doesn't update the name
+ * indices.  For dentries that are currently linked into the tree, use
+ * rename_wim_path().
+ *
+ * Returns 0 or an error code resulting from string conversion.
+ */
 int
 dentry_set_name(struct wim_dentry *dentry, const tchar *name)
 {
@@ -258,11 +325,13 @@ dentry_set_name(struct wim_dentry *dentry, const tchar *name)
 	return 0;
 }
 
-/* Returns the total length of a WIM alternate data stream entry on-disk,
- * including the stream name, the null terminator, AND the padding after the
- * entry to align the next ADS entry or dentry on an 8-byte boundary. */
+/* Return the length, in bytes, required for the specified alternate data stream
+ * (ADS) entry on-disk.  This accounts for the fixed-length portion of the ADS
+ * entry, the {stream name and its null terminator} if present, and the padding
+ * after the entry to align the next ADS entry or dentry on an 8-byte boundary
+ * in the uncompressed metadata resource buffer.  */
 static u64
-ads_entry_total_length(const struct wim_ads_entry *entry)
+ads_entry_out_total_length(const struct wim_ads_entry *entry)
 {
 	u64 len = sizeof(struct wim_ads_entry_on_disk);
 	if (entry->stream_name_nbytes)
@@ -271,7 +340,7 @@ ads_entry_total_length(const struct wim_ads_entry *entry)
 }
 
 /*
- * Determine whether to include a "dummy" stream when writing a WIM dentry:
+ * Determine whether to include a "dummy" stream when writing a WIM dentry.
  *
  * Some versions of Microsoft's WIM software (the boot driver(s) in WinPE 3.0,
  * for example) contain a bug where they assume the first alternate data stream
@@ -295,10 +364,10 @@ inode_needs_dummy_stream(const struct wim_inode *inode)
 						when it was read in  */
 }
 
-/* Calculate the total number of bytes that will be consumed when a WIM dentry
- * is written.  This includes the base dentry, the name fields, any tagged items,
- * and any alternate data stream entries.  Also includes all alignment bytes
- * between these parts.  */
+/* Calculate the total number of bytes that will be consumed when a dentry is
+ * written.  This includes the fixed-length portion of the dentry, the name
+ * fields, any tagged metadata items, and any alternate data stream entries.
+ * Also includes all alignment bytes.  */
 u64
 dentry_out_total_length(const struct wim_dentry *dentry)
 {
@@ -316,15 +385,16 @@ dentry_out_total_length(const struct wim_dentry *dentry)
 
 	if (unlikely(inode->i_num_ads)) {
 		if (inode_needs_dummy_stream(inode))
-			len += ads_entry_total_length(&(struct wim_ads_entry){});
+			len += ads_entry_out_total_length(&(struct wim_ads_entry){});
 
 		for (u16 i = 0; i < inode->i_num_ads; i++)
-			len += ads_entry_total_length(&inode->i_ads_entries[i]);
+			len += ads_entry_out_total_length(&inode->i_ads_entries[i]);
 	}
 
 	return len;
 }
 
+/* Internal version of for_dentry_in_tree() that omits the NULL check  */
 static int
 do_for_dentry_in_tree(struct wim_dentry *dentry,
 		      int (*visitor)(struct wim_dentry *, void *), void *arg)
@@ -344,7 +414,7 @@ do_for_dentry_in_tree(struct wim_dentry *dentry,
 	return 0;
 }
 
-
+/* Internal version of for_dentry_in_tree_depth() that omits the NULL check  */
 static int
 do_for_dentry_in_tree_depth(struct wim_dentry *dentry,
 			    int (*visitor)(struct wim_dentry *, void *), void *arg)
@@ -360,10 +430,25 @@ do_for_dentry_in_tree_depth(struct wim_dentry *dentry,
 	return unlikely((*visitor)(dentry, arg));
 }
 
-/* Calls a function on all directory entries in a WIM dentry tree.  Logically,
- * this is a pre-order traversal (the function is called on a parent dentry
- * before its children), but sibling dentries will be visited in order as well.
- * */
+/*
+ * Call a function on all dentries in a tree.
+ *
+ * @arg will be passed as the second argument to each invocation of @visitor.
+ *
+ * This function does a pre-order traversal --- that is, a parent will be
+ * visited before its children.  It also will visit siblings in order of
+ * case-sensitive filename.  Equivalently, this function visits the entire tree
+ * in the case-sensitive lexicographic order of the full paths.
+ *
+ * It is safe to pass NULL for @root, which means that the dentry tree is empty.
+ * In this case, this function does nothing.
+ *
+ * @visitor must not modify the structure of the dentry tree during the
+ * traversal.
+ *
+ * The return value will be 0 if all calls to @visitor returned 0.  Otherwise,
+ * the return value will be the first nonzero value returned by @visitor.
+ */
 int
 for_dentry_in_tree(struct wim_dentry *root,
 		   int (*visitor)(struct wim_dentry *, void *), void *arg)
@@ -373,9 +458,10 @@ for_dentry_in_tree(struct wim_dentry *root,
 	return do_for_dentry_in_tree(root, visitor, arg);
 }
 
-/* Like for_dentry_in_tree(), but the visitor function is always called on a
- * dentry's children before on itself. */
-int
+/* Like for_dentry_in_tree(), but do a depth-first traversal of the dentry tree.
+ * That is, the visitor function will be called on a dentry's children before
+ * itself.  It will be safe to free a dentry when visiting it.  */
+static int
 for_dentry_in_tree_depth(struct wim_dentry *root,
 			 int (*visitor)(struct wim_dentry *, void *), void *arg)
 {
@@ -384,7 +470,16 @@ for_dentry_in_tree_depth(struct wim_dentry *root,
 	return do_for_dentry_in_tree_depth(root, visitor, arg);
 }
 
-/* Calculate the full path of @dentry.  */
+/*
+ * Calculate the full path to @dentry within the WIM image, if not already done.
+ *
+ * The full name will be saved in the cached value 'dentry->_full_path'.
+ *
+ * Whenever possible, use dentry_full_path() instead of calling this and
+ * accessing _full_path directly.
+ *
+ * Returns 0 or an error code resulting from string conversion.
+ */
 int
 calculate_dentry_full_path(struct wim_dentry *dentry)
 {
@@ -420,6 +515,13 @@ calculate_dentry_full_path(struct wim_dentry *dentry)
 			       &dentry->_full_path, &dummy);
 }
 
+/*
+ * Return the full path to the @dentry within the WIM image, or NULL if the full
+ * path could not be determined due to a string conversion error.
+ *
+ * The returned memory will be cached in the dentry, so the caller is not
+ * responsible for freeing it.
+ */
 tchar *
 dentry_full_path(struct wim_dentry *dentry)
 {
@@ -451,7 +553,18 @@ dentry_calculate_subdir_offset(struct wim_dentry *dentry, void *_subdir_offset_p
 }
 
 /*
- * Calculates the subdir offsets for a directory tree.
+ * Calculate the subdir offsets for a dentry tree, in preparation of writing
+ * that dentry tree to a metadata resource.
+ *
+ * The subdir offset of each dentry is the offset in the uncompressed metadata
+ * resource at which its child dentries begin, or 0 if that dentry has no
+ * children.
+ *
+ * The caller must initialize *subdir_offset_p to the first subdir offset that
+ * is available to use after the root dentry is written.
+ *
+ * When this function returns, *subdir_offset_p will have been advanced past the
+ * size needed for the dentry tree within the uncompressed metadata resource.
  */
 void
 calculate_subdir_offsets(struct wim_dentry *root, u64 *subdir_offset_p)
@@ -506,8 +619,9 @@ _avl_dentry_compare_names(const struct avl_tree_node *n1,
 }
 
 /* Default case sensitivity behavior for searches with
- * WIMLIB_CASE_PLATFORM_DEFAULT specified.  This can be modified by
- * wimlib_global_init().  */
+ * WIMLIB_CASE_PLATFORM_DEFAULT specified.  This can be modified by passing
+ * WIMLIB_INIT_FLAG_DEFAULT_CASE_SENSITIVE or
+ * WIMLIB_INIT_FLAG_DEFAULT_CASE_INSENSITIVE to wimlib_global_init().  */
 bool default_ignore_case =
 #ifdef __WIN32__
 	true
@@ -603,8 +717,10 @@ get_dentry_child_with_utf16le_name(const struct wim_dentry *dentry,
 	return child;
 }
 
-/* Returns the child of @dentry that has the file name @name.  Returns NULL if
- * no child has the name. */
+/* Given a 'tchar' filename and a directory, look up the dentry for the file.
+ * If the filename was successfully converted to UTF-16LE and the dentry was
+ * found, return it; otherwise return NULL.  This has configurable case
+ * sensitivity.  */
 struct wim_dentry *
 get_dentry_child_with_name(const struct wim_dentry *dentry, const tchar *name,
 			   CASE_SENSITIVITY_TYPE case_type)
@@ -627,6 +743,8 @@ get_dentry_child_with_name(const struct wim_dentry *dentry, const tchar *name,
 	return child;
 }
 
+/* This is the UTF-16LE version of get_dentry(), currently private to this file
+ * because no one needs it besides get_dentry().  */
 static struct wim_dentry *
 get_dentry_utf16le(WIMStruct *wim, const utf16lechar *path,
 		   CASE_SENSITIVITY_TYPE case_type)
@@ -743,19 +861,19 @@ get_dentry(WIMStruct *wim, const tchar *path, CASE_SENSITIVITY_TYPE case_type)
 	return dentry;
 }
 
-/* Takes in a path of length @len in @buf, and transforms it into a string for
- * the path of its parent directory. */
+/* Modify @path, which is a null-terminated string @len 'tchars' in length,
+ * in-place to produce the path to its parent directory.  */
 static void
-to_parent_name(tchar *buf, size_t len)
+to_parent_name(tchar *path, size_t len)
 {
 	ssize_t i = (ssize_t)len - 1;
-	while (i >= 0 && buf[i] == WIM_PATH_SEPARATOR)
+	while (i >= 0 && path[i] == WIM_PATH_SEPARATOR)
 		i--;
-	while (i >= 0 && buf[i] != WIM_PATH_SEPARATOR)
+	while (i >= 0 && path[i] != WIM_PATH_SEPARATOR)
 		i--;
-	while (i >= 0 && buf[i] == WIM_PATH_SEPARATOR)
+	while (i >= 0 && path[i] == WIM_PATH_SEPARATOR)
 		i--;
-	buf[i + 1] = T('\0');
+	path[i + 1] = T('\0');
 }
 
 /* Similar to get_dentry(), but returns the dentry named by @path with the last
@@ -774,7 +892,18 @@ get_parent_dentry(WIMStruct *wim, const tchar *path,
 	return get_dentry(wim, buf, case_type);
 }
 
-/* Creates an unlinked directory entry. */
+/*
+ * Create an unlinked dentry.
+ *
+ * @name specifies the long name to give the new dentry.  If NULL or empty, the
+ * new dentry will be given no long name.
+ *
+ * The new dentry will have no short name and no associated inode.
+ *
+ * On success, returns 0 and a pointer to the new, allocated dentry is stored in
+ * *dentry_ret.  On failure, returns WIMLIB_ERR_NOMEM or an error code resulting
+ * from string conversion.
+ */
 int
 new_dentry(const tchar *name, struct wim_dentry **dentry_ret)
 {
@@ -785,7 +914,7 @@ new_dentry(const tchar *name, struct wim_dentry **dentry_ret)
 	if (!dentry)
 		return WIMLIB_ERR_NOMEM;
 
-	if (*name) {
+	if (name && *name) {
 		ret = dentry_set_name(dentry, name);
 		if (ret) {
 			FREE(dentry);
@@ -801,7 +930,7 @@ new_dentry(const tchar *name, struct wim_dentry **dentry_ret)
 
 static int
 _new_dentry_with_inode(const tchar *name, struct wim_dentry **dentry_ret,
-			bool timeless)
+		       bool timeless)
 {
 	struct wim_dentry *dentry;
 	int ret;
@@ -824,25 +953,32 @@ _new_dentry_with_inode(const tchar *name, struct wim_dentry **dentry_ret,
 	return 0;
 }
 
-int
-new_dentry_with_timeless_inode(const tchar *name, struct wim_dentry **dentry_ret)
-{
-	return _new_dentry_with_inode(name, dentry_ret, true);
-}
-
+/* Like new_dentry(), but also allocate an inode and associate it with the
+ * dentry.  The timestamps for the inode will be set to the current time.  */
 int
 new_dentry_with_inode(const tchar *name, struct wim_dentry **dentry_ret)
 {
 	return _new_dentry_with_inode(name, dentry_ret, false);
 }
 
+/* Like new_dentry_with_inode(), but don't bother setting the timestamps for the
+ * new inode; instead, just leave them as 0, under the presumption that the
+ * caller will set them itself.  */
+int
+new_dentry_with_timeless_inode(const tchar *name, struct wim_dentry **dentry_ret)
+{
+	return _new_dentry_with_inode(name, dentry_ret, true);
+}
+
+/* Create an unnamed dentry with a new inode for a directory with the default
+ * metadata.  */
 int
 new_filler_directory(struct wim_dentry **dentry_ret)
 {
 	int ret;
 	struct wim_dentry *dentry;
 
-	ret = new_dentry_with_inode(T(""), &dentry);
+	ret = new_dentry_with_inode(NULL, &dentry);
 	if (ret)
 		return ret;
 	/* Leave the inode number as 0; this is allowed for non
@@ -902,19 +1038,22 @@ do_free_dentry_and_unref_streams(struct wim_dentry *dentry, void *lookup_table)
 }
 
 /*
- * Recursively frees all directory entries in the specified tree.
+ * Free all dentries in a tree.
  *
  * @root:
- *	The root of the tree.
+ *	The root of the dentry tree to free.  If NULL, this function has no
+ *	effect.
  *
  * @lookup_table:
- *	The lookup table for dentries.  If non-NULL, the reference counts in the
- *	lookup table for the lookup table entries corresponding to the dentries
- *	will be decremented.
+ *	A pointer to the lookup table for the WIM, or NULL if not specified.  If
+ *	specified, this function will decrement the reference counts of the
+ *	single-instance streams referenced by the dentries.
  *
- * This also puts references to the corresponding inodes.
+ * This function also releases references to the corresponding inodes.
  *
- * This does *not* unlink @root from its parent directory (if it has one).
+ * This function does *not* unlink @root from its parent directory, if it has
+ * one.  If @root has a parent, the caller must unlink @root before calling this
+ * function.
  */
 void
 free_dentry_tree(struct wim_dentry *root, struct wim_lookup_table *lookup_table)
@@ -961,21 +1100,21 @@ dir_index_child_ci(struct wim_inode *dir, struct wim_dentry *child)
 	return avl_tree_entry(duplicate, struct wim_dentry, d_index_node_ci);
 }
 
-/* Removes the specified dentry from its directory's case-sensitive index.  */
+/* Remove the specified dentry from its directory's case-sensitive index.  */
 static void
 dir_unindex_child(struct wim_inode *dir, struct wim_dentry *child)
 {
 	avl_tree_remove(&dir->i_children, &child->d_index_node);
 }
 
-/* Removes the specified dentry from its directory's case-insensitive index.  */
+/* Remove the specified dentry from its directory's case-insensitive index.  */
 static void
 dir_unindex_child_ci(struct wim_inode *dir, struct wim_dentry *child)
 {
 	avl_tree_remove(&dir->i_children_ci, &child->d_index_node_ci);
 }
 
-/* Returns true iff the specified dentry is in its parent directory's
+/* Return true iff the specified dentry is in its parent directory's
  * case-insensitive index.  */
 static bool
 dentry_in_ci_index(const struct wim_dentry *dentry)
@@ -984,10 +1123,13 @@ dentry_in_ci_index(const struct wim_dentry *dentry)
 }
 
 /*
- * Links a dentry into the directory tree.
+ * Link a dentry into the tree.
  *
- * @parent: The dentry that will be the parent of @child.
- * @child: The dentry to link.
+ * @parent:
+ *	The dentry that will be the parent of @child.  It must name a directory.
+ *
+ * @child:
+ *	The dentry to link.  It must be currently unlinked.
  *
  * Returns NULL if successful.  If @parent already contains a dentry with the
  * same case-sensitive name as @child, returns a pointer to this duplicate
@@ -1020,13 +1162,16 @@ dentry_add_child(struct wim_dentry *parent, struct wim_dentry *child)
 	return NULL;
 }
 
-/* Unlink a WIM dentry from the directory entry tree.  */
+/* Unlink a dentry from the tree.  */
 void
 unlink_dentry(struct wim_dentry *dentry)
 {
 	struct wim_inode *dir;
 
-	if (dentry_is_root(dentry))
+	/* Do nothing if the dentry is root or it's already unlinked.  Not
+	 * actually necessary based on the current callers, but we do the check
+	 * here to be safe.  */
+	if (unlikely(dentry->d_parent == dentry))
 		return;
 
 	dir = dentry->d_parent->d_inode;
@@ -1039,7 +1184,7 @@ unlink_dentry(struct wim_dentry *dentry)
 
 		if (!list_empty(&dentry->d_ci_conflict_list)) {
 			/* Make a different case-insensitively-the-same dentry
-			 * be the "representative" in the search index. */
+			 * be the "representative" in the search index.  */
 			struct list_head *next;
 			struct wim_dentry *other;
 			struct wim_dentry *existing;
@@ -1051,6 +1196,10 @@ unlink_dentry(struct wim_dentry *dentry)
 		}
 	}
 	list_del(&dentry->d_ci_conflict_list);
+
+	/* Not actually necessary, but to be safe don't retain the now-obsolete
+	 * parent pointer.  */
+	dentry->d_parent = dentry;
 }
 
 static int
@@ -1068,8 +1217,8 @@ read_extra_data(const u8 *p, const u8 *end, struct wim_inode *inode)
 	return 0;
 }
 
-/* Reads a WIM directory entry, including all alternate data stream entries that
- * follow it, from the WIM image's metadata resource.  */
+/* Read a dentry, including all alternate data stream entries that follow it,
+ * from an uncompressed metadata resource buffer.  */
 static int
 read_dentry(const u8 * restrict buf, size_t buf_len,
 	    u64 *offset_p, struct wim_dentry **dentry_ret)
@@ -1132,7 +1281,7 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 	}
 
 	/* Allocate new dentry structure, along with a preliminary inode.  */
-	ret = new_dentry_with_timeless_inode(T(""), &dentry);
+	ret = new_dentry_with_timeless_inode(NULL, &dentry);
 	if (ret)
 		return ret;
 
@@ -1267,6 +1416,7 @@ err_free_dentry:
 	return ret;
 }
 
+/* Is the dentry named "." or ".." ?  */
 static bool
 dentry_is_dot_or_dotdot(const struct wim_dentry *dentry)
 {
@@ -1365,7 +1515,7 @@ read_dentry_tree_recursive(const u8 * restrict buf, size_t buf_len,
 }
 
 /*
- * Read a tree of dentries (directory entries) from a WIM metadata resource.
+ * Read a tree of dentries from a WIM metadata resource.
  *
  * @buf:
  *	Buffer containing an uncompressed WIM metadata resource.
@@ -1432,11 +1582,17 @@ err_free_dentry_tree:
 }
 
 /*
- * Writes a WIM alternate data stream (ADS) entry to an output buffer.
+ * Write a WIM alternate data stream (ADS) entry to an output buffer.
  *
- * @ads_entry:  The ADS entry structure.
- * @hash:       The hash field to use (instead of the one in the ADS entry).
- * @p:          The memory location to write the data to.
+ * @ads_entry:
+ *	The ADS entry to write.
+ *
+ * @hash:
+ *	The hash field to use (instead of the one stored directly in the ADS
+ *	entry, which isn't valid if the inode has been "resolved").
+ *
+ * @p:
+ *	The memory location to which to write the data.
  *
  * Returns a pointer to the byte after the last byte written.
  */
@@ -1464,13 +1620,18 @@ write_ads_entry(const struct wim_ads_entry *ads_entry,
 }
 
 /*
- * Writes a WIM dentry to an output buffer.
+ * Write a WIM dentry to an output buffer.
  *
- * @dentry:  The dentry structure.
- * @p:       The memory location to write the data to.
+ * This includes any alternate data stream entries that may follow the dentry
+ * itself.
  *
- * Returns the pointer to the byte after the last byte we wrote as part of the
- * dentry, including any alternate data stream entries.
+ * @dentry:
+ *	The dentry to write.
+ *
+ * @p:
+ *	The memory location to which to write the data.
+ *
+ * Returns a pointer to the byte following the last written.
  */
 static u8 *
 write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
@@ -1493,8 +1654,6 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 	disk_dentry->security_id = cpu_to_le32(inode->i_security_id);
 	disk_dentry->subdir_offset = cpu_to_le64(dentry->subdir_offset);
 
-	/* UNIX data uses the two 8-byte reserved fields.  So if no UNIX data
-	 * exists, they get set to 0, just as we would do anyway.  */
 	disk_dentry->unused_1 = cpu_to_le64(0);
 	disk_dentry->unused_2 = cpu_to_le64(0);
 
@@ -1579,18 +1738,26 @@ write_dir_dentries(struct wim_dentry *dir, void *_pp)
 	return 0;
 }
 
-/* Writes a directory tree to the metadata resource.
+/*
+ * Write a directory tree to the metadata resource.
  *
- * @root:	Root of the dentry tree.
- * @p:		Pointer to a buffer with enough space for the dentry tree.
+ * @root:
+ *	The root of a dentry tree on which calculate_subdir_offsets() has been
+ *	called.  This cannot be NULL; if the dentry tree is empty, the caller is
+ *	expected to first generate a dummy root directory.
  *
- * Returns pointer to the byte after the last byte we wrote.
+ * @p:
+ *	Pointer to a buffer with enough space for the dentry tree.  This size
+ *	must have been obtained by calculate_subdir_offsets().
+ *
+ * Returns a pointer to the byte following the last written.
  */
 u8 *
 write_dentry_tree(struct wim_dentry *root, u8 *p)
 {
 	DEBUG("Writing dentry tree.");
-	wimlib_assert(dentry_is_root(root));
+
+	wimlib_assert(root != NULL);
 
 	/* write root dentry and end-of-directory entry following it */
 	p = write_dentry(root, p);

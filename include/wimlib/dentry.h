@@ -152,11 +152,6 @@ for_dentry_in_tree(struct wim_dentry *root,
 		   int (*visitor)(struct wim_dentry*, void*),
 		   void *args);
 
-extern int
-for_dentry_in_tree_depth(struct wim_dentry *root,
-			 int (*visitor)(struct wim_dentry*, void*),
-			 void *args);
-
 /* Iterate through each @child dentry of the @dir directory inode,
  * in sorted order (by case sensitive name).  */
 #define for_inode_child(child, dir)						\
