@@ -3,7 +3,6 @@
 
 #include "wimlib/resource.h"
 #include "wimlib/types.h"
-#include "wimlib/endianness.h"
 
 #include <limits.h>
 

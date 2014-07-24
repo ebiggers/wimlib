@@ -34,7 +34,6 @@
 #  include "config.h"
 #endif
 
-#include "wimlib.h"
 #include "wimlib/assert.h"
 #include "wimlib/compiler.h"
 #include "wimlib/compressor_ops.h"

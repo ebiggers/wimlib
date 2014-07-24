@@ -26,7 +26,6 @@
 #endif
 
 #include "wimlib/assert.h"
-#include "wimlib/case.h"
 #include "wimlib/dentry.h" /* Only for dentry_full_path().  Otherwise the code
 			      in this file doesn't care about file names/paths.
 			    */

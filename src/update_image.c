@@ -28,6 +28,7 @@
 #include "wimlib/capture.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
+#include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"

@@ -59,18 +59,12 @@
 #  include "config.h"
 #endif
 
-#include "wimlib/case.h"
+#include "wimlib/assert.h"
 #include "wimlib/dentry.h"
+#include "wimlib/inode.h"
 #include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
-#include "wimlib/error.h"
-#include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
-#include "wimlib/paths.h"
-#include "wimlib/resource.h"
-#include "wimlib/security.h"
-#include "wimlib/sha1.h"
-#include "wimlib/timestamp.h"
 
 #include <errno.h>
 
