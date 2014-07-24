@@ -299,7 +299,7 @@ dentry_set_name_utf16le(struct wim_dentry *dentry, const utf16lechar *name,
  * indices.  For dentries that are currently linked into the tree, use
  * rename_wim_path().
  *
- * Returns 0 or an error code resulting from string conversion.
+ * Returns 0 or an error code resulting from a failed string conversion.
  */
 int
 dentry_set_name(struct wim_dentry *dentry, const tchar *name)
@@ -472,7 +472,7 @@ for_dentry_in_tree_depth(struct wim_dentry *root,
  * Whenever possible, use dentry_full_path() instead of calling this and
  * accessing _full_path directly.
  *
- * Returns 0 or an error code resulting from string conversion.
+ * Returns 0 or an error code resulting from a failed string conversion.
  */
 int
 calculate_dentry_full_path(struct wim_dentry *dentry)
@@ -896,7 +896,7 @@ get_parent_dentry(WIMStruct *wim, const tchar *path,
  *
  * On success, returns 0 and a pointer to the new, allocated dentry is stored in
  * *dentry_ret.  On failure, returns WIMLIB_ERR_NOMEM or an error code resulting
- * from string conversion.
+ * from a failed string conversion.
  */
 int
 new_dentry(const tchar *name, struct wim_dentry **dentry_ret)

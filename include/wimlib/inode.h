@@ -125,9 +125,10 @@ struct wim_inode {
 
 	/* Corresponds to 'security_id' in `struct wim_dentry_on_disk':  The
 	 * index of this inode's security descriptor in the WIM image's table of
-	 * security descriptors, or -1.  Note: in verify_inode(), called
-	 * whenever a WIM image is loaded, out-of-bounds indices are set to -1,
-	 * so the extraction code does not need to do bounds checks.  */
+	 * security descriptors, or -1.  Note: when a WIM image is loaded,
+	 * wimlib sets out-of-bounds indices and values less than -1 in this
+	 * field to -1.  So the extraction code need not do an upper bound check
+	 * after checking for -1 (or equivalently < 0).  */
 	int32_t i_security_id;
 
 	/* Identity of a reparse point.  See
@@ -355,6 +356,12 @@ extern void
 inode_remove_ads(struct wim_inode *inode, struct wim_ads_entry *entry,
 		 struct wim_lookup_table *lookup_table);
 
+/*
+ * Does the specified alternate data stream entry correspond to a named stream?
+ *
+ * See inode_needs_dummy_stream() for explanation of why an alternate data
+ * stream entry might, in fact, not be named...
+ */
 static inline bool
 ads_entry_is_named_stream(const struct wim_ads_entry *entry)
 {
@@ -522,8 +529,8 @@ extern int
 read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
 		 size_t *nbytes_remaining_p);
 
-extern int
-verify_inode(struct wim_inode *inode, const struct wim_security_data *sd);
+extern void
+check_inode(struct wim_inode *inode, const struct wim_security_data *sd);
 
 extern void
 inode_ref_streams(struct wim_inode *inode);

@@ -112,11 +112,8 @@ read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
 	if (ret)
 		goto out_free_dentry_tree;
 
-	image_for_each_inode(inode, imd) {
-		ret = verify_inode(inode, sd);
-		if (ret)
-			goto out_free_dentry_tree;
-	}
+	image_for_each_inode(inode, imd)
+		check_inode(inode, sd);
 
 	/* Success; fill in the image_metadata structure.  */
 	imd->root_dentry = root;
