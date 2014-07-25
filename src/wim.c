@@ -188,7 +188,9 @@ wimlib_create_new_wim(int ctype, WIMStruct **wim_ret)
 	struct wim_lookup_table *table;
 	int ret;
 
-	wimlib_global_init(WIMLIB_INIT_FLAG_ASSUME_UTF8);
+	ret = wimlib_global_init(WIMLIB_INIT_FLAG_ASSUME_UTF8);
+	if (ret)
+		return ret;
 
 	DEBUG("Creating new WIM with %"TS" compression.",
 	      wimlib_get_compression_type_string(ctype));
@@ -817,7 +819,9 @@ open_wim_as_WIMStruct(const void *wim_filename_or_fd, int open_flags,
 	else
 		DEBUG("Opening WIM file \"%"TS"\"", (const tchar*)wim_filename_or_fd);
 
-	wimlib_global_init(WIMLIB_INIT_FLAG_ASSUME_UTF8);
+	ret = wimlib_global_init(WIMLIB_INIT_FLAG_ASSUME_UTF8);
+	if (ret)
+		return ret;
 
 	if (wim_ret == NULL)
 		return WIMLIB_ERR_INVALID_PARAM;
