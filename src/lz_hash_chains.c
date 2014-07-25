@@ -162,20 +162,31 @@ lz_hc_load_window(struct lz_mf *_mf, const u8 window[], u32 size)
 		mf->next_hash = lz_hc_hash(window);
 }
 
-static inline u32
-do_search(const u8 * restrict window,
-	  const u32 cur_window_pos,
-	  u32 prev_tab[restrict],
-	  u32 cur_match,
-	  const u32 min_len,
-	  const u32 max_len,
-	  const u32 max_search_depth,
-	  struct lz_match matches[restrict])
+static u32
+lz_hc_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 {
-	const u8 * const strptr = &window[cur_window_pos];
-	u32 best_len = min_len - 1;
-	u32 depth_remaining = max_search_depth;
+	struct lz_hc *mf = (struct lz_hc *)_mf;
+	const u8 * const window = mf->base.cur_window;
+	const u32 cur_pos = mf->base.cur_window_pos;
+	const u8 * const strptr = &window[cur_pos];
+	const u32 bytes_remaining = mf->base.cur_window_size - cur_pos;
+	u32 * const prev_tab = mf->prev_tab;
+	const u32 max_len = min(bytes_remaining, mf->base.params.nice_match_len);
+	u32 best_len = mf->base.params.min_match_len - 1;
+	u32 depth_remaining = mf->base.params.max_search_depth;
 	u32 num_matches = 0;
+	u32 hash;
+	u32 cur_match;
+
+	if (unlikely(bytes_remaining <= LZ_HC_HASH_BYTES))
+		goto out;
+
+	hash = mf->next_hash;
+	mf->next_hash = lz_hc_hash(strptr + 1);
+	prefetch(&mf->hash_tab[mf->next_hash]);
+	cur_match = mf->hash_tab[hash];
+	mf->hash_tab[hash] = cur_pos;
+	prev_tab[cur_pos] = cur_match;
 
 	for (; cur_match && depth_remaining--; cur_match = prev_tab[cur_match]) {
 
@@ -193,65 +204,28 @@ do_search(const u8 * restrict window,
 
 		len = best_len;
 
-		while (++len != max_len)
-			if (matchptr[len] != strptr[len])
-				break;
+		do {
+			if (++len == max_len) {
+				const u32 len_limit = min(bytes_remaining,
+							  mf->base.params.max_match_len);
+				while (len < len_limit && strptr[len] == matchptr[len])
+					len++;
+				matches[num_matches++] = (struct lz_match) {
+					.len = len,
+					.offset = strptr - matchptr,
+				};
+				goto out;
+			}
+		} while (matchptr[len] == strptr[len]);
 
+		best_len = len;
 		matches[num_matches++] = (struct lz_match) {
 			.len = len,
 			.offset = strptr - matchptr,
 		};
-		best_len = len;
-		if (best_len == max_len)
-			break;
+
 	next_match:
 		;
-	}
-	return num_matches;
-}
-
-static u32
-lz_hc_get_matches(struct lz_mf *_mf, struct lz_match matches[])
-{
-	struct lz_hc *mf = (struct lz_hc *)_mf;
-	const u32 bytes_remaining = lz_mf_get_bytes_remaining(&mf->base);
-	u32 hash;
-	u32 cur_match;
-	u32 num_matches = 0;
-
-	if (bytes_remaining <= LZ_HC_HASH_BYTES)
-		goto out;
-
-	hash = mf->next_hash;
-	mf->next_hash = lz_hc_hash(lz_mf_get_window_ptr(&mf->base) + 1);
-	prefetch(&mf->hash_tab[mf->next_hash]);
-	cur_match = mf->hash_tab[hash];
-	mf->hash_tab[hash] = mf->base.cur_window_pos;
-	mf->prev_tab[mf->base.cur_window_pos] = cur_match;
-
-	num_matches = do_search(mf->base.cur_window,
-				mf->base.cur_window_pos,
-				mf->prev_tab,
-				cur_match,
-				mf->base.params.min_match_len,
-				min(bytes_remaining, mf->base.params.nice_match_len),
-				mf->base.params.max_search_depth,
-				matches);
-
-	/* If the longest match is @nice_match_len in length, it may have been
-	 * truncated.  Try extending it up to the maximum match length.  */
-	if (num_matches != 0 &&
-	    matches[num_matches - 1].len == mf->base.params.nice_match_len)
-	{
-		const u8 * const strptr = lz_mf_get_window_ptr(&mf->base);
-		const u8 * const matchptr = strptr - matches[num_matches - 1].offset;
-		const u32 len_limit = min(bytes_remaining, mf->base.params.max_match_len);
-		u32 len;
-
-		len = matches[num_matches - 1].len;
-		while (len < len_limit && strptr[len] == matchptr[len])
-			len++;
-		matches[num_matches - 1].len = len;
 	}
 
 out:
