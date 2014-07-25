@@ -110,14 +110,6 @@ enum lz_mf_algo {
 	LZ_MF_NULL = 1,
 
 	/*
-	 * Brute Force match-finding algorithm.
-	 *
-	 * This algorithm exists for comparison, benchmarking, and testing
-	 * purposes only.  It is not intended to be used in real compressors.
-	 */
-	LZ_MF_BRUTE_FORCE = 2,
-
-	/*
 	 * Hash Chain match-finding algorithm.
 	 *
 	 * This works well on small windows.

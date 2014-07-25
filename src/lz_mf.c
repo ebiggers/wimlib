@@ -40,7 +40,6 @@
 /* Available match-finding algorithms.  */
 static const struct lz_mf_ops *mf_ops[] = {
 	[LZ_MF_NULL]			= &lz_null_ops,
-	[LZ_MF_BRUTE_FORCE]		= &lz_brute_force_ops,
 	[LZ_MF_HASH_CHAINS]		= &lz_hash_chains_ops,
 	[LZ_MF_BINARY_TREES]		= &lz_binary_trees_ops,
 	[LZ_MF_LCP_INTERVAL_TREE]	= &lz_lcp_interval_tree_ops,
