@@ -2868,8 +2868,9 @@ wimlib_get_compression_type_string(int ctype);
  * 	The error code returned by one of wimlib's functions.
  *
  * @return
- * 	Pointer to a statically allocated string describing the error code,
- * 	or @c NULL if the error code is not valid.
+ * 	Pointer to a statically allocated string describing the error code.  If
+ * 	the error code is for some reason not recognized by the library, the
+ * 	string will be "Unknown error".
  */
 extern const wimlib_tchar *
 wimlib_get_error_string(enum wimlib_error_code code);

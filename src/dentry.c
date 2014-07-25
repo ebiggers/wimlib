@@ -912,8 +912,6 @@ new_dentry(const tchar *name, struct wim_dentry **dentry_ret)
 		ret = dentry_set_name(dentry, name);
 		if (ret) {
 			FREE(dentry);
-			ERROR("Failed to set name on new dentry with name \"%"TS"\"",
-			      name);
 			return ret;
 		}
 	}

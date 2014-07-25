@@ -247,13 +247,13 @@ static const tchar *error_strings[] = {
 	[WIMLIB_ERR_INSUFFICIENT_PRIVILEGES]
 		= T("The user does not have sufficient privileges"),
 	[WIMLIB_ERR_INTEGRITY]
-		= T("The WIM failed an integrity check"),
+		= T("The WIM file is corrupted (failed integrity check)"),
 	[WIMLIB_ERR_INVALID_CAPTURE_CONFIG]
 		= T("The capture configuration string was invalid"),
 	[WIMLIB_ERR_INVALID_CHUNK_SIZE]
-		= T("The WIM chunk size was invalid"),
+		= T("The compression chunk size was unrecognized"),
 	[WIMLIB_ERR_INVALID_COMPRESSION_TYPE]
-		= T("The WIM compression type was invalid"),
+		= T("The compression type was unrecognized"),
 	[WIMLIB_ERR_INVALID_HEADER]
 		= T("The WIM header was invalid"),
 	[WIMLIB_ERR_INVALID_IMAGE]
@@ -387,16 +387,16 @@ static const tchar *error_strings[] = {
 WIMLIBAPI const tchar *
 wimlib_get_error_string(enum wimlib_error_code code)
 {
-	if ((int)code < 0 || code >= ARRAY_LEN(error_strings))
-		return NULL;
-	else
-		return error_strings[code];
+	if ((unsigned int)code >= ARRAY_LEN(error_strings))
+		return T("Unknown error");
+
+	return error_strings[(unsigned int)code];
 }
 
 
 
-static void *(*wimlib_malloc_func) (size_t)	     = malloc;
-static void  (*wimlib_free_func)   (void *)	     = free;
+static void *(*wimlib_malloc_func) (size_t)	    = malloc;
+static void  (*wimlib_free_func)   (void *)	    = free;
 static void *(*wimlib_realloc_func)(void *, size_t) = realloc;
 
 void *
