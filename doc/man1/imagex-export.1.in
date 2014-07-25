@@ -175,7 +175,8 @@ WIMs, which usually contain LZMS-compressed solid blocks and may carry the
 downloaded directly by the Windows 8 web downloader have encrypted segments, and
 wimlib cannot export images from such files until they are first decrypted.  In
 addition, to ensure the destination archive is created in the original WIM
-format rather than in the newer format, specify \fB--compress\fR=\fImaximum\fR.
+format rather than in the newer format, specify \fB--compress\fR=\fILZX\fR (or
+\fB--compress\fR=\fImaximum\fR).
 .SH EXAMPLES
 Export the second image of 'boot.wim' to the new WIM file 'new.wim':
 .RS
@@ -188,7 +189,19 @@ The above example creates "new.wim" with the same compression type as
 \fB--compress\fR=\fITYPE\fR; for example:
 .RS
 .PP
-@IMAGEX_PROGNAME@ export boot.wim 2 new.wim --compress=maximum
+@IMAGEX_PROGNAME@ export boot.wim 2 new.wim --compress=LZX
+.RE
+.PP
+Export "ESD to WIM" --- that is, solid WIM to non-solid WIM:
+.RS
+.PP
+@IMAGEX_PROGNAME@ export install.esd all install.wim --compress=LZX
+.RE
+.PP
+Export "WIM to ESD" --- that is, non-solid WIM to solid WIM:
+.RS
+.PP
+@IMAGEX_PROGNAME@ export install.wim all install.esd --solid
 .RE
 .PP
 .SH SEE ALSO
