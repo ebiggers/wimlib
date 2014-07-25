@@ -400,15 +400,15 @@ winpe	/
 overlay	/overlay
 
 # Overlay a separate directory directly on the root of the WIM image.
-# This is only legal if there are no conflicting files.
 /data/stuff	/
 .RE
 .RE
 .fi
 .IP ""
 Subdirectories in the WIM are created as needed.  Multiple source directories
-may share the same target, which implies an overlay; however, an error is issued
-if the same file appears in different overlays to the same directory.
+may share the same target, which implies an overlay.  In the event that this
+results a nondirectory file being added to the WIM image multiple times, the
+last version (as listed in the source list file) overrides any earlier version.
 .IP ""
 File paths containing whitespace may be quoted with either single quotes or
 double quotes.  Quotes may not be escaped.
@@ -490,7 +490,7 @@ delta is being based.  The new WIM will still contain a full copy of the image
 metadata, but this is typically only a small fraction of a WIM's total size.
 .IP ""
 This option can be specified multiple times, in which case the resulting delta
-WIM will only contain streams not present in any of the specified base
+WIM will only contain streams not present in any of the specified base WIMs.
 .IP ""
 To operate on the resulting delta WIM using other commands such as
 \fB@IMAGEX_PROGNAME@ apply\fR, you must specify the delta WIM as the WIM file to
@@ -542,7 +542,7 @@ pipe after the delta WIM.
 \fB--wimboot\fR
 Mark the image as WIMBoot-compatible.  See Microsoft's
 documentation for more information about WIMBoot.  This option will, by default,
-change the compression type to XPRESS and the chunk size to 4096 bytes; these
+set the compression type to XPRESS and the chunk size to 4096 bytes; these
 can, however, still be overridden through the \fB--compress\fR and
 \fB--chunk-size\fR parameters, respectively.  In addition, this option will, by
 default, set the configuration file to
@@ -581,19 +581,19 @@ compression (with \fB--compress\fR=LZMS or \fB--compress\fR=recovery) have
 varying levels of compatibility with Microsoft's software.  Generally, more
 recent versions of Microsoft's software are more compatible.
 .SH EXAMPLES
-First example:  Create a new WIM 'mywim.wim' with "maximum" (LZX) compression
+First example:  Create a new WIM 'mywim.wim' with LZX ("maximum") compression
 that will contain a captured image of the directory tree 'somedir'.  Note that
 the image name need not be specified and will default to 'somedir':
 .RS
 .PP
-@IMAGEX_PROGNAME@ capture somedir mywim.wim --compress=maximum
+@IMAGEX_PROGNAME@ capture somedir mywim.wim
 .RE
 .PP
 or, if the \fBwimcapture\fR hard link or batch file has been installed, the
 abbreviated form can be used:
 .RS
 .PP
-wimcapture somedir mywim.wim --compress=maximum
+wimcapture somedir mywim.wim
 .RE
 .PP
 The remaining examples will use the long form, however.  Next, append the image
@@ -605,7 +605,7 @@ of a different directory tree to the WIM created above:
 .PP
 Easy enough, and the above examples of imaging directory trees work on both
 UNIX-like systems and Windows.  Next, capture a WIM with several non-default
-options, including "fast" (XPRESS) compression, an integrity table, no messing
+options, including XPRESS ("fast") compression, an integrity table, no messing
 with absolute symbolic links, and an image name and description:
 .RS
 .PP
