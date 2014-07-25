@@ -1436,7 +1436,7 @@ extract_stream(struct wim_lookup_table_entry *lte, u64 size,
 
 /* A consume_data_callback_t implementation that writes the chunk of data to a
  * file descriptor.  */
-int
+static int
 extract_chunk_to_fd(const void *chunk, size_t size, void *_fd_p)
 {
 	struct filedes *fd = _fd_p;
