@@ -458,7 +458,7 @@ lz_bt_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 	u32 min_len;
 	u32 num_matches = 0;
 
-	if (bytes_remaining <= LZ_BT_HASH_BYTES)
+	if (unlikely(bytes_remaining <= mf->base.params.min_match_len + 1))
 		goto out;
 
 	if (mf->digram_tab) {
@@ -590,7 +590,7 @@ lz_bt_skip_position(struct lz_bt *mf)
 	u32 hash;
 	u32 cur_match;
 
-	if (bytes_remaining <= LZ_BT_HASH_BYTES)
+	if (unlikely(bytes_remaining <= mf->base.params.min_match_len + 1))
 		goto out;
 
 	/* Update the digram table.  */
