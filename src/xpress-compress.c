@@ -45,11 +45,25 @@ struct xpress_item;
 struct xpress_mc_pos_data;
 
 struct xpress_compressor_params {
-	struct lz_match (*choose_item_func)(struct xpress_compressor *);
+
+	/* Only used when choose_items_func == xpress_choose_items_near_optimal  */
 	u32 num_optim_passes;
+
+	/* Given the data to compress (c->cur_window, c->cur_window_size),
+	 * 'choose_items_func' fills in c->chosen_items with the intermediate
+	 * representation of the match/literal sequence to output.  Also fills
+	 * in c->codewords and c->lens to provide the Huffman code with which
+	 * these items should be output.
+	 *
+	 * Returns the number of items written to c->chosen_items.  This can be
+	 * at most c->cur_window_size.  (The worst case is all literals, no
+	 * matches.)  */
+	u32 (*choose_items_func)(struct xpress_compressor *c);
+
+	/* Match-finding algorithm and parameters  */
 	enum lz_mf_algo mf_algo;
-	u32 nice_match_length;
 	u32 max_search_depth;
+	u32 nice_match_length;
 };
 
 /* XPRESS compressor state.  */
@@ -58,36 +72,28 @@ struct xpress_compressor {
 	/* Parameters determined based on the compression level.  */
 	struct xpress_compressor_params params;
 
-	unsigned (*get_matches_func)(struct xpress_compressor *,
-				     const struct lz_match **);
-	void (*skip_bytes_func)(struct xpress_compressor *, u32 n);
-	u32 len_3_too_far;
-
-	/* Data currently being compressed  */
-	const u8 *cur_window;
-	u32 cur_window_size;
-
 	/* Lempel-Ziv match-finder  */
 	struct lz_mf *mf;
 
+	/* Optimal parsing data  */
+	unsigned (*get_matches_func)(struct xpress_compressor *,
+				     const struct lz_match **);
+	void (*skip_bytes_func)(struct xpress_compressor *, u32 n);
 	const u8 *cur_window_ptr;
-
-	/* Match cache, used when doing multiple optimization passes.  */
 	struct lz_match *cached_matches;
 	struct lz_match *cache_ptr;
 	struct lz_match *cache_limit;
-
-	/* Optimal parsing data  */
 	struct xpress_mc_pos_data *optimum;
 	unsigned optimum_cur_idx;
 	unsigned optimum_end_idx;
 	u8 costs[XPRESS_NUM_SYMBOLS];
 
-	/* Lazy parsing data  */
-	struct lz_match prev_match;
-
 	/* The selected sequence of matches/literals  */
 	struct xpress_item *chosen_items;
+
+	/* Data currently being compressed  */
+	const u8 *cur_window;
+	u32 cur_window_size;
 
 	/* Symbol frequency counters  */
 	u32 freqs[XPRESS_NUM_SYMBOLS];
@@ -597,98 +603,6 @@ xpress_choose_near_optimal_item(struct xpress_compressor *c)
 	return xpress_match_chooser_reverse_list(c, cur_pos);
 }
 
-/* Lazy parsing.  */
-static struct lz_match
-xpress_choose_lazy_item(struct xpress_compressor *c)
-{
-	const struct lz_match *matches;
-	struct lz_match cur_match;
-	struct lz_match next_match;
-	u32 num_matches;
-
-	if (c->prev_match.len) {
-		cur_match = c->prev_match;
-		c->prev_match.len = 0;
-	} else {
-		num_matches = xpress_get_matches(c, &matches);
-		if (num_matches == 0 ||
-		    (matches[num_matches - 1].len == 3 &&
-		     matches[num_matches - 1].offset >= c->len_3_too_far))
-		{
-			cur_match.len = 0;
-			return cur_match;
-		}
-
-		/* With lazy parsing we only consider the longest match at each
-		 * position.  */
-		cur_match = matches[num_matches - 1];
-	}
-
-	if (cur_match.len >= c->params.nice_match_length) {
-		xpress_skip_bytes(c, cur_match.len - 1);
-		return cur_match;
-	}
-
-	num_matches = xpress_get_matches(c, &matches);
-	if (num_matches == 0 ||
-	    (matches[num_matches - 1].len == 3 &&
-	     matches[num_matches - 1].offset >= c->len_3_too_far))
-	{
-		xpress_skip_bytes(c, cur_match.len - 2);
-		return cur_match;
-	}
-
-	next_match = matches[num_matches - 1];
-
-	if (next_match.len <= cur_match.len) {
-		xpress_skip_bytes(c, cur_match.len - 2);
-		return cur_match;
-	} else {
-		/* Longer match at next position.  Choose a literal here so we
-		 * will get to use the longer match.  */
-		c->prev_match = next_match;
-		cur_match.len = 0;
-		return cur_match;
-	}
-}
-
-/* Greedy parsing.  */
-static struct lz_match
-xpress_choose_greedy_item(struct xpress_compressor *c)
-{
-	const struct lz_match *matches;
-	u32 num_matches;
-
-	num_matches = xpress_get_matches(c, &matches);
-	if (num_matches == 0 ||
-	    (matches[num_matches - 1].len == 3 &&
-	     matches[num_matches - 1].offset >= c->len_3_too_far))
-		return (struct lz_match) {};
-
-	xpress_skip_bytes(c, matches[num_matches - 1].len - 1);
-	return matches[num_matches - 1];
-}
-
-/* Always choose a literal.  */
-static struct lz_match
-xpress_choose_literal(struct xpress_compressor *c)
-{
-	return (struct lz_match) {};
-}
-
-/*
- * Return the next match or literal to use, delegating to the currently selected
- * match-choosing algorithm.
- *
- * If the length of the returned 'struct lz_match' is less than
- * XPRESS_MIN_MATCH_LEN, then it is really a literal.
- */
-static inline struct lz_match
-xpress_choose_item(struct xpress_compressor *c)
-{
-	return (*c->params.choose_item_func)(c);
-}
-
 /* Set default XPRESS Huffman symbol costs to kick-start the iterative
  * optimization algorithm.  */
 static void
@@ -713,17 +627,9 @@ xpress_set_costs(u8 costs[], const u8 lens[])
 		costs[i] = lens[i] ? lens[i] : XPRESS_MAX_CODEWORD_LEN;
 }
 
-/*
- * Given the data to compress (c->cur_window, c->cur_window_size), fills in
- * c->chosen_items with the intermediate representation of the match/literal
- * sequence to output.  Also fills in c->codewords and c->lens to provide the
- * Huffman code with which these items should be output.
- *
- * Returns the number of items written to c->chosen_items.  This can be at most
- * c->cur_window_size.  (The worst case is all literals, no matches.)
- */
+/* Near-optimal parsing  */
 static u32
-xpress_choose_items(struct xpress_compressor *c)
+xpress_choose_items_near_optimal(struct xpress_compressor *c)
 {
 	u32 num_passes_remaining = c->params.num_optim_passes;
 	const u8 *window_ptr;
@@ -732,17 +638,9 @@ xpress_choose_items(struct xpress_compressor *c)
 	struct lz_match raw_item;
 	struct xpress_item xpress_item;
 
-	if (c->params.choose_item_func == xpress_choose_near_optimal_item) {
-		xpress_set_default_costs(c->costs);
-		c->optimum_cur_idx = 0;
-		c->optimum_end_idx = 0;
-	} else {
-		c->prev_match.len = 0;
-		if (c->cur_window_size <= 8192)
-			c->len_3_too_far = 2048;
-		else
-			c->len_3_too_far = 4096;
-	}
+	xpress_set_default_costs(c->costs);
+	c->optimum_cur_idx = 0;
+	c->optimum_end_idx = 0;
 
 	if (c->params.num_optim_passes > 1) {
 		c->get_matches_func = xpress_get_matches_fillcache;
@@ -755,13 +653,14 @@ xpress_choose_items(struct xpress_compressor *c)
 	lz_mf_load_window(c->mf, c->cur_window, c->cur_window_size);
 
 	while (--num_passes_remaining) {
-		window_ptr = c->cur_window_ptr = c->cur_window;
+		c->cur_window_ptr = c->cur_window;
+		window_ptr = c->cur_window;
 		window_end = window_ptr + c->cur_window_size;
 		c->cache_ptr = c->cached_matches;
 		memset(c->freqs, 0, sizeof(c->freqs));
 
 		while (window_ptr != window_end) {
-			raw_item = xpress_choose_item(c);
+			raw_item = xpress_choose_near_optimal_item(c);
 			if (raw_item.len >= XPRESS_MIN_MATCH_LEN) {
 				xpress_tally_match(raw_item.len,
 						   raw_item.offset, c->freqs);
@@ -783,7 +682,8 @@ xpress_choose_items(struct xpress_compressor *c)
 		}
 	}
 
-	window_ptr = c->cur_window_ptr = c->cur_window;
+	c->cur_window_ptr = c->cur_window;
+	window_ptr = c->cur_window;
 	window_end = window_ptr + c->cur_window_size;
 	c->cache_ptr = c->cached_matches;
 	memset(c->freqs, 0, sizeof(c->freqs));
@@ -791,7 +691,7 @@ xpress_choose_items(struct xpress_compressor *c)
 
 	u32 unseen_cost = 9;
 	while (window_ptr != window_end) {
-		raw_item = xpress_choose_item(c);
+		raw_item = xpress_choose_near_optimal_item(c);
 		if (raw_item.len >= XPRESS_MIN_MATCH_LEN) {
 			xpress_item = xpress_tally_match(raw_item.len,
 							 raw_item.offset,
@@ -807,7 +707,6 @@ xpress_choose_items(struct xpress_compressor *c)
 		/* When doing one-pass near-optimal parsing, rebuild the Huffman
 		 * code occasionally.  */
 		if (unlikely((next_chosen_item - c->chosen_items) % 2048 == 0) &&
-		    c->params.choose_item_func == xpress_choose_near_optimal_item &&
 		    c->cur_window_size >= 16384 &&
 		    c->params.num_optim_passes == 1)
 		{
@@ -818,6 +717,177 @@ xpress_choose_items(struct xpress_compressor *c)
 				unseen_cost++;
 		}
 	}
+	c->freqs[XPRESS_END_OF_DATA]++;
+	xpress_make_huffman_code(c);
+	return next_chosen_item - c->chosen_items;
+}
+
+/* Lazy parsing  */
+static u32
+xpress_choose_items_lazy(struct xpress_compressor *c)
+{
+	struct lz_mf *mf;
+	u32 len_3_too_far;
+	const u8 *window_ptr;
+	const u8 *window_end;
+	u32 num_matches;
+	struct lz_match matches[min(c->params.nice_match_length, c->params.max_search_depth)];
+	struct xpress_item *next_chosen_item;
+	struct lz_match prev_match;
+
+	mf = c->mf;
+
+	lz_mf_load_window(mf, c->cur_window, c->cur_window_size);
+
+	if (c->cur_window_size <= 8192)
+		len_3_too_far = 2048;
+	else
+		len_3_too_far = 4096;
+
+	memset(c->freqs, 0, sizeof(c->freqs));
+
+	window_ptr = c->cur_window;
+	window_end = c->cur_window + c->cur_window_size;
+	next_chosen_item = c->chosen_items;
+
+	for (;;) {
+
+		/* Don't have match at previous position  */
+
+		num_matches = lz_mf_get_matches(mf, matches);
+		window_ptr++;
+
+		if (num_matches == 0 ||
+		    (matches[num_matches - 1].len == 3 &&
+		     matches[num_matches - 1].offset >= len_3_too_far))
+		{
+			/* No matches found => output literal  */
+			*next_chosen_item++ = xpress_tally_literal(*(window_ptr - 1),
+								   c->freqs);
+			if (window_ptr == window_end)
+				break;
+			continue;
+		}
+
+		prev_match = matches[num_matches - 1];
+
+	have_prev_match:
+		/* Have match at previous position  */
+
+		if (prev_match.len >= c->params.nice_match_length) {
+			/* Very long match found => output immediately  */
+			*next_chosen_item++ = xpress_tally_match(prev_match.len,
+								 prev_match.offset,
+								 c->freqs);
+			lz_mf_skip_positions(mf, prev_match.len - 1);
+			window_ptr += prev_match.len - 1;
+			if (window_ptr == window_end)
+				break;
+			continue;
+		}
+
+		num_matches = lz_mf_get_matches(mf, matches);
+		window_ptr++;
+
+		if (num_matches == 0 ||
+		    (matches[num_matches - 1].len <= prev_match.len))
+		{
+			/* Next match is not longer => output previous match  */
+			*next_chosen_item++ = xpress_tally_match(prev_match.len,
+								 prev_match.offset,
+								 c->freqs);
+			lz_mf_skip_positions(mf, prev_match.len - 2);
+			window_ptr += prev_match.len - 2;
+			if (window_ptr == window_end)
+				break;
+			continue;
+		}
+
+		/* Next match is longer => output literal  */
+
+		*next_chosen_item++ = xpress_tally_literal(*(window_ptr - 2),
+							   c->freqs);
+
+		prev_match = matches[num_matches - 1];
+
+		goto have_prev_match;
+	}
+
+	c->freqs[XPRESS_END_OF_DATA]++;
+	xpress_make_huffman_code(c);
+	return next_chosen_item - c->chosen_items;
+}
+
+/* Greedy parsing  */
+static u32
+xpress_choose_items_greedy(struct xpress_compressor *c)
+{
+	struct lz_mf *mf;
+	u32 len_3_too_far;
+	const u8 *window_ptr;
+	const u8 *window_end;
+	struct lz_match matches[min(c->params.nice_match_length, c->params.max_search_depth)];
+	u32 num_matches;
+	struct xpress_item *next_chosen_item;
+
+	mf = c->mf;
+
+	lz_mf_load_window(mf, c->cur_window, c->cur_window_size);
+
+	if (c->cur_window_size <= 8192)
+		len_3_too_far = 2048;
+	else
+		len_3_too_far = 4096;
+
+	memset(c->freqs, 0, sizeof(c->freqs));
+
+	window_ptr = c->cur_window;
+	window_end = c->cur_window + c->cur_window_size;
+	next_chosen_item = c->chosen_items;
+
+	do {
+		/* Get longest match at the current position.  */
+		num_matches = lz_mf_get_matches(mf, matches);
+
+		if (num_matches == 0 ||
+		    (matches[num_matches - 1].len == 3 &&
+		     matches[num_matches - 1].offset >= len_3_too_far))
+		{
+			*next_chosen_item++ = xpress_tally_literal(*window_ptr, c->freqs);
+			window_ptr += 1;
+		} else {
+			u32 len = matches[num_matches - 1].len;
+			u32 offset = matches[num_matches - 1].offset;
+
+			*next_chosen_item++ = xpress_tally_match(len, offset, c->freqs);
+			lz_mf_skip_positions(mf, len - 1);
+			window_ptr += len;
+		}
+	} while (window_ptr != window_end);
+
+	c->freqs[XPRESS_END_OF_DATA]++;
+	xpress_make_huffman_code(c);
+	return next_chosen_item - c->chosen_items;
+}
+
+/* Huffman-only parsing  */
+static u32
+xpress_choose_items_huffonly(struct xpress_compressor *c)
+{
+	const u8 *window_ptr;
+	const u8 *window_end;
+	struct xpress_item *next_chosen_item;
+
+	memset(c->freqs, 0, sizeof(c->freqs));
+
+	window_ptr = c->cur_window;
+	window_end = c->cur_window + c->cur_window_size;
+	next_chosen_item = c->chosen_items;
+
+	do {
+		*next_chosen_item++ = xpress_tally_literal(*window_ptr++, c->freqs);
+	} while (window_ptr != window_end);
+
 	c->freqs[XPRESS_END_OF_DATA]++;
 	xpress_make_huffman_code(c);
 	return next_chosen_item - c->chosen_items;
@@ -835,15 +905,13 @@ xpress_build_params(unsigned int compression_level, u32 max_window_size,
 
 		/* Huffman only (no Lempel-Ziv matches)  */
 		xpress_params->mf_algo = LZ_MF_NULL;
-		xpress_params->choose_item_func = xpress_choose_literal;
-		xpress_params->num_optim_passes = 1;
+		xpress_params->choose_items_func = xpress_choose_items_huffonly;
 
 	} else if (compression_level < 30) {
 
 		/* Greedy parsing  */
 		xpress_params->mf_algo = LZ_MF_HASH_CHAINS;
-		xpress_params->choose_item_func = xpress_choose_greedy_item;
-		xpress_params->num_optim_passes = 1;
+		xpress_params->choose_items_func = xpress_choose_items_greedy;
 		xpress_params->nice_match_length = compression_level;
 		xpress_params->max_search_depth = compression_level / 2;
 
@@ -851,15 +919,14 @@ xpress_build_params(unsigned int compression_level, u32 max_window_size,
 
 		/* Lazy parsing  */
 		xpress_params->mf_algo = LZ_MF_HASH_CHAINS;
-		xpress_params->choose_item_func = xpress_choose_lazy_item;
-		xpress_params->num_optim_passes = 1;
+		xpress_params->choose_items_func = xpress_choose_items_lazy;
 		xpress_params->nice_match_length = compression_level;
 		xpress_params->max_search_depth = compression_level / 2;
 
 	} else {
 
 		/* Near-optimal parsing  */
-		xpress_params->choose_item_func = xpress_choose_near_optimal_item;
+		xpress_params->choose_items_func = xpress_choose_items_near_optimal;
 		if (max_window_size >= 32768)
 			xpress_params->mf_algo = LZ_MF_BINARY_TREES;
 		else
@@ -912,17 +979,16 @@ xpress_get_needed_memory(size_t max_window_size, unsigned int compression_level)
 
 	size += lz_mf_get_needed_memory(params.mf_algo, max_window_size);
 
-	if (params.num_optim_passes > 1) {
-		size_t cache_len = max(max_window_size * XPRESS_CACHE_PER_POS,
-				       params.max_search_depth + 1);
-		size += cache_len * sizeof(struct lz_match);
-	} else {
-		size += params.max_search_depth * sizeof(struct lz_match);
-	}
-
-	if (params.choose_item_func == xpress_choose_near_optimal_item) {
+	if (params.choose_items_func == xpress_choose_items_near_optimal) {
 		size += (XPRESS_OPTIM_ARRAY_LENGTH + params.nice_match_length) *
 				      sizeof(struct xpress_mc_pos_data);
+		if (params.num_optim_passes > 1) {
+			size_t cache_len = max(max_window_size * XPRESS_CACHE_PER_POS,
+					       params.max_search_depth + 1);
+			size += cache_len * sizeof(struct lz_match);
+		} else {
+			size += params.max_search_depth * sizeof(struct lz_match);
+		}
 	}
 
 	size += max_window_size * sizeof(struct xpress_item);
@@ -954,27 +1020,26 @@ xpress_create_compressor(size_t max_window_size, unsigned int compression_level,
 	if (!c->mf)
 		goto oom;
 
-	if (params.num_optim_passes > 1) {
-		size_t cache_len = max(max_window_size * XPRESS_CACHE_PER_POS,
-				       params.max_search_depth + 1);
-		c->cached_matches = MALLOC(cache_len * sizeof(struct lz_match));
-		if (!c->cached_matches)
-			goto oom;
-		c->cache_limit = c->cached_matches + cache_len -
-				   (params.max_search_depth + 1);
-	} else {
-		c->cached_matches = MALLOC(params.max_search_depth *
-					   sizeof(struct lz_match));
-		if (!c->cached_matches)
-			goto oom;
-	}
-
-	if (params.choose_item_func == xpress_choose_near_optimal_item) {
+	if (params.choose_items_func == xpress_choose_items_near_optimal) {
 		c->optimum = MALLOC((XPRESS_OPTIM_ARRAY_LENGTH +
 				     params.nice_match_length) *
 				      sizeof(struct xpress_mc_pos_data));
 		if (!c->optimum)
 			goto oom;
+		if (params.num_optim_passes > 1) {
+			size_t cache_len = max(max_window_size * XPRESS_CACHE_PER_POS,
+					       params.max_search_depth + 1);
+			c->cached_matches = MALLOC(cache_len * sizeof(struct lz_match));
+			if (!c->cached_matches)
+				goto oom;
+			c->cache_limit = c->cached_matches + cache_len -
+					   (params.max_search_depth + 1);
+		} else {
+			c->cached_matches = MALLOC(params.max_search_depth *
+						   sizeof(struct lz_match));
+			if (!c->cached_matches)
+				goto oom;
+		}
 	}
 
 	c->chosen_items = MALLOC(max_window_size * sizeof(struct xpress_item));
@@ -1014,7 +1079,7 @@ xpress_compress(const void *uncompressed_data, size_t uncompressed_size,
 	/* Determine match/literal sequence to divide the data into.  */
 	c->cur_window = uncompressed_data;
 	c->cur_window_size = uncompressed_size;
-	num_chosen_items = xpress_choose_items(c);
+	num_chosen_items = (*c->params.choose_items_func)(c);
 
 	/* Output the Huffman code as a series of 512 4-bit lengths.  */
 	cptr = compressed_data;
