@@ -178,7 +178,7 @@ lz_hc_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 	u32 hash;
 	u32 cur_match;
 
-	if (unlikely(bytes_remaining <= LZ_HC_HASH_BYTES))
+	if (unlikely(bytes_remaining <= mf->base.params.min_match_len))
 		goto out;
 
 	/* Insert the current position into the appropriate hash chain and set
@@ -263,7 +263,7 @@ lz_hc_skip_position(struct lz_hc *mf)
 	const u32 bytes_remaining = lz_mf_get_bytes_remaining(&mf->base);
 	u32 hash;
 
-	if (bytes_remaining <= LZ_HC_HASH_BYTES)
+	if (unlikely(bytes_remaining <= mf->base.params.min_match_len))
 		goto out;
 
 	hash = mf->next_hash;
