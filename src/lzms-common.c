@@ -209,9 +209,8 @@ lzms_maybe_do_x86_translation(u8 data[restrict], s32 i, s32 num_op_bytes,
 	return i + 1;
 }
 
-static s32
-lzms_may_x86_translate(const u8 p[restrict],
-		       s32 *restrict max_offset_ret)
+static inline s32
+lzms_may_x86_translate(const u8 p[restrict], s32 *restrict max_offset_ret)
 {
 	/* Switch on first byte of the opcode, assuming it is really an x86
 	 * instruction.  */
@@ -272,14 +271,47 @@ lzms_may_x86_translate(const u8 p[restrict],
  * Translate relative addresses embedded in x86 instructions into absolute
  * addresses (@undo == %false), or undo this translation (@undo == %true).
  *
- * @last_target_usages is a temporary array of length >= 65536.
+ * Absolute addresses are usually more compressible by LZ factorization.
+ *
+ * @last_target_usages must be a temporary array of length >= 65536.
  */
 void
-lzms_x86_filter(u8 data[restrict],
-		s32 size,
-		s32 last_target_usages[restrict],
-		bool undo)
+lzms_x86_filter(u8 data[restrict], s32 size,
+		s32 last_target_usages[restrict], bool undo)
 {
+	/*
+	 * Note: this filter runs unconditionally and uses a custom algorithm to
+	 * detect data regions that probably contain x86 code.
+	 *
+	 * 'closest_target_usage' tracks the most recent position that has a
+	 * good chance of being an x86 instruction.  When the filter detects a
+	 * likely x86 instruction, it updates this variable and considers the
+	 * next 1023 bytes of data as valid for x86 translations.
+	 *
+	 * If part of the data does not, in fact, contain x86 machine code, then
+	 * 'closest_target_usage' will, very likely, eventually fall more than
+	 * 1023 bytes behind the current position.  This results in x86
+	 * translations being disabled until the next likely x86 instruction is
+	 * detected.
+	 *
+	 * Translations on relative call (e8 opcode) instructions are slightly
+	 * more restricted.  They require that the most recent likely x86
+	 * instruction was in the last 511 bytes, rather than the last 1023
+	 * bytes.
+	 *
+	 * To identify "likely x86 instructions", the algorithm attempts to
+	 * track the position of the most recent potential relative-addressing
+	 * instruction that referenced each possible memory address.  If it
+	 * finds two references to the same memory address within a 65535 byte
+	 * window, the second reference is flagged as a likely x86 instruction.
+	 * Since the instructions considered for translation necessarily use
+	 * relative addressing, the algorithm does a tentative translation into
+	 * absolute addresses.  In addition, so that memory addresses can be
+	 * looked up in an array of reasonable size (in this code,
+	 * 'last_target_usages'), only the low-order 2 bytes of each address are
+	 * considered significant.
+	 */
+
 	s32 closest_target_usage = -LZMS_X86_MAX_TRANSLATION_OFFSET - 1;
 
 	for (s32 i = 0; i < 65536; i++)
@@ -290,13 +322,16 @@ lzms_x86_filter(u8 data[restrict],
 		s32 n;
 
 		n = lzms_may_x86_translate(data + i, &max_trans_offset);
+
 		if (max_trans_offset) {
+			/* Recognized opcode.  */
 			i = lzms_maybe_do_x86_translation(data, i, n,
 							  &closest_target_usage,
 							  last_target_usages,
 							  max_trans_offset,
 							  undo);
 		} else {
+			/* Not a recognized opcode.  */
 			i += n;
 		}
 	}
