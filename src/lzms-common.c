@@ -317,7 +317,7 @@ lzms_x86_filter(u8 data[restrict], s32 size,
 	for (s32 i = 0; i < 65536; i++)
 		last_target_usages[i] = -LZMS_X86_MAX_GOOD_TARGET_OFFSET - 1;
 
-	for (s32 i = 0; i < size - 16; ) {
+	for (s32 i = 1; i < size - 16; ) {
 		s32 max_trans_offset;
 		s32 n;
 
