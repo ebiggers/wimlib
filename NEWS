@@ -1,5 +1,14 @@
 Version 1.7.1-BETA:
-	Made more improvements to the compression algorithms.
+
+	Made a minor change to the LZMS compressor and decompressor to fix an
+	incompatibility with the Microsoft implementation.  In the unlikely
+	event that you created an LZMS-compressed WIM with wimlib v1.7.0 or
+	earlier and a checksum error is reported when extracting files from it
+	with wimlib v1.7.1, decompress it with v1.7.0 then compress it with
+	v1.7.1.
+
+	The performance of LZX compression in its default settings has been
+	improved by a further 5-10%.
 
 	The default compression mode for wimcapture is now LZX compression in
 	its default mode, which is the same as '--compress=maximum'.
