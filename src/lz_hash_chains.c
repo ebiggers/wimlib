@@ -171,7 +171,7 @@ lz_hc_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 	const u8 * const strptr = &window[cur_pos];
 	const u32 bytes_remaining = mf->base.cur_window_size - cur_pos;
 	u32 * const prev_tab = mf->prev_tab;
-	const u32 max_len = min(bytes_remaining, mf->base.params.nice_match_len);
+	const u32 nice_len = min(bytes_remaining, mf->base.params.nice_match_len);
 	u32 best_len = mf->base.params.min_match_len - 1;
 	u32 depth_remaining = mf->base.params.max_search_depth;
 	u32 num_matches = 0;
@@ -180,6 +180,12 @@ lz_hc_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 
 	if (unlikely(bytes_remaining <= LZ_HC_HASH_BYTES))
 		goto out;
+
+	/* Insert the current position into the appropriate hash chain and set
+	 * 'cur_match' to the previous head.
+	 *
+	 * For a slight performance improvement, we do each hash calculation one
+	 * position in advance and prefetch the necessary hash table entry.  */
 
 	hash = mf->next_hash;
 	mf->next_hash = lz_hc_hash(strptr + 1);
@@ -193,6 +199,16 @@ lz_hc_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 		const u8 * const matchptr = &window[cur_match];
 		u32 len;
 
+		/* Considering a match at 'matchptr'.  */
+
+		/* The bytes at index 'best_len' are the most likely to differ,
+		 * so check them first.
+		 *
+		 * The bytes at indices 'best_len - 1' and '0' are less
+		 * important to check separately.  But doing so still gives a
+		 * slight performance improvement, probably because they create
+		 * separate branches for the CPU to predict independently of the
+		 * branches in the main comparison loops.  */
 		if (matchptr[best_len] != strptr[best_len] ||
 		    matchptr[best_len - 1] != strptr[best_len - 1] ||
 		    matchptr[0] != strptr[0])
@@ -202,13 +218,19 @@ lz_hc_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 			if (matchptr[len] != strptr[len])
 				goto next_match;
 
+		/* We now know the match length is at least 'best_len + 1'.  */
+
 		len = best_len;
 
 		do {
-			if (++len == max_len) {
-				const u32 len_limit = min(bytes_remaining,
-							  mf->base.params.max_match_len);
-				while (len < len_limit && strptr[len] == matchptr[len])
+			if (++len == nice_len) {
+				/* 'nice_len' reached; don't waste time
+				 * searching for longer matches.  Extend the
+				 * match as far as possible, record it, and
+				 * return.  */
+				const u32 max_len = min(bytes_remaining,
+							mf->base.params.max_match_len);
+				while (len < max_len && strptr[len] == matchptr[len])
 					len++;
 				matches[num_matches++] = (struct lz_match) {
 					.len = len,
@@ -218,6 +240,7 @@ lz_hc_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 			}
 		} while (matchptr[len] == strptr[len]);
 
+		/* Found a longer match, but 'nice_len' not yet reached.  */
 		best_len = len;
 		matches[num_matches++] = (struct lz_match) {
 			.len = len,
@@ -225,6 +248,7 @@ lz_hc_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 		};
 
 	next_match:
+		/* Continue to next match in the chain.  */
 		;
 	}
 
