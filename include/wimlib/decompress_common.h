@@ -56,15 +56,27 @@ init_input_bitstream(struct input_bitstream *istream,
 static inline void
 bitstream_ensure_bits(struct input_bitstream *istream, unsigned num_bits)
 {
-	for (int nbits = num_bits; (int)istream->bitsleft < nbits; nbits -= 16) {
-		u16 nextword;
-		unsigned shift;
+	u16 nextword;
+	unsigned shift;
 
-		if (unlikely(istream->data_bytes_left < 2)) {
-			istream->bitsleft = num_bits;
-			return;
-		}
+	/* This currently works for at most 17 bits.  */
+	wimlib_assert2(num_bits <= 17);
 
+	if (istream->bitsleft >= num_bits)
+		return;
+
+	nextword = le16_to_cpu(*(const le16*)istream->data);
+	shift = sizeof(istream->bitbuf) * 8 - 16 - istream->bitsleft;
+	istream->bitbuf |= (u32)nextword << shift;
+	istream->data += 2;
+	istream->bitsleft += 16;
+	istream->data_bytes_left -= 2;
+
+	/* Help the compiler: If it's known at compile-time that num_bits <= 16,
+	 * a second word will never be needed.  */
+	if (!(is_constant(num_bits) && num_bits <= 16) &&
+	    unlikely(istream->bitsleft < num_bits))
+	{
 		nextword = le16_to_cpu(*(const le16*)istream->data);
 		shift = sizeof(istream->bitbuf) * 8 - 16 - istream->bitsleft;
 		istream->bitbuf |= (u32)nextword << shift;
