@@ -1059,45 +1059,26 @@ lzx_literal_cost(u8 c, const struct lzx_costs * costs)
 	return costs->main[c];
 }
 
-/* Given a (length, offset) pair that could be turned into a valid LZX match as
- * well as costs for the codewords in the main, length, and aligned Huffman
- * codes, return the approximate number of bits it will take to represent this
- * match in the compressed output.  Take into account the match offset LRU
- * queue and also updates it.  */
+/* Returns the cost, in bits, to output a repeat offset match of the specified
+ * length and position slot (repeat index) using the specified cost model.  */
 static u32
-lzx_match_cost(unsigned length, u32 offset, const struct lzx_costs *costs,
-	       struct lzx_lru_queue *queue)
+lzx_repmatch_cost(u32 len, unsigned position_slot, const struct lzx_costs *costs)
 {
-	unsigned position_slot;
 	unsigned len_header, main_symbol;
-	unsigned num_extra_bits;
 	u32 cost = 0;
 
-	position_slot = lzx_get_position_slot(offset, queue);
-
-	len_header = min(length - LZX_MIN_MATCH_LEN, LZX_NUM_PRIMARY_LENS);
+	len_header = min(len - LZX_MIN_MATCH_LEN, LZX_NUM_PRIMARY_LENS);
 	main_symbol = ((position_slot << 3) | len_header) + LZX_NUM_CHARS;
 
 	/* Account for main symbol.  */
 	cost += costs->main[main_symbol];
 
-	/* Account for extra position information.  */
-	num_extra_bits = lzx_get_num_extra_bits(position_slot);
-	if (num_extra_bits >= 3) {
-		cost += num_extra_bits - 3;
-		cost += costs->aligned[(offset + LZX_OFFSET_OFFSET) & 7];
-	} else {
-		cost += num_extra_bits;
-	}
-
 	/* Account for extra length information.  */
 	if (len_header == LZX_NUM_PRIMARY_LENS)
-		cost += costs->len[length - LZX_MIN_MATCH_LEN - LZX_NUM_PRIMARY_LENS];
+		cost += costs->len[len - LZX_MIN_MATCH_LEN - LZX_NUM_PRIMARY_LENS];
 
 	return cost;
-
 }
-
 
 /* Set the cost model @c->costs from the Huffman codeword lengths specified in
  * @lens.
@@ -1449,9 +1430,9 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 	unsigned num_matches;
 	const struct lz_match *matches;
 	struct lz_match match;
-	unsigned longest_len;
-	unsigned longest_rep_len;
-	u32 longest_rep_offset;
+	u32 longest_len;
+	u32 longest_rep_len;
+	unsigned longest_rep_slot;
 	unsigned cur_pos;
 	unsigned end_pos;
 	struct lzx_mc_pos_data *optimum = c->optimum;
@@ -1486,7 +1467,7 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 				len++;
 			if (len > longest_rep_len) {
 				longest_rep_len = len;
-				longest_rep_offset = offset;
+				longest_rep_slot = i;
 			}
 		}
 	}
@@ -1496,7 +1477,7 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 		lzx_skip_bytes(c, longest_rep_len);
 		return (struct lz_match) {
 			.len = longest_rep_len,
-			.offset = longest_rep_offset,
+			.offset = c->queue.R[longest_rep_slot],
 		};
 	}
 
@@ -1574,19 +1555,20 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 	end_pos = longest_len;
 
 	if (longest_rep_len >= LZX_MIN_MATCH_LEN) {
-		struct lzx_lru_queue queue;
 		u32 cost;
 
 		while (end_pos < longest_rep_len)
 			optimum[++end_pos].cost = MC_INFINITE_COST;
 
-		queue = c->queue;
-		cost = lzx_match_cost(longest_rep_len, longest_rep_offset,
-				      &c->costs, &queue);
+		cost = lzx_repmatch_cost(longest_rep_len, longest_rep_slot,
+					 &c->costs);
 		if (cost <= optimum[longest_rep_len].cost) {
-			optimum[longest_rep_len].queue = queue;
+			optimum[longest_rep_len].queue = c->queue;
+			swap(optimum[longest_rep_len].queue.R[0],
+			     optimum[longest_rep_len].queue.R[longest_rep_slot]);
 			optimum[longest_rep_len].prev.link = 0;
-			optimum[longest_rep_len].prev.match_offset = longest_rep_offset;
+			optimum[longest_rep_len].prev.match_offset =
+				optimum[longest_rep_len].queue.R[0];
 			optimum[longest_rep_len].cost = cost;
 		}
 	}
@@ -1656,7 +1638,7 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 				len++;
 			if (len > longest_rep_len) {
 				longest_rep_len = len;
-				longest_rep_offset = offset;
+				longest_rep_slot = i;
 			}
 		}
 
@@ -1668,7 +1650,8 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 			match = lzx_match_chooser_reverse_list(c, cur_pos);
 
 			/* Append the long match to the end of the list.  */
-			optimum[cur_pos].next.match_offset = longest_rep_offset;
+			optimum[cur_pos].next.match_offset =
+				optimum[cur_pos].queue.R[longest_rep_slot];
 			optimum[cur_pos].next.link = cur_pos + longest_rep_len;
 			c->optimum_end_idx = cur_pos + longest_rep_len;
 
@@ -1775,23 +1758,22 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 		}
 
 		if (longest_rep_len >= LZX_MIN_MATCH_LEN) {
-			struct lzx_lru_queue queue;
 
 			while (end_pos < cur_pos + longest_rep_len)
 				optimum[++end_pos].cost = MC_INFINITE_COST;
 
-			queue = optimum[cur_pos].queue;
-
 			cost = optimum[cur_pos].cost +
-				lzx_match_cost(longest_rep_len, longest_rep_offset,
-					       &c->costs, &queue);
+				lzx_repmatch_cost(longest_rep_len, longest_rep_slot,
+						  &c->costs);
 			if (cost <= optimum[cur_pos + longest_rep_len].cost) {
 				optimum[cur_pos + longest_rep_len].queue =
-					queue;
+					optimum[cur_pos].queue;
+				swap(optimum[cur_pos + longest_rep_len].queue.R[0],
+				     optimum[cur_pos + longest_rep_len].queue.R[longest_rep_slot]);
 				optimum[cur_pos + longest_rep_len].prev.link =
 					cur_pos;
 				optimum[cur_pos + longest_rep_len].prev.match_offset =
-					longest_rep_offset;
+					optimum[cur_pos + longest_rep_len].queue.R[0];
 				optimum[cur_pos + longest_rep_len].cost =
 					cost;
 			}
