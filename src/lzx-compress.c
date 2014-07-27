@@ -439,7 +439,19 @@ struct lzx_mc_pos_data {
 	};
 
 	/* Adaptive state that exists after an approximate minimum-cost path to
-	 * reach this position is taken.  */
+	 * reach this position is taken.
+	 *
+	 * Note: we update this whenever we update the pending minimum-cost
+	 * path.  This is in contrast to LZMA, which also has an optimal parser
+	 * that maintains a repeat offset queue per position, but will only
+	 * compute the queue once that position is actually reached in the
+	 * parse, meaning that matches are being considered *starting* at that
+	 * position.  However, the two methods seem to have approximately the
+	 * same performance if appropriate optimizations are used.  Intuitively
+	 * the LZMA method seems faster, but it actually suffers from 1-2 extra
+	 * hard-to-predict branches at each position.  Probably it works better
+	 * for LZMA than LZX because LZMA has a larger adaptive state than LZX,
+	 * and the LZMA encoder considers more possibilities.  */
 	struct lzx_lru_queue queue;
 };
 
@@ -1452,8 +1464,8 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 	c->optimum_cur_idx = 0;
 	c->optimum_end_idx = 0;
 
-	/* Search for matches at recent offsets.  Only keep the one with the
-	 * longest match length.  */
+	/* Search for matches at repeat offsets.  As a heuristic, we only keep
+	 * the one with the longest match length.  */
 	longest_rep_len = LZX_MIN_MATCH_LEN - 1;
 	if (c->match_window_pos >= 1) {
 		unsigned limit = min(LZX_MAX_MATCH_LEN,
@@ -1472,7 +1484,7 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 		}
 	}
 
-	/* If there's a long match with a recent offset, take it.  */
+	/* If there's a long match with a repeat offset, choose it immediately.  */
 	if (longest_rep_len >= c->params.nice_match_length) {
 		lzx_skip_bytes(c, longest_rep_len);
 		return (struct lz_match) {
@@ -1481,10 +1493,10 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 		};
 	}
 
-	/* Search other matches.  */
+	/* Find other matches.  */
 	num_matches = lzx_get_matches(c, &matches);
 
-	/* If there's a long match, take it.  */
+	/* If there's a long match, choose it immediately.  */
 	if (num_matches) {
 		longest_len = matches[num_matches - 1].len;
 		if (longest_len >= c->params.nice_match_length) {
@@ -1495,8 +1507,7 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 		longest_len = 1;
 	}
 
-	/* Calculate the cost to reach the next position by coding a literal.
-	 */
+	/* Calculate the cost to reach the next position by coding a literal.  */
 	optimum[1].queue = c->queue;
 	optimum[1].cost = lzx_literal_cost(c->cur_window[c->match_window_pos - 1],
 					      &c->costs);
@@ -1577,17 +1588,16 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 	 * position.  The algorithm may find multiple paths to reach each
 	 * position; only the lowest-cost path is saved.
 	 *
-	 * The progress of the parse is tracked in the @optimum array, which
-	 * for each position contains the minimum cost to reach that position,
-	 * the index of the start of the match/literal taken to reach that
-	 * position through the minimum-cost path, the offset of the match taken
-	 * (not relevant for literals), and the adaptive state that will exist
-	 * at that position after the minimum-cost path is taken.  The @cur_pos
+	 * The progress of the parse is tracked in the @optimum array, which for
+	 * each position contains the minimum cost to reach that position, the
+	 * index of the start of the match/literal taken to reach that position
+	 * through the minimum-cost path, the offset of the match taken (not
+	 * relevant for literals), and the adaptive state that will exist at
+	 * that position after the minimum-cost path is taken.  The @cur_pos
 	 * variable stores the position at which the algorithm is currently
 	 * considering coding choices, and the @end_pos variable stores the
 	 * greatest position at which the costs of coding choices have been
-	 * saved.  (Actually, the algorithm guarantees that all positions up to
-	 * and including @end_pos are reachable by at least one path.)
+	 * saved.
 	 *
 	 * The loop terminates when any one of the following conditions occurs:
 	 *
@@ -1625,7 +1635,8 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 		if (cur_pos == end_pos || cur_pos == LZX_OPTIM_ARRAY_LENGTH)
 			return lzx_match_chooser_reverse_list(c, cur_pos);
 
-		/* Search for matches at recent offsets.  */
+		/* Search for matches at repeat offsets.  Again, as a heuristic
+		 * we only keep the longest one.  */
 		longest_rep_len = LZX_MIN_MATCH_LEN - 1;
 		unsigned limit = min(LZX_MAX_MATCH_LEN,
 				     c->match_window_end - c->match_window_pos);
@@ -1642,7 +1653,7 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 			}
 		}
 
-		/* If we found a long match at a recent offset, choose it
+		/* If we found a long match at a repeat offset, choose it
 		 * immediately.  */
 		if (longest_rep_len >= c->params.nice_match_length) {
 			/* Build the list of matches to return and get
@@ -1662,10 +1673,10 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 			return match;
 		}
 
-		/* Search other matches.  */
+		/* Find other matches.  */
 		num_matches = lzx_get_matches(c, &matches);
 
-		/* If there's a long match, take it.  */
+		/* If there's a long match, choose it immediately.  */
 		if (num_matches) {
 			longest_len = matches[num_matches - 1].len;
 			if (longest_len >= c->params.nice_match_length) {
@@ -1689,6 +1700,8 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 			longest_len = 1;
 		}
 
+		/* If we are reaching any positions for the first time, we need
+		 * to initialize their costs to infinity.  */
 		while (end_pos < cur_pos + longest_len)
 			optimum[++end_pos].cost = MC_INFINITE_COST;
 
@@ -1719,6 +1732,12 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 			offset = matches[i].offset;
 			position_cost = optimum[cur_pos].cost;
 
+			/* Yet another optimization: instead of calling
+			 * lzx_get_position_slot(), hand-inline the search of
+			 * the repeat offset queue.  Then we can omit the
+			 * extra_bits calculation for repeat offset matches, and
+			 * also only compute the updated queue if we actually do
+			 * find a new lowest cost path.  */
 			for (position_slot = 0; position_slot < LZX_NUM_RECENT_OFFSETS; position_slot++)
 				if (offset == optimum[cur_pos].queue.R[position_slot])
 					goto have_position_cost;
@@ -1754,7 +1773,6 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 							LZX_NUM_PRIMARY_LENS];
 				}
 				if (cost < optimum[cur_pos + len].cost) {
-
 					if (position_slot < LZX_NUM_RECENT_OFFSETS) {
 						optimum[cur_pos + len].queue = optimum[cur_pos].queue;
 						swap(optimum[cur_pos + len].queue.R[0],
@@ -1771,6 +1789,30 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 			} while (++len <= matches[i].len);
 		}
 
+		/* Consider coding a repeat offset match.
+		 *
+		 * As a heuristic, we only consider the longest length of the
+		 * longest repeat offset match.  This does not, however,
+		 * necessarily mean that we will never consider any other repeat
+		 * offsets, because above we detect repeat offset matches that
+		 * were found by the regular match-finder.  Therefore, this
+		 * special handling of the longest repeat-offset match is only
+		 * helpful for coding a repeat offset match that was *not* found
+		 * by the match-finder, e.g. due to being obscured by a less
+		 * distant match that is at least as long.
+		 *
+		 * Note: an alternative, used in LZMA, is to consider every
+		 * length of every repeat offset match.  This is a more thorough
+		 * search, and it makes it unnecessary to detect repeat offset
+		 * matches that were found by the regular match-finder.  But by
+		 * my tests, for LZX the LZMA method slows down the compressor
+		 * by ~10% and doesn't actually help the compression ratio too
+		 * much.
+		 *
+		 * Also tested a compromise approach: consider every 3rd length
+		 * of the longest repeat offset match.  Still didn't seem quite
+		 * worth it, though.
+		 */
 		if (longest_rep_len >= LZX_MIN_MATCH_LEN) {
 
 			while (end_pos < cur_pos + longest_rep_len)
