@@ -1454,14 +1454,15 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 	u32 longest_rep_offset;
 	unsigned cur_pos;
 	unsigned end_pos;
+	struct lzx_mc_pos_data *optimum = c->optimum;
 
 	if (c->optimum_cur_idx != c->optimum_end_idx) {
 		/* Case 2: Return the next match/literal already found.  */
-		match.len = c->optimum[c->optimum_cur_idx].next.link -
+		match.len = optimum[c->optimum_cur_idx].next.link -
 				    c->optimum_cur_idx;
-		match.offset = c->optimum[c->optimum_cur_idx].next.match_offset;
+		match.offset = optimum[c->optimum_cur_idx].next.match_offset;
 
-		c->optimum_cur_idx = c->optimum[c->optimum_cur_idx].next.link;
+		c->optimum_cur_idx = optimum[c->optimum_cur_idx].next.link;
 		return match;
 	}
 
@@ -1515,10 +1516,10 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 
 	/* Calculate the cost to reach the next position by coding a literal.
 	 */
-	c->optimum[1].queue = c->queue;
-	c->optimum[1].cost = lzx_literal_cost(c->cur_window[c->match_window_pos - 1],
+	optimum[1].queue = c->queue;
+	optimum[1].cost = lzx_literal_cost(c->cur_window[c->match_window_pos - 1],
 					      &c->costs);
-	c->optimum[1].prev.link = 0;
+	optimum[1].prev.link = 0;
 
 	/* Calculate the cost to reach any position up to and including that
 	 * reached by the longest match.
@@ -1564,10 +1565,10 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 			if (len_header == LZX_NUM_PRIMARY_LENS)
 				cost += c->costs.len[len - LZX_MIN_MATCH_LEN - LZX_NUM_PRIMARY_LENS];
 
-			c->optimum[len].queue = queue;
-			c->optimum[len].prev.link = 0;
-			c->optimum[len].prev.match_offset = offset;
-			c->optimum[len].cost = cost;
+			optimum[len].queue = queue;
+			optimum[len].prev.link = 0;
+			optimum[len].prev.match_offset = offset;
+			optimum[len].cost = cost;
 		} while (++len <= matches[i].len);
 	}
 	end_pos = longest_len;
@@ -1577,16 +1578,16 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 		u32 cost;
 
 		while (end_pos < longest_rep_len)
-			c->optimum[++end_pos].cost = MC_INFINITE_COST;
+			optimum[++end_pos].cost = MC_INFINITE_COST;
 
 		queue = c->queue;
 		cost = lzx_match_cost(longest_rep_len, longest_rep_offset,
 				      &c->costs, &queue);
-		if (cost <= c->optimum[longest_rep_len].cost) {
-			c->optimum[longest_rep_len].queue = queue;
-			c->optimum[longest_rep_len].prev.link = 0;
-			c->optimum[longest_rep_len].prev.match_offset = longest_rep_offset;
-			c->optimum[longest_rep_len].cost = cost;
+		if (cost <= optimum[longest_rep_len].cost) {
+			optimum[longest_rep_len].queue = queue;
+			optimum[longest_rep_len].prev.link = 0;
+			optimum[longest_rep_len].prev.match_offset = longest_rep_offset;
+			optimum[longest_rep_len].cost = cost;
 		}
 	}
 
@@ -1594,7 +1595,7 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 	 * position.  The algorithm may find multiple paths to reach each
 	 * position; only the lowest-cost path is saved.
 	 *
-	 * The progress of the parse is tracked in the @c->optimum array, which
+	 * The progress of the parse is tracked in the @optimum array, which
 	 * for each position contains the minimum cost to reach that position,
 	 * the index of the start of the match/literal taken to reach that
 	 * position through the minimum-cost path, the offset of the match taken
@@ -1620,7 +1621,7 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 	 *    match/literal list.
 	 *
 	 * 3. Failing either of the above in a degenerate case, the loop
-	 *    terminates when space in the @c->optimum array is exhausted.
+	 *    terminates when space in the @optimum array is exhausted.
 	 *    This terminates the algorithm and forces it to start returning
 	 *    matches/literals even though they may not be globally optimal.
 	 *
@@ -1647,7 +1648,7 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 		unsigned limit = min(LZX_MAX_MATCH_LEN,
 				     c->match_window_end - c->match_window_pos);
 		for (int i = 0; i < LZX_NUM_RECENT_OFFSETS; i++) {
-			u32 offset = c->optimum[cur_pos].queue.R[i];
+			u32 offset = optimum[cur_pos].queue.R[i];
 			const u8 *strptr = &c->cur_window[c->match_window_pos];
 			const u8 *matchptr = strptr - offset;
 			unsigned len = 0;
@@ -1667,8 +1668,8 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 			match = lzx_match_chooser_reverse_list(c, cur_pos);
 
 			/* Append the long match to the end of the list.  */
-			c->optimum[cur_pos].next.match_offset = longest_rep_offset;
-			c->optimum[cur_pos].next.link = cur_pos + longest_rep_len;
+			optimum[cur_pos].next.match_offset = longest_rep_offset;
+			optimum[cur_pos].next.link = cur_pos + longest_rep_len;
 			c->optimum_end_idx = cur_pos + longest_rep_len;
 
 			/* Skip over the remaining bytes of the long match.  */
@@ -1690,9 +1691,9 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 				match = lzx_match_chooser_reverse_list(c, cur_pos);
 
 				/* Append the long match to the end of the list.  */
-				c->optimum[cur_pos].next.match_offset =
+				optimum[cur_pos].next.match_offset =
 					matches[num_matches - 1].offset;
-				c->optimum[cur_pos].next.link = cur_pos + longest_len;
+				optimum[cur_pos].next.link = cur_pos + longest_len;
 				c->optimum_end_idx = cur_pos + longest_len;
 
 				/* Skip over the remaining bytes of the long match.  */
@@ -1706,16 +1707,16 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 		}
 
 		while (end_pos < cur_pos + longest_len)
-			c->optimum[++end_pos].cost = MC_INFINITE_COST;
+			optimum[++end_pos].cost = MC_INFINITE_COST;
 
 		/* Consider coding a literal.  */
-		cost = c->optimum[cur_pos].cost +
+		cost = optimum[cur_pos].cost +
 			lzx_literal_cost(c->cur_window[c->match_window_pos - 1],
 					 &c->costs);
-		if (cost < c->optimum[cur_pos + 1].cost) {
-			c->optimum[cur_pos + 1].queue = c->optimum[cur_pos].queue;
-			c->optimum[cur_pos + 1].cost = cost;
-			c->optimum[cur_pos + 1].prev.link = cur_pos;
+		if (cost < optimum[cur_pos + 1].cost) {
+			optimum[cur_pos + 1].queue = optimum[cur_pos].queue;
+			optimum[cur_pos + 1].cost = cost;
+			optimum[cur_pos + 1].prev.link = cur_pos;
 		}
 
 		/* Consider coding a match.
@@ -1734,8 +1735,8 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 			unsigned num_extra_bits;
 
 			offset = matches[i].offset;
-			queue = c->optimum[cur_pos].queue;
-			position_cost = c->optimum[cur_pos].cost;
+			queue = optimum[cur_pos].queue;
+			position_cost = optimum[cur_pos].cost;
 
 			position_slot = lzx_get_position_slot(offset, &queue);
 			num_extra_bits = lzx_get_num_extra_bits(position_slot);
@@ -1764,11 +1765,11 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 							LZX_MIN_MATCH_LEN -
 							LZX_NUM_PRIMARY_LENS];
 				}
-				if (cost < c->optimum[cur_pos + len].cost) {
-					c->optimum[cur_pos + len].queue = queue;
-					c->optimum[cur_pos + len].prev.link = cur_pos;
-					c->optimum[cur_pos + len].prev.match_offset = offset;
-					c->optimum[cur_pos + len].cost = cost;
+				if (cost < optimum[cur_pos + len].cost) {
+					optimum[cur_pos + len].queue = queue;
+					optimum[cur_pos + len].prev.link = cur_pos;
+					optimum[cur_pos + len].prev.match_offset = offset;
+					optimum[cur_pos + len].cost = cost;
 				}
 			} while (++len <= matches[i].len);
 		}
@@ -1777,21 +1778,21 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 			struct lzx_lru_queue queue;
 
 			while (end_pos < cur_pos + longest_rep_len)
-				c->optimum[++end_pos].cost = MC_INFINITE_COST;
+				optimum[++end_pos].cost = MC_INFINITE_COST;
 
-			queue = c->optimum[cur_pos].queue;
+			queue = optimum[cur_pos].queue;
 
-			cost = c->optimum[cur_pos].cost +
+			cost = optimum[cur_pos].cost +
 				lzx_match_cost(longest_rep_len, longest_rep_offset,
 					       &c->costs, &queue);
-			if (cost <= c->optimum[cur_pos + longest_rep_len].cost) {
-				c->optimum[cur_pos + longest_rep_len].queue =
+			if (cost <= optimum[cur_pos + longest_rep_len].cost) {
+				optimum[cur_pos + longest_rep_len].queue =
 					queue;
-				c->optimum[cur_pos + longest_rep_len].prev.link =
+				optimum[cur_pos + longest_rep_len].prev.link =
 					cur_pos;
-				c->optimum[cur_pos + longest_rep_len].prev.match_offset =
+				optimum[cur_pos + longest_rep_len].prev.match_offset =
 					longest_rep_offset;
-				c->optimum[cur_pos + longest_rep_len].cost =
+				optimum[cur_pos + longest_rep_len].cost =
 					cost;
 			}
 		}
