@@ -232,9 +232,9 @@ such paths will be treated case sensitively.
 Regardless of these settings, options and non-path arguments must be specified
 in lower case.
 .SH LICENSE
-wimlib and @IMAGEX_PROGNAME@ are distributed under the GNU General Public
-License version 3 or later.  Be aware this means this software is provided as-is
-and has no warranty; see COPYING for details.
+@IMAGEX_PROGNAME@ is provided to you under the GNU General Public License
+version 3.  Be aware this means this software is provided as-is and has no
+warranty.
 .SH REPORTING BUGS
 Report bugs to ebiggers3@gmail.com.  Feedback and suggestions are also welcome.
 .SH SEE ALSO
