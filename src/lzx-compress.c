@@ -1712,16 +1712,19 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 		 * length.  */
 		for (unsigned i = 0, len = 2; i < num_matches; i++) {
 			u32 offset;
-			struct lzx_lru_queue queue;
 			u32 position_cost;
 			unsigned position_slot;
 			unsigned num_extra_bits;
 
 			offset = matches[i].offset;
-			queue = optimum[cur_pos].queue;
 			position_cost = optimum[cur_pos].cost;
 
-			position_slot = lzx_get_position_slot(offset, &queue);
+			for (position_slot = 0; position_slot < LZX_NUM_RECENT_OFFSETS; position_slot++)
+				if (offset == optimum[cur_pos].queue.R[position_slot])
+					goto have_position_cost;
+
+			position_slot = lzx_get_position_slot_raw(offset + LZX_OFFSET_OFFSET);
+
 			num_extra_bits = lzx_get_num_extra_bits(position_slot);
 			if (num_extra_bits >= 3) {
 				position_cost += num_extra_bits - 3;
@@ -1730,6 +1733,8 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 			} else {
 				position_cost += num_extra_bits;
 			}
+
+		have_position_cost:
 
 			do {
 				unsigned len_header;
@@ -1749,7 +1754,16 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 							LZX_NUM_PRIMARY_LENS];
 				}
 				if (cost < optimum[cur_pos + len].cost) {
-					optimum[cur_pos + len].queue = queue;
+
+					if (position_slot < LZX_NUM_RECENT_OFFSETS) {
+						optimum[cur_pos + len].queue = optimum[cur_pos].queue;
+						swap(optimum[cur_pos + len].queue.R[0],
+						     optimum[cur_pos + len].queue.R[position_slot]);
+					} else {
+						optimum[cur_pos + len].queue.R[0] = offset;
+						optimum[cur_pos + len].queue.R[1] = optimum[cur_pos].queue.R[0];
+						optimum[cur_pos + len].queue.R[2] = optimum[cur_pos].queue.R[1];
+					}
 					optimum[cur_pos + len].prev.link = cur_pos;
 					optimum[cur_pos + len].prev.match_offset = offset;
 					optimum[cur_pos + len].cost = cost;
