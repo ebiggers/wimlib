@@ -23,6 +23,26 @@
  * mean "SHA-1 not specified".  */
 const u8 zero_hash[20];
 
+/*
+ * Builds a hexadecimal string representation of a SHA-1 message digest.
+ *
+ * The output buffer must be at least 41 characters.
+ */
+void
+sprint_hash(const u8 hash[SHA1_HASH_SIZE], tchar strbuf[SHA1_HASH_SIZE * 2 + 1])
+{
+	int i;
+	u8 high, low;
+
+	for (i = 0; i < SHA1_HASH_SIZE; i++) {
+		high = hash[i] >> 4;
+		low = hash[i] & 0xF;
+		strbuf[i * 2 + 0] = (high < 10 ? high + '0' : high - 10 + 'a');
+		strbuf[i * 2 + 1] = (low  < 10 ? low  + '0' : low  - 10 + 'a');
+	}
+	strbuf[i * 2] = 0;
+}
+
 /* If we use libcrypto (e.g. OpenSSL) then we get all the SHA-1 functions for
  * free.  Otherwise we need to implement them ourselves.  */
 

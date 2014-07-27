@@ -1095,13 +1095,6 @@ hasher_consume_chunk(const void *chunk, size_t size, void *_ctx)
 		return (*ctx->cbs.consume_chunk)(chunk, size, ctx->cbs.consume_chunk_ctx);
 }
 
-static void
-get_sha1_string(const u8 md[SHA1_HASH_SIZE], tchar *str)
-{
-	for (size_t i = 0; i < SHA1_HASH_SIZE; i++)
-		str += tsprintf(str, T("%02x"), md[i]);
-}
-
 /* Callback for finishing reading a stream while calculating its SHA1 message
  * digest.  */
 static int
@@ -1136,8 +1129,8 @@ hasher_end_stream(struct wim_lookup_table_entry *lte, int status, void *_ctx)
 				if (wimlib_print_errors) {
 					tchar expected_hashstr[SHA1_HASH_SIZE * 2 + 1];
 					tchar actual_hashstr[SHA1_HASH_SIZE * 2 + 1];
-					get_sha1_string(lte->hash, expected_hashstr);
-					get_sha1_string(hash, actual_hashstr);
+					sprint_hash(lte->hash, expected_hashstr);
+					sprint_hash(hash, actual_hashstr);
 					ERROR("The stream is corrupted!\n"
 					      "        (Expected SHA1=%"TS",\n"
 					      "              got SHA1=%"TS")",

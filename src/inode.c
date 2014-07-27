@@ -467,11 +467,14 @@ int
 stream_not_found_error(const struct wim_inode *inode, const u8 *hash)
 {
 	if (wimlib_print_errors) {
-		ERROR("\"%"TS"\": stream not found", inode_first_full_path(inode));
-		tfprintf(wimlib_error_file,
-			 T("        SHA-1 message digest of missing stream:\n        "));
-		print_hash(hash, wimlib_error_file);
-		tputc(T('\n'), wimlib_error_file);
+		tchar hashstr[SHA1_HASH_SIZE * 2 + 1];
+
+		sprint_hash(hash, hashstr);
+
+		ERROR("\"%"TS"\": stream not found\n"
+		      "        SHA-1 message digest of missing stream:\n"
+		      "        %"TS"",
+		      inode_first_full_path(inode), hashstr);
 	}
 	return WIMLIB_ERR_RESOURCE_NOT_FOUND;
 }

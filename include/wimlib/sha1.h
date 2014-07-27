@@ -17,6 +17,9 @@
 
 extern const u8 zero_hash[SHA1_HASH_SIZE];
 
+extern void
+sprint_hash(const u8 hash[SHA1_HASH_SIZE], tchar strbuf[SHA1_HASH_SIZE * 2 + 1]);
+
 static inline void
 copy_hash(u8 dest[SHA1_HASH_SIZE], const u8 src[SHA1_HASH_SIZE])
 {
@@ -39,12 +42,6 @@ static inline bool
 hashes_equal(const u8 h1[SHA1_HASH_SIZE], const u8 h2[SHA1_HASH_SIZE])
 {
 	return !hashes_cmp(h1, h2);
-}
-
-static inline void
-print_hash(const u8 hash[SHA1_HASH_SIZE], FILE *out)
-{
-	print_byte_field(hash, SHA1_HASH_SIZE, out);
 }
 
 static inline bool
