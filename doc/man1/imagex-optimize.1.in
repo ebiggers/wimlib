@@ -33,7 +33,7 @@ better job than the program that wrote the original file.  A side effect of this
 is that every stream in the original WIM will be checksummed, so this can help
 verify that the WIM is intact (equivalent to applying all the images from it).
 .TP
-\fB--compress\fR=\fITYPE\fR[:\fILEVEL\fR
+\fB--compress\fR=\fITYPE\fR[:\fILEVEL\fR]
 Recompress the WIM file using the specified compression type, and optionally the
 specified compression level for that compression type.  This implies
 \fB--recompress\fR.
@@ -88,3 +88,4 @@ Rebuild the WIM in the non-pipable format.  (This is the default if
 .SH SEE ALSO
 .BR @IMAGEX_PROGNAME@ (1)
 .BR @IMAGEX_PROGNAME@-export (1)
+.BR @IMAGEX_PROGNAME@-verify (1)

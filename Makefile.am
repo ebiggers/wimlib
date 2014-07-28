@@ -209,7 +209,8 @@ imagex_cmds =	append	\
 		optimize\
 		split	\
 		unmount	\
-		update
+		update	\
+		verify
 
 install-exec-hook:
 	if [ "@IMAGEX_PROGNAME@" != imagex ]; then			    \
@@ -283,6 +284,7 @@ wimlib_manpages =				\
 	doc/man1/@IMAGEX_PROGNAME@-split.1		\
 	doc/man1/@IMAGEX_PROGNAME@-unmount.1		\
 	doc/man1/@IMAGEX_PROGNAME@-update.1		\
+	doc/man1/@IMAGEX_PROGNAME@-verify.1		\
 	doc/man1/mkwinpeimg.1
 
 man1_MANS = $(wimlib_manpages)

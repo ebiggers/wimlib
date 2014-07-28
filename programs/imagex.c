@@ -124,6 +124,7 @@ enum {
 	CMD_UNMOUNT,
 #endif
 	CMD_UPDATE,
+	CMD_VERIFY,
 	CMD_MAX,
 };
 
@@ -400,6 +401,12 @@ static const struct option update_options[] = {
 	{T("no-acls"),     no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
 	{T("strict-acls"), no_argument,       NULL, IMAGEX_STRICT_ACLS_OPTION},
 	{T("no-replace"),  no_argument,       NULL, IMAGEX_NO_REPLACE_OPTION},
+
+	{NULL, 0, NULL, 0},
+};
+
+static const struct option verify_options[] = {
+	{T("ref"), required_argument, NULL, IMAGEX_REF_OPTION},
 
 	{NULL, 0, NULL, 0},
 };
@@ -1233,6 +1240,25 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 				imagex_printf(T("\t(Use --commit to keep changes.)\n"));
 			}
 		}
+		break;
+	case WIMLIB_PROGRESS_MSG_BEGIN_VERIFY_IMAGE:
+		imagex_printf(T("Verifying metadata for image %"PRIu32" of %"PRIu32"\n"),
+			      info->verify_image.current_image,
+			      info->verify_image.total_images);
+		break;
+	case WIMLIB_PROGRESS_MSG_VERIFY_STREAMS:
+		percent_done = TO_PERCENT(info->verify_streams.completed_bytes,
+					  info->verify_streams.total_bytes);
+		unit_shift = get_unit(info->verify_streams.total_bytes, &unit_name);
+		imagex_printf(T("\rVerifying streams: "
+			  "%"PRIu64" %"TS" of %"PRIu64" %"TS" (%u%%) done"),
+			info->verify_streams.completed_bytes >> unit_shift,
+			unit_name,
+			info->verify_streams.total_bytes >> unit_shift,
+			unit_name,
+			percent_done);
+		if (info->verify_streams.completed_bytes == info->verify_streams.total_bytes)
+			imagex_printf(T("\n"));
 		break;
 	default:
 		break;
@@ -3959,7 +3985,82 @@ out_err:
 	goto out_free_command_str;
 }
 
+/* Verify a WIM file.  */
+static int
+imagex_verify(int argc, tchar **argv, int cmd)
+{
+	int ret;
+	const tchar *wimfile;
+	WIMStruct *wim;
+	int open_flags = WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
+	int verify_flags = 0;
+	STRING_SET(refglobs);
+	int c;
 
+	for_opt(c, verify_options) {
+		switch (c) {
+		case IMAGEX_REF_OPTION:
+			ret = string_set_append(&refglobs, optarg);
+			if (ret)
+				goto out_free_refglobs;
+			break;
+		default:
+			goto out_usage;
+		}
+	}
+
+	argv += optind;
+	argc -= optind;
+
+	if (argc != 1) {
+		if (argc == 0)
+			imagex_error(T("Must specify a WIM file!"));
+		else
+			imagex_error(T("At most one WIM file can be specified!"));
+		goto out_usage;
+	}
+
+	wimfile = argv[0];
+
+	ret = wimlib_open_wim_with_progress(wimfile,
+					    open_flags,
+					    &wim,
+					    imagex_progress_func,
+					    NULL);
+	if (ret)
+		goto out_free_refglobs;
+
+	ret = wim_reference_globs(wim, &refglobs, open_flags);
+	if (ret)
+		goto out_wimlib_free;
+
+	ret = wimlib_verify_wim(wim, verify_flags);
+	if (ret) {
+		tputc(T('\n'), stderr);
+		imagex_error(T("\"%"TS"\" failed verification!"),
+			     wimfile);
+		if (ret == WIMLIB_ERR_RESOURCE_NOT_FOUND &&
+		    refglobs.num_strings == 0)
+		{
+			imagex_printf(T("Note: if this WIM file is not standalone, "
+					"use the --ref option to specify the other parts.\n"));
+		}
+	} else {
+		imagex_printf(T("\n\"%"TS"\" was successfully verified.\n"),
+			      wimfile);
+	}
+
+out_wimlib_free:
+	wimlib_free(wim);
+out_free_refglobs:
+	string_set_destroy(&refglobs);
+	return ret;
+
+out_usage:
+	usage(CMD_VERIFY, stderr);
+	ret = -1;
+	goto out_free_refglobs;
+}
 
 struct imagex_command {
 	const tchar *name;
@@ -3986,6 +4087,7 @@ static const struct imagex_command imagex_commands[] = {
 	[CMD_UNMOUNT]  = {T("unmount"),  imagex_unmount},
 #endif
 	[CMD_UPDATE]   = {T("update"),   imagex_update},
+	[CMD_VERIFY]   = {T("verify"),   imagex_verify},
 };
 
 #ifdef __WIN32__
@@ -4104,6 +4206,10 @@ T(
 "                    [DEFAULT_ADD_OPTIONS] [DEFAULT_DELETE_OPTIONS]\n"
 "                    [--command=STRING] [--wimboot-config=FILE]\n"
 "                    [< CMDFILE]\n"
+),
+[CMD_VERIFY] =
+T(
+"    %"TS" WIMFILE [--ref=\"GLOB\"]\n"
 ),
 };
 

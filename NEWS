@@ -24,6 +24,8 @@ Version 1.7.1-BETA:
 	"standard" names: '--solid', '--solid-compress', and
 	'--solid-chunk-size', respectively.
 
+	Added 'verify' subcommand to 'wimlib-imagex'.
+
 	The XPRESS compressor no longer supports chunks larger than 65536 bytes.
 	There is little point in having larger chunks, since the LZ77 sliding
 	window for XPRESS cannot be larger than 65536 bytes.  This change does
@@ -55,6 +57,8 @@ Version 1.7.1-BETA:
 		Library users can now specify a custom file for warning and
 		error messages to be sent to, rather than the default of
 		standard error.
+
+		New function: wimlib_verify_wim().
 
 Version 1.7.0:
 	Improved compression, decompression, and extraction performance.

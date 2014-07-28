@@ -1,0 +1,55 @@
+.TH WIMLIB-IMAGEX "1" "June 2014" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.SH NAME
+@IMAGEX_PROGNAME@-verify \- Verify a WIM file
+.SH SYNOPSIS
+\fB@IMAGEX_PROGNAME@ verify\fR \fIWIMFILE\fR [\fIOPTION\fR...]
+.SH DESCRIPTION
+\fB@IMAGEX_PROGNAME@ verify\fR checks the validity of the specified WIM archive.
+This command is also available as simply \fBwimverify\fR if the appropriate hard
+link or batch file has been installed.
+.PP
+Specifically, this command performs the following verifications on the WIM
+archive:
+.IP \[bu] 4
+Verify that the WIM file can be successfully opened, which involves parsing the
+header, lookup table, and XML data.
+.IP \[bu]
+If the WIM archive contains an integrity table, verify the integrity of the
+entire WIM archive.  Otherwise, print a warning.
+.IP \[bu]
+Verify that the metadata for each image in the WIM archive can be successfully
+parsed.
+.IP \[bu]
+Verify that all files needed by each image are actually contained in the WIM
+archive or in one of the WIM archives referenced by the \fB--ref\fR option.
+.IP \[bu]
+Verify that all files contained in the WIM archive can be successfully
+decompressed, with matching cryptographic checksums.
+.SH OPTIONS
+.TP 6
+\fB--ref\fR="\fIGLOB\fR"
+File glob of additional WIMs or split WIM parts to reference resources from.
+This option can be specified multiple times.  Note: \fIGLOB\fR is listed in
+quotes because it is interpreted by \fB@IMAGEX_PROGNAME@\fR and may need to be
+quoted to protect against shell expansion.
+.SH NOTES
+This is a read-only command.  It will never modify the WIM file.
+.PP
+In the future, this command might do more thorough verifications than it does
+now.
+.SH EXAMPLES
+Verify the WIM file 'boot.wim':
+.RS
+.PP
+wimverify boot.wim
+.RE
+.PP
+Verify the split WIM file consisting of 'boot.swm', 'boot2.swm', 'boot3.swm', ...:
+.RS
+.PP
+wimverify boot.swm --ref="boot*.swm"
+.RE
+.PP
+.SH SEE ALSO
+.BR @IMAGEX_PROGNAME@ (1)
+.BR @IMAGEX_PROGNAME@-optimize (1)

@@ -40,6 +40,7 @@ AC_CONFIG_FILES([Makefile]
 		[doc/man1/"$IMAGEX_PROGNAME"-split.1:doc/man1/imagex-split.1.in]
 		[doc/man1/"$IMAGEX_PROGNAME"-unmount.1:doc/man1/imagex-unmount.1.in]
 		[doc/man1/"$IMAGEX_PROGNAME"-update.1:doc/man1/imagex-update.1.in]
+		[doc/man1/"$IMAGEX_PROGNAME"-verify.1:doc/man1/imagex-verify.1.in]
 		[doc/man1/mkwinpeimg.1])
 
 AC_CONFIG_FILES([programs/mkwinpeimg], [chmod +x programs/mkwinpeimg])
