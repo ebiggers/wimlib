@@ -626,6 +626,19 @@ enum wimlib_progress_msg {
 	 * ::wimlib_progress_info.done_with_file.  This message is only received
 	 * if ::WIMLIB_WRITE_FLAG_SEND_DONE_WITH_FILE_MESSAGES was provided.  */
 	WIMLIB_PROGRESS_MSG_DONE_WITH_FILE = 26,
+
+	/** wimlib_verify_wim() is starting to verify the metadata for an image.
+	 * @p info will point to ::wimlib_progress_info.verify_image.  */
+	WIMLIB_PROGRESS_MSG_BEGIN_VERIFY_IMAGE = 27,
+
+	/** wimlib_verify_wim() has finished verifying the metadata for an
+	 * image.  @p info will point to ::wimlib_progress_info.verify_image.
+	 */
+	WIMLIB_PROGRESS_MSG_END_VERIFY_IMAGE = 28,
+
+	/** wimlib_verify_wim() is verifying stream integrity.  @p info will
+	 * point to ::wimlib_progress_info.verify_streams.  */
+	WIMLIB_PROGRESS_MSG_VERIFY_STREAMS = 29,
 };
 
 /** Valid return values from user-provided progress functions
@@ -1053,6 +1066,23 @@ union wimlib_progress_info {
 		 */
 		const wimlib_tchar *path_to_file;
 	} done_with_file;
+
+	/** Valid on messages ::WIMLIB_PROGRESS_MSG_BEGIN_VERIFY_IMAGE and
+	 * ::WIMLIB_PROGRESS_MSG_END_VERIFY_IMAGE.  */
+	struct wimlib_progress_info_verify_image {
+		const wimlib_tchar *wimfile;
+		uint32_t total_images;
+		uint32_t current_image;
+	} verify_image;
+
+	/** Valid on messages ::WIMLIB_PROGRESS_MSG_VERIFY_STREAMS.  */
+	struct wimlib_progress_info_verify_streams {
+		const wimlib_tchar *wimfile;
+		uint64_t total_streams;
+		uint64_t total_bytes;
+		uint64_t completed_streams;
+		uint64_t completed_bytes;
+	} verify_streams;
 };
 
 /**
@@ -3995,6 +4025,45 @@ wimlib_split(WIMStruct *wim,
 	     const wimlib_tchar *swm_name,
 	     uint64_t part_size,
 	     int write_flags);
+
+/**
+ * @ingroup G_general
+ *
+ * Perform verification checks on a WIM file.
+ *
+ * @param wim
+ *	The ::WIMStruct for the WIM file to verify.  Note: for an extra layer of
+ *	verification, it is a good idea to have used
+ *	::WIMLIB_OPEN_FLAG_CHECK_INTEGRITY when you opened the file.
+ *	<br/>
+ *	If verifying a split WIM, specify the first part of the split WIM here,
+ *	and reference the other parts using wimlib_reference_resource_files()
+ *	before calling this function.
+ *
+ * @param verify_flags
+ *	Reserved; must be 0.
+ *
+ * @retval 0 if the WIM file was successfully verified; nonzero if it failed
+ * verification or another error occurred.  Some of the possible error codes
+ * are:
+ *
+ * @retval ::WIMLIB_ERR_DECOMPRESSION
+ *	A compressed resource could not be decompressed.
+ * @retval ::WIMLIB_ERR_INVALID_METADATA_RESOURCE
+ *	The metadata resource for an image is invalid.
+ * @retval ::WIMLIB_ERR_INVALID_RESOURCE_HASH
+ *	One of the files did not decompress to its original data, as given by a
+ *	cryptographic checksum.
+ * @retval ::WIMLIB_ERR_RESOURCE_NOT_FOUND
+ *	One of the files referenced by an image could not be located.
+ *
+ * If a progress function is registered with @p wim, it will receive the
+ * following progress messages: ::WIMLIB_PROGRESS_MSG_BEGIN_VERIFY_IMAGE,
+ * ::WIMLIB_PROGRESS_MSG_END_VERIFY_IMAGE, and
+ * ::WIMLIB_PROGRESS_MSG_VERIFY_STREAMS.
+ */
+extern int
+wimlib_verify_wim(WIMStruct *wim, int verify_flags);
 
 /**
  * @ingroup G_mounting_wim_images
