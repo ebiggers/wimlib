@@ -31,6 +31,8 @@
 \fB@IMAGEX_PROGNAME@ unmount\fR \fIarguments...\fR
 .br
 \fB@IMAGEX_PROGNAME@ update\fR \fIarguments...\fR
+.br
+\fB@IMAGEX_PROGNAME@ verify\fR \fIarguments...\fR
 .SH DESCRIPTION
 \fB@IMAGEX_PROGNAME@\fR deals with archives in the Windows Imaging Format (WIM).
 Its interface is similar to Microsoft's ImageX, but \fB@IMAGEX_PROGNAME@\fR is
@@ -118,6 +120,9 @@ Split a WIM file into multiple parts
 .IP \[bu]
 Join a split WIM
  (\fB@IMAGEX_PROGNAME@ join\fR)
+.IP \[bu]
+Verify a WIM file
+ (\fB@IMAGEX_PROGNAME@ verify\fR)
 .SH DETAILED FEATURES
 This section presents some of the interesting features of
 \fB@IMAGEX_PROGNAME@\fR in more detail.
@@ -253,3 +258,4 @@ Report bugs to ebiggers3@gmail.com.  Feedback and suggestions are also welcome.
 .BR @IMAGEX_PROGNAME@-split (1),
 .BR @IMAGEX_PROGNAME@-unmount (1),
 .BR @IMAGEX_PROGNAME@-update (1),
+.BR @IMAGEX_PROGNAME@-verify (1),
