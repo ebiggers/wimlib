@@ -401,9 +401,12 @@ extract_from_tmpfile(const tchar *tmpfile_name, struct apply_ctx *ctx)
 {
 	struct wim_lookup_table_entry tmpfile_lte;
 	struct wim_lookup_table_entry *orig_lte = ctx->cur_stream;
-	const struct stream_owner *owners = stream_owners(orig_lte);
 	const struct read_stream_list_callbacks *cbs = ctx->saved_cbs;
 	int ret;
+
+	BUILD_BUG_ON(MAX_OPEN_STREAMS < ARRAY_LEN(orig_lte->inline_stream_owners));
+
+	struct stream_owner *owners = orig_lte->stream_owners;
 
 	/* Copy the stream's data from the temporary file to each of its
 	 * destinations.
@@ -415,10 +418,8 @@ extract_from_tmpfile(const tchar *tmpfile_name, struct apply_ctx *ctx)
 	memcpy(&tmpfile_lte, orig_lte, sizeof(struct wim_lookup_table_entry));
 	tmpfile_lte.resource_location = RESOURCE_IN_FILE_ON_DISK;
 	tmpfile_lte.file_on_disk = ctx->tmpfile_name;
-	tmpfile_lte.out_refcnt = 1;
-
+	ret = 0;
 	for (u32 i = 0; i < orig_lte->out_refcnt; i++) {
-		tmpfile_lte.inline_stream_owners[0] = owners[i];
 
 		/* Note: it usually doesn't matter whether we pass the original
 		 * stream entry to callbacks provided by the extraction backend
@@ -429,9 +430,12 @@ extract_from_tmpfile(const tchar *tmpfile_name, struct apply_ctx *ctx)
 		 * because it needs the original stream location in order to
 		 * create the external backing reference.  */
 
+		orig_lte->out_refcnt = 1;
+		orig_lte->inline_stream_owners[0] = owners[i];
+
 		ret = (*cbs->begin_stream)(orig_lte, cbs->begin_stream_ctx);
 		if (ret)
-			return ret;
+			break;
 
 		/* Extra SHA-1 isn't necessary here, but it shouldn't hurt as
 		 * this case is very rare anyway.  */
@@ -439,10 +443,13 @@ extract_from_tmpfile(const tchar *tmpfile_name, struct apply_ctx *ctx)
 				     cbs->consume_chunk,
 				     cbs->consume_chunk_ctx);
 
-		return (*cbs->end_stream)(orig_lte, ret,
-					  cbs->end_stream_ctx);
+		ret = (*cbs->end_stream)(orig_lte, ret, cbs->end_stream_ctx);
+		if (ret)
+			break;
 	}
-	return 0;
+	FREE(owners);
+	orig_lte->out_refcnt = 0;
+	return ret;
 }
 
 static int
