@@ -54,7 +54,7 @@ init_input_bitstream(struct input_bitstream *istream,
  *
  * If the input data is exhausted, any further bits are assumed to be 0.  */
 static inline void
-bitstream_ensure_bits(struct input_bitstream *istream, unsigned num_bits)
+bitstream_ensure_bits(struct input_bitstream *istream, const unsigned num_bits)
 {
 	u16 nextword;
 	unsigned shift;
@@ -64,6 +64,11 @@ bitstream_ensure_bits(struct input_bitstream *istream, unsigned num_bits)
 
 	if (istream->bitsleft >= num_bits)
 		return;
+
+	if (unlikely(istream->data_bytes_left < 2)) {
+		istream->bitsleft = num_bits;
+		return;
+	}
 
 	nextword = le16_to_cpu(*(const le16*)istream->data);
 	shift = sizeof(istream->bitbuf) * 8 - 16 - istream->bitsleft;
@@ -77,6 +82,10 @@ bitstream_ensure_bits(struct input_bitstream *istream, unsigned num_bits)
 	if (!(is_constant(num_bits) && num_bits <= 16) &&
 	    unlikely(istream->bitsleft < num_bits))
 	{
+		if (unlikely(istream->data_bytes_left < 2)) {
+			istream->bitsleft = num_bits;
+			return;
+		}
 		nextword = le16_to_cpu(*(const le16*)istream->data);
 		shift = sizeof(istream->bitbuf) * 8 - 16 - istream->bitsleft;
 		istream->bitbuf |= (u32)nextword << shift;
