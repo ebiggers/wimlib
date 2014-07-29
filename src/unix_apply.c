@@ -372,7 +372,8 @@ unix_create_if_directory(const struct wim_dentry *dentry,
 		ERROR_WITH_ERRNO("Can't create directory \"%s\"", path);
 		return WIMLIB_ERR_MKDIR;
 	}
-	return 0;
+
+	return report_file_created(&ctx->common);
 }
 
 /* If @dentry represents an empty regular file or a special file, create it, set
@@ -444,7 +445,11 @@ unix_extract_if_empty_file(const struct wim_dentry *dentry,
 	if (ret)
 		return ret;
 
-	return unix_create_hardlinks(inode, dentry, path, ctx);
+	ret = unix_create_hardlinks(inode, dentry, path, ctx);
+	if (ret)
+		return ret;
+
+	return report_file_created(&ctx->common);
 }
 
 static int
@@ -680,6 +685,9 @@ unix_set_dir_metadata(struct list_head *dentry_list, struct unix_apply_ctx *ctx)
 			ret = unix_set_metadata(-1, dentry->d_inode, NULL, ctx);
 			if (ret)
 				return ret;
+			ret = report_file_metadata_applied(&ctx->common);
+			if (ret)
+				return ret;
 		}
 	}
 	return 0;
@@ -712,6 +720,7 @@ unix_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	 * because we can't extract any other files until their directories
 	 * exist.  Empty files are needed because they don't have
 	 * representatives in the stream list.  */
+	reset_file_progress(&ctx->common);
 	ret = unix_create_dirs_and_empty_files(dentry_list, ctx);
 	if (ret)
 		goto out;
@@ -742,8 +751,10 @@ unix_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	if (ret)
 		goto out;
 
+
 	/* Set directory metadata.  We do this last so that we get the right
 	 * directory timestamps.  */
+	reset_file_progress(&ctx->common);
 	ret = unix_set_dir_metadata(dentry_list, ctx);
 	if (ret)
 		goto out;

@@ -425,7 +425,7 @@ ntfs_3g_set_metadata(ntfs_inode *ni, const struct wim_inode *inode,
  * the NTFS inode @dir_ni.  */
 static int
 ntfs_3g_create_dirs_recursive(ntfs_inode *dir_ni, struct wim_dentry *dir,
-			      const struct ntfs_3g_apply_ctx *ctx)
+			      struct ntfs_3g_apply_ctx *ctx)
 {
 	struct wim_dentry *child;
 
@@ -448,7 +448,9 @@ ntfs_3g_create_dirs_recursive(ntfs_inode *dir_ni, struct wim_dentry *dir,
 
 		child->d_inode->i_mft_no = ni->mft_no;
 
-		ret = ntfs_3g_set_metadata(ni, child->d_inode, ctx);
+		ret = report_file_created(&ctx->common);
+		if (!ret)
+			ret = ntfs_3g_set_metadata(ni, child->d_inode, ctx);
 		if (!ret)
 			ret = ntfs_3g_create_any_empty_ads(ni, child->d_inode, ctx);
 		if (!ret)
@@ -470,7 +472,7 @@ ntfs_3g_create_dirs_recursive(ntfs_inode *dir_ni, struct wim_dentry *dir,
 static int
 ntfs_3g_create_directories(struct wim_dentry *root,
 			   struct list_head *dentry_list,
-			   const struct ntfs_3g_apply_ctx *ctx)
+			   struct ntfs_3g_apply_ctx *ctx)
 {
 	ntfs_inode *root_ni;
 	int ret;
@@ -502,6 +504,9 @@ ntfs_3g_create_directories(struct wim_dentry *root,
 		if (!dentry_has_short_name(dentry))
 			continue;
 		ret = ntfs_3g_restore_dos_name(NULL, NULL, dentry, ctx->vol);
+		if (ret)
+			return ret;
+		ret = report_file_created(&ctx->common);
 		if (ret)
 			return ret;
 	}
@@ -660,7 +665,7 @@ out_close_ni:
  * Directories must have already been created.  */
 static int
 ntfs_3g_create_nondirectories(struct list_head *dentry_list,
-			      const struct ntfs_3g_apply_ctx *ctx)
+			      struct ntfs_3g_apply_ctx *ctx)
 {
 	struct wim_dentry *dentry;
 	struct wim_inode *inode;
@@ -673,6 +678,9 @@ ntfs_3g_create_nondirectories(struct list_head *dentry_list,
 		if (dentry != inode_first_extraction_dentry(inode))
 			continue;
 		ret = ntfs_3g_create_nondirectory(inode, ctx);
+		if (ret)
+			return ret;
+		ret = report_file_created(&ctx->common);
 		if (ret)
 			return ret;
 	}
@@ -907,6 +915,8 @@ ntfs_3g_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 
 	/* Create all inodes and aliases, including short names, and set
 	 * metadata (attributes, security descriptors, and timestamps).  */
+
+	reset_file_progress(&ctx->common);
 
 	ret = ntfs_3g_create_directories(root, dentry_list, ctx);
 	if (ret)

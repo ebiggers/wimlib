@@ -90,6 +90,15 @@
 	 WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE  |	\
 	 WIMLIB_EXTRACT_FLAG_WIMBOOT)
 
+/* Send WIMLIB_PROGRESS_MSG_EXTRACT_FILE_STRUCTURE or
+ * WIMLIB_PROGRESS_MSG_EXTRACT_METADATA.  */
+int
+do_file_extract_progress(struct apply_ctx *ctx, enum wimlib_progress_msg msg)
+{
+	ctx->count_until_file_progress = 512;  /* Arbitrary value to limit calls  */
+	return extract_progress(ctx, msg);
+}
+
 /* Check whether the extraction of a dentry should be skipped completely.  */
 static bool
 dentry_is_supported(struct wim_dentry *dentry,

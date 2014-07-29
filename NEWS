@@ -27,6 +27,10 @@ Version 1.7.1-BETA:
 		error messages to be sent to, rather than the default of
 		standard error.
 
+		New progress messages:
+		WIMLIB_PROGRESS_MSG_EXTRACT_FILE_STRUCTURE,
+		WIMLIB_PROGRESS_MSG_EXTRACT_METADATA.
+
 		New function: wimlib_verify_wim().
 
 Version 1.7.0:

@@ -974,6 +974,10 @@ create_directories(struct list_head *dentry_list,
 		ret = create_any_empty_ads(dentry, ctx);
 		if (ret)
 			return ret;
+
+		ret = report_file_created(&ctx->common);
+		if (ret)
+			return ret;
 	}
 	return 0;
 }
@@ -1219,6 +1223,9 @@ create_nondirectories(struct list_head *dentry_list, struct win32_apply_ctx *ctx
 		if (dentry != inode_first_extraction_dentry(inode))
 			continue;
 		ret = create_nondirectory(inode, ctx);
+		if (ret)
+			return ret;
+		ret = report_file_created(&ctx->common);
 		if (ret)
 			return ret;
 	}
@@ -1984,6 +1991,9 @@ apply_metadata(struct list_head *dentry_list, struct win32_apply_ctx *ctx)
 		ret = apply_metadata_to_file(dentry, ctx);
 		if (ret)
 			return ret;
+		ret = report_file_metadata_applied(&ctx->common);
+		if (ret)
+			return ret;
 	}
 	return 0;
 }
@@ -2031,6 +2041,8 @@ win32_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 			goto out;
 	}
 
+	reset_file_progress(&ctx->common);
+
 	ret = create_directories(dentry_list, ctx);
 	if (ret)
 		goto out;
@@ -2050,6 +2062,8 @@ win32_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	ret = extract_stream_list(&ctx->common, &cbs);
 	if (ret)
 		goto out;
+
+	reset_file_progress(&ctx->common);
 
 	ret = apply_metadata(dentry_list, ctx);
 	if (ret)

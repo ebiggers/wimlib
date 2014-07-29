@@ -1,6 +1,7 @@
 #ifndef _WIMLIB_APPLY_H
 #define _WIMLIB_APPLY_H
 
+#include "wimlib/compiler.h"
 #include "wimlib/file_io.h"
 #include "wimlib/list.h"
 #include "wimlib/progress.h"
@@ -70,6 +71,7 @@ struct apply_ctx {
 	u64 cur_stream_offset;
 	struct filedes tmpfile_fd;
 	tchar *tmpfile_name;
+	unsigned int count_until_file_progress;
 };
 
 /* Maximum number of UNIX file descriptors, NTFS attributes, or Windows file
@@ -81,6 +83,39 @@ static inline int
 extract_progress(struct apply_ctx *ctx, enum wimlib_progress_msg msg)
 {
 	return call_progress(ctx->progfunc, msg, &ctx->progress, ctx->progctx);
+}
+
+extern int
+do_file_extract_progress(struct apply_ctx *ctx, enum wimlib_progress_msg msg);
+
+static inline int
+maybe_do_file_progress(struct apply_ctx *ctx, enum wimlib_progress_msg msg)
+{
+	if (unlikely(!--ctx->count_until_file_progress))
+		return do_file_extract_progress(ctx, msg);
+	return 0;
+}
+
+/* Call this to reset the counter for report_file_created() and
+ * report_file_metadata_applied().  */
+static inline void
+reset_file_progress(struct apply_ctx *ctx)
+{
+	ctx->count_until_file_progress = 1;
+}
+
+/* Report that a file was created, prior to stream extraction.  */
+static inline int
+report_file_created(struct apply_ctx *ctx)
+{
+	return maybe_do_file_progress(ctx, WIMLIB_PROGRESS_MSG_EXTRACT_FILE_STRUCTURE);
+}
+
+/* Report that file metadata was applied, after stream extraction.  */
+static inline int
+report_file_metadata_applied(struct apply_ctx *ctx)
+{
+	return maybe_do_file_progress(ctx, WIMLIB_PROGRESS_MSG_EXTRACT_METADATA);
 }
 
 /* Returns any of the aliases of an inode that are being extracted.  */

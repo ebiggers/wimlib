@@ -504,6 +504,12 @@ enum wimlib_progress_msg {
 	 * single extraction operation for optimization purposes.  */
 	WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN = 1,
 
+	/** This message may be sent periodically (not for every file) while
+	 * files or directories are being created, prior to data stream
+	 * extraction.  @p info will point to ::wimlib_progress_info.extract.
+	 */
+	WIMLIB_PROGRESS_MSG_EXTRACT_FILE_STRUCTURE = 3,
+
 	/** File data is currently being extracted.  @p info will point to
 	 * ::wimlib_progress_info.extract.  This is the main message to track
 	 * the progress of an extraction operation.  */
@@ -512,6 +518,12 @@ enum wimlib_progress_msg {
 	/** Starting to read a new part of a split pipable WIM over the pipe.
 	 * @p info will point to ::wimlib_progress_info.extract.  */
 	WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN = 5,
+
+	/** This message may be sent periodically (not for every file) while
+	 * file and directory metadata is being applied, following data stream
+	 * extraction.  @p info will point to ::wimlib_progress_info.extract.
+	 */
+	WIMLIB_PROGRESS_MSG_EXTRACT_METADATA = 6,
 
 	/** Confirms that the image has been successfully extracted.  @p info
 	 * will point to ::wimlib_progress_info.extract.  This is paired with
@@ -850,7 +862,9 @@ union wimlib_progress_info {
 	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN,
 	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN,
 	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_TREE_BEGIN,
+	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_FILE_STRUCTURE,
 	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS,
+	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_METADATA,
 	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_TREE_END, and
 	 * ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END.
 	 *
@@ -2657,7 +2671,9 @@ wimlib_export_image(WIMStruct *src_wim, int src_image,
  *
  * If a progress function is registered with @p wim, then as each image is
  * extracted it will receive ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_BEGIN, then
- * zero or more ::WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS messages, then
+ * zero or more ::WIMLIB_PROGRESS_MSG_EXTRACT_FILE_STRUCTURE messages, then zero
+ * or more ::WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS messages, then zero or more
+ * ::WIMLIB_PROGRESS_MSG_EXTRACT_METADATA messages, then
  * ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END.
  */
 extern int
