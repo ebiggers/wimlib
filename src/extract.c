@@ -412,6 +412,7 @@ extract_from_tmpfile(const tchar *tmpfile_name, struct apply_ctx *ctx)
 	struct wim_lookup_table_entry *orig_lte = ctx->cur_stream;
 	const struct read_stream_list_callbacks *cbs = ctx->saved_cbs;
 	int ret;
+	const u32 orig_refcnt = orig_lte->out_refcnt;
 
 	BUILD_BUG_ON(MAX_OPEN_STREAMS < ARRAY_LEN(orig_lte->inline_stream_owners));
 
@@ -428,7 +429,7 @@ extract_from_tmpfile(const tchar *tmpfile_name, struct apply_ctx *ctx)
 	tmpfile_lte.resource_location = RESOURCE_IN_FILE_ON_DISK;
 	tmpfile_lte.file_on_disk = ctx->tmpfile_name;
 	ret = 0;
-	for (u32 i = 0; i < orig_lte->out_refcnt; i++) {
+	for (u32 i = 0; i < orig_refcnt; i++) {
 
 		/* Note: it usually doesn't matter whether we pass the original
 		 * stream entry to callbacks provided by the extraction backend
