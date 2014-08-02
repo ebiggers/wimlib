@@ -4501,6 +4501,9 @@ wimlib_free_compressor(struct wimlib_compressor *compressor);
  *
  * @retval ::WIMLIB_ERR_INVALID_COMPRESSION_TYPE
  *	@p ctype was not a supported compression type.
+ * @retval ::WIMLIB_ERR_INVALID_PARAM
+ *	@p decompressor_ret was @c NULL, or @p max_block_size is not valid for
+ *	the compression type.
  * @retval ::WIMLIB_ERR_NOMEM
  *	Insufficient memory to allocate the decompressor.
  */
