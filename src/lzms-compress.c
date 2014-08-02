@@ -1309,7 +1309,8 @@ lzms_build_params(unsigned int compression_level,
 		  struct lzms_compressor_params *lzms_params)
 {
 	lzms_params->min_match_length  = (compression_level >= 50) ? 2 : 3;
-	lzms_params->nice_match_length = ((u64)compression_level * 32) / 50;
+	lzms_params->nice_match_length = max(((u64)compression_level * 32) / 50,
+					     lzms_params->min_match_length);
 	lzms_params->max_search_depth  = ((u64)compression_level * 50) / 50;
 	lzms_params->optim_array_length = 224 + compression_level * 16;
 }
