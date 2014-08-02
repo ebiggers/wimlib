@@ -888,6 +888,9 @@ winnt_scan_stream(const wchar_t *path, size_t path_nchars,
 							sizeof(wchar_t));
 		if (!ads_entry)
 			return WIMLIB_ERR_NOMEM;
+	} else if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+		/* Ignore unnamed data stream of reparse point  */
+		return 0;
 	} else {
 		ads_entry = NULL;
 	}
