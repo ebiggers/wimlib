@@ -156,9 +156,6 @@ open_wim_as_WIMStruct(const void *wim_filename_or_fd, int open_flags,
 		      wimlib_progress_func_t progfunc, void *progctx);
 
 extern int
-close_wim(WIMStruct *wim);
-
-extern int
 can_modify_wim(WIMStruct *wim);
 
 extern int
