@@ -4,15 +4,6 @@
 /* Constants for the XPRESS data compression format.  See the comments in
  * xpress-decompress.c for more information about this format.  */
 
-//#define ENABLE_XPRESS_DEBUG
-#ifdef ENABLE_XPRESS_DEBUG
-#	define XPRESS_DEBUG DEBUG
-#	define XPRESS_ASSERT wimlib_assert
-#else
-#	define XPRESS_DEBUG(format, ...)
-#	define XPRESS_ASSERT(...)
-#endif
-
 #define XPRESS_NUM_CHARS	256
 #define XPRESS_NUM_SYMBOLS	512
 #define XPRESS_MAX_CODEWORD_LEN	15
