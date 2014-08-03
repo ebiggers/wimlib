@@ -484,19 +484,7 @@ NTSTATUS (WINAPI *func_RtlDosPathNameToNtPathName_U_WithStatus)
 NTSTATUS (WINAPI *func_RtlCreateSystemVolumeInformationFolder)
 		(PCUNICODE_STRING VolumeRootPath);
 
-static OSVERSIONINFO windows_version_info = {
-	.dwOSVersionInfoSize = sizeof(OSVERSIONINFO),
-};
-
 static bool acquired_privileges = false;
-
-bool
-windows_version_is_at_least(unsigned major, unsigned minor)
-{
-	return windows_version_info.dwMajorVersion > major ||
-		(windows_version_info.dwMajorVersion == major &&
-		 windows_version_info.dwMinorVersion >= minor);
-}
 
 struct dll_sym {
 	void **func_ptr;
@@ -598,9 +586,6 @@ win32_global_init(int init_flags)
 				goto out_drop_privs;
 		acquired_privileges = true;
 	}
-
-	/* Get Windows version information.  */
-	GetVersionEx(&windows_version_info);
 
 	ret = init_dll(&ntdll_spec);
 	if (ret)

@@ -143,19 +143,6 @@ extern NTSTATUS (WINAPI *func_RtlDosPathNameToNtPathName_U_WithStatus)
 extern NTSTATUS (WINAPI *func_RtlCreateSystemVolumeInformationFolder)
 			(PCUNICODE_STRING VolumeRootPath);
 
-
-extern bool
-windows_version_is_at_least(unsigned major, unsigned minor);
-
-#define running_on_windows_xp_or_later() \
-			windows_version_is_at_least(5, 1)
-
-#define running_on_windows_vista_or_later() \
-			windows_version_is_at_least(6, 0)
-
-#define running_on_windows_7_or_later() \
-			windows_version_is_at_least(6, 1)
-
 extern int
 win32_path_to_nt_path(const wchar_t *win32_path, UNICODE_STRING *nt_path);
 
