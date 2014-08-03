@@ -10,7 +10,7 @@ Section: libs
 Homepage: http://sourceforge.net/projects/wimlib
 Vcs-Git: git://git.code.sf.net/p/wimlib/code
 
-Package: wimlib9
+Package: wimlib15
 Section: libs
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
