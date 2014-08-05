@@ -269,7 +269,7 @@ load_streams_from_pipe(struct apply_ctx *ctx,
 	}
 	ret = 0;
 out:
-	if (found_lte->resource_location != RESOURCE_IN_WIM)
+	if (found_lte && found_lte->resource_location != RESOURCE_IN_WIM)
 		FREE(rspec);
 	free_lookup_table_entry(found_lte);
 	return ret;
