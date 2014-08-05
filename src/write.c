@@ -102,11 +102,14 @@ static int
 stream_filtered(const struct wim_lookup_table_entry *lte,
 		const struct filter_context *ctx)
 {
-	int write_flags = ctx->write_flags;
-	WIMStruct *wim = ctx->wim;
+	int write_flags;
+	WIMStruct *wim;
 
 	if (ctx == NULL)
 		return 0;
+
+	write_flags = ctx->write_flags;
+	wim = ctx->wim;
 
 	if (write_flags & WIMLIB_WRITE_FLAG_OVERWRITE &&
 	    lte->resource_location == RESOURCE_IN_WIM &&
