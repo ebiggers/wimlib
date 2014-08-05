@@ -789,8 +789,6 @@ out:
 		if (do_ntfs_umount(vol)) {
 			ERROR_WITH_ERRNO("Failed to unmount NTFS volume `%s'",
 					 device);
-			if (ret == 0)
-				ret = WIMLIB_ERR_NTFS_3G;
 		}
 	} else {
 		/* We need to leave the NTFS volume mounted so that we can read
