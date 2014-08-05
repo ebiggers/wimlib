@@ -59,12 +59,14 @@ do_capture_progress(struct add_image_params *params, int status,
 	case WIMLIB_SCAN_DENTRY_OK:
 		if (!(params->add_flags & WIMLIB_ADD_FLAG_VERBOSE))
 			return 0;
+		break;
 	case WIMLIB_SCAN_DENTRY_UNSUPPORTED:
 	case WIMLIB_SCAN_DENTRY_EXCLUDED:
 	case WIMLIB_SCAN_DENTRY_FIXED_SYMLINK:
 	case WIMLIB_SCAN_DENTRY_NOT_FIXED_SYMLINK:
 		if (!(params->add_flags & WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE))
 			return 0;
+		break;
 	}
 	params->progress.scan.status = status;
 	if (status == WIMLIB_SCAN_DENTRY_OK && inode->i_nlink == 1) {
