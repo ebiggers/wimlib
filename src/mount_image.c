@@ -1,10 +1,10 @@
 /*
  * mount_image.c
  *
- * This file implements mounting of WIM files using FUSE, which stands for
- * Filesystem in Userspace.  FUSE allows a filesystem to be implemented in a
- * userspace process by implementing the filesystem primitives--- read(),
- * write(), readdir(), etc.
+ * This file implements mounting of WIM images using FUSE
+ * (Filesystem in Userspace).  See http://fuse.sourceforge.net/.
+ *
+ * Currently it is only expected to work on Linux.
  */
 
 /*
@@ -389,21 +389,20 @@ wim_pathname_to_stream(const struct wimfs_context *ctx, const char *path,
 		stream_name = path_stream_name(path);
 		if (stream_name) {
 			p = (char *)stream_name - 1;
-			*p = T('\0');
+			*p = '\0';
 		}
 	}
 
 	dentry = get_dentry(wim, path, WIMLIB_CASE_SENSITIVE);
 	if (p)
-		*p = T(':');
+		*p = ':';
 	if (!dentry)
 		return -errno;
 
 	inode = dentry->d_inode;
 
-	if (!inode->i_resolved)
-		if (inode_resolve_streams(inode, wim->lookup_table, false))
-			return -EIO;
+	if (inode_resolve_streams(inode, wim->lookup_table, false))
+		return -EIO;
 
 	if (!(lookup_flags & LOOKUP_FLAG_DIRECTORY_OK)
 	      && inode_is_directory(inode))
@@ -505,8 +504,7 @@ create_dentry(struct fuse_context *fuse_ctx, const char *path,
 
 	dentry_add_child(parent, new_dentry);
 
-	if (dentry_ret)
-		*dentry_ret = new_dentry;
+	*dentry_ret = new_dentry;
 	return 0;
 }
 
@@ -944,7 +942,7 @@ out_restore_wim_filename:
 	return ret;
 }
 
-/* Deletes the staging directory, undoing the effects of a succesful call to
+/* Deletes the staging directory, undoing the effects of a successful call to
  * make_staging_dir().  */
 static void
 delete_staging_dir(struct wimfs_context *ctx)
@@ -966,6 +964,7 @@ delete_staging_dir(struct wimfs_context *ctx)
 	close(ctx->parent_dir_fd);
 }
 
+/* Number the inodes in the mounted image sequentially.  */
 static void
 reassign_inode_numbers(struct wimfs_context *ctx)
 {
@@ -992,6 +991,8 @@ release_extra_refcnts(struct wimfs_context *ctx)
 	}
 }
 
+/* Delete the 'struct wim_lookup_table_entry' for any stream that was modified
+ * or created in the read-write mounted image and had a final size of 0.  */
 static void
 delete_empty_streams(struct wimfs_context *ctx)
 {
@@ -1009,6 +1010,9 @@ delete_empty_streams(struct wimfs_context *ctx)
         }
 }
 
+/* Close all file descriptors open to the specified inode.
+ *
+ * Note: closing the last file descriptor might free the inode.  */
 static void
 inode_close_fds(struct wim_inode *inode)
 {
@@ -1021,6 +1025,7 @@ inode_close_fds(struct wim_inode *inode)
 	}
 }
 
+/* Close all file descriptors open to the mounted image.  */
 static void
 close_all_fds(struct wimfs_context *ctx)
 {
@@ -1069,7 +1074,7 @@ renew_current_image(struct wimfs_context *ctx)
 	if (ret)
 		goto err_free_new_lte;
 
-	ret = xml_add_image(wim, T(""));
+	ret = xml_add_image(wim, "");
 	if (ret)
 		goto err_undo_append;
 
@@ -1128,12 +1133,16 @@ commit_image(struct wimfs_context *ctx, int unmount_flags, mqd_t mq)
 	xml_update_image_info(ctx->wim, ctx->wim->current_image);
 
 	write_flags = 0;
+
 	if (unmount_flags & WIMLIB_UNMOUNT_FLAG_CHECK_INTEGRITY)
 		write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
+
 	if (unmount_flags & WIMLIB_UNMOUNT_FLAG_REBUILD)
 		write_flags |= WIMLIB_WRITE_FLAG_REBUILD;
+
 	if (unmount_flags & WIMLIB_UNMOUNT_FLAG_RECOMPRESS)
 		write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
+
 	return wimlib_overwrite(ctx->wim, write_flags, 0);
 }
 
@@ -1149,6 +1158,7 @@ may_unmount_wimfs(void)
 		fuse_ctx->uid == 0);
 }
 
+/* Unmount the mounted image, called from the daemon process.  */
 static int
 unmount_wimfs(void)
 {
@@ -1172,6 +1182,11 @@ unmount_wimfs(void)
 	}
 
 	if (wimfs_ctx->num_open_fds) {
+
+		/* There are still open file descriptors to the image.  */
+
+		/* With COMMIT, refuse to unmount unless FORCE is also
+		 * specified.  */
 		if ((unmount_flags & (WIMLIB_UNMOUNT_FLAG_COMMIT |
 				      WIMLIB_UNMOUNT_FLAG_FORCE))
 				 == WIMLIB_UNMOUNT_FLAG_COMMIT)
@@ -1179,16 +1194,20 @@ unmount_wimfs(void)
 			ret = WIMLIB_ERR_MOUNTED_IMAGE_IS_BUSY;
 			goto out;
 		}
+
+		/* Force-close all file descriptors.  */
 		close_all_fds(wimfs_ctx);
 	}
 
 	if (unmount_flags & WIMLIB_UNMOUNT_FLAG_COMMIT)
 		ret = commit_image(wimfs_ctx, unmount_flags, mq);
 	else
-		ret = 0;
+		ret = 0;  /* Read-only mount, or discarding changes to
+			     a read-write mount  */
+
 out:
 	/* Leave the image mounted if commit failed, unless this is a
-	 * forced unmount.  The user can retry without commit if they
+	 * forced unmount.  The user can retry without COMMIT if they
 	 * want.  */
 	if (!ret || (unmount_flags & WIMLIB_UNMOUNT_FLAG_FORCE)) {
 		unlock_wim_for_append(wimfs_ctx->wim);
@@ -1298,11 +1317,11 @@ wimfs_getattr(const char *path, struct stat *stbuf)
 static int
 copy_xattr(char *dest, size_t destsize, const void *src, size_t srcsize)
 {
-	if (!destsize)
-		return srcsize;
-	if (destsize < srcsize)
-		return -ERANGE;
-	memcpy(dest, src, srcsize);
+	if (destsize) {
+		if (destsize < srcsize)
+			return -ERANGE;
+		memcpy(dest, src, srcsize);
+	}
 	return srcsize;
 }
 
@@ -1380,11 +1399,11 @@ wimfs_getxattr(const char *path, const char *name, char *value,
 		return -EFBIG;
 
 	if (size) {
-		if (lte->size > size)
+		if (size < lte->size)
 			return -ERANGE;
 
 		if (read_full_stream_into_buf(lte, value))
-			return -errno;
+			return errno ? -errno : -EIO;
 	}
 	return lte->size;
 }
@@ -1659,7 +1678,7 @@ wimfs_read(const char *path, char *buf, size_t size,
 	switch (lte->resource_location) {
 	case RESOURCE_IN_WIM:
 		if (read_partial_wim_stream_into_buf(lte, size, offset, buf))
-			ret = -errno;
+			ret = errno ? -errno : -EIO;
 		else
 			ret = size;
 		break;
@@ -1815,7 +1834,8 @@ wimfs_setxattr(const char *path, const char *name,
 	if (!strncmp(name, "wimfs.", 6)) {
 		/* Handle some magical extended attributes.  These really should
 		 * be ioctls, but directory ioctls aren't supported until
-		 * libfuse 2.9, and even then they are broken.  */
+		 * libfuse 2.9, and even then they are broken.  [Fixed by
+		 * libfuse commit e3b7d4c278a26520be63d99d6ea84b26906fe73d]  */
 		name += 6;
 		if (!strcmp(name, "unmount_info")) {
 			if (!may_unmount_wimfs())
@@ -2080,6 +2100,8 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 
 	/* For read-write mount, check for write access to the WIM.  */
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
+		if (!wim->filename)
+			return WIMLIB_ERR_NO_FILENAME;
 		ret = can_delete_from_wim(wim);
 		if (ret)
 			return ret;
@@ -2234,7 +2256,6 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	char optstring[256] =
 		"use_ino"
 		",subtype=wimfs"
-		",attr_timeout=0"
 		",hard_remove"
 		",default_permissions"
 		",kernel_cache"
@@ -2301,27 +2322,27 @@ generate_message_queue_name(char name[WIMFS_MQUEUE_NAME_LEN + 1])
 }
 
 static mqd_t
-create_message_queue(const char *name, bool have_progfunc)
+create_message_queue(const char *name)
 {
-	bool am_root = (getuid() == 0);
-	mode_t umask_save = 0;
-	mode_t mode = 0600;
+	bool am_root;
+	mode_t umask_save;
+	mode_t mode;
 	struct mq_attr attr;
 	mqd_t mq;
 
 	memset(&attr, 0, sizeof(attr));
 	attr.mq_maxmsg = 8;
-	if (have_progfunc)
-		attr.mq_msgsize = sizeof(struct commit_progress_report);
-	else
-		attr.mq_msgsize = sizeof(int);
+	attr.mq_msgsize = sizeof(struct commit_progress_report);
 
+	am_root = (geteuid() == 0);
 	if (am_root) {
 		/* Filesystem mounted as normal user with --allow-other should
 		 * be able to send messages to root user, if they're doing the
 		 * unmount.  */
 		umask_save = umask(0);
 		mode = 0666;
+	} else {
+		mode = 0600;
 	}
 	mq = mq_open(name, O_RDWR | O_CREAT | O_EXCL, mode, &attr);
 	if (am_root)
@@ -2392,7 +2413,7 @@ do_unmount_commit(const char *dir, int unmount_flags,
 	if (progfunc) {
 		generate_message_queue_name(unmount_info.mq_name);
 
-		mq = create_message_queue(unmount_info.mq_name, progfunc != NULL);
+		mq = create_message_queue(unmount_info.mq_name);
 		if (mq == (mqd_t)-1) {
 			ERROR_WITH_ERRNO("Can't create POSIX message queue");
 			return WIMLIB_ERR_MQUEUE;
