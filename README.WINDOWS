@@ -12,9 +12,9 @@ you should read too.
 For the convenience of Windows users, the Windows distribution of wimlib is a
 ZIP file containing the following items:
 
-  * wimlib-imagex.exe, a command-line tool to deal with WIM (.wim) and split WIM
-    (.swm) files that is similar to Microsoft's ImageX.  This is a ready-to-run
-    executable and not an installer.
+  * wimlib-imagex.exe, a command-line tool to deal with WIM (.wim), split WIM
+    (.swm), and ESD (.esd) files that is inspired by Microsoft's ImageX and
+    DISM.  This is a ready-to-run executable and not an installer.
 
   * Very short batch scripts (e.g. wimapply.cmd) which are shortcuts to the
     corresponding wimlib-imagex commands (e.g. `wimlib-imagex apply').
@@ -69,8 +69,7 @@ It's recommended to use wimlib-imagex in scripts to avoid having to
 interactively enter commands.  However, note that wimlib-imagex is largely just
 a command-line front-end for wimlib, and it's possible to use wimlib's API in
 other front-ends or applications.  Currently there is no official graphical user
-interface available for wimlib or wimlib-imagex.  An unofficial Windows-only
-graphical user interface that provides a thin wrapper around wimlib-imagex can
-be downloaded at
-http://reboot.pro/files/file/485-wimlib-imagex-command-line-compiler/; however,
-as of 2014-03-23 it is still under development and is only released for testing.
+interface available for wimlib or wimlib-imagex.  However, an unofficial, beta,
+Windows-only graphical user interface that provides a thin wrapper around
+wimlib-imagex can be downloaded at
+http://reboot.pro/files/file/485-wimlib-imagex-command-line-compiler/.
