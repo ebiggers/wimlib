@@ -33,14 +33,8 @@
 #  include <emmintrin.h>
 #endif
 
-/* LZX uses what it calls 'position slots' to represent match offsets.
- * What this means is that a small 'position slot' number and a small
- * offset from that slot are encoded instead of one large offset for
- * every match.
- * - lzx_position_base is an index to the position slot bases
- * - lzx_extra_bits states how many bits of offset-from-base data is needed.
+/* Mapping: position slot => first match offset that uses that position slot.
  */
-
 const u32 lzx_position_base[LZX_MAX_POSITION_SLOTS] = {
 	0      , 1      , 2      , 3      , 4      ,	/* 0  --- 4  */
 	6      , 8      , 12     , 16     , 24     ,	/* 5  --- 9  */
@@ -55,6 +49,8 @@ const u32 lzx_position_base[LZX_MAX_POSITION_SLOTS] = {
 	2097152						/* 50	     */
 };
 
+/* Mapping: position slot => how many extra bits must be read and added to the
+ * corresponding position base to decode the match offset.  */
 #ifdef USE_LZX_EXTRA_BITS_ARRAY
 const u8 lzx_extra_bits[LZX_MAX_POSITION_SLOTS] = {
 	0 , 0 , 0 , 0 , 1 ,
@@ -193,7 +189,7 @@ inline  /* Although inlining the 'process_target' function still speeds up the
 	   SSE2 case, it bloats the binary more.  */
 #endif
 void
-lzx_e8_filter(u8 *data, s32 size, void (*process_target)(s32 *, s32))
+lzx_e8_filter(u8 *data, u32 size, void (*process_target)(s32 *, s32))
 {
 #ifdef __SSE2__
 	/* SSE2 vectorized implementation for x86_64.  This speeds up LZX
@@ -288,13 +284,13 @@ lzx_e8_filter(u8 *data, s32 size, void (*process_target)(s32 *, s32))
 }
 
 void
-lzx_do_e8_preprocessing(u8 *data, s32 size)
+lzx_do_e8_preprocessing(u8 *data, u32 size)
 {
 	lzx_e8_filter(data, size, do_translate_target);
 }
 
 void
-lzx_undo_e8_preprocessing(u8 *data, s32 size)
+lzx_undo_e8_preprocessing(u8 *data, u32 size)
 {
 	lzx_e8_filter(data, size, undo_translate_target);
 }

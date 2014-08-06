@@ -107,6 +107,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/lz_suffix_array_utils.h	\
 	include/wimlib/lzms.h		\
 	include/wimlib/lzx.h		\
+	include/wimlib/lzx_constants.h	\
 	include/wimlib/metadata.h	\
 	include/wimlib/pathlist.h	\
 	include/wimlib/paths.h		\

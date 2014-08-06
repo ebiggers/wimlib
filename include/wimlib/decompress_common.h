@@ -230,7 +230,7 @@ make_huffman_decode_table(u16 decode_table[], unsigned num_syms,
  * This function won't write any data beyond this position.
  */
 static inline void
-lz_copy(u8 *dst, unsigned length, unsigned offset, const u8 *winend)
+lz_copy(u8 *dst, u32 length, u32 offset, const u8 *winend)
 {
 	const u8 *src = dst - offset;
 #if defined(__x86_64__) || defined(__i386__)
