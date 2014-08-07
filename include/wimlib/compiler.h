@@ -46,4 +46,12 @@
 #	define is_constant(x) (0)
 #endif /* __GNUC__ */
 
+#ifdef __CHECKER__
+#  define _bitwise_attr	__attribute__((bitwise))
+#  define _force_attr	__attribute__((force))
+#else
+#  define _bitwise_attr
+#  define _force_attr
+#endif
+
 #endif /* _WIMLIB_COMPILER_H */
