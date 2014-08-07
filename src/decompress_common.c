@@ -15,7 +15,6 @@
 #endif
 
 #include "wimlib/decompress_common.h"
-#include "wimlib/error.h"
 #include "wimlib/util.h" /* for BUILD_BUG_ON()  */
 
 #include <string.h>
@@ -179,7 +178,6 @@ make_huffman_decode_table(u16 decode_table[const restrict],
 		if (unlikely(left < 0)) {
 			/* The lengths overflow the codespace; that is, the code
 			 * is over-subscribed.  */
-			DEBUG("Invalid prefix code (over-subscribed)");
 			return -1;
 		}
 	}
@@ -201,7 +199,6 @@ make_huffman_decode_table(u16 decode_table[const restrict],
 			       table_num_entries * sizeof(decode_table[0]));
 			return 0;
 		}
-		DEBUG("Invalid prefix code (incomplete set)");
 		return -1;
 	}
 
