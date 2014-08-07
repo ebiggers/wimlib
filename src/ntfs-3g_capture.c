@@ -529,7 +529,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 				 ntfs_volume *vol,
 				 struct add_image_params *params)
 {
-	le32 attributes;
+	u32 attributes;
 	int ret;
 	struct wim_dentry *root = NULL;
 	struct wim_inode *inode = NULL;
@@ -582,7 +582,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	inode->i_creation_time    = le64_to_cpu(ni->creation_time);
 	inode->i_last_write_time  = le64_to_cpu(ni->last_data_change_time);
 	inode->i_last_access_time = le64_to_cpu(ni->last_access_time);
-	inode->i_attributes       = le32_to_cpu(attributes);
+	inode->i_attributes       = attributes;
 	inode->i_resolved         = 1;
 
 	/* Capture streams.  */
