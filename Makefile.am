@@ -102,6 +102,8 @@ libwim_la_SOURCES =		\
 	include/wimlib/integrity.h	\
 	include/wimlib/list.h		\
 	include/wimlib/lookup_table.h	\
+	include/wimlib/lz_extend.h	\
+	include/wimlib/lz_hash3.h	\
 	include/wimlib/lz_mf.h		\
 	include/wimlib/lz_mf_ops.h	\
 	include/wimlib/lz_suffix_array_utils.h	\

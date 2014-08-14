@@ -30,26 +30,25 @@
  */
 
 /*
- * Note: the binary tree search/update algorithm is based on code from the
- * public domain LZMA SDK (authors: Igor Pavlov, Lasse Collin).
+ * Note: the binary tree search/update algorithm is based on LzFind.c from
+ * 7-Zip, which was written by Igor Pavlov and released into the public domain.
  */
 
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #endif
 
+#include "wimlib/lz_extend.h"
+#include "wimlib/lz_hash3.h"
 #include "wimlib/lz_mf.h"
 #include "wimlib/util.h"
-#include <pthread.h>
+
 #include <string.h>
 
-/* Number of hash buckets.  This can be changed, but it should be a power of 2
- * so that the correct hash bucket can be selected using a fast bitwise AND.  */
-#define LZ_BT_HASH_LEN		(1 << 16)
+/* log2 of the number of buckets in the hash table.  This can be changed.  */
+#define LZ_BT_HASH_ORDER 16
 
-/* Number of bytes from which the hash code is computed at each position.  This
- * can be changed, provided that lz_bt_hash() is updated as well.  */
-#define LZ_BT_HASH_BYTES   3
+#define LZ_BT_HASH_LEN (1 << LZ_BT_HASH_ORDER)
 
 /* Number of entries in the digram table.
  *
@@ -66,39 +65,13 @@ struct lz_bt {
 	u32 *digram_tab;
 	u32 *child_tab;
 	u32 next_hash;
+	u16 next_digram;
 };
 
-static u32 crc32_table[256];
-static pthread_once_t crc32_table_filled = PTHREAD_ONCE_INIT;
-
-static void
-crc32_init(void)
-{
-        for (u32 b = 0; b < 256; b++) {
-                u32 r = b;
-                for (int i = 0; i < 8; i++) {
-                        if (r & 1)
-                                r = (r >> 1) ^ 0xEDB88320;
-                        else
-                                r >>= 1;
-                }
-                crc32_table[b] = r;
-        }
-}
-
-/* This hash function is taken from the LZMA SDK.  It seems to work well.
-
- * TODO: Maybe use the SSE4.2 CRC32 instruction when available?  */
 static inline u32
 lz_bt_hash(const u8 *p)
 {
-	u32 hash = 0;
-
-	hash ^= crc32_table[p[0]];
-	hash ^= p[1];
-	hash ^= (u32)p[2] << 8;
-
-	return hash % LZ_BT_HASH_LEN;
+	return lz_hash(p, LZ_BT_HASH_ORDER);
 }
 
 static void
@@ -165,12 +138,8 @@ lz_bt_init(struct lz_mf *_mf)
 		mf->digram_tab = mf->hash_tab + LZ_BT_HASH_LEN;
 		mf->child_tab = mf->digram_tab + LZ_BT_DIGRAM_TAB_LEN;
 	} else {
-		mf->digram_tab = NULL;
 		mf->child_tab = mf->hash_tab + LZ_BT_HASH_LEN;
 	}
-
-	/* Fill in the CRC32 table if not done already.  */
-	pthread_once(&crc32_table_filled, crc32_init);
 
 	return true;
 }
@@ -187,9 +156,6 @@ lz_bt_load_window(struct lz_mf *_mf, const u8 window[], u32 size)
 	if (mf->digram_tab)
 		clear_len += LZ_BT_DIGRAM_TAB_LEN;
 	memset(mf->hash_tab, 0, clear_len * sizeof(u32));
-
-	if (size >= LZ_BT_HASH_BYTES)
-		mf->next_hash = lz_bt_hash(window);
 }
 
 /*
@@ -198,7 +164,7 @@ lz_bt_load_window(struct lz_mf *_mf, const u8 window[], u32 size)
  *
  * @window
  *	The window being searched.
- * @cur_window_pos
+ * @cur_pos
  *	The current position in the window.
  * @child_tab
  *	Table of child pointers for the binary tree.  The children of the node
@@ -213,9 +179,14 @@ lz_bt_load_window(struct lz_mf *_mf, const u8 window[], u32 size)
  *	the current hash code is empty.
  * @min_len
  *	Ignore matches shorter than this length.  This must be at least 1.
+ * @nice_len
+ *	Stop searching if a match of this length or longer is found.  This must
+ *	be less than or equal to @max_len.
  * @max_len
- *	Don't produce any matches longer than this length.  If we find a match
- *	this long, terminate the search and return.
+ *	Maximum length of matches to return.  This can be longer than @nice_len,
+ *	in which case a match of length @nice_len will still cause the search to
+ *	be terminated, but the match will be extended up to @max_len bytes
+ *	first.
  * @max_search_depth
  *	Stop if we reach this depth in the binary tree.
  * @matches
@@ -225,17 +196,18 @@ lz_bt_load_window(struct lz_mf *_mf, const u8 window[], u32 size)
  *	@min_len, nor shall any match be longer than @max_len, nor shall any two
  *	matches have the same offset.
  *
- * Returns the number of matches found and written to @matches.
+ * Returns a pointer to the next free slot in @matches.
  */
-static u32
+static struct lz_match *
 do_search(const u8 window[restrict],
-	  const u32 cur_window_pos,
+	  const u32 cur_pos,
 	  u32 child_tab[restrict],
 	  u32 cur_match,
 	  const u32 min_len,
+	  const u32 nice_len,
 	  const u32 max_len,
 	  const u32 max_search_depth,
-	  struct lz_match matches[restrict])
+	  struct lz_match *lz_matchptr)
 {
 	/*
 	 * Here's my explanation of how this code actually works.  Beware: this
@@ -295,15 +267,14 @@ do_search(const u8 window[restrict],
 	 * matches must be non-decreasing as they are encountered by the tree
 	 * search.
 	 *
-	 * Using this observation, we can maintain two variables,
-	 * 'longest_lt_match_len' and 'longest_gt_match_len', that represent the
-	 * length of the longest lexicographically lesser and greater,
-	 * respectively, match that has been examined so far.   Then, when
-	 * examining a new match, we need only start comparing at the index
-	 * min(longest_lt_match_len, longest_gt_match_len) byte.  Note that we
-	 * cannot know beforehand whether the match will be lexicographically
-	 * lesser or greater, hence the need for taking the minimum of these two
-	 * lengths.
+	 * Using this observation, we can maintain two variables, 'best_lt_len'
+	 * and 'best_gt_len', that represent the length of the longest
+	 * lexicographically lesser and greater, respectively, match that has
+	 * been examined so far.   Then, when examining a new match, we need
+	 * only start comparing at the index min(best_lt_len, best_gt_len) byte.
+	 * Note that we cannot know beforehand whether the match will be
+	 * lexicographically lesser or greater, hence the need for taking the
+	 * minimum of these two lengths.
 	 *
 	 * As noted earlier, as we descend into the tree, the potential matches
 	 * will have strictly increasing offsets.  To make things faster for
@@ -357,10 +328,10 @@ do_search(const u8 window[restrict],
 	 * node as "pending (greater than)".
 	 *
 	 * If the search terminates before the current string is found (up to a
-	 * precision of @max_len bytes), then we set "pending (less than)" and
+	 * precision of @nice_len bytes), then we set "pending (less than)" and
 	 * "pending (greater than)" to point to nothing.  Alternatively, if the
 	 * search terminates due to finding the current string (up to a
-	 * precision of @max_len bytes), then we set "pending (less than)" and
+	 * precision of @nice_len bytes), then we set "pending (less than)" and
 	 * "pending (greater than)" to point to the appropriate children of that
 	 * match.
 	 *
@@ -383,53 +354,50 @@ do_search(const u8 window[restrict],
 	 * It's complicated, but it should make sense if you think about it.
 	 * The algorithm basically just moves subtrees into the correct
 	 * locations as it walks down the tree for the search.  But also, if the
-	 * algorithm actually finds a match of length @max_len with the current
+	 * algorithm actually finds a match of length @nice_len with the current
 	 * string, it no longer needs that match node and can discard it.  The
 	 * algorithm also will discard nodes if the search terminates due to the
 	 * depth limit.  For these reasons, the binary tree might not, in fact,
 	 * contain all valid positions.
 	 */
 
-	u32 num_matches = 0;
-	u32 longest_lt_match_len = 0;
-	u32 longest_gt_match_len = 0;
-	u32 longest_match_len = min_len - 1;
-	u32 *pending_lt_ptr = &child_tab[cur_window_pos * 2 + 0];
-	u32 *pending_gt_ptr = &child_tab[cur_window_pos * 2 + 1];
-	const u8 *strptr = &window[cur_window_pos];
+	u32 best_lt_len = 0;
+	u32 best_gt_len = 0;
+	u32 best_len = min_len - 1;
+	u32 *pending_lt_ptr = &child_tab[cur_pos * 2 + 0];
+	u32 *pending_gt_ptr = &child_tab[cur_pos * 2 + 1];
+	const u8 * const strptr = &window[cur_pos];
 	u32 depth_remaining = max_search_depth;
+
 	for (;;) {
 		const u8 *matchptr;
 		u32 len;
 
-		if (depth_remaining-- == 0 || cur_match == 0) {
+		if (cur_match == 0 || depth_remaining-- == 0) {
 			*pending_lt_ptr = 0;
 			*pending_gt_ptr = 0;
-			return num_matches;
+			return lz_matchptr;
 		}
 
 		matchptr = &window[cur_match];
-		len = min(longest_lt_match_len, longest_gt_match_len);
+		len = min(best_lt_len, best_gt_len);
 
 		if (matchptr[len] == strptr[len]) {
 
-			if (++len != max_len && matchptr[len] == strptr[len])
-				while (++len != max_len)
-					if (matchptr[len] != strptr[len])
-						break;
+			len = lz_extend(strptr, matchptr, len + 1, max_len);
 
-			if (len > longest_match_len) {
-				longest_match_len = len;
+			if (len > best_len) {
+				best_len = len;
 
-				matches[num_matches++] = (struct lz_match) {
+				*lz_matchptr++ = (struct lz_match) {
 					.len = len,
 					.offset = strptr - matchptr,
 				};
 
-				if (len == max_len) {
+				if (len >= nice_len) {
 					*pending_lt_ptr = child_tab[cur_match * 2 + 0];
 					*pending_gt_ptr = child_tab[cur_match * 2 + 1];
-					return num_matches;
+					return lz_matchptr;
 				}
 			}
 		}
@@ -438,12 +406,12 @@ do_search(const u8 window[restrict],
 			*pending_lt_ptr = cur_match;
 			pending_lt_ptr = &child_tab[cur_match * 2 + 1];
 			cur_match = *pending_lt_ptr;
-			longest_lt_match_len = len;
+			best_lt_len = len;
 		} else {
 			*pending_gt_ptr = cur_match;
 			pending_gt_ptr = &child_tab[cur_match * 2 + 0];
 			cur_match = *pending_gt_ptr;
-			longest_gt_match_len = len;
+			best_gt_len = len;
 		}
 	}
 }
@@ -452,21 +420,27 @@ static u32
 lz_bt_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 {
 	struct lz_bt *mf = (struct lz_bt *)_mf;
-	const u32 bytes_remaining = lz_mf_get_bytes_remaining(&mf->base);
+	const u8 * const window = mf->base.cur_window;
+	const u32 cur_pos = mf->base.cur_window_pos++;
+	const u32 bytes_remaining = mf->base.cur_window_size - cur_pos;
+	u32 min_len;
+	const u32 max_len = min(bytes_remaining, mf->base.params.max_match_len);
+	const u32 nice_len = min(max_len, mf->base.params.nice_match_len);
 	u32 hash;
 	u32 cur_match;
-	u32 min_len;
-	u32 num_matches = 0;
+	struct lz_match *lz_matchptr = matches;
 
-	if (unlikely(bytes_remaining <= mf->base.params.min_match_len + 1))
-		goto out;
+	if (unlikely(bytes_remaining < LZ_HASH_REQUIRED_NBYTES + 1))
+		return 0;
 
 	if (mf->digram_tab) {
 		/* Search the digram table for a length 2 match.  */
 
-		const u16 digram = *(const u16 *)lz_mf_get_window_ptr(&mf->base);
+		const u16 digram = mf->next_digram;
+		mf->next_digram = *(const u16 *)(&window[cur_pos + 1]);
+		prefetch(&mf->digram_tab[mf->next_digram]);
 		cur_match = mf->digram_tab[digram];
-		mf->digram_tab[digram] = mf->base.cur_window_pos;
+		mf->digram_tab[digram] = cur_pos;
 
 		/* We're only interested in matches of length exactly 2, since
 		 * those won't be found during the binary tree search.
@@ -476,13 +450,10 @@ lz_bt_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 		 * search.  However I found this actually *reduced* performance
 		 * slightly, evidently because the binary tree still needs to be
 		 * searched/updated starting from the root in either case.  */
-		if (cur_match != 0 &&
-		    (mf->base.cur_window[cur_match + 2] !=
-		     mf->base.cur_window[mf->base.cur_window_pos + 2]))
-		{
-			matches[num_matches++] = (struct lz_match) {
+		if (cur_match != 0 && window[cur_match + 2] != window[cur_pos + 2]) {
+			*lz_matchptr++ = (struct lz_match) {
 				.len = 2,
-				.offset = mf->base.cur_window_pos - cur_match,
+				.offset = cur_pos - cur_match,
 			};
 		}
 		min_len = 3;
@@ -491,142 +462,134 @@ lz_bt_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 	}
 
 	hash = mf->next_hash;
-	mf->next_hash = lz_bt_hash(lz_mf_get_window_ptr(&mf->base) + 1);
+	mf->next_hash = lz_bt_hash(&window[cur_pos + 1]);
 	prefetch(&mf->hash_tab[mf->next_hash]);
 	cur_match = mf->hash_tab[hash];
-	mf->hash_tab[hash] = mf->base.cur_window_pos;
+	mf->hash_tab[hash] = cur_pos;
 
 	/* Search the binary tree of 'hash' for matches while re-rooting it at
 	 * the current position.  */
-	num_matches += do_search(mf->base.cur_window,
-				 mf->base.cur_window_pos,
-				 mf->child_tab,
-				 cur_match,
-				 min_len,
-				 min(bytes_remaining, mf->base.params.nice_match_len),
-				 mf->base.params.max_search_depth,
-				 &matches[num_matches]);
-
-	/* If the longest match is @nice_match_len in length, it may have been
-	 * truncated.  Try extending it up to the maximum match length.  */
-	if (num_matches != 0 &&
-	    matches[num_matches - 1].len == mf->base.params.nice_match_len)
-	{
-		const u8 * const strptr = lz_mf_get_window_ptr(&mf->base);
-		const u8 * const matchptr = strptr - matches[num_matches - 1].offset;
-		const u32 len_limit = min(bytes_remaining, mf->base.params.max_match_len);
-		u32 len;
-
-		len = matches[num_matches - 1].len;
-		while (len < len_limit && strptr[len] == matchptr[len])
-			len++;
-		matches[num_matches - 1].len = len;
-	}
-
-out:
-	/* Advance to the next position.  */
-	mf->base.cur_window_pos++;
+	lz_matchptr = do_search(window,
+				cur_pos,
+				mf->child_tab,
+				cur_match,
+				min_len,
+				nice_len,
+				max_len,
+				mf->base.params.max_search_depth,
+				lz_matchptr);
 
 	/* Return the number of matches found.  */
-	return num_matches;
+	return lz_matchptr - matches;
 }
 
-/* This is the same as do_search(), but it does not save any matches.
+/* This is very similar to do_search(), but it does not save any matches.
  * See do_search() for explanatory comments.  */
 static void
 do_skip(const u8 window[restrict],
-	const u32 cur_window_pos,
+	const u32 cur_pos,
 	u32 child_tab[restrict],
 	u32 cur_match,
-	const u32 max_len,
+	const u32 nice_len,
 	const u32 max_search_depth)
 {
-	u32 longest_lt_match_len = 0;
-	u32 longest_gt_match_len = 0;
-	u32 *pending_lt_ptr = &child_tab[cur_window_pos * 2 + 0];
-	u32 *pending_gt_ptr = &child_tab[cur_window_pos * 2 + 1];
-	const u8 * const strptr = &window[cur_window_pos];
+	u32 best_lt_len = 0;
+	u32 best_gt_len = 0;
+	u32 *pending_lt_ptr = &child_tab[cur_pos * 2 + 0];
+	u32 *pending_gt_ptr = &child_tab[cur_pos * 2 + 1];
+	const u8 * const strptr = &window[cur_pos];
 	u32 depth_remaining = max_search_depth;
 	for (;;) {
 		const u8 *matchptr;
 		u32 len;
 
-		if (depth_remaining-- == 0 || cur_match == 0) {
+		if (cur_match == 0 || depth_remaining-- == 0) {
 			*pending_lt_ptr = 0;
 			*pending_gt_ptr = 0;
 			return;
 		}
 
 		matchptr = &window[cur_match];
-		len = min(longest_lt_match_len, longest_gt_match_len);
+		len = min(best_lt_len, best_gt_len);
 
 		if (matchptr[len] == strptr[len]) {
-			do {
-				if (++len == max_len) {
-					*pending_lt_ptr = child_tab[cur_match * 2 + 0];
-					*pending_gt_ptr = child_tab[cur_match * 2 + 1];
-					return;
-				}
-			} while (matchptr[len] == strptr[len]);
+			len = lz_extend(strptr, matchptr, len + 1, nice_len);
+			if (len == nice_len) {
+				*pending_lt_ptr = child_tab[cur_match * 2 + 0];
+				*pending_gt_ptr = child_tab[cur_match * 2 + 1];
+				return;
+			}
 		}
 		if (matchptr[len] < strptr[len]) {
 			*pending_lt_ptr = cur_match;
 			pending_lt_ptr = &child_tab[cur_match * 2 + 1];
 			cur_match = *pending_lt_ptr;
-			longest_lt_match_len = len;
+			best_lt_len = len;
 		} else {
 			*pending_gt_ptr = cur_match;
 			pending_gt_ptr = &child_tab[cur_match * 2 + 0];
 			cur_match = *pending_gt_ptr;
-			longest_gt_match_len = len;
+			best_gt_len = len;
 		}
 	}
-}
-
-static void
-lz_bt_skip_position(struct lz_bt *mf)
-{
-	const u32 bytes_remaining = lz_mf_get_bytes_remaining(&mf->base);
-	u32 hash;
-	u32 cur_match;
-
-	if (unlikely(bytes_remaining <= mf->base.params.min_match_len + 1))
-		goto out;
-
-	/* Update the digram table.  */
-	if (mf->digram_tab) {
-		const u16 digram = *(const u16 *)lz_mf_get_window_ptr(&mf->base);
-		mf->digram_tab[digram] = mf->base.cur_window_pos;
-	}
-
-	/* Update the hash table.  */
-	hash = mf->next_hash;
-	mf->next_hash = lz_bt_hash(lz_mf_get_window_ptr(&mf->base) + 1);
-	prefetch(&mf->hash_tab[mf->next_hash]);
-	cur_match = mf->hash_tab[hash];
-	mf->hash_tab[hash] = mf->base.cur_window_pos;
-
-	/* Update the binary tree for the appropriate hash code.  */
-	do_skip(mf->base.cur_window,
-		mf->base.cur_window_pos,
-		mf->child_tab,
-		cur_match,
-		min(bytes_remaining, mf->base.params.nice_match_len),
-		mf->base.params.max_search_depth);
-
-out:
-	/* Advance to the next position.  */
-	mf->base.cur_window_pos++;
 }
 
 static void
 lz_bt_skip_positions(struct lz_mf *_mf, u32 n)
 {
 	struct lz_bt *mf = (struct lz_bt *)_mf;
+	const u8 * const window = mf->base.cur_window;
+	u32 cur_pos = mf->base.cur_window_pos;
+	u32 end_pos = cur_pos + n;
+	u32 bytes_remaining = mf->base.cur_window_size - cur_pos;
+	u32 hash;
+	u32 next_hash;
+	u32 cur_match;
+	u16 digram;
+	u16 next_digram;
 
+	mf->base.cur_window_pos = end_pos;
+
+	if (unlikely(bytes_remaining < n + (LZ_HASH_REQUIRED_NBYTES + 1) - 1)) {
+	        /* Nearing end of window.  */
+	        if (unlikely(bytes_remaining < (LZ_HASH_REQUIRED_NBYTES + 1)))
+	                return;
+
+	        end_pos = cur_pos + bytes_remaining - (LZ_HASH_REQUIRED_NBYTES + 1) + 1;
+	}
+
+	next_hash = mf->next_hash;
+	next_digram = mf->next_digram;
 	do {
-		lz_bt_skip_position(mf);
-	} while (--n);
+		if (mf->digram_tab) {
+			digram = next_digram;
+			next_digram = *(const u16 *)(&window[cur_pos + 1]);
+			mf->digram_tab[digram] = cur_pos;
+		}
+
+		hash = next_hash;
+		next_hash = lz_bt_hash(&window[cur_pos + 1]);
+		cur_match = mf->hash_tab[hash];
+		mf->hash_tab[hash] = cur_pos;
+
+		/* Update the binary tree for the appropriate hash code.  */
+		do_skip(window,
+			cur_pos,
+			mf->child_tab,
+			cur_match,
+			min(bytes_remaining, mf->base.params.nice_match_len),
+			mf->base.params.max_search_depth);
+
+		bytes_remaining--;
+	} while (++cur_pos != end_pos);
+
+	if (mf->digram_tab) {
+		prefetch(&mf->digram_tab[next_digram]);
+		mf->next_digram = next_digram;
+	}
+
+	prefetch(&mf->hash_tab[next_hash]);
+	mf->next_hash = next_hash;
 }
 
 static void

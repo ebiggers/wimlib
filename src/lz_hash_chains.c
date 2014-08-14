@@ -33,64 +33,35 @@
 #  include "config.h"
 #endif
 
+#include "wimlib/lz_extend.h"
+#include "wimlib/lz_hash3.h"
 #include "wimlib/lz_mf.h"
 #include "wimlib/util.h"
-#include <pthread.h>
+
 #include <string.h>
 
-/* Number of hash buckets.  This can be changed, but should be a power of 2 so
- * that the correct hash bucket can be selected using a fast bitwise AND.  */
-#define LZ_HC_HASH_LEN     (1 << 15)
+/* log2 of the number of buckets in the hash table.  This can be changed.  */
+#define LZ_HC_HASH_ORDER 15
 
-/* Number of bytes from which the hash code is computed at each position.  This
- * can be changed, provided that lz_hc_hash() is updated as well.  */
-#define LZ_HC_HASH_BYTES   3
+#define LZ_HC_HASH_LEN   (1 << LZ_HC_HASH_ORDER)
 
 struct lz_hc {
 	struct lz_mf base;
-	u32 *hash_tab;
-	u32 *prev_tab;
+	u32 *hash_tab; /* followed by 'prev_tab' in memory */
 	u32 next_hash;
 };
 
-static u32 crc32_table[256];
-static pthread_once_t crc32_table_filled = PTHREAD_ONCE_INIT;
-
-static void
-crc32_init(void)
-{
-        for (u32 b = 0; b < 256; b++) {
-                u32 r = b;
-                for (int i = 0; i < 8; i++) {
-                        if (r & 1)
-                                r = (r >> 1) ^ 0xEDB88320;
-                        else
-                                r >>= 1;
-                }
-                crc32_table[b] = r;
-        }
-}
-
-/* This hash function is taken from the LZMA SDK.  It seems to work well.
- *
- * TODO: Maybe use the SSE4.2 CRC32 instruction when available?  */
 static inline u32
 lz_hc_hash(const u8 *p)
 {
-	u32 hash = 0;
-
-	hash ^= crc32_table[p[0]];
-	hash ^= p[1];
-	hash ^= (u32)p[2] << 8;
-
-	return hash % LZ_HC_HASH_LEN;
+	return lz_hash(p, LZ_HC_HASH_ORDER);
 }
 
 static void
 lz_hc_set_default_params(struct lz_mf_params *params)
 {
-	if (params->min_match_len < LZ_HC_HASH_BYTES)
-		params->min_match_len = LZ_HC_HASH_BYTES;
+	if (params->min_match_len < LZ_HASH_NBYTES)
+		params->min_match_len = LZ_HASH_NBYTES;
 
 	if (params->max_match_len == 0)
 		params->max_match_len = params->max_window_size;
@@ -115,7 +86,6 @@ lz_hc_params_valid(const struct lz_mf_params *_params)
 
 	lz_hc_set_default_params(&params);
 
-	/* Avoid edge case where min_match_len = 3, max_match_len = 2 */
 	return (params.min_match_len <= params.max_match_len);
 }
 
@@ -137,16 +107,9 @@ lz_hc_init(struct lz_mf *_mf)
 
 	lz_hc_set_default_params(&mf->base.params);
 
-	/* Allocate space for 'hash_tab' and 'prev_tab'.  */
-
 	mf->hash_tab = MALLOC(lz_hc_get_needed_memory(mf->base.params.max_window_size));
 	if (!mf->hash_tab)
 		return false;
-
-	mf->prev_tab = mf->hash_tab + LZ_HC_HASH_LEN;
-
-	/* Fill in the CRC32 table if not done already.  */
-	pthread_once(&crc32_table_filled, crc32_init);
 
 	return true;
 }
@@ -157,9 +120,6 @@ lz_hc_load_window(struct lz_mf *_mf, const u8 window[], u32 size)
 	struct lz_hc *mf = (struct lz_hc *)_mf;
 
 	memset(mf->hash_tab, 0, LZ_HC_HASH_LEN * sizeof(u32));
-
-	if (size >= LZ_HC_HASH_BYTES)
-		mf->next_hash = lz_hc_hash(window);
 }
 
 static u32
@@ -167,19 +127,20 @@ lz_hc_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 {
 	struct lz_hc *mf = (struct lz_hc *)_mf;
 	const u8 * const window = mf->base.cur_window;
-	const u32 cur_pos = mf->base.cur_window_pos;
+	const u32 cur_pos = mf->base.cur_window_pos++;
 	const u8 * const strptr = &window[cur_pos];
 	const u32 bytes_remaining = mf->base.cur_window_size - cur_pos;
-	u32 * const prev_tab = mf->prev_tab;
-	const u32 nice_len = min(bytes_remaining, mf->base.params.nice_match_len);
+	u32 * const prev_tab = mf->hash_tab + LZ_HC_HASH_LEN;
+	const u32 max_len = min(bytes_remaining, mf->base.params.max_match_len);
+	const u32 nice_len = min(max_len, mf->base.params.nice_match_len);
 	u32 best_len = mf->base.params.min_match_len - 1;
 	u32 depth_remaining = mf->base.params.max_search_depth;
-	u32 num_matches = 0;
+	struct lz_match *lz_matchptr = matches;
 	u32 hash;
 	u32 cur_match;
 
-	if (unlikely(bytes_remaining <= mf->base.params.min_match_len))
-		goto out;
+	if (unlikely(bytes_remaining < LZ_HASH_REQUIRED_NBYTES + 1))
+		return 0;
 
 	/* Insert the current position into the appropriate hash chain and set
 	 * 'cur_match' to the previous head.
@@ -194,96 +155,119 @@ lz_hc_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 	mf->hash_tab[hash] = cur_pos;
 	prev_tab[cur_pos] = cur_match;
 
+	/* Ensure we can find a match of at least the requested length.  */
+	if (unlikely(best_len >= max_len))
+		return 0;
+
+	/* Search the appropriate hash chain for matches.  */
 	for (; cur_match && depth_remaining--; cur_match = prev_tab[cur_match]) {
 
 		const u8 * const matchptr = &window[cur_match];
 		u32 len;
 
-		/* Considering a match at 'matchptr'.  */
-
-		/* The bytes at index 'best_len' are the most likely to differ,
-		 * so check them first.
+		/* Considering the potential match at 'matchptr':  is it longer
+		 * than 'best_len'?
 		 *
-		 * The bytes at indices 'best_len - 1' and '0' are less
+		 * The bytes at index 'best_len' are the most likely to differ,
+		 * so check them first.  */
+		if (matchptr[best_len] != strptr[best_len])
+			goto next_match;
+
+	#if HAVE_FAST_LZ_EXTEND
+		if ((*(const u32 *)strptr & 0xFFFFFF) !=
+		    (*(const u32 *)matchptr & 0xFFFFFF))
+			goto next_match;
+
+		len = lz_extend(strptr, matchptr, 3, max_len);
+
+		if (len > best_len) {
+			best_len = len;
+
+			*lz_matchptr++ = (struct lz_match) {
+				.len = best_len,
+				.offset = strptr - matchptr,
+			};
+
+			if (best_len >= nice_len)
+				break;
+		}
+
+	#else /* HAVE_FAST_LZ_EXTEND */
+
+		/* The bytes at indices 'best_len - 1' and '0' are less
 		 * important to check separately.  But doing so still gives a
-		 * slight performance improvement, probably because they create
-		 * separate branches for the CPU to predict independently of the
-		 * branches in the main comparison loops.  */
-		if (matchptr[best_len] != strptr[best_len] ||
-		    matchptr[best_len - 1] != strptr[best_len - 1] ||
-		    matchptr[0] != strptr[0])
+		 * slight performance improvement, at least on x86_64, probably
+		 * because they create separate branches for the CPU to predict
+		 * independently of the branches in the main comparison loops.
+		 */
+		 if (matchptr[best_len - 1] != strptr[best_len - 1] ||
+		     matchptr[0] != strptr[0])
 			goto next_match;
 
 		for (len = 1; len < best_len - 1; len++)
 			if (matchptr[len] != strptr[len])
 				goto next_match;
 
-		/* We now know the match length is at least 'best_len + 1'.  */
+		/* The match is the longest found so far ---
+		 * at least 'best_len' + 1 bytes.  Continue extending it.  */
 
-		len = best_len;
+		if (++best_len != max_len && strptr[best_len] == matchptr[best_len])
+			while (++best_len != max_len)
+				if (strptr[best_len] != matchptr[best_len])
+					break;
 
-		do {
-			if (++len == nice_len) {
-				/* 'nice_len' reached; don't waste time
-				 * searching for longer matches.  Extend the
-				 * match as far as possible, record it, and
-				 * return.  */
-				const u32 max_len = min(bytes_remaining,
-							mf->base.params.max_match_len);
-				while (len < max_len && strptr[len] == matchptr[len])
-					len++;
-				matches[num_matches++] = (struct lz_match) {
-					.len = len,
-					.offset = strptr - matchptr,
-				};
-				goto out;
-			}
-		} while (matchptr[len] == strptr[len]);
-
-		/* Found a longer match, but 'nice_len' not yet reached.  */
-		best_len = len;
-		matches[num_matches++] = (struct lz_match) {
-			.len = len,
+		/* Record the match.  */
+		*lz_matchptr++ = (struct lz_match) {
+			.len = best_len,
 			.offset = strptr - matchptr,
 		};
+
+		/* Terminate the search if 'nice_len' was reached.  */
+		if (best_len >= nice_len)
+			break;
+	#endif /* !HAVE_FAST_LZ_EXTEND */
 
 	next_match:
 		/* Continue to next match in the chain.  */
 		;
 	}
 
-out:
-	mf->base.cur_window_pos++;
-	return num_matches;
-}
-
-static void
-lz_hc_skip_position(struct lz_hc *mf)
-{
-	const u32 bytes_remaining = lz_mf_get_bytes_remaining(&mf->base);
-	u32 hash;
-
-	if (unlikely(bytes_remaining <= mf->base.params.min_match_len))
-		goto out;
-
-	hash = mf->next_hash;
-	mf->next_hash = lz_hc_hash(lz_mf_get_window_ptr(&mf->base) + 1);
-	prefetch(&mf->hash_tab[mf->next_hash]);
-	mf->prev_tab[mf->base.cur_window_pos] = mf->hash_tab[hash];
-	mf->hash_tab[hash] = mf->base.cur_window_pos;
-
-out:
-	mf->base.cur_window_pos++;
+	return lz_matchptr - matches;
 }
 
 static void
 lz_hc_skip_positions(struct lz_mf *_mf, u32 n)
 {
 	struct lz_hc *mf = (struct lz_hc *)_mf;
+	u32 * const hash_tab = mf->hash_tab;
+	u32 * const prev_tab = hash_tab + LZ_HC_HASH_LEN;
+	const u8 * const window = mf->base.cur_window;
+	u32 cur_pos = mf->base.cur_window_pos;
+	u32 end_pos = cur_pos + n;
+	const u32 bytes_remaining = mf->base.cur_window_size - cur_pos;
+	u32 hash;
+	u32 next_hash;
 
+	mf->base.cur_window_pos = end_pos;
+
+	if (unlikely(bytes_remaining < n + (LZ_HASH_REQUIRED_NBYTES + 1) - 1)) {
+	        /* Nearing end of window.  */
+	        if (unlikely(bytes_remaining < (LZ_HASH_REQUIRED_NBYTES + 1)))
+	                return;
+
+	        end_pos = cur_pos + bytes_remaining - (LZ_HASH_REQUIRED_NBYTES + 1) + 1;
+	}
+
+	next_hash = mf->next_hash;
 	do {
-		lz_hc_skip_position(mf);
-	} while (--n);
+		hash = next_hash;
+		next_hash = lz_hc_hash(&window[cur_pos + 1]);
+		prev_tab[cur_pos] = hash_tab[hash];
+		hash_tab[hash] = cur_pos;
+	} while (++cur_pos != end_pos);
+
+	prefetch(&hash_tab[next_hash]);
+	mf->next_hash = next_hash;
 }
 
 static void
