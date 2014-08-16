@@ -110,21 +110,53 @@ struct verify_stream_list_ctx {
 	wimlib_progress_func_t progfunc;
 	void *progctx;
 	union wimlib_progress_info *progress;
+	u64 next_progress;
 };
 
 static int
 end_verify_stream(struct wim_lookup_table_entry *lte, int status, void *_ctx)
 {
 	struct verify_stream_list_ctx *ctx = _ctx;
+	union wimlib_progress_info *progress = ctx->progress;
 
 	if (status)
 		return status;
 
-	ctx->progress->verify_streams.completed_streams++;
-	ctx->progress->verify_streams.completed_bytes += lte->size;
+	progress->verify_streams.completed_streams++;
+	progress->verify_streams.completed_bytes += lte->size;
 
-	return call_progress(ctx->progfunc, WIMLIB_PROGRESS_MSG_VERIFY_STREAMS,
-			     ctx->progress, ctx->progctx);
+	/* Handle rate-limiting of progress messages  */
+
+	if (progress->verify_streams.completed_bytes < ctx->next_progress)
+		return 0;
+
+	/* Time for another progress message.  */
+
+	status = call_progress(ctx->progfunc, WIMLIB_PROGRESS_MSG_VERIFY_STREAMS,
+			       progress, ctx->progctx);
+	if (status)
+		return status;
+
+	if (ctx->next_progress == progress->verify_streams.total_bytes) {
+		ctx->next_progress = ~(uint64_t)0;
+		return 0;
+	}
+
+	/* Send new message as soon as another 1/128 of the total has
+	 * been verified.  (Arbitrary number.)  */
+	ctx->next_progress = progress->verify_streams.completed_bytes +
+			     progress->verify_streams.total_bytes / 128;
+
+	/* ... Unless that would be more than 5000000 bytes, in which case send
+	 * the next after the next 5000000 bytes. (Another arbitrary number.) */
+	if (progress->verify_streams.completed_bytes + 5000000 < ctx->next_progress)
+		ctx->next_progress = progress->verify_streams.completed_bytes + 5000000;
+
+	/* ... But always send a message as soon as we're completely
+	 * done.  */
+	if (progress->verify_streams.total_bytes < ctx->next_progress)
+		ctx->next_progress = progress->verify_streams.total_bytes;
+	return 0;
 }
 
 static int
@@ -215,6 +247,7 @@ wimlib_verify_wim(WIMStruct *wim, int verify_flags)
 	ctx.progfunc = wim->progfunc;
 	ctx.progctx = wim->progctx;
 	ctx.progress = &progress;
+	ctx.next_progress = 0;
 
 	ret = call_progress(ctx.progfunc, WIMLIB_PROGRESS_MSG_VERIFY_STREAMS,
 			    ctx.progress, ctx.progctx);
