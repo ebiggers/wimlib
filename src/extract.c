@@ -1481,23 +1481,20 @@ out:
 static int
 mkdir_if_needed(const tchar *target)
 {
-	struct stat stbuf;
-	if (tstat(target, &stbuf)) {
-		if (errno == ENOENT) {
-			if (tmkdir(target, 0755)) {
-				ERROR_WITH_ERRNO("Failed to create directory "
-						 "\"%"TS"\"", target);
-				return WIMLIB_ERR_MKDIR;
-			}
-		} else {
-			ERROR_WITH_ERRNO("Failed to stat \"%"TS"\"", target);
-			return WIMLIB_ERR_STAT;
-		}
-	} else if (!S_ISDIR(stbuf.st_mode)) {
-		ERROR("\"%"TS"\" is not a directory", target);
-		return WIMLIB_ERR_NOTDIR;
-	}
-	return 0;
+	if (!tmkdir(target, 0755))
+		return 0;
+
+	if (errno == EEXIST)
+		return 0;
+
+#ifdef __WIN32__
+	/* _wmkdir() fails with EACCES if called on a drive root directory.  */
+	if (errno == EACCES)
+		return 0;
+#endif
+
+	ERROR_WITH_ERRNO("Failed to create directory \"%"TS"\"", target);
+	return WIMLIB_ERR_MKDIR;
 }
 
 /* Make sure the extraction flags make sense, and update them if needed.  */
