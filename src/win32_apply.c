@@ -333,26 +333,86 @@ start_wimboot_extraction(struct win32_apply_ctx *ctx)
 	if (ret)
 		return ret;
 
-	/* TODO: DISM seems to set HKEY_LOCAL_MACHINE\SOFTWARE\Setup
-	 * "WimBoot"=dword:00000001 in the registry of the extracted image.  Do
-	 * we need to do this too?  I'd really prefer not to be mucking around
-	 * with the extracted files, and certainly not the registry...
-	 *
-	 * It changed two other keys as well:
-	 *
-	 * [HKEY_LOCAL_MACHINE\SOFTWARE\ControlSet001\Control\ProductOptions]
-	 *         value "ProductPolicy"
-	 *
-	 * [HKEY_LOCAL_MACHINE\SOFTWARE\ControlSet001\Control\SessionManager\AppCompatCache]
-	 *         value "AppCompatCache"
-	 */
-
 	return wimboot_alloc_data_source_id(wim->filename,
 					    wim->hdr.guid,
 					    wim->current_image,
 					    ctx->common.target,
 					    &ctx->wimboot.data_source_id,
 					    &ctx->wimboot.wof_running);
+}
+
+static void
+build_win32_extraction_path(const struct wim_dentry *dentry,
+			    struct win32_apply_ctx *ctx);
+
+/* Sets WimBoot=1 in the extracted SYSTEM registry hive.
+ *
+ * WIMGAPI does this, and it's possible that it's important.
+ * But I don't know exactly what this value means to Windows.  */
+static int
+end_wimboot_extraction(struct win32_apply_ctx *ctx)
+{
+	struct wim_dentry *dentry;
+	wchar_t subkeyname[32];
+	LONG res;
+	LONG res2;
+	HKEY key;
+	DWORD value;
+
+	dentry = get_dentry(ctx->common.wim, L"\\Windows\\System32\\config\\SYSTEM",
+			    WIMLIB_CASE_INSENSITIVE);
+
+	if (!dentry || !will_extract_dentry(dentry))
+		goto out;
+
+	if (!will_extract_dentry(wim_get_current_root_dentry(ctx->common.wim)))
+		goto out;
+
+	/* Not bothering to use the native routines (e.g. NtLoadKey()) for this.
+	 * If this doesn't work, you probably also have many other problems.  */
+
+	build_win32_extraction_path(dentry, ctx);
+
+	randomize_char_array_with_alnum(subkeyname, 20);
+	subkeyname[20] = L'\0';
+
+	res = RegLoadKey(HKEY_LOCAL_MACHINE, subkeyname, ctx->pathbuf.Buffer);
+	if (res)
+		goto out_check_res;
+
+	wcscpy(&subkeyname[20], L"\\Setup");
+
+	res = RegCreateKeyEx(HKEY_LOCAL_MACHINE, subkeyname, 0, NULL,
+			     REG_OPTION_BACKUP_RESTORE, 0, NULL, &key, NULL);
+	if (res)
+		goto out_unload_key;
+
+	value = 1;
+
+	res = RegSetValueEx(key, L"WimBoot", 0, REG_DWORD,
+			    (const BYTE *)&value, sizeof(DWORD));
+	if (res)
+		goto out_close_key;
+
+	res = RegFlushKey(key);
+
+out_close_key:
+	res2 = RegCloseKey(key);
+	if (!res)
+		res = res2;
+out_unload_key:
+	subkeyname[20] = L'\0';
+	RegUnLoadKey(HKEY_LOCAL_MACHINE, subkeyname);
+out_check_res:
+	if (res) {
+		/* Warning only.  */
+		set_errno_from_win32_error(res);
+		WARNING_WITH_ERRNO("Failed to set \\Setup: dword \"WimBoot\"=1 value "
+				   "in registry hive \"%ls\" (err=0x%08"PRIu32")",
+				   ctx->pathbuf.Buffer, (u32)res);
+	}
+out:
+	return 0;
 }
 
 /* Returns the number of wide characters needed to represent the path to the
@@ -475,7 +535,7 @@ build_extraction_path_with_ads(const struct wim_dentry *dentry,
  * The path is saved in ctx->pathbuf and will be null terminated.
  *
  * XXX: We could get rid of this if it wasn't needed for the file encryption
- * APIs.  */
+ * APIs, and the registry manipulation in WIMBoot mode.  */
 static void
 build_win32_extraction_path(const struct wim_dentry *dentry,
 			    struct win32_apply_ctx *ctx)
@@ -2035,7 +2095,7 @@ win32_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	if (ret)
 		goto out;
 
-	if (ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT) {
+	if (unlikely(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT)) {
 		ret = start_wimboot_extraction(ctx);
 		if (ret)
 			goto out;
@@ -2068,6 +2128,12 @@ win32_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	ret = apply_metadata(dentry_list, ctx);
 	if (ret)
 		goto out;
+
+	if (unlikely(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT)) {
+		ret = end_wimboot_extraction(ctx);
+		if (ret)
+			goto out;
+	}
 
 	do_warnings(ctx);
 out:
