@@ -78,18 +78,18 @@ create the file.  When applicable, the results with the equivalent Microsoft
 implementation in WIMGAPI is included.
 
   =============================================================================
-  | Compression            ||  wimlib (v1.7.1)       |  WIMGAPI (Windows 8.1) |
+  | Compression            ||  wimlib (v1.7.2-BETA)  |  WIMGAPI (Windows 8.1) |
   =============================================================================
-  | None             [1]   ||  361,182,560 in 3.7s   |  361,183,674 in 4.4s   |
-  | XPRESS           [2]   ||  138,349,798 in 5.8s   |  140,416,657 in 6.8s   |
-  | XPRESS (slow)    [3]   ||  135,234,072 in 19.5s  |  N/A                   |
-  | LZX (quick)      [4]   ||  131,816,279 in 6.7s   |  N/A                   |
-  | LZX (normal)     [5]   ||  126,808,347 in 28.3s  |  127,259,566 in 31.4s  |
-  | LZX (slow)       [6]   ||  126,199,523 in 61.4s  |  N/A                   |
-  | LZMS (non-solid) [7]   ||  122,083,126 in 30.4s  |  N/A                   |
-  | LZMS (solid)     [8]   ||  93,752,206  in 84.3s  |  88,742,238 in 156.1s  |
-  | "WIMBoot"        [9]   ||  167,039,787 in 7.6s   |  169,051,718 in 14.9s  |
-  | "WIMBoot" (slow) [10]  ||  165,141,503 in 15.8s  |  N/A                   |
+  | None             [1]   ||  361,404,682 in 3.4s   |  361,364,994 in 4.2s   |
+  | XPRESS           [2]   ||  138,398,747 in 4.2s   |  140,468,002 in 5.1s   |
+  | XPRESS (slow)    [3]   ||  135,284,950 in 10.3s  |  N/A                   |
+  | LZX (quick)      [4]   ||  131,861,913 in 4.7s   |  N/A                   |
+  | LZX (normal)     [5]   ||  126,855,247 in 14.9s  |  127,301,774 in 18.2s  |
+  | LZX (slow)       [6]   ||  126,245,561 in 32.1s  |  N/A                   |
+  | LZMS (non-solid) [7]   ||  122,126,328 in 16.4s  |  N/A                   |
+  | LZMS (solid)     [8]   ||  93,795,440  in 47.4s  |  88,789,426 in 96.8s   |
+  | "WIMBoot"        [9]   ||  167,121,495 in 5.3s   |  169,124,968 in 9.3s   |
+  | "WIMBoot" (slow) [10]  ||  165,219,818 in 9.4s   |  N/A                   |
   =============================================================================
 
 Notes:
@@ -133,7 +133,7 @@ Testing environment:
 
     - 64 bit binaries
     - Windows 8.1 virtual machine running on Linux with VT-x
-    - 2 CPUs and 2 GiB memory given to virtual machine
+    - 4 CPUs and 4 GiB memory given to virtual machine
     - SSD-backed virtual disk
     - All tests done with page cache warmed
 
