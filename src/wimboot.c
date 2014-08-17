@@ -831,26 +831,6 @@ out:
 	return ret;
 }
 
-static int
-win32_get_drive_path(const wchar_t *file_path, wchar_t drive_path[7])
-{
-	tchar *file_abspath;
-
-	file_abspath = realpath(file_path, NULL);
-	if (!file_abspath)
-		return WIMLIB_ERR_NOMEM;
-
-	if (file_abspath[0] == L'\0' || file_abspath[1] != L':') {
-		ERROR("\"%ls\": Path format not recognized", file_abspath);
-		FREE(file_abspath);
-		return WIMLIB_ERR_UNSUPPORTED;
-	}
-
-	wsprintf(drive_path, L"\\\\.\\%lc:", file_abspath[0]);
-	FREE(file_abspath);
-	return 0;
-}
-
 /* Try to attach an instance of the Windows Overlay File System Filter Driver to
  * the specified drive (such as C:)  */
 static bool

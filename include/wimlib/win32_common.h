@@ -157,4 +157,7 @@ typedef struct _FILE_FS_PERSISTENT_VOLUME_INFORMATION {
 extern int
 win32_path_to_nt_path(const wchar_t *win32_path, UNICODE_STRING *nt_path);
 
+extern int
+win32_get_drive_path(const wchar_t *file_path, wchar_t drive_path[7]);
+
 #endif /* _WIMLIB_WIN32_COMMON_H */

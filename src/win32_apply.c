@@ -799,27 +799,38 @@ maybe_clear_encryption_attribute(HANDLE *h_ptr, const struct wim_dentry *dentry,
 /* Try to enable short name support on the target volume.  If successful, return
  * true.  If unsuccessful, issue a warning and return false.  */
 static bool
-try_to_enable_short_names(struct win32_apply_ctx *ctx)
+try_to_enable_short_names(const wchar_t *volume)
 {
+	HANDLE h;
 	FILE_FS_PERSISTENT_VOLUME_INFORMATION info;
-	NTSTATUS status;
+	BOOL bret;
+	DWORD bytesReturned;
+
+	h = CreateFile(volume, GENERIC_WRITE,
+		       FILE_SHARE_VALID_FLAGS, NULL, OPEN_EXISTING,
+		       FILE_FLAG_BACKUP_SEMANTICS, NULL);
+	if (h == INVALID_HANDLE_VALUE)
+		goto fail;
 
 	info.VolumeFlags = 0;
 	info.FlagMask = PERSISTENT_VOLUME_STATE_SHORT_NAME_CREATION_DISABLED;
 	info.Version = 1;
 	info.Reserved = 0;
 
-	status = (*func_NtFsControlFile)(ctx->h_target, NULL, NULL, NULL,
-					 &ctx->iosb,
-					 FSCTL_SET_PERSISTENT_VOLUME_STATE,
-					 &info, sizeof(info), NULL, 0);
-	if (!NT_SUCCESS(status)) {
-		WARNING("Failed to enable short name support on target volume "
-			"(status=0x%08"PRIx32")", (u32)status);
-		return false;
-	}
+	bret = DeviceIoControl(h, FSCTL_SET_PERSISTENT_VOLUME_STATE,
+			       &info, sizeof(info), NULL, 0,
+			       &bytesReturned, NULL);
 
+	CloseHandle(h);
+
+	if (!bret)
+		goto fail;
 	return true;
+
+fail:
+	WARNING("Failed to enable short name support on %ls "
+		"(err=%"PRIu32")", volume + 4, (u32)GetLastError());
+	return false;
 }
 
 /* Set the short name on the open file @h which has been created at the location
@@ -860,8 +871,16 @@ retry:
 		if (dentry->short_name_nbytes == 0)
 			return 0;
 		if (!ctx->tried_to_enable_short_names) {
+			wchar_t volume[7];
+			int ret;
+
 			ctx->tried_to_enable_short_names = true;
-			if (try_to_enable_short_names(ctx))
+
+			ret = win32_get_drive_path(ctx->common.target,
+						   volume);
+			if (ret)
+				return ret;
+			if (try_to_enable_short_names(volume))
 				goto retry;
 		}
 	}
