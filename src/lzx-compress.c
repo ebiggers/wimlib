@@ -196,6 +196,7 @@
 
 #include "wimlib/compressor_ops.h"
 #include "wimlib/compress_common.h"
+#include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/lz_mf.h"
 #include "wimlib/lzx.h"
@@ -455,6 +456,129 @@ struct lzx_mc_pos_data {
 	struct lzx_lru_queue queue;
 };
 
+
+/*
+ * Structure to keep track of the current state of sending bits to the
+ * compressed output buffer.
+ *
+ * The LZX bitstream is encoded as a sequence of 16-bit coding units.
+ */
+struct lzx_output_bitstream {
+
+	/* Bits that haven't yet been written to the output buffer.  */
+	u32 bitbuf;
+
+	/* Number of bits currently held in @bitbuf.  */
+	u32 bitcount;
+
+	/* Pointer to the start of the output buffer.  */
+	le16 *start;
+
+	/* Pointer to the position in the output buffer at which the next coding
+	 * unit should be written.  */
+	le16 *next;
+
+	/* Pointer past the end of the output buffer.  */
+	le16 *end;
+};
+
+/*
+ * Initialize the output bitstream.
+ *
+ * @os
+ *	The output bitstream structure to initialize.
+ * @buffer
+ *	The buffer being written to.
+ * @size
+ *	Size of @buffer, in bytes.
+ */
+static void
+lzx_init_output(struct lzx_output_bitstream *os, void *buffer, u32 size)
+{
+	os->bitbuf = 0;
+	os->bitcount = 0;
+	os->start = buffer;
+	os->next = os->start;
+	os->end = os->start + size / sizeof(le16);
+}
+
+/*
+ * Write some bits to the output bitstream.
+ *
+ * The bits are given by the low-order @num_bits bits of @bits.  Higher-order
+ * bits in @bits cannot be set.  At most 17 bits can be written at once.
+ *
+ * @max_bits is a compile-time constant that specifies the maximum number of
+ * bits that can ever be written at the call site.  Currently, it is used to
+ * optimize away the conditional code for writing a second 16-bit coding unit
+ * when writing fewer than 17 bits.
+ *
+ * If the output buffer space is exhausted, then the bits will be ignored, and
+ * lzx_flush_output() will return 0 when it gets called.
+ */
+static _always_inline_attribute void
+lzx_write_varbits(struct lzx_output_bitstream *os,
+		  const u32 bits, const unsigned int num_bits,
+		  const unsigned int max_num_bits)
+{
+	/* This code is optimized for LZX, which never needs to write more than
+	 * 17 bits at once.  */
+	LZX_ASSERT(num_bits <= 17);
+	LZX_ASSERT(num_bits <= max_num_bits);
+	LZX_ASSERT(os->bitcount <= 15);
+
+	/* Add the bits to the bit buffer variable.  @bitcount will be at most
+	 * 15, so there will be just enough space for the maximum possible
+	 * @num_bits of 17.  */
+	os->bitcount += num_bits;
+	os->bitbuf = (os->bitbuf << num_bits) | bits;
+
+	/* Check whether any coding units need to be written.  */
+	if (os->bitcount >= 16) {
+
+		os->bitcount -= 16;
+
+		/* Write a coding unit, unless it would overflow the buffer.  */
+		if (os->next != os->end)
+			*os->next++ = cpu_to_le16(os->bitbuf >> os->bitcount);
+
+		/* If writing 17 bits, a second coding unit might need to be
+		 * written.  But because 'max_num_bits' is a compile-time
+		 * constant, the compiler will optimize away this code at most
+		 * call sites.  */
+		if (max_num_bits == 17 && os->bitcount == 16) {
+			if (os->next != os->end)
+				*os->next++ = cpu_to_le16(os->bitbuf);
+			os->bitcount = 0;
+		}
+	}
+}
+
+/* Use when @num_bits is a compile-time constant.  Otherwise use
+ * lzx_write_varbits().  */
+static _always_inline_attribute void
+lzx_write_bits(struct lzx_output_bitstream *os,
+	       const u32 bits, const unsigned int num_bits)
+{
+	lzx_write_varbits(os, bits, num_bits, num_bits);
+}
+
+/*
+ * Flush the last coding unit to the output buffer if needed.  Return the total
+ * number of bytes written to the output buffer, or 0 if an overflow occurred.
+ */
+static u32
+lzx_flush_output(struct lzx_output_bitstream *os)
+{
+	if (os->next == os->end)
+		return 0;
+
+	if (os->bitcount != 0)
+		*os->next++ = cpu_to_le16(os->bitbuf << (16 - os->bitcount));
+
+	return (const u8 *)os->next - (const u8 *)os->start;
+}
+
 /* Returns the LZX position slot that corresponds to a given match offset,
  * taking into account the recent offset queue and updating it if the offset is
  * found in it.  */
@@ -522,7 +646,7 @@ lzx_make_huffman_codes(const struct lzx_freqs *freqs,
 /*
  * Output a precomputed LZX match.
  *
- * @out:
+ * @os:
  *	The bitstream to which to write the match.
  * @block_type:
  *	The type of the LZX block (LZX_BLOCKTYPE_ALIGNED or
@@ -534,30 +658,23 @@ lzx_make_huffman_codes(const struct lzx_freqs *freqs,
  *	and aligned offset Huffman codes for the current LZX compressed block.
  */
 static void
-lzx_write_match(struct output_bitstream *out, int block_type,
+lzx_write_match(struct lzx_output_bitstream *os, int block_type,
 		struct lzx_item match, const struct lzx_codes *codes)
 {
-	/* low 8 bits are the match length minus 2 */
 	unsigned match_len_minus_2 = match.data & 0xff;
-	/* Next 17 bits are the position footer */
-	unsigned position_footer = (match.data >> 8) & 0x1ffff;	/* 17 bits */
-	/* Next 6 bits are the position slot. */
-	unsigned position_slot = (match.data >> 25) & 0x3f;	/* 6 bits */
+	u32 position_footer = (match.data >> 8) & 0x1ffff;
+	unsigned position_slot = (match.data >> 25) & 0x3f;
 	unsigned len_header;
 	unsigned len_footer;
 	unsigned main_symbol;
 	unsigned num_extra_bits;
-	unsigned verbatim_bits;
-	unsigned aligned_bits;
 
 	/* If the match length is less than MIN_MATCH_LEN (= 2) +
-	 * NUM_PRIMARY_LENS (= 7), the length header contains
-	 * the match length minus MIN_MATCH_LEN, and there is no
-	 * length footer.
+	 * NUM_PRIMARY_LENS (= 7), the length header contains the match length
+	 * minus MIN_MATCH_LEN, and there is no length footer.
 	 *
-	 * Otherwise, the length header contains
-	 * NUM_PRIMARY_LENS, and the length footer contains
-	 * the match length minus NUM_PRIMARY_LENS minus
+	 * Otherwise, the length header contains NUM_PRIMARY_LENS, and the
+	 * length footer contains the match length minus NUM_PRIMARY_LENS minus
 	 * MIN_MATCH_LEN. */
 	if (match_len_minus_2 < LZX_NUM_PRIMARY_LENS) {
 		len_header = match_len_minus_2;
@@ -575,46 +692,49 @@ lzx_write_match(struct output_bitstream *out, int block_type,
 	main_symbol = ((position_slot << 3) | len_header) + LZX_NUM_CHARS;
 
 	/* Output main symbol. */
-	bitstream_put_bits(out, codes->codewords.main[main_symbol],
-			   codes->lens.main[main_symbol]);
+	lzx_write_varbits(os, codes->codewords.main[main_symbol],
+			  codes->lens.main[main_symbol],
+			  LZX_MAX_MAIN_CODEWORD_LEN);
 
 	/* If there is a length footer, output it using the
 	 * length Huffman code. */
-	if (len_header == LZX_NUM_PRIMARY_LENS)
-		bitstream_put_bits(out, codes->codewords.len[len_footer],
-				   codes->lens.len[len_footer]);
+	if (len_header == LZX_NUM_PRIMARY_LENS) {
+		lzx_write_varbits(os, codes->codewords.len[len_footer],
+				  codes->lens.len[len_footer],
+				  LZX_MAX_LEN_CODEWORD_LEN);
+	}
+
+	/* Output the position footer.  */
 
 	num_extra_bits = lzx_get_num_extra_bits(position_slot);
 
-	/* For aligned offset blocks with at least 3 extra bits, output the
-	 * verbatim bits literally, then the aligned bits encoded using the
-	 * aligned offset code.  Otherwise, only the verbatim bits need to be
-	 * output. */
 	if ((block_type == LZX_BLOCKTYPE_ALIGNED) && (num_extra_bits >= 3)) {
 
-		verbatim_bits = position_footer >> 3;
-		bitstream_put_bits(out, verbatim_bits,
-				   num_extra_bits - 3);
+		/* Aligned offset blocks: The low 3 bits of the position footer
+		 * are Huffman-encoded using the aligned offset code.  The
+		 * remaining bits are output literally.  */
 
-		aligned_bits = (position_footer & 7);
-		bitstream_put_bits(out,
-				   codes->codewords.aligned[aligned_bits],
-				   codes->lens.aligned[aligned_bits]);
+		lzx_write_varbits(os,
+				  position_footer >> 3, num_extra_bits - 3, 14);
+
+		lzx_write_varbits(os,
+				  codes->codewords.aligned[position_footer & 7],
+				  codes->lens.aligned[position_footer & 7],
+				  LZX_MAX_ALIGNED_CODEWORD_LEN);
 	} else {
-		/* verbatim bits is the same as the position
-		 * footer, in this case. */
-		bitstream_put_bits(out, position_footer, num_extra_bits);
+		/* Verbatim blocks, or fewer than 3 extra bits:  All position
+		 * footer bits are output literally.  */
+		lzx_write_varbits(os, position_footer, num_extra_bits, 17);
 	}
 }
 
 /* Output an LZX literal (encoded with the main Huffman code).  */
 static void
-lzx_write_literal(struct output_bitstream *out, u8 literal,
+lzx_write_literal(struct lzx_output_bitstream *os, unsigned literal,
 		  const struct lzx_codes *codes)
 {
-	bitstream_put_bits(out,
-			   codes->codewords.main[literal],
-			   codes->lens.main[literal]);
+	lzx_write_varbits(os, codes->codewords.main[literal],
+			  codes->lens.main[literal], LZX_MAX_MAIN_CODEWORD_LEN);
 }
 
 static unsigned
@@ -774,7 +894,7 @@ lzx_build_precode(const u8 lens[restrict],
  * as deltas from the codeword lengths of the corresponding code in the previous
  * block.
  *
- * @out:
+ * @os:
  *	Bitstream to which to write the compressed Huffman code.
  * @lens:
  *	The codeword lengths, indexed by symbol, in the Huffman code.
@@ -785,7 +905,7 @@ lzx_build_precode(const u8 lens[restrict],
  *	The number of symbols in the Huffman code.
  */
 static void
-lzx_write_compressed_code(struct output_bitstream *out,
+lzx_write_compressed_code(struct lzx_output_bitstream *os,
 			  const u8 lens[restrict],
 			  const u8 prev_lens[restrict],
 			  unsigned num_syms)
@@ -810,28 +930,28 @@ lzx_write_compressed_code(struct output_bitstream *out,
 
 	/* Write the lengths of the precode codes to the output. */
 	for (i = 0; i < LZX_PRECODE_NUM_SYMBOLS; i++)
-		bitstream_put_bits(out, precode_lens[i],
-				   LZX_PRECODE_ELEMENT_SIZE);
+		lzx_write_bits(os, precode_lens[i], LZX_PRECODE_ELEMENT_SIZE);
 
 	/* Write the length symbols, encoded with the precode, to the output. */
 
 	for (i = 0; i < num_output_syms; ) {
 		precode_sym = output_syms[i++];
 
-		bitstream_put_bits(out, precode_codewords[precode_sym],
-				   precode_lens[precode_sym]);
+		lzx_write_varbits(os, precode_codewords[precode_sym],
+				  precode_lens[precode_sym],
+				  LZX_MAX_PRE_CODEWORD_LEN);
 		switch (precode_sym) {
 		case 17:
-			bitstream_put_bits(out, output_syms[i++], 4);
+			lzx_write_bits(os, output_syms[i++], 4);
 			break;
 		case 18:
-			bitstream_put_bits(out, output_syms[i++], 5);
+			lzx_write_bits(os, output_syms[i++], 5);
 			break;
 		case 19:
-			bitstream_put_bits(out, output_syms[i++], 1);
-			bitstream_put_bits(out,
-					   precode_codewords[output_syms[i]],
-					   precode_lens[output_syms[i]]);
+			lzx_write_bits(os, output_syms[i++], 1);
+			lzx_write_varbits(os, precode_codewords[output_syms[i]],
+					  precode_lens[output_syms[i]],
+					  LZX_MAX_PRE_CODEWORD_LEN);
 			i++;
 			break;
 		default:
@@ -845,7 +965,7 @@ lzx_write_compressed_code(struct output_bitstream *out,
  * compressed block to the output bitstream in the final compressed
  * representation.
  *
- * @ostream
+ * @os
  *	The output bitstream.
  * @block_type
  *	The chosen type of the LZX compressed block (LZX_BLOCKTYPE_ALIGNED or
@@ -859,7 +979,7 @@ lzx_write_compressed_code(struct output_bitstream *out,
  *	LZX compressed block.
  */
 static void
-lzx_write_items(struct output_bitstream *ostream, int block_type,
+lzx_write_items(struct lzx_output_bitstream *os, int block_type,
 		const struct lzx_item items[], u32 num_items,
 		const struct lzx_codes *codes)
 {
@@ -868,32 +988,30 @@ lzx_write_items(struct output_bitstream *ostream, int block_type,
 		 * indicates whether the item is an actual LZ-style match (1) or
 		 * a literal byte (0).  */
 		if (items[i].data & 0x80000000)
-			lzx_write_match(ostream, block_type, items[i], codes);
+			lzx_write_match(os, block_type, items[i], codes);
 		else
-			lzx_write_literal(ostream, items[i].data, codes);
+			lzx_write_literal(os, items[i].data, codes);
 	}
 }
 
 /* Write an LZX aligned offset or verbatim block to the output.  */
 static void
 lzx_write_compressed_block(int block_type,
-			   unsigned block_size,
-			   unsigned max_window_size,
+			   u32 block_size,
+			   u32 max_window_size,
 			   unsigned num_main_syms,
 			   struct lzx_item * chosen_items,
-			   unsigned num_chosen_items,
+			   u32 num_chosen_items,
 			   const struct lzx_codes * codes,
 			   const struct lzx_codes * prev_codes,
-			   struct output_bitstream * ostream)
+			   struct lzx_output_bitstream * os)
 {
-	unsigned i;
-
 	LZX_ASSERT(block_type == LZX_BLOCKTYPE_ALIGNED ||
 		   block_type == LZX_BLOCKTYPE_VERBATIM);
 
 	/* The first three bits indicate the type of block and are one of the
 	 * LZX_BLOCKTYPE_* constants.  */
-	bitstream_put_bits(ostream, block_type, 3);
+	lzx_write_bits(os, block_type, 3);
 
 	/* Output the block size.
 	 *
@@ -911,63 +1029,49 @@ lzx_write_compressed_block(int block_type,
 	 * because WIMs created with chunk size greater than 32768 can seemingly
 	 * only be opened by wimlib anyway.  */
 	if (block_size == LZX_DEFAULT_BLOCK_SIZE) {
-		bitstream_put_bits(ostream, 1, 1);
+		lzx_write_bits(os, 1, 1);
 	} else {
-		bitstream_put_bits(ostream, 0, 1);
+		lzx_write_bits(os, 0, 1);
 
 		if (max_window_size >= 65536)
-			bitstream_put_bits(ostream, block_size >> 16, 8);
+			lzx_write_bits(os, block_size >> 16, 8);
 
-		bitstream_put_bits(ostream, block_size, 16);
+		lzx_write_bits(os, block_size & 0xFFFF, 16);
 	}
 
-	/* Write out lengths of the main code. Note that the LZX specification
-	 * incorrectly states that the aligned offset code comes after the
-	 * length code, but in fact it is the very first code to be written
-	 * (before the main code).  */
-	if (block_type == LZX_BLOCKTYPE_ALIGNED)
-		for (i = 0; i < LZX_ALIGNEDCODE_NUM_SYMBOLS; i++)
-			bitstream_put_bits(ostream, codes->lens.aligned[i],
-					   LZX_ALIGNEDCODE_ELEMENT_SIZE);
+	/* Output the aligned offset code.  */
+	if (block_type == LZX_BLOCKTYPE_ALIGNED) {
+		for (int i = 0; i < LZX_ALIGNEDCODE_NUM_SYMBOLS; i++) {
+			lzx_write_bits(os, codes->lens.aligned[i],
+				       LZX_ALIGNEDCODE_ELEMENT_SIZE);
+		}
+	}
 
-	/* Write the precode and lengths for the first LZX_NUM_CHARS symbols in
-	 * the main code, which are the codewords for literal bytes.  */
-	lzx_write_compressed_code(ostream,
-				  codes->lens.main,
+	/* Output the main code (two parts).  */
+	lzx_write_compressed_code(os, codes->lens.main,
 				  prev_codes->lens.main,
 				  LZX_NUM_CHARS);
-
-	/* Write the precode and lengths for the rest of the main code, which
-	 * are the codewords for match headers.  */
-	lzx_write_compressed_code(ostream,
-				  codes->lens.main + LZX_NUM_CHARS,
+	lzx_write_compressed_code(os, codes->lens.main + LZX_NUM_CHARS,
 				  prev_codes->lens.main + LZX_NUM_CHARS,
 				  num_main_syms - LZX_NUM_CHARS);
 
-	/* Write the precode and lengths for the length code.  */
-	lzx_write_compressed_code(ostream,
-				  codes->lens.len,
+	/* Output the length code.  */
+	lzx_write_compressed_code(os, codes->lens.len,
 				  prev_codes->lens.len,
 				  LZX_LENCODE_NUM_SYMBOLS);
 
-	/* Write the actual matches and literals.  */
-	lzx_write_items(ostream, block_type,
-			chosen_items, num_chosen_items, codes);
+	/* Output the compressed matches and literals.  */
+	lzx_write_items(os, block_type, chosen_items, num_chosen_items, codes);
 }
 
 /* Write out the LZX blocks that were computed.  */
 static void
-lzx_write_all_blocks(struct lzx_compressor *c, struct output_bitstream *ostream)
+lzx_write_all_blocks(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 {
 
 	const struct lzx_codes *prev_codes = &c->zero_codes;
 	for (unsigned i = 0; i < c->num_blocks; i++) {
 		const struct lzx_block_spec *spec = &c->block_specs[i];
-
-		LZX_DEBUG("Writing block %u/%u (type=%d, size=%u, num_chosen_items=%u)...",
-			  i + 1, c->num_blocks,
-			  spec->block_type, spec->block_size,
-			  spec->num_chosen_items);
 
 		lzx_write_compressed_block(spec->block_type,
 					   spec->block_size,
@@ -977,7 +1081,7 @@ lzx_write_all_blocks(struct lzx_compressor *c, struct output_bitstream *ostream)
 					   spec->num_chosen_items,
 					   &spec->codes,
 					   prev_codes,
-					   ostream);
+					   os);
 
 		prev_codes = &spec->codes;
 	}
@@ -1001,7 +1105,7 @@ lzx_tally_match(unsigned match_len, u32 match_offset,
 		struct lzx_freqs *freqs, struct lzx_lru_queue *queue)
 {
 	unsigned position_slot;
-	unsigned position_footer;
+	u32 position_footer;
 	u32 len_header;
 	unsigned main_symbol;
 	unsigned len_footer;
@@ -1013,7 +1117,7 @@ lzx_tally_match(unsigned match_len, u32 match_offset,
 	 * as part of the main symbol) and a position footer.  */
 	position_slot = lzx_get_position_slot(match_offset, queue);
 	position_footer = (match_offset + LZX_OFFSET_OFFSET) &
-				((1U << lzx_get_num_extra_bits(position_slot)) - 1);
+				(((u32)1 << lzx_get_num_extra_bits(position_slot)) - 1);
 
 	/* The match length shall be encoded as a length header (itself encoded
 	 * as part of the main symbol) and an optional length footer.  */
@@ -1964,7 +2068,7 @@ lzx_choose_items_for_block(struct lzx_compressor *c, struct lzx_block_spec *spec
 	struct lz_match lz_match;
 	struct lzx_item lzx_item;
 
-	LZX_ASSERT(num_passes >= 1);
+	LZX_ASSERT(num_passes_remaining >= 1);
 	LZX_ASSERT(lz_mf_get_position(c->mf) == spec->window_pos);
 
 	c->match_window_end = spec->window_pos + spec->block_size;
@@ -2258,44 +2362,28 @@ lzx_compress(const void *uncompressed_data, size_t uncompressed_size,
 	     void *compressed_data, size_t compressed_size_avail, void *_c)
 {
 	struct lzx_compressor *c = _c;
-	struct output_bitstream ostream;
-	size_t compressed_size;
+	struct lzx_output_bitstream os;
 
-	if (uncompressed_size < 100) {
-		LZX_DEBUG("Too small to bother compressing.");
+	/* Don't bother compressing very small inputs.  */
+	if (uncompressed_size < 100)
 		return 0;
-	}
-
-	LZX_DEBUG("Attempting to compress %zu bytes...",
-		  uncompressed_size);
 
 	/* The input data must be preprocessed.  To avoid changing the original
 	 * input, copy it to a temporary buffer.  */
 	memcpy(c->cur_window, uncompressed_data, uncompressed_size);
 	c->cur_window_size = uncompressed_size;
 
-	/* Before doing any actual compression, do the call instruction (0xe8
-	 * byte) translation on the uncompressed data.  */
+	/* Preprocess the data.  */
 	lzx_do_e8_preprocessing(c->cur_window, c->cur_window_size);
 
 	/* Prepare the compressed data.  */
 	lzx_prepare_blocks(c);
 
-	/* Generate the compressed data.  */
-	init_output_bitstream(&ostream, compressed_data, compressed_size_avail);
-	lzx_write_all_blocks(c, &ostream);
-
-	compressed_size = flush_output_bitstream(&ostream);
-	if (compressed_size == (u32)~0UL) {
-		LZX_DEBUG("Data did not compress to %zu bytes or less!",
-			  compressed_size_avail);
-		return 0;
-	}
-
-	LZX_DEBUG("Done: compressed %zu => %zu bytes.",
-		  uncompressed_size, compressed_size);
-
-	return compressed_size;
+	/* Generate the compressed data and return its size, or 0 if an overflow
+	 * occurred.  */
+	lzx_init_output(&os, compressed_data, compressed_size_avail);
+	lzx_write_all_blocks(c, &os);
+	return lzx_flush_output(&os);
 }
 
 static void

@@ -15,6 +15,7 @@
 #		define WIMLIBAPI __attribute__((visibility("default")))
 #	endif
 #	define _always_inline_attribute inline __attribute__((always_inline))
+#	define _no_inline_attribute __attribute__((noinline))
 #	define _packed_attribute __attribute__((packed))
 #	define _format_attribute(type, format_str, args_start) \
 			/*__attribute__((format(type, format_str, args_start))) */
@@ -34,6 +35,7 @@
 #else
 #	define WIMLIBAPI
 #	define _always_inline_attribute inline
+#	define _no_inline_attribute
 #	define _format_attribute(type, format_str, args_start)
 #	define _cold_attribute
 #	define _packed_attribute

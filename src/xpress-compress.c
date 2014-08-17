@@ -30,6 +30,7 @@
 
 #include "wimlib/compressor_ops.h"
 #include "wimlib/compress_common.h"
+#include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/lz_mf.h"
 #include "wimlib/util.h"
@@ -128,9 +129,121 @@ struct xpress_item {
 	/* For literals, offset == 0 and adjusted_len is the literal byte.  */
 };
 
+/*
+ * Structure to keep track of the current state of sending data to the
+ * compressed output buffer.
+ *
+ * The XPRESS bitstream is encoded as a sequence of little endian 16-bit coding
+ * units interwoven with literal bytes.
+ */
+struct xpress_output_bitstream {
+
+	/* Bits that haven't yet been written to the output buffer.  */
+	u32 bitbuf;
+
+	/* Number of bits currently held in @bitbuf.  */
+	u32 bitcount;
+
+	/* Pointer to the start of the output buffer.  */
+	u8 *start;
+
+	/* Pointer to the location in the ouput buffer at which to write the
+	 * next 16 bits.  */
+	u8 *next_bits;
+
+	/* Pointer to the location in the output buffer at which to write the
+	 * next 16 bits, after @next_bits.  */
+	u8 *next_bits2;
+
+	/* Pointer to the location in the output buffer at which to write the
+	 * next literal byte.  */
+	u8 *next_byte;
+
+	/* Pointer to the end of the output buffer.  */
+	u8 *end;
+};
+
+/*
+ * Initialize the output bitstream.
+ *
+ * @os
+ *	The output bitstream structure to initialize.
+ * @buffer
+ *	The buffer to write to.
+ * @size
+ *	Size of @buffer, in bytes.  Must be at least 4.
+ */
+static void
+xpress_init_output(struct xpress_output_bitstream *os, void *buffer, u32 size)
+{
+	os->bitbuf = 0;
+	os->bitcount = 0;
+	os->start = buffer;
+	os->next_bits = os->start;
+	os->next_bits2 = os->start + 2;
+	os->next_byte = os->start + 4;
+	os->end = os->start + size;
+}
+
+/*
+ * Write some bits to the output bitstream.
+ *
+ * The bits are given by the low-order @num_bits bits of @bits.  Higher-order
+ * bits in @bits cannot be set.  At most 16 bits can be written at once.
+ *
+ * If the output buffer space is exhausted, then the bits will be ignored, and
+ * xpress_flush_output() will return 0 when it gets called.
+ */
+static _always_inline_attribute void
+xpress_write_bits(struct xpress_output_bitstream *os,
+		  const u32 bits, const unsigned int num_bits)
+{
+	/* This code is optimized for XPRESS, which never needs to write more
+	 * than 16 bits at once.  */
+
+	os->bitcount += num_bits;
+	os->bitbuf = (os->bitbuf << num_bits) | bits;
+
+	if (os->bitcount > 16) {
+		os->bitcount -= 16;
+		if (os->end - os->next_byte >= 2) {
+			*(le16 *)os->next_bits = cpu_to_le16(os->bitbuf >> os->bitcount);
+			os->next_bits = os->next_bits2;
+			os->next_bits2 = os->next_byte;
+			os->next_byte += 2;
+		}
+	}
+}
+
+/*
+ * Interweave a literal byte into the output bitstream.
+ */
+static _always_inline_attribute void
+xpress_write_byte(struct xpress_output_bitstream *os, u8 byte)
+{
+	if (os->next_byte < os->end)
+		*os->next_byte++ = byte;
+}
+
+/*
+ * Flush the last coding unit to the output buffer if needed.  Return the total
+ * number of bytes written to the output buffer, or 0 if an overflow occurred.
+ */
+static u32
+xpress_flush_output(struct xpress_output_bitstream *os)
+{
+	if (unlikely(os->end - os->next_byte < 2))
+		return 0;
+
+	*(le16 *)os->next_bits = cpu_to_le16(os->bitbuf << (16 - os->bitcount));
+	*(le16 *)os->next_bits2 = cpu_to_le16(0);
+
+	return os->next_byte - os->start;
+}
+
 /* Output an XPRESS match.  */
 static void
-xpress_write_match(struct xpress_item match, struct output_bitstream *ostream,
+xpress_write_match(struct xpress_item match, struct xpress_output_bitstream *os,
 		   const u32 codewords[], const u8 lens[])
 {
 	unsigned len_hdr = min(match.adjusted_len, 0xf);
@@ -138,41 +251,41 @@ xpress_write_match(struct xpress_item match, struct output_bitstream *ostream,
 	unsigned sym = XPRESS_NUM_CHARS + ((offset_bsr << 4) | len_hdr);
 
 	/* Huffman symbol  */
-	bitstream_put_bits(ostream, codewords[sym], lens[sym]);
+	xpress_write_bits(os, codewords[sym], lens[sym]);
 
 	/* If length >= 18, one extra length byte.
 	 * If length >= 273, three (total) extra length bytes.  */
 	if (match.adjusted_len >= 0xf) {
 		u8 byte1 = min(match.adjusted_len - 0xf, 0xff);
-		bitstream_put_byte(ostream, byte1);
+		xpress_write_byte(os, byte1);
 		if (byte1 == 0xff) {
-			bitstream_put_byte(ostream, match.adjusted_len & 0xff);
-			bitstream_put_byte(ostream, match.adjusted_len >> 8);
+			xpress_write_byte(os, match.adjusted_len & 0xff);
+			xpress_write_byte(os, match.adjusted_len >> 8);
 		}
 	}
 
 	/* Offset bits  */
-	bitstream_put_bits(ostream, match.offset ^ (1U << offset_bsr), offset_bsr);
+	xpress_write_bits(os, match.offset ^ (1U << offset_bsr), offset_bsr);
 }
 
 /* Output a sequence of XPRESS matches and literals.  */
 static void
-xpress_write_items(struct output_bitstream *ostream,
+xpress_write_items(struct xpress_output_bitstream *os,
 		   const struct xpress_item items[], u32 num_items,
 		   const u32 codewords[], const u8 lens[])
 {
 	for (u32 i = 0; i < num_items; i++) {
 		if (items[i].offset) {
 			/* Match  */
-			xpress_write_match(items[i], ostream, codewords, lens);
+			xpress_write_match(items[i], os, codewords, lens);
 		} else {
 			/* Literal  */
 			unsigned lit = items[i].adjusted_len;
-			bitstream_put_bits(ostream, codewords[lit], lens[lit]);
+			xpress_write_bits(os, codewords[lit], lens[lit]);
 		}
 	}
 	/* End-of-data symbol (required for MS compatibility)  */
-	bitstream_put_bits(ostream, codewords[XPRESS_END_OF_DATA], lens[XPRESS_END_OF_DATA]);
+	xpress_write_bits(os, codewords[XPRESS_END_OF_DATA], lens[XPRESS_END_OF_DATA]);
 }
 
 /* Make the Huffman code for XPRESS.
@@ -1061,19 +1174,13 @@ xpress_compress(const void *uncompressed_data, size_t uncompressed_size,
 	struct xpress_compressor *c = _c;
 	u32 num_chosen_items;
 	u8 *cptr;
-	struct output_bitstream ostream;
+	struct xpress_output_bitstream os;
 	u32 compressed_size;
 
 	/* XPRESS requires 256 bytes of overhead for the Huffman code, so it's
 	 * impossible to compress 256 bytes or less of data to less than the
-	 * input size.
-	 *
-	 * +1 to take into account that the buffer for compressed data is 1 byte
-	 * smaller than the buffer for uncompressed data.
-	 *
-	 * +4 to take into account that init_output_bitstream() requires at
-	 * least 4 bytes of data.  */
-	if (compressed_size_avail < XPRESS_NUM_SYMBOLS / 2 + 1 + 4)
+	 * input size.  */
+	if (compressed_size_avail < XPRESS_NUM_SYMBOLS / 2 + 50)
 		return 0;
 
 	/* Determine match/literal sequence to divide the data into.  */
@@ -1087,14 +1194,14 @@ xpress_compress(const void *uncompressed_data, size_t uncompressed_size,
 		*cptr++ = (c->lens[i] & 0xf) | (c->lens[i + 1] << 4);
 
 	/* Output the encoded matches/literals.  */
-	init_output_bitstream(&ostream, cptr,
-			      compressed_size_avail - XPRESS_NUM_SYMBOLS / 2 - 1);
-	xpress_write_items(&ostream, c->chosen_items, num_chosen_items,
+	xpress_init_output(&os, cptr,
+			   compressed_size_avail - XPRESS_NUM_SYMBOLS / 2);
+	xpress_write_items(&os, c->chosen_items, num_chosen_items,
 			   c->codewords, c->lens);
 
 	/* Flush any pending data and get the length of the compressed data.  */
-	compressed_size = flush_output_bitstream(&ostream);
-	if (compressed_size == (u32)~0UL)
+	compressed_size = xpress_flush_output(&os);
+	if (compressed_size == 0)
 		return 0;
 
 	/* Return the length of the compressed data.  */

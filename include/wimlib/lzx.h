@@ -15,10 +15,8 @@
 
 //#define ENABLE_LZX_DEBUG
 #ifdef ENABLE_LZX_DEBUG
-#	define LZX_DEBUG DEBUG
 #       define LZX_ASSERT wimlib_assert
 #else
-#	define LZX_DEBUG(format, ...)
 #	define LZX_ASSERT(...)
 #endif
 

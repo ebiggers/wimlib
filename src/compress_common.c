@@ -15,102 +15,10 @@
 #endif
 
 #include "wimlib/assert.h"
-#include "wimlib/endianness.h"
-#include "wimlib/compiler.h"
 #include "wimlib/compress_common.h"
 #include "wimlib/util.h"
 
 #include <string.h>
-
-/* Writes @num_bits bits, given by the @num_bits least significant bits of
- * @bits, to the output @ostream. */
-void
-bitstream_put_bits(struct output_bitstream *ostream, u32 bits,
-		   unsigned num_bits)
-{
-	bits &= (1U << num_bits) - 1;
-	while (num_bits > ostream->free_bits) {
-		/* Buffer variable does not have space for the new bits.  It
-		 * needs to be flushed as a 16-bit integer.  Bits in the second
-		 * byte logically precede those in the first byte
-		 * (little-endian), but within each byte the bits are ordered
-		 * from high to low.  This is true for both XPRESS and LZX
-		 * compression.  */
-
-		/* There must be at least 2 bytes of space remaining.  */
-		if (unlikely(ostream->bytes_remaining < 2)) {
-			ostream->overrun = true;
-			return;
-		}
-
-		/* Fill the buffer with as many bits that fit.  */
-		unsigned fill_bits = ostream->free_bits;
-
-		ostream->bitbuf <<= fill_bits;
-		ostream->bitbuf |= bits >> (num_bits - fill_bits);
-
-		*(le16*)ostream->bit_output = cpu_to_le16(ostream->bitbuf);
-		ostream->bit_output = ostream->next_bit_output;
-		ostream->next_bit_output = ostream->output;
-		ostream->output += 2;
-		ostream->bytes_remaining -= 2;
-
-		ostream->free_bits = 16;
-		num_bits -= fill_bits;
-		bits &= (1U << num_bits) - 1;
-	}
-
-	/* Buffer variable has space for the new bits.  */
-	ostream->bitbuf = (ostream->bitbuf << num_bits) | bits;
-	ostream->free_bits -= num_bits;
-}
-
-void
-bitstream_put_byte(struct output_bitstream *ostream, u8 n)
-{
-	if (unlikely(ostream->bytes_remaining < 1)) {
-		ostream->overrun = true;
-		return;
-	}
-	*ostream->output++ = n;
-	ostream->bytes_remaining--;
-}
-
-/* Flushes any remaining bits to the output bitstream.
- *
- * Returns -1 if the stream has overrun; otherwise returns the total number of
- * bytes in the output.  */
-u32
-flush_output_bitstream(struct output_bitstream *ostream)
-{
-	if (unlikely(ostream->overrun))
-		return (u32)~0UL;
-
-	*(le16*)ostream->bit_output =
-		cpu_to_le16((u16)((u32)ostream->bitbuf << ostream->free_bits));
-	*(le16*)ostream->next_bit_output =
-		cpu_to_le16(0);
-
-	return ostream->output - ostream->output_start;
-}
-
-/* Initializes an output bit buffer to write its output to the memory location
- * pointer to by @data. */
-void
-init_output_bitstream(struct output_bitstream *ostream,
-		      void *data, unsigned num_bytes)
-{
-	wimlib_assert(num_bytes >= 4);
-
-	ostream->bitbuf              = 0;
-	ostream->free_bits           = 16;
-	ostream->output_start        = data;
-	ostream->bit_output          = data;
-	ostream->next_bit_output     = data + 2;
-	ostream->output              = data + 4;
-	ostream->bytes_remaining     = num_bytes - 4;
-	ostream->overrun             = false;
-}
 
 /* Given the binary tree node A[subtree_idx] whose children already
  * satisfy the maxheap property, swap the node with its greater child
