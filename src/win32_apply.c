@@ -124,6 +124,13 @@ struct win32_apply_ctx {
 	/* Number of files for which we didn't have permission to set any part
 	 * of the security descriptor.  */
 	unsigned long no_security_descriptors;
+
+	/* Number of files for which we couldn't set the short name.  */
+	unsigned long num_short_name_failures;
+
+	/* Have we tried to enable short name support on the target volume yet?
+	 */
+	bool tried_to_enable_short_names;
 };
 
 /* Get the drive letter from a Windows path, or return the null character if the
@@ -408,7 +415,7 @@ out_check_res:
 		/* Warning only.  */
 		set_errno_from_win32_error(res);
 		WARNING_WITH_ERRNO("Failed to set \\Setup: dword \"WimBoot\"=1 value "
-				   "in registry hive \"%ls\" (err=0x%08"PRIu32")",
+				   "in registry hive \"%ls\" (err=%"PRIu32")",
 				   ctx->pathbuf.Buffer, (u32)res);
 	}
 out:
@@ -789,6 +796,32 @@ maybe_clear_encryption_attribute(HANDLE *h_ptr, const struct wim_dentry *dentry,
 	return 0;
 }
 
+/* Try to enable short name support on the target volume.  If successful, return
+ * true.  If unsuccessful, issue a warning and return false.  */
+static bool
+try_to_enable_short_names(struct win32_apply_ctx *ctx)
+{
+	FILE_FS_PERSISTENT_VOLUME_INFORMATION info;
+	NTSTATUS status;
+
+	info.VolumeFlags = 0;
+	info.FlagMask = PERSISTENT_VOLUME_STATE_SHORT_NAME_CREATION_DISABLED;
+	info.Version = 1;
+	info.Reserved = 0;
+
+	status = (*func_NtFsControlFile)(ctx->h_target, NULL, NULL, NULL,
+					 &ctx->iosb,
+					 FSCTL_SET_PERSISTENT_VOLUME_STATE,
+					 &info, sizeof(info), NULL, 0);
+	if (!NT_SUCCESS(status)) {
+		WARNING("Failed to enable short name support on target volume "
+			"(status=0x%08"PRIx32")", (u32)status);
+		return false;
+	}
+
+	return true;
+}
+
 /* Set the short name on the open file @h which has been created at the location
  * indicated by @dentry.
  *
@@ -803,6 +836,10 @@ static int
 set_short_name(HANDLE h, const struct wim_dentry *dentry,
 	       struct win32_apply_ctx *ctx)
 {
+
+	if (!ctx->common.supported_features.short_names)
+		return 0;
+
 	size_t bufsize = offsetof(FILE_NAME_INFORMATION, FileName) +
 			 dentry->short_name_nbytes;
 	u8 buf[bufsize] _aligned_attribute(8);
@@ -812,20 +849,32 @@ set_short_name(HANDLE h, const struct wim_dentry *dentry,
 	info->FileNameLength = dentry->short_name_nbytes;
 	memcpy(info->FileName, dentry->short_name, dentry->short_name_nbytes);
 
+
+retry:
 	status = (*func_NtSetInformationFile)(h, &ctx->iosb, info, bufsize,
 					      FileShortNameInformation);
 	if (NT_SUCCESS(status))
 		return 0;
 
-	/* By default, failure to set short names is not an error (since short
-	 * names aren't too important anymore...).  */
-	if (!(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_SHORT_NAMES))
-		return 0;
-
 	if (status == STATUS_SHORT_NAMES_NOT_ENABLED_ON_VOLUME) {
 		if (dentry->short_name_nbytes == 0)
 			return 0;
-		ERROR("Can't extract short name when short "
+		if (!ctx->tried_to_enable_short_names) {
+			ctx->tried_to_enable_short_names = true;
+			if (try_to_enable_short_names(ctx))
+				goto retry;
+		}
+	}
+
+	/* By default, failure to set short names is not an error (since short
+	 * names aren't too important anymore...).  */
+	if (!(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_SHORT_NAMES)) {
+		ctx->num_short_name_failures++;
+		return 0;
+	}
+
+	if (status == STATUS_SHORT_NAMES_NOT_ENABLED_ON_VOLUME) {
+		ERROR("Can't set short name when short "
 		      "names are not enabled on the volume!");
 	} else {
 		ERROR("Can't set short name on \"%ls\" (status=0x%08"PRIx32")",
@@ -2065,23 +2114,30 @@ static void
 do_warnings(const struct win32_apply_ctx *ctx)
 {
 	if (ctx->partial_security_descriptors == 0 &&
-	    ctx->no_security_descriptors == 0)
+	    ctx->no_security_descriptors == 0 &&
+	    ctx->num_short_name_failures == 0)
 		return;
 
 	WARNING("Extraction to \"%ls\" complete, but with one or more warnings:",
 		ctx->common.target);
-	if (ctx->partial_security_descriptors != 0) {
+	if (ctx->num_short_name_failures) {
+		WARNING("- Could not set short names on %lu files or directories",
+			ctx->num_short_name_failures);
+	}
+	if (ctx->partial_security_descriptors) {
 		WARNING("- Could only partially set the security descriptor\n"
 			"            on %lu files or directories.",
 			ctx->partial_security_descriptors);
 	}
-	if (ctx->no_security_descriptors != 0) {
+	if (ctx->no_security_descriptors) {
 		WARNING("- Could not set security descriptor at all\n"
 			"            on %lu files or directories.",
 			ctx->no_security_descriptors);
 	}
-	WARNING("To fully restore all security descriptors, run the program\n"
-		"          with Administrator rights.");
+	if (ctx->partial_security_descriptors || ctx->no_security_descriptors) {
+		WARNING("To fully restore all security descriptors, run the program\n"
+			"          with Administrator rights.");
+	}
 }
 
 /* Extract files from a WIM image to a directory on Windows  */

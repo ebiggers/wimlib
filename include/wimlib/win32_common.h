@@ -143,6 +143,17 @@ extern NTSTATUS (WINAPI *func_RtlDosPathNameToNtPathName_U_WithStatus)
 extern NTSTATUS (WINAPI *func_RtlCreateSystemVolumeInformationFolder)
 			(PCUNICODE_STRING VolumeRootPath);
 
+#define FSCTL_SET_PERSISTENT_VOLUME_STATE 0x90238
+
+#define PERSISTENT_VOLUME_STATE_SHORT_NAME_CREATION_DISABLED 0x00000001
+
+typedef struct _FILE_FS_PERSISTENT_VOLUME_INFORMATION {
+	ULONG VolumeFlags;
+	ULONG FlagMask;
+	ULONG Version;
+	ULONG Reserved;
+} FILE_FS_PERSISTENT_VOLUME_INFORMATION, *PFILE_FS_PERSISTENT_VOLUME_INFORMATION;
+
 extern int
 win32_path_to_nt_path(const wchar_t *win32_path, UNICODE_STRING *nt_path);
 
