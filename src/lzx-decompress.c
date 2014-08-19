@@ -94,12 +94,11 @@ struct lzx_tables {
 /* The main LZX decompressor structure.
  *
  * Note: we keep track of most of the decompression state outside this
- * structure.  This structure only exists so that (1) we can store
- * @max_window_size and @num_main_syms for multiple calls to lzx_decompress();
- * and (2) so that we don't have to allocate the large 'struct lzx_tables' on
- * the stack.  */
+ * structure.  This structure only exists so that (1) we can store @window_order
+ * and @num_main_syms for multiple calls to lzx_decompress(); and (2) so that we
+ * don't have to allocate the large 'struct lzx_tables' on the stack.  */
 struct lzx_decompressor {
-	u32 max_window_size;
+	unsigned window_order;
 	unsigned num_main_syms;
 	struct lzx_tables tables;
 };
@@ -265,7 +264,7 @@ lzx_read_codeword_lens(struct input_bitstream *istream, u8 lens[], unsigned num_
 static int
 lzx_read_block_header(struct input_bitstream *istream,
 		      unsigned num_main_syms,
-		      u32 max_window_size,
+		      unsigned window_order,
 		      int *block_type_ret,
 		      u32 *block_size_ret,
 		      struct lzx_tables *tables,
@@ -296,7 +295,7 @@ lzx_read_block_header(struct input_bitstream *istream,
 		block_size <<= 8;
 		block_size |= tmp;
 
-		if (max_window_size >= 65536) {
+		if (window_order >= 16) {
 			tmp = bitstream_read_bits(istream, 8);
 			block_size <<= 8;
 			block_size |= tmp;
@@ -593,9 +592,6 @@ lzx_decompress(const void *compressed_data, size_t compressed_size,
 	bool may_have_e8_byte;
 	int ret;
 
-	if (uncompressed_size > dec->max_window_size)
-		return -1;
-
 	init_input_bitstream(&istream, compressed_data, compressed_size);
 
 	/* Initialize the recent offsets queue.  */
@@ -619,7 +615,7 @@ lzx_decompress(const void *compressed_data, size_t compressed_size,
 	     window_pos += block_size)
 	{
 		ret = lzx_read_block_header(&istream, dec->num_main_syms,
-					    dec->max_window_size, &block_type,
+					    dec->window_order, &block_type,
 					    &block_size, &dec->tables, &queue);
 		if (ret)
 			return ret;
@@ -683,11 +679,13 @@ lzx_free_decompressor(void *_dec)
 }
 
 static int
-lzx_create_decompressor(size_t max_window_size, void **dec_ret)
+lzx_create_decompressor(size_t max_block_size, void **dec_ret)
 {
 	struct lzx_decompressor *dec;
+	unsigned window_order;
 
-	if (!lzx_window_size_valid(max_window_size))
+	window_order = lzx_get_window_order(max_block_size);
+	if (window_order == 0)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	/* The aligned allocation is needed to ensure that the lzx_tables are
@@ -697,8 +695,8 @@ lzx_create_decompressor(size_t max_window_size, void **dec_ret)
 	if (!dec)
 		return WIMLIB_ERR_NOMEM;
 
-	dec->max_window_size = max_window_size;
-	dec->num_main_syms = lzx_get_num_main_syms(max_window_size);
+	dec->window_order = window_order;
+	dec->num_main_syms = lzx_get_num_main_syms(window_order);
 
 	*dec_ret = dec;
 	return 0;

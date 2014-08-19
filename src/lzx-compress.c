@@ -328,14 +328,24 @@ struct lzx_compressor {
 	/* Allocated size of @cur_window.  */
 	u32 max_window_size;
 
+	/* log2 order of the LZX window size for LZ match offset encoding
+	 * purposes.  Will be >= LZX_MIN_WINDOW_ORDER and <=
+	 * LZX_MAX_WINDOW_ORDER.
+	 *
+	 * Note: 1 << @window_order is normally equal to @max_window_size, but
+	 * it will be greater than @max_window_size in the event that the
+	 * compressor was created with a non-power-of-2 block size.  (See
+	 * lzx_get_window_order().)  */
+	unsigned window_order;
+
 	/* Compression parameters.  */
 	struct lzx_compressor_params params;
 
 	unsigned (*get_matches_func)(struct lzx_compressor *, const struct lz_match **);
 	void (*skip_bytes_func)(struct lzx_compressor *, unsigned n);
 
-	/* Number of symbols in the main alphabet (depends on the
-	 * @max_window_size since it determines the maximum allowed offset).  */
+	/* Number of symbols in the main alphabet (depends on the @window_order
+	 * since it determines the maximum allowed offset).  */
 	unsigned num_main_syms;
 
 	/* The current match offset LRU queue.  */
@@ -998,7 +1008,7 @@ lzx_write_items(struct lzx_output_bitstream *os, int block_type,
 static void
 lzx_write_compressed_block(int block_type,
 			   u32 block_size,
-			   u32 max_window_size,
+			   unsigned window_order,
 			   unsigned num_main_syms,
 			   struct lzx_item * chosen_items,
 			   u32 num_chosen_items,
@@ -1033,7 +1043,7 @@ lzx_write_compressed_block(int block_type,
 	} else {
 		lzx_write_bits(os, 0, 1);
 
-		if (max_window_size >= 65536)
+		if (window_order >= 16)
 			lzx_write_bits(os, block_size >> 16, 8);
 
 		lzx_write_bits(os, block_size & 0xFFFF, 16);
@@ -1075,7 +1085,7 @@ lzx_write_all_blocks(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 
 		lzx_write_compressed_block(spec->block_type,
 					   spec->block_size,
-					   c->max_window_size,
+					   c->window_order,
 					   c->num_main_syms,
 					   spec->chosen_items,
 					   spec->num_chosen_items,
@@ -2254,13 +2264,17 @@ static void
 lzx_free_compressor(void *_c);
 
 static u64
-lzx_get_needed_memory(size_t max_window_size, unsigned int compression_level)
+lzx_get_needed_memory(size_t max_block_size, unsigned int compression_level)
 {
 	struct lzx_compressor_params params;
 	u64 size = 0;
+	unsigned window_order;
+	u32 max_window_size;
 
-	if (!lzx_window_size_valid(max_window_size))
+	window_order = lzx_get_window_order(max_block_size);
+	if (window_order == 0)
 		return 0;
+	max_window_size = max_block_size;
 
 	lzx_build_params(compression_level, max_window_size, &params);
 
@@ -2286,15 +2300,19 @@ lzx_get_needed_memory(size_t max_window_size, unsigned int compression_level)
 }
 
 static int
-lzx_create_compressor(size_t max_window_size, unsigned int compression_level,
+lzx_create_compressor(size_t max_block_size, unsigned int compression_level,
 		      void **c_ret)
 {
 	struct lzx_compressor *c;
 	struct lzx_compressor_params params;
 	struct lz_mf_params mf_params;
+	unsigned window_order;
+	u32 max_window_size;
 
-	if (!lzx_window_size_valid(max_window_size))
+	window_order = lzx_get_window_order(max_block_size);
+	if (window_order == 0)
 		return WIMLIB_ERR_INVALID_PARAM;
+	max_window_size = max_block_size;
 
 	lzx_build_params(compression_level, max_window_size, &params);
 	lzx_build_mf_params(&params, max_window_size, &mf_params);
@@ -2306,8 +2324,9 @@ lzx_create_compressor(size_t max_window_size, unsigned int compression_level,
 		goto oom;
 
 	c->params = params;
-	c->num_main_syms = lzx_get_num_main_syms(max_window_size);
+	c->num_main_syms = lzx_get_num_main_syms(window_order);
 	c->max_window_size = max_window_size;
+	c->window_order = window_order;
 
 	c->cur_window = ALIGNED_MALLOC(max_window_size, 16);
 	if (!c->cur_window)

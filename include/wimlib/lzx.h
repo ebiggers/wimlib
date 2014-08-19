@@ -65,8 +65,9 @@ lzx_get_position_slot_raw(u32 formatted_offset)
 	}
 }
 
-extern bool lzx_window_size_valid(size_t window_size);
-extern unsigned lzx_get_num_main_syms(u32 window_size);
+extern unsigned lzx_get_window_order(size_t max_block_size);
+
+extern unsigned lzx_get_num_main_syms(unsigned window_order);
 
 /* Least-recently used queue for match offsets.  */
 struct lzx_lru_queue {

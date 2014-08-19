@@ -67,23 +67,32 @@ const u8 lzx_extra_bits[LZX_MAX_POSITION_SLOTS] = {
 };
 #endif
 
-/* LZX window size must be a power of 2 between 2^15 and 2^21, inclusively.  */
-bool
-lzx_window_size_valid(size_t window_size)
+/* Round the specified compression block size (not LZX block size) up to the
+ * next valid LZX window size, and return its order (log2).  Or, if the block
+ * size is 0 or greater than the largest valid LZX window size, return 0.  */
+unsigned
+lzx_get_window_order(size_t max_block_size)
 {
-	if (window_size == 0 || (u32)window_size != window_size)
-		return false;
-	u32 order = bsr32(window_size);
-	if (window_size != 1U << order)
-		return false;
-	return (order >= LZX_MIN_WINDOW_ORDER && order <= LZX_MAX_WINDOW_ORDER);
+	unsigned order;
+
+	if (max_block_size == 0 || max_block_size > (1 << LZX_MAX_WINDOW_ORDER))
+		return 0;
+
+	order = bsr32(max_block_size);
+
+	if ((1 << order) != max_block_size)
+		order++;
+
+	return max(order, LZX_MIN_WINDOW_ORDER);
 }
 
-/* Given a valid LZX window size, return the number of symbols that will exist
+/* Given a valid LZX window order, return the number of symbols that will exist
  * in the main Huffman code.  */
 unsigned
-lzx_get_num_main_syms(u32 window_size)
+lzx_get_num_main_syms(unsigned window_order)
 {
+	u32 window_size = 1 << window_order;
+
 	/* NOTE: the calculation *should* be as follows:
 	 *
 	 * u32 max_offset = window_size - LZX_MIN_MATCH_LEN;
