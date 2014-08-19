@@ -64,7 +64,7 @@ lz_hc_set_default_params(struct lz_mf_params *params)
 		params->min_match_len = LZ_HASH_NBYTES;
 
 	if (params->max_match_len == 0)
-		params->max_match_len = params->max_window_size;
+		params->max_match_len = UINT32_MAX;
 
 	if (params->max_search_depth == 0)
 		params->max_search_depth = 50;

@@ -359,7 +359,7 @@ lz_lsa_set_default_params(struct lz_mf_params *params)
 		params->min_match_len = 2;
 
 	if (params->max_match_len == 0)
-		params->max_match_len = params->max_window_size;
+		params->max_match_len = UINT32_MAX;
 
 	if (params->max_match_len > LZ_LSA_LEN_MAX)
 		params->max_match_len = LZ_LSA_LEN_MAX;
