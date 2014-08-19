@@ -34,6 +34,7 @@
 
 struct wimlib_decompressor {
 	const struct decompressor_ops *ops;
+	size_t max_block_size;
 	void *private;
 };
 
@@ -68,6 +69,7 @@ wimlib_create_decompressor(enum wimlib_compression_type ctype,
 	if (dec == NULL)
 		return WIMLIB_ERR_NOMEM;
 	dec->ops = decompressor_ops[ctype];
+	dec->max_block_size = max_block_size;
 	dec->private = NULL;
 	if (dec->ops->create_decompressor) {
 		int ret;
@@ -88,6 +90,9 @@ wimlib_decompress(const void *compressed_data, size_t compressed_size,
 		  void *uncompressed_data, size_t uncompressed_size,
 		  struct wimlib_decompressor *dec)
 {
+	if (unlikely(uncompressed_size > dec->max_block_size))
+		return -2;
+
 	return dec->ops->decompress(compressed_data, compressed_size,
 				    uncompressed_data, uncompressed_size,
 				    dec->private);
