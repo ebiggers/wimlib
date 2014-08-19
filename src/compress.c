@@ -154,7 +154,8 @@ wimlib_compress(const void *uncompressed_data, size_t uncompressed_size,
 {
 	size_t compressed_size;
 
-	wimlib_assert(uncompressed_size <= c->max_block_size);
+	if (unlikely(uncompressed_size == 0 || uncompressed_size > c->max_block_size))
+		return 0;
 
 	compressed_size = c->ops->compress(uncompressed_data,
 					   uncompressed_size,
