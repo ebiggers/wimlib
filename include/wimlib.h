@@ -4455,7 +4455,8 @@ wimlib_set_default_compression_level(int ctype, unsigned int compression_level);
  * wimlib_create_compressor() for the specified compression type, maximum block
  * size, and compression level.  @p compression_level may be 0, in which case
  * the current default compression level for @p ctype is used.  Returns 0 if the
- * compression type is invalid.
+ * compression type is invalid, or the @p max_block_size for that compression
+ * type is invalid.
  */
 extern uint64_t
 wimlib_get_compressor_needed_memory(enum wimlib_compression_type ctype,

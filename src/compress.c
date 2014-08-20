@@ -90,6 +90,9 @@ wimlib_get_compressor_needed_memory(enum wimlib_compression_type ctype,
 	if (!compressor_ctype_valid(ctype))
 		return 0;
 
+	if (max_block_size == 0)
+		return 0;
+
 	ops = compressor_ops[ctype];
 
 	if (compression_level == 0)
@@ -97,10 +100,16 @@ wimlib_get_compressor_needed_memory(enum wimlib_compression_type ctype,
 	if (compression_level == 0)
 		compression_level = DEFAULT_COMPRESSION_LEVEL;
 
-	size = sizeof(struct wimlib_compressor);
-	if (ops->get_needed_memory)
-		size += ops->get_needed_memory(max_block_size, compression_level);
-	return size;
+	if (ops->get_needed_memory) {
+		size = ops->get_needed_memory(max_block_size, compression_level);
+
+		/* 0 is never valid and indicates an invalid max_block_size.  */
+		if (size == 0)
+			return 0;
+	} else {
+		size = 0;
+	}
+	return size + sizeof(struct wimlib_compressor);
 }
 
 WIMLIBAPI int
