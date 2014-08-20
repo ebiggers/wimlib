@@ -442,36 +442,70 @@ typedef char wimlib_tchar;
 
 /**
  * Specifies a compression format.  Pass one of these values to
- * wimlib_create_new_wim(), wimlib_create_compressor(), or
- * wimlib_create_decompressor().
+ * wimlib_create_new_wim(), wimlib_set_output_compression_type(),
+ * wimlib_create_compressor(), or wimlib_create_decompressor().
  *
  * A WIM file has one default compression type and chunk size.  Normally, each
- * resource is compressed with this compression type.  However, resources may be
- * stored as uncompressed.  In addition, a WIM with the new version number of
- * 3584, or "ESD file", might contain solid blocks with different compression
- * types.
+ * resource in the WIM file is compressed with this compression type.  However,
+ * resources may be stored as uncompressed; for example, wimlib will do so if a
+ * resource does not compress to less than its original size.  In addition, a
+ * WIM with the new version number of 3584, or "ESD file", might contain solid
+ * blocks with different compression types.
  */
 enum wimlib_compression_type {
-	/** No compression.  */
+	/**
+	 * No compression.
+	 *
+	 * This is a valid argument to wimlib_create_new_wim() and
+	 * wimlib_set_output_compression_type(), but not to the functions in the
+	 * compression API such as wimlib_create_compressor().
+	 */
 	WIMLIB_COMPRESSION_TYPE_NONE = 0,
 
-	/** The XPRESS compression format.  This format combines Lempel-Ziv
+	/**
+	 * The XPRESS compression format.  This format combines Lempel-Ziv
 	 * factorization with Huffman encoding.  Compression and decompression
 	 * are both fast.  This format supports chunk sizes that are powers of 2
-	 * between <c>2^12</c> and <c>2^16</c>, inclusively.  */
+	 * between <c>2^12</c> and <c>2^16</c>, inclusively.
+	 *
+	 * wimlib's XPRESS compressor will, with the default settings, usually
+	 * produce a better compression ratio, and work more quickly, than the
+	 * implementation in Microsoft's WIMGAPI (as of Windows 8.1).
+	 * Non-default compression levels are also supported.  For example,
+	 * level 80 will enable two-pass optimal parsing, which is significantly
+	 * slower but usually improves compression by several percent over the
+	 * default level of 50.
+	 *
+	 * If using wimlib_create_compressor() to create an XPRESS compressor
+	 * directly, the @p max_block_size parameter may be any positive value
+	 * up to <c>2^16</c>.
+	 */
 	WIMLIB_COMPRESSION_TYPE_XPRESS = 1,
 
-	/** The LZX compression format.  This format combines Lempel-Ziv
+	/**
+	 * The LZX compression format.  This format combines Lempel-Ziv
 	 * factorization with Huffman encoding, but with more features and
 	 * complexity than XPRESS.  Compression is slow to somewhat fast,
 	 * depending on the settings.  Decompression is fast but slower than
 	 * XPRESS.  This format supports chunk sizes that are powers of 2
 	 * between <c>2^15</c> and <c>2^21</c>, inclusively.  Note: chunk sizes
 	 * other than <c>2^15</c> are not compatible with the Microsoft
-	 * implementation.  */
+	 * implementation.
+	 *
+	 * wimlib's LZX compressor will, with the default settings, usually
+	 * produce a better compression ratio, and work more quickly, than the
+	 * implementation in Microsoft's WIMGAPI (as of Windows 8.1).
+	 * Non-default compression levels are also supported.  For example,
+	 * level 20 will provide fast compression, almost as fast as XPRESS.
+	 *
+	 * If using wimlib_create_compressor() to create an LZX compressor
+	 * directly, the @p max_block_size parameter may be any positive value
+	 * up to <c>2^21</c>.
+	 */
 	WIMLIB_COMPRESSION_TYPE_LZX = 2,
 
-	/** The LZMS compression format.  This format combines Lempel-Ziv
+	/**
+	 * The LZMS compression format.  This format combines Lempel-Ziv
 	 * factorization with adaptive Huffman encoding and range coding.
 	 * Compression and decompression are both fairly slow.  This format
 	 * supports chunk sizes that are powers of 2 between <c>2^15</c> and
@@ -479,7 +513,16 @@ enum wimlib_compression_type {
 	 * sizes.  Note: LZMS compression is only compatible with wimlib v1.6.0
 	 * and later, WIMGAPI Windows 8 and later, and DISM Windows 8.1 and
 	 * later.  Also, chunk sizes larger than <c>2^26</c> are not compatible
-	 * with the Microsoft implementation.  */
+	 * with the Microsoft implementation.
+	 *
+	 * wimlib's LZMS compressor is currently faster but will usually not
+	 * compress as much as the implementation in Microsoft's WIMGAPI
+	 * (Windows 8.1).
+	 *
+	 * If using wimlib_create_compressor() to create an LZMS compressor
+	 * directly, the @p max_block_size parameter may be any positive value
+	 * up to <c>2^31 - 2</c>.
+	 */
 	WIMLIB_COMPRESSION_TYPE_LZMS = 3,
 };
 
@@ -4356,15 +4399,15 @@ wimlib_write_to_fd(WIMStruct *wim,
 /**
  * @defgroup G_compression Compression and decompression functions
  *
- * @brief Functions for LZX, XPRESS, and LZMS compression and decompression,
- * exported for convenience only, as they are already used by wimlib internally
- * when appropriate.
+ * @brief Functions for XPRESS, LZX, and LZMS compression and decompression.
  *
- * These functions can be used for general-purpose lossless data compression,
- * but some limitations apply; for example, none of the compressors or
- * decompressors currently support sliding windows, and there also exist
- * slightly different variants of these formats that are not supported
- * unmodified.
+ * These functions are already used by wimlib internally when appropriate for
+ * reading and writing WIM archives.  But they are exported and documented so
+ * that they can be used in other applications or libraries for general-purpose
+ * lossless data compression.  They are implemented in highly optimized C code,
+ * using state-of-the-art compression techniques.  The main limitation is the
+ * lack of sliding window support; this has, however, allowed the algorithms to
+ * be optimized for block-based compression.
  *
  * @{
  */
@@ -4377,19 +4420,27 @@ struct wimlib_decompressor;
 
 /**
  * Set the default compression level for the specified compression type.  This
- * will affect both explicit and library-internal calls to
- * wimlib_create_compressor().
+ * is the compression level that wimlib_create_compressor() assumes if it is
+ * called with @p compression_level specified as 0.
+ *
+ * wimlib's WIM writing code (e.g. wimlib_write()) will pass 0 to
+ * wimlib_create_compressor() internally.  Therefore, calling this function will
+ * affect the compression level of any data later written to WIM files using the
+ * specified compression type.
+ *
+ * The initial state, before this function is called, is that all compression
+ * types have a default compression level of 50.
  *
  * @param ctype
  *	Compression type for which to set the default compression level, as one
  *	of the ::wimlib_compression_type constants.  Or, if this is the special
- *	value -1, the default compression levels for all known compression types
- *	will be set.
+ *	value -1, the default compression levels for all compression types will
+ *	be set.
  * @param compression_level
  *	The default compression level to set.  If 0, the "default default" level
- *	is restored.  Otherwise, a higher value indicates higher compression.
- *	The values are scaled so that 10 is low compression, 50 is medium
- *	compression, and 100 is high compression.
+ *	of 50 is restored.  Otherwise, a higher value indicates higher
+ *	compression, whereas a lower value indicates lower compression.  See
+ *	wimlib_create_compressor() for more information.
  *
  * @return 0 on success; nonzero on error.
  *
@@ -4401,9 +4452,9 @@ wimlib_set_default_compression_level(int ctype, unsigned int compression_level);
 
 /**
  * Returns the approximate number of bytes needed to allocate a compressor with
- * wimlib_create_compressor() for the specified compression type, block size,
- * and compression level.  @p compression_level may be 0, in which case the
- * current default compression level for @p ctype is used.  Returns 0 if the
+ * wimlib_create_compressor() for the specified compression type, maximum block
+ * size, and compression level.  @p compression_level may be 0, in which case
+ * the current default compression level for @p ctype is used.  Returns 0 if the
  * compression type is invalid.
  */
 extern uint64_t
@@ -4417,27 +4468,56 @@ wimlib_get_compressor_needed_memory(enum wimlib_compression_type ctype,
  * necessary to call this to process a WIM file.
  *
  * @param ctype
- *	Compression type for which to create the compressor.
+ *	Compression type for which to create the compressor, as one of the
+ *	::wimlib_compression_type constants.
  * @param max_block_size
- *	Maximum block size to support.  The exact meaning and allowed values for
- *	this parameter depend on the compression type, but it at least specifies
- *	the maximum allowed value for @p uncompressed_size to wimlib_compress().
+ *	The maximum compression block size to support.  This specifies the
+ *	maximum allowed value for the @p uncompressed_size parameter of
+ *	wimlib_compress() when called using this compressor.
+ *	<br/>
+ *	Usually, the amount of memory used by the compressor will scale in
+ *	proportion to the @p max_block_size parameter.
+ *	wimlib_get_compressor_needed_memory() can be used to query the specific
+ *	amount of memory that will be required.
+ *	<br/>
+ *	This parameter must be at least 1 and must be less than or equal to a
+ *	compression-type-specific limit.
+ *	<br/>
+ *	In general, the same value of @p max_block_size must be passed to
+ *	wimlib_create_decompressor() when the data is later decompressed.
+ *	However, some compression types have looser requirements regarding this.
  * @param compression_level
- *	The compression level to use.  If 0, the default compression level is
- *	used.  Otherwise, a higher value indicates higher compression.  The
+ *	The compression level to use.  If 0, the default compression level (50,
+ *	or another value as set through wimlib_set_default_compression_level())
+ *	is used.  Otherwise, a higher value indicates higher compression.  The
  *	values are scaled so that 10 is low compression, 50 is medium
- *	compression, and 100 is high compression.
+ *	compression, and 100 is high compression.  This is not a percentage;
+ *	values above 100 are also valid.
+ *	<br/>
+ *	Using a higher-than-default compression level can result in a better
+ *	compression ratio, but can significantly reduce performance.  Similarly,
+ *	using a lower-than-default compression level can result in better
+ *	performance, but can significantly worsen the compression ratio.  The
+ *	exact results will depend heavily on the compression type and what
+ *	algorithms are implemented for it.  If you are considering using a
+ *	non-default compression level, you should run benchmarks to see if it is
+ *	worthwhile for your application.
+ *	<br/>
+ *	The compression level does not affect the format of the compressed data.
+ *	Therefore, it is a compressor-only parameter and does not need to be
+ *	passed to the decompressor.
  * @param compressor_ret
- *	A location into which to return the pointer to the allocated compressor,
- *	which can be used for any number of calls to wimlib_compress() before
- *	being freed with wimlib_free_compressor().
+ *	A location into which to return the pointer to the allocated compressor.
+ *	The allocated compressor can be used for any number of calls to
+ *	wimlib_compress() before being freed with wimlib_free_compressor().
  *
  * @return 0 on success; nonzero on error.
  *
  * @retval ::WIMLIB_ERR_INVALID_COMPRESSION_TYPE
  *	@p ctype was not a supported compression type.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
- *	The compressor does not support the specified maximum block size.
+ *	@p max_block_size was invalid for the compression type, or @p
+ *	compressor_ret was @c NULL.
  * @retval ::WIMLIB_ERR_NOMEM
  *	Insufficient memory to allocate the compressor.
  */
@@ -4448,13 +4528,14 @@ wimlib_create_compressor(enum wimlib_compression_type ctype,
 			 struct wimlib_compressor **compressor_ret);
 
 /**
- * Losslessly compress a block of data using a compressor previously created
- * with wimlib_create_compressor().
+ * Compress a buffer of data.
  *
  * @param uncompressed_data
  *	Buffer containing the data to compress.
  * @param uncompressed_size
- *	Size, in bytes, of the data to compress.
+ *	Size, in bytes, of the data to compress.  This cannot be greater than
+ *	the @p max_block_size with which wimlib_create_compressor() was called.
+ *	(If it is, the data will not be compressed and 0 will be returned.)
  * @param compressed_data
  *	Buffer into which to write the compressed data.
  * @param compressed_size_avail
@@ -4463,8 +4544,8 @@ wimlib_create_compressor(enum wimlib_compression_type ctype,
  *	A compressor previously allocated with wimlib_create_compressor().
  *
  * @return
- *	The size of the compressed data, in bytes, or 0 if the input data could
- *	not be compressed to @p compressed_size_avail or fewer bytes.
+ *	The size of the compressed data, in bytes, or 0 if the data could not be
+ *	compressed to @p compressed_size_avail or fewer bytes.
  */
 extern size_t
 wimlib_compress(const void *uncompressed_data, size_t uncompressed_size,
@@ -4475,35 +4556,41 @@ wimlib_compress(const void *uncompressed_data, size_t uncompressed_size,
  * Free a compressor previously allocated with wimlib_create_compressor().
  *
  * @param compressor
- *	The compressor to free.
+ *	The compressor to free.  If @c NULL, no action is taken.
  */
 extern void
 wimlib_free_compressor(struct wimlib_compressor *compressor);
 
 /**
- * Allocate a decompressor for the specified compression type using the
- * specified parameters.  This function is part of wimlib's compression API; it
- * is not necessary to call this to process a WIM file.
+ * Allocate a decompressor for the specified compression type.  This function is
+ * part of wimlib's compression API; it is not necessary to call this to process
+ * a WIM file.
  *
  * @param ctype
- *	Compression type for which to create the decompressor.
+ *	Compression type for which to create the decompressor, as one of the
+ *	::wimlib_compression_type constants.
  * @param max_block_size
- *	Maximum block size to support.  The exact meaning and allowed values for
- *	this parameter depend on the compression type, but it at least specifies
- *	the maximum allowed value for @p uncompressed_size to
+ *	The maximum compression block size to support.  This specifies the
+ *	maximum allowed value for the @p uncompressed_size parameter of
  *	wimlib_decompress().
+ *	<br/>
+ *	In general, this parameter must be the same as the @p max_block_size
+ *	that was passed to wimlib_create_compressor() when the data was
+ *	compressed.  However, some compression types have looser requirements
+ *	regarding this.
  * @param decompressor_ret
  *	A location into which to return the pointer to the allocated
- *	decompressor, which can be used for any number of calls to
- *	wimlib_decompress() before being freed with wimlib_free_decompressor().
+ *	decompressor.  The allocated decompressor can be used for any number of
+ *	calls to wimlib_decompress() before being freed with
+ *	wimlib_free_decompressor().
  *
  * @return 0 on success; nonzero on error.
  *
  * @retval ::WIMLIB_ERR_INVALID_COMPRESSION_TYPE
  *	@p ctype was not a supported compression type.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
- *	@p decompressor_ret was @c NULL, or @p max_block_size is not valid for
- *	the compression type.
+ *	@p max_block_size was invalid for the compression type, or @p
+ *	decompressor_ret was @c NULL.
  * @retval ::WIMLIB_ERR_NOMEM
  *	Insufficient memory to allocate the decompressor.
  */
@@ -4513,8 +4600,7 @@ wimlib_create_decompressor(enum wimlib_compression_type ctype,
 			   struct wimlib_decompressor **decompressor_ret);
 
 /**
- * Decompress a block of data using a decompressor previously created with
- * wimlib_create_decompressor().
+ * Decompress a buffer of data.
  *
  * @param compressed_data
  *	Buffer containing the data to decompress.
@@ -4523,11 +4609,22 @@ wimlib_create_decompressor(enum wimlib_compression_type ctype,
  * @param uncompressed_data
  *	Buffer into which to write the uncompressed data.
  * @param uncompressed_size
- *	Size, in bytes, of the data when uncompressed.
+ *	Size, in bytes, of the data when uncompressed.  This cannot exceed the
+ *	@p max_block_size with which wimlib_create_decompressor() was called.
+ *	(If it does, the data will not be decompressed and a nonzero value will
+ *	be returned.)
  * @param decompressor
  *	A decompressor previously allocated with wimlib_create_decompressor().
  *
  * @return 0 on success; nonzero on error.
+ *
+ * No specific error codes are defined; any nonzero value indicates that the
+ * decompression failed.  This can only occur if the data is truly invalid;
+ * there will never be transient errors like "out of memory", for example.
+ *
+ * This function requires that the exact uncompressed size of the data be passed
+ * as the @p uncompressed_size parameter.  If this is not done correctly,
+ * decompression may fail or the data may be decompressed incorrectly.
  */
 extern int
 wimlib_decompress(const void *compressed_data, size_t compressed_size,
@@ -4538,7 +4635,7 @@ wimlib_decompress(const void *compressed_data, size_t compressed_size,
  * Free a decompressor previously allocated with wimlib_create_decompressor().
  *
  * @param decompressor
- *	The decompressor to free.
+ *	The decompressor to free.  If @c NULL, no action is taken.
  */
 extern void
 wimlib_free_decompressor(struct wimlib_decompressor *decompressor);
