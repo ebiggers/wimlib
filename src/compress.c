@@ -111,14 +111,14 @@ wimlib_create_compressor(enum wimlib_compression_type ctype,
 {
 	struct wimlib_compressor *c;
 
+	if (!compressor_ctype_valid(ctype))
+		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
+
 	if (c_ret == NULL)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (max_block_size == 0)
 		return WIMLIB_ERR_INVALID_PARAM;
-
-	if (!compressor_ctype_valid(ctype))
-		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
 
 	c = MALLOC(sizeof(*c));
 	if (c == NULL)

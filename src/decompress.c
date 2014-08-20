@@ -59,14 +59,14 @@ wimlib_create_decompressor(enum wimlib_compression_type ctype,
 {
 	struct wimlib_decompressor *dec;
 
+	if (!decompressor_ctype_valid(ctype))
+		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
+
 	if (dec_ret == NULL)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (max_block_size == 0)
 		return WIMLIB_ERR_INVALID_PARAM;
-
-	if (!decompressor_ctype_valid(ctype))
-		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
 
 	dec = MALLOC(sizeof(*dec));
 	if (dec == NULL)
