@@ -1012,16 +1012,6 @@ lzms_decompress(const void *compressed_data, size_t compressed_size,
 	if (uncompressed_size == 0)
 		return 0;
 
-	/* The x86 post-processor requires that the uncompressed length fit into
-	 * a signed 32-bit integer.  Also, the position slot table cannot be
-	 * searched for a position of INT32_MAX or greater.  */
-	if (uncompressed_size >= INT32_MAX) {
-		LZMS_DEBUG("Uncompressed length too large "
-			   "(got %zu, expected < INT32_MAX)",
-			   uncompressed_size);
-		return -1;
-	}
-
 	/* Decode the literals and matches.  */
 	if (lzms_decode_items(compressed_data, compressed_size,
 			      uncompressed_data, uncompressed_size, ctx))
@@ -1047,6 +1037,12 @@ static int
 lzms_create_decompressor(size_t max_block_size, void **ctx_ret)
 {
 	struct lzms_decompressor *ctx;
+
+	/* The x86 post-processor requires that the uncompressed length fit into
+	 * a signed 32-bit integer.  Also, the position slot table cannot be
+	 * searched for a position of INT32_MAX or greater.  */
+	if (max_block_size >= INT32_MAX)
+		return WIMLIB_ERR_INVALID_PARAM;
 
 	ctx = ALIGNED_MALLOC(sizeof(struct lzms_decompressor),
 			     DECODE_TABLE_ALIGNMENT);

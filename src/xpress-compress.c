@@ -1068,12 +1068,6 @@ xpress_build_mf_params(const struct xpress_compressor_params *xpress_params,
 	mf_params->nice_match_len = xpress_params->nice_match_length;
 }
 
-static inline bool
-xpress_window_size_valid(size_t window_size)
-{
-	return (window_size > 0 && window_size <= XPRESS_MAX_OFFSET + 1);
-}
-
 static void
 xpress_free_compressor(void *_c);
 
@@ -1083,7 +1077,7 @@ xpress_get_needed_memory(size_t max_window_size, unsigned int compression_level)
 	u64 size = 0;
 	struct xpress_compressor_params params;
 
-	if (!xpress_window_size_valid(max_window_size))
+	if (max_window_size > XPRESS_MAX_OFFSET + 1)
 		return 0;
 
 	xpress_build_params(compression_level, max_window_size, &params);
@@ -1117,7 +1111,7 @@ xpress_create_compressor(size_t max_window_size, unsigned int compression_level,
 	struct xpress_compressor_params params;
 	struct lz_mf_params mf_params;
 
-	if (!xpress_window_size_valid(max_window_size))
+	if (max_window_size > XPRESS_MAX_OFFSET + 1)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	xpress_build_params(compression_level, max_window_size, &params);

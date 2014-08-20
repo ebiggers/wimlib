@@ -1335,10 +1335,12 @@ static u64
 lzms_get_needed_memory(size_t max_block_size, unsigned int compression_level)
 {
 	struct lzms_compressor_params params;
+	u64 size = 0;
+
+	if (max_block_size >= INT32_MAX)
+		return 0;
 
 	lzms_build_params(compression_level, &params);
-
-	u64 size = 0;
 
 	size += sizeof(struct lzms_compressor);
 	size += max_block_size;

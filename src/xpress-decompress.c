@@ -71,6 +71,7 @@
 
 #include "wimlib/decompressor_ops.h"
 #include "wimlib/decompress_common.h"
+#include "wimlib/error.h"
 #include "wimlib/xpress.h"
 
 /*
@@ -198,6 +199,16 @@ xpress_decompress(const void *compressed_data, size_t compressed_size,
 				uncompressed_size, decode_table);
 }
 
+static int
+xpress_create_decompressor(size_t max_block_size, void **dec_ret)
+{
+	if (max_block_size > XPRESS_MAX_OFFSET + 1)
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	return 0;
+}
+
 const struct decompressor_ops xpress_decompressor_ops = {
-	.decompress = xpress_decompress,
+	.create_decompressor = xpress_create_decompressor,
+	.decompress	     = xpress_decompress,
 };
