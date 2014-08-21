@@ -385,12 +385,14 @@ static const tchar *error_strings[] = {
 
 /* API function documented in wimlib.h  */
 WIMLIBAPI const tchar *
-wimlib_get_error_string(enum wimlib_error_code code)
+wimlib_get_error_string(enum wimlib_error_code _code)
 {
-	if ((unsigned int)code >= ARRAY_LEN(error_strings))
+	unsigned int code = (unsigned int)_code;
+
+	if (code >= ARRAY_LEN(error_strings) || error_strings[code] == NULL)
 		return T("Unknown error");
 
-	return error_strings[(unsigned int)code];
+	return error_strings[code];
 }
 
 
