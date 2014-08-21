@@ -1040,7 +1040,7 @@ xpress_build_params(unsigned int compression_level, u32 max_window_size,
 
 		/* Near-optimal parsing  */
 		xpress_params->choose_items_func = xpress_choose_items_near_optimal;
-		if (max_window_size >= 32768)
+		if (max_window_size >= 16384)
 			xpress_params->mf_algo = LZ_MF_BINARY_TREES;
 		else
 			xpress_params->mf_algo = LZ_MF_HASH_CHAINS;
