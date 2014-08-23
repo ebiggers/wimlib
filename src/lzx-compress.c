@@ -198,6 +198,7 @@
 #include "wimlib/compress_common.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
+#include "wimlib/lz_extend.h"
 #include "wimlib/lz_mf.h"
 #include "wimlib/lzx.h"
 #include "wimlib/util.h"
@@ -1489,6 +1490,42 @@ lzx_match_chooser_reverse_list(struct lzx_compressor *c, unsigned cur_pos)
 }
 
 /*
+ * Find the longest repeat offset match.
+ *
+ * If no match of at least LZX_MIN_MATCH_LEN bytes is found, then return 0.
+ *
+ * If a match of at least LZX_MIN_MATCH_LEN bytes is found, then return its
+ * length and set *slot_ret to the index of its offset in @queue.
+ */
+static inline u32
+lzx_repsearch(const u8 * const strptr, const u32 bytes_remaining,
+	      const struct lzx_lru_queue *queue, unsigned *slot_ret)
+{
+	u32 best_len = 0;
+
+	BUILD_BUG_ON(LZX_MIN_MATCH_LEN != 2);
+	if (likely(bytes_remaining >= 2)) {
+		const u32 max_len = min(LZX_MAX_MATCH_LEN, bytes_remaining);
+		const u16 str = *(const u16 *)strptr;
+		for (unsigned i = 0; i < LZX_NUM_RECENT_OFFSETS; i++) {
+			const u8 * const matchptr = strptr - queue->R[i];
+
+			/* Check the first two bytes.  If they match, then
+			 * extend the match to its full length.  */
+			if (*(const u16 *)matchptr == str) {
+				const u32 len = lz_extend(strptr, matchptr,
+							  2, max_len);
+				if (len > best_len) {
+					best_len = len;
+					*slot_ret = i;
+				}
+			}
+		}
+	}
+	return best_len;
+}
+
+/*
  * lzx_choose_near_optimal_match() -
  *
  * Choose an approximately optimal match or literal to use at the next position
@@ -1580,22 +1617,13 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 
 	/* Search for matches at repeat offsets.  As a heuristic, we only keep
 	 * the one with the longest match length.  */
-	longest_rep_len = LZX_MIN_MATCH_LEN - 1;
-	if (c->match_window_pos >= 1) {
-		unsigned limit = min(LZX_MAX_MATCH_LEN,
-				     c->match_window_end - c->match_window_pos);
-		for (int i = 0; i < LZX_NUM_RECENT_OFFSETS; i++) {
-			u32 offset = c->queue.R[i];
-			const u8 *strptr = &c->cur_window[c->match_window_pos];
-			const u8 *matchptr = strptr - offset;
-			unsigned len = 0;
-			while (len < limit && strptr[len] == matchptr[len])
-				len++;
-			if (len > longest_rep_len) {
-				longest_rep_len = len;
-				longest_rep_slot = i;
-			}
-		}
+	if (likely(c->match_window_pos >= 1)) {
+		longest_rep_len = lzx_repsearch(&c->cur_window[c->match_window_pos],
+						c->match_window_end - c->match_window_pos,
+						&c->queue,
+						&longest_rep_slot);
+	} else {
+		longest_rep_len = 0;
 	}
 
 	/* If there's a long match with a repeat offset, choose it immediately.  */
@@ -1679,7 +1707,10 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 	}
 	end_pos = longest_len;
 
-	if (longest_rep_len >= LZX_MIN_MATCH_LEN) {
+	if (longest_rep_len) {
+
+		LZX_ASSERT(longest_rep_len >= LZX_MIN_MATCH_LEN);
+
 		u32 cost;
 
 		while (end_pos < longest_rep_len)
@@ -1751,21 +1782,10 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 
 		/* Search for matches at repeat offsets.  Again, as a heuristic
 		 * we only keep the longest one.  */
-		longest_rep_len = LZX_MIN_MATCH_LEN - 1;
-		unsigned limit = min(LZX_MAX_MATCH_LEN,
-				     c->match_window_end - c->match_window_pos);
-		for (int i = 0; i < LZX_NUM_RECENT_OFFSETS; i++) {
-			u32 offset = optimum[cur_pos].queue.R[i];
-			const u8 *strptr = &c->cur_window[c->match_window_pos];
-			const u8 *matchptr = strptr - offset;
-			unsigned len = 0;
-			while (len < limit && strptr[len] == matchptr[len])
-				len++;
-			if (len > longest_rep_len) {
-				longest_rep_len = len;
-				longest_rep_slot = i;
-			}
-		}
+		longest_rep_len = lzx_repsearch(&c->cur_window[c->match_window_pos],
+						c->match_window_end - c->match_window_pos,
+						&optimum[cur_pos].queue,
+						&longest_rep_slot);
 
 		/* If we found a long match at a repeat offset, choose it
 		 * immediately.  */
@@ -1927,7 +1947,9 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 		 * of the longest repeat offset match.  Still didn't seem quite
 		 * worth it, though.
 		 */
-		if (longest_rep_len >= LZX_MIN_MATCH_LEN) {
+		if (longest_rep_len) {
+
+			LZX_ASSERT(longest_rep_len >= LZX_MIN_MATCH_LEN);
 
 			while (end_pos < cur_pos + longest_rep_len)
 				optimum[++end_pos].cost = MC_INFINITE_COST;
