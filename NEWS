@@ -1,10 +1,15 @@
 Version 1.7.2-BETA:
-	Made yet another round of performance improvements to the XPRESS, LZX,
-	and LZMS compressors.
+	Made another round of performance improvements to the XPRESS, LZX, and
+	LZMS compressors.
 
 	On Windows, wimextract and its underlying library function
 	wimlib_extract_paths() will no longer fail if given a target directory
 	path ending in a slash.
+
+	On Windows, wimlib will now attempt to enable short name generation on
+	the target volume if any files being extracted have short names.
+
+	No API changes, but a few documentation improvements.
 
 Version 1.7.1:
 	Made more improvements to the XPRESS, LZX, and LZMS compressors.
