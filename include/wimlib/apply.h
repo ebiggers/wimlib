@@ -33,6 +33,8 @@ struct wim_features {
 
 struct wim_lookup_table_entry;
 struct read_stream_list_callbacks;
+struct apply_operations;
+struct wim_dentry;
 
 struct apply_ctx {
 	/* The WIMStruct from which files are being extracted from the currently
@@ -62,6 +64,7 @@ struct apply_ctx {
 	struct wim_features supported_features;
 
 	/* The members below should not be used outside of extract.c  */
+	const struct apply_operations *apply_ops;
 	u64 next_progress;
 	unsigned long invalid_sequence;
 	unsigned long num_streams_remaining;
@@ -127,14 +130,105 @@ extern int
 extract_stream_list(struct apply_ctx *ctx,
 		    const struct read_stream_list_callbacks *cbs);
 
+/*
+ * Represents an extraction backend.
+ */
 struct apply_operations {
+
+	/* Name of the extraction backend.  */
 	const char *name;
+
+	/*
+	 * Query the features supported by the extraction backend.
+	 *
+	 * @target
+	 *	The target string that was provided by the user.  (Often a
+	 *	directory, but extraction backends are free to interpret this
+	 *	differently.)
+	 *
+	 * @supported_features
+	 *	A structure, each of whose members represents a feature that may
+	 *	be supported by the extraction backend.  For each feature that
+	 *	the extraction backend supports, this routine must set the
+	 *	corresponding member to a nonzero value.
+	 *
+	 * Return 0 if successful; otherwise a positive wimlib error code.
+	 */
 	int (*get_supported_features)(const tchar *target,
 				      struct wim_features *supported_features);
 
+	/*
+	 * Main extraction routine.
+	 *
+	 * The extraction backend is provided a list of dentries that have been
+	 * prepared for extraction.  It is free to extract them in any way that
+	 * it chooses.  Ideally, it should choose a method that maximizes
+	 * performance.
+	 *
+	 * The target string will be provided in ctx->common.target.  This might
+	 * be a directory, although extraction backends are free to interpret it
+	 * as they wish.  TODO: in some cases, the common extraction code also
+	 * interprets the target string.  This should be completely isolated to
+	 * extraction backends.
+	 *
+	 * The extraction flags will be provided in ctx->common.extract_flags.
+	 * Extraction backends should examine them and implement the behaviors
+	 * for as many flags as possible.  Some flags are already handled by the
+	 * common extraction code.  TODO: this needs to be better formalized.
+	 *
+	 * @dentry_list, the list of dentries, will be ordered such that the
+	 * ancestor of any dentry always precedes any descendents.  Unless
+	 * @single_tree_only is set, it's possible that the dentries consist of
+	 * multiple disconnected trees.
+	 *
+	 * 'd_extraction_name' and 'd_extraction_name_nchars' of each dentry
+	 * will be set to indicate the actual name with which the dentry should
+	 * be extracted.  This may or may not be the same as 'file_name'.
+	 * TODO: really, the extraction backends should be responsible for
+	 * generating 'd_extraction_name'.
+	 *
+	 * Each dentry will refer to a valid inode in 'd_inode'.
+	 * 'd_inode->i_extraction_aliases' will contain a list of just the
+	 * dentries of that inode being extracted.  This will be a (possibly
+	 * nonproper) subset of the 'd_inode->i_dentry' list.
+	 *
+	 * The streams required to be extracted will already be prepared in
+	 * 'apply_ctx'.  The extraction backend should call
+	 * extract_stream_list() to extract them.
+	 *
+	 * The will_extract_dentry() utility function, given an arbitrary dentry
+	 * in the WIM image (which may not be in the extraction list), can be
+	 * used to determine if that dentry is in the extraction list.
+	 *
+	 * Return 0 if successful; otherwise a positive wimlib error code.
+	 */
 	int (*extract)(struct list_head *dentry_list, struct apply_ctx *ctx);
 
+	/*
+	 * Query whether the unnamed data stream of the specified file will be
+	 * extracted as "externally backed".  If so, the extraction backend is
+	 * assumed to handle this separately, and the common extraction code
+	 * will not register a usage of that stream.
+	 *
+	 * This routine is optional.
+	 *
+	 * Return:
+	 *	< 0 if the file will *not* be externally backed.
+	 *	= 0 if the file will be externally backed.
+	 *	> 0 (wimlib error code) if another error occurred.
+	 */
+	int (*will_externally_back)(struct wim_dentry *dentry, struct apply_ctx *ctx);
+
+	/*
+	 * Size of the backend-specific extraction context.  It must contain
+	 * 'struct apply_ctx' as its first member.
+	 */
 	size_t context_size;
+
+	/*
+	 * Set this if the extraction backend only supports extracting dentries
+	 * that form a single tree, not multiple trees.
+	 */
 	bool single_tree_only;
 };
 

@@ -1041,22 +1041,42 @@ ref_stream(struct wim_lookup_table_entry *lte, u32 stream_idx,
 }
 
 static int
+ref_unnamed_stream(struct wim_dentry *dentry, struct apply_ctx *ctx)
+{
+	struct wim_inode *inode = dentry->d_inode;
+	int ret;
+	u16 stream_idx;
+	struct wim_lookup_table_entry *stream;
+
+	if (unlikely(inode_is_encrypted_directory(inode)))
+		return 0;
+
+	if (unlikely(ctx->apply_ops->will_externally_back)) {
+		ret = (*ctx->apply_ops->will_externally_back)(dentry, ctx);
+		if (ret >= 0) {
+			if (ret) /* Error */
+				return ret;
+			/* Will externally back */
+			return 0;
+		}
+		/* Won't externally back */
+	}
+
+	stream = inode_unnamed_stream_resolved(inode, &stream_idx);
+	return ref_stream(stream, stream_idx, dentry, ctx);
+}
+
+static int
 dentry_ref_streams(struct wim_dentry *dentry, struct apply_ctx *ctx)
 {
 	struct wim_inode *inode = dentry->d_inode;
 	int ret;
 
-	/* The unnamed data stream will always be extracted, except in an
-	 * unlikely case.  */
-	if (!inode_is_encrypted_directory(inode)) {
-		u16 stream_idx;
-		struct wim_lookup_table_entry *stream;
-
-		stream = inode_unnamed_stream_resolved(inode, &stream_idx);
-		ret = ref_stream(stream, stream_idx, dentry, ctx);
-		if (ret)
-			return ret;
-	}
+	/* The unnamed data stream will almost always be extracted, but there
+	 * exist cases in which it won't be.  */
+	ret = ref_unnamed_stream(dentry, ctx);
+	if (ret)
+		return ret;
 
 	/* Named data streams will be extracted only if supported in the current
 	 * extraction mode and volume, and to avoid complications, if not doing
@@ -1394,6 +1414,7 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 	}
 	INIT_LIST_HEAD(&ctx->stream_list);
 	filedes_invalidate(&ctx->tmpfile_fd);
+	ctx->apply_ops = ops;
 
 	ret = (*ops->get_supported_features)(target, &ctx->supported_features);
 	if (ret)

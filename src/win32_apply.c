@@ -312,6 +312,89 @@ in_prepopulate_list(struct wim_dentry *dentry,
 				  wcslen(dentry->_full_path), pats);
 }
 
+static const wchar_t *
+current_path(struct win32_apply_ctx *ctx);
+
+static void
+build_extraction_path(const struct wim_dentry *dentry,
+		      struct win32_apply_ctx *ctx);
+
+#define WIM_BACKING_NOT_ENABLED		-1
+#define WIM_BACKING_NOT_POSSIBLE	-2
+#define WIM_BACKING_EXCLUDED		-3
+
+/*
+ * Determines if the unnamed data stream of a file will be created as an
+ * external backing, as opposed to a standard extraction.
+ */
+static int
+win32_will_externally_back(struct wim_dentry *dentry, struct apply_ctx *_ctx)
+{
+	struct win32_apply_ctx *ctx = (struct win32_apply_ctx *)_ctx;
+	struct wim_lookup_table_entry *stream;
+	int ret;
+
+	if (!(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT))
+		return WIM_BACKING_NOT_ENABLED;
+
+	if (dentry->d_inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
+					     FILE_ATTRIBUTE_REPARSE_POINT |
+					     FILE_ATTRIBUTE_ENCRYPTED))
+		return WIM_BACKING_NOT_POSSIBLE;
+
+	stream = inode_unnamed_lte_resolved(dentry->d_inode);
+
+	if (!stream ||
+	    stream->resource_location != RESOURCE_IN_WIM ||
+	    stream->rspec->wim != ctx->common.wim ||
+	    stream->size != stream->rspec->uncompressed_size)
+		return WIM_BACKING_NOT_POSSIBLE;
+
+	ret = calculate_dentry_full_path(dentry);
+	if (ret)
+		return ret;
+
+	if (in_prepopulate_list(dentry, ctx))
+		return WIM_BACKING_EXCLUDED;
+
+	return 0;
+}
+
+static int
+set_external_backing(struct wim_dentry *dentry, struct win32_apply_ctx *ctx)
+{
+	int ret;
+
+	ret = win32_will_externally_back(dentry, &ctx->common);
+	if (ret > 0) /* Error.  */
+		return ret;
+
+	if (ret < 0 && ret != WIM_BACKING_EXCLUDED)
+		return 0; /* Not externally backing, other than due to exclusion.  */
+
+	build_extraction_path(dentry, ctx);
+
+	if (ret == WIM_BACKING_EXCLUDED) {
+		/* Not externally backing due to exclusion.  */
+		union wimlib_progress_info info;
+
+		info.wimboot_exclude.path_in_wim = dentry->_full_path;
+		info.wimboot_exclude.extraction_path = current_path(ctx);
+
+		return call_progress(ctx->common.progfunc,
+				     WIMLIB_PROGRESS_MSG_WIMBOOT_EXCLUDE,
+				     &info, ctx->common.progctx);
+	} else {
+		/* Externally backing.  */
+		return wimboot_set_pointer(&ctx->attr,
+					   current_path(ctx),
+					   inode_unnamed_lte_resolved(dentry->d_inode),
+					   ctx->wimboot.data_source_id,
+					   ctx->wimboot.wim_lookup_table_hash,
+					   ctx->wimboot.wof_running);
+	}
+}
+
 /* Calculates the SHA-1 message digest of the WIM's lookup table.  */
 static int
 hash_lookup_table(WIMStruct *wim, u8 hash[SHA1_HASH_SIZE])
@@ -650,11 +733,11 @@ prepare_target(struct list_head *dentry_list, struct win32_apply_ctx *ctx)
 /* When creating an inode that will have a short (DOS) name, we create it using
  * the long name associated with the short name.  This ensures that the short
  * name gets associated with the correct long name.  */
-static const struct wim_dentry *
+static struct wim_dentry *
 first_extraction_alias(const struct wim_inode *inode)
 {
-	const struct list_head *next = inode->i_extraction_aliases.next;
-	const struct wim_dentry *dentry;
+	struct list_head *next = inode->i_extraction_aliases.next;
+	struct wim_dentry *dentry;
 
 	do {
 		dentry = list_entry(next, struct wim_dentry,
@@ -1323,7 +1406,7 @@ create_links(HANDLE h, const struct wim_dentry *first_dentry,
 static int
 create_nondirectory(const struct wim_inode *inode, struct win32_apply_ctx *ctx)
 {
-	const struct wim_dentry *first_dentry;
+	struct wim_dentry *first_dentry;
 	HANDLE h;
 	int ret;
 
@@ -1341,6 +1424,10 @@ create_nondirectory(const struct wim_inode *inode, struct win32_apply_ctx *ctx)
 	 * create more files.  */
 	if (!ret)
 		ret = create_links(h, first_dentry, ctx);
+
+	/* "WIMBoot" extraction: set external backing by the WIM file if needed.  */
+	if (!ret && unlikely(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT))
+		ret = set_external_backing(first_dentry, ctx);
 
 	(*func_NtClose)(h);
 	return ret;
@@ -1459,42 +1546,6 @@ begin_extract_stream_instance(const struct wim_lookup_table_entry *stream,
 		 * such files...  */
 		list_add_tail(&dentry->tmp_list, &ctx->encrypted_dentries);
 		return prepare_data_buffer(ctx, stream->size);
-	}
-
-	/* Extracting unnamed data stream in WIMBoot mode?  */
-	if (unlikely(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT)
-	    && (stream_name_nchars == 0)
-	    && (stream->resource_location == RESOURCE_IN_WIM)
-	    && (stream->rspec->wim == ctx->common.wim)
-	    && (stream->size == stream->rspec->uncompressed_size))
-	{
-		int ret = calculate_dentry_full_path(dentry);
-		if (ret)
-			return ret;
-		if (in_prepopulate_list(dentry, ctx)) {
-			union wimlib_progress_info info;
-
-			info.wimboot_exclude.path_in_wim = dentry->_full_path;
-			info.wimboot_exclude.extraction_path = current_path(ctx);
-
-			ret = call_progress(ctx->common.progfunc,
-					    WIMLIB_PROGRESS_MSG_WIMBOOT_EXCLUDE,
-					    &info, ctx->common.progctx);
-			FREE(dentry->_full_path);
-			dentry->_full_path = NULL;
-			if (ret)
-				return ret;
-			/* Go on and open the file for normal extraction.  */
-		} else {
-			FREE(dentry->_full_path);
-			dentry->_full_path = NULL;
-			return wimboot_set_pointer(&ctx->attr,
-						   current_path(ctx),
-						   stream,
-						   ctx->wimboot.data_source_id,
-						   ctx->wimboot.wim_lookup_table_hash,
-						   ctx->wimboot.wof_running);
-		}
 	}
 
 	if (ctx->num_open_handles == MAX_OPEN_STREAMS) {
@@ -2243,6 +2294,7 @@ const struct apply_operations win32_apply_ops = {
 	.name			= "Windows",
 	.get_supported_features = win32_get_supported_features,
 	.extract                = win32_extract,
+	.will_externally_back   = win32_will_externally_back,
 	.context_size           = sizeof(struct win32_apply_ctx),
 };
 
