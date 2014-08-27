@@ -851,8 +851,20 @@ set_short_name(HANDLE h, const struct wim_dentry *dentry,
 	if (!ctx->common.supported_features.short_names)
 		return 0;
 
+	/*
+	 * Note: The size of the FILE_NAME_INFORMATION buffer must be such that
+	 * FileName contains at least 2 wide characters (4 bytes).  Otherwise,
+	 * NtSetInformationFile() will return STATUS_INFO_LENGTH_MISMATCH.  This
+	 * is despite the fact that FileNameLength can validly be 0 or 2 bytes,
+	 * with the former case being removing the existing short name if
+	 * present, rather than setting one.
+	 *
+	 * FileName seemingly does not, however, need to be null-terminated in
+	 * any case.
+	 */
+
 	size_t bufsize = offsetof(FILE_NAME_INFORMATION, FileName) +
-			 dentry->short_name_nbytes;
+			 max(dentry->short_name_nbytes, 2 * sizeof(wchar_t));
 	u8 buf[bufsize] _aligned_attribute(8);
 	FILE_NAME_INFORMATION *info = (FILE_NAME_INFORMATION *)buf;
 	NTSTATUS status;
