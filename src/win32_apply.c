@@ -361,7 +361,7 @@ win32_will_externally_back(struct wim_dentry *dentry, struct apply_ctx *_ctx)
 }
 
 static int
-set_external_backing(struct wim_dentry *dentry, struct win32_apply_ctx *ctx)
+set_external_backing(HANDLE h, struct wim_dentry *dentry, struct win32_apply_ctx *ctx)
 {
 	int ret;
 
@@ -386,7 +386,7 @@ set_external_backing(struct wim_dentry *dentry, struct win32_apply_ctx *ctx)
 				     &info, ctx->common.progctx);
 	} else {
 		/* Externally backing.  */
-		return wimboot_set_pointer(&ctx->attr,
+		return wimboot_set_pointer(h,
 					   current_path(ctx),
 					   inode_unnamed_lte_resolved(dentry->d_inode),
 					   ctx->wimboot.data_source_id,
@@ -1427,7 +1427,7 @@ create_nondirectory(const struct wim_inode *inode, struct win32_apply_ctx *ctx)
 
 	/* "WIMBoot" extraction: set external backing by the WIM file if needed.  */
 	if (!ret && unlikely(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT))
-		ret = set_external_backing(first_dentry, ctx);
+		ret = set_external_backing(h, first_dentry, ctx);
 
 	(*func_NtClose)(h);
 	return ret;

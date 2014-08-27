@@ -1024,10 +1024,10 @@ out:
  * This turns it into a reparse point that redirects accesses to it, to the
  * corresponding resource in the WIM archive.
  *
- * @attr
- *	Object attributes that specify the path to the file.
+ * @h
+ *	Open handle to the file, with GENERIC_WRITE access.
  * @printable_name
- *	Printable representation of the path encoded in @attr.
+ *	Printable representation of the path to the file.
  * @lte
  *	Unnamed data stream of the file.
  * @data_source_id
@@ -1041,29 +1041,15 @@ out:
  * Returns 0 on success, or a positive error code on failure.
  */
 int
-wimboot_set_pointer(OBJECT_ATTRIBUTES *attr,
+wimboot_set_pointer(HANDLE h,
 		    const wchar_t *printable_name,
 		    const struct wim_lookup_table_entry *lte,
 		    u64 data_source_id,
 		    const u8 lookup_table_hash[SHA1_HASH_SIZE],
 		    bool wof_running)
 {
-	int ret;
-	HANDLE h = NULL;
-	NTSTATUS status;
-	IO_STATUS_BLOCK iosb;
 	DWORD bytes_returned;
 	DWORD err;
-
-	status = (*func_NtOpenFile)(&h, GENERIC_WRITE | SYNCHRONIZE, attr,
-				    &iosb, FILE_SHARE_VALID_FLAGS,
-				    FILE_OPEN_FOR_BACKUP_INTENT |
-					FILE_OPEN_REPARSE_POINT |
-					FILE_SYNCHRONOUS_IO_NONALERT);
-	if (!NT_SUCCESS(status)) {
-		SetLastError((*func_RtlNtStatusToDosError)(status));
-		goto fail;
-	}
 
 	if (wof_running) {
 		/* The WOF driver is running.  We can create the reparse point
@@ -1144,20 +1130,14 @@ wimboot_set_pointer(OBJECT_ATTRIBUTES *attr,
 			goto fail;
 	}
 
-	ret = 0;
-	goto out;
+	return 0;
 
 fail:
 	err = GetLastError();
 	set_errno_from_win32_error(err);
 	ERROR_WITH_ERRNO("\"%ls\": Couldn't set WIMBoot pointer data "
 			 "(err=%"PRIu32")", printable_name, (u32)err);
-	ret = WIMLIB_ERR_WIMBOOT;
-out:
-	if (h)
-		(*func_NtClose)(h);
-	return ret;
-
+	return WIMLIB_ERR_WIMBOOT;
 }
 
 #endif /* __WIN32__ */
