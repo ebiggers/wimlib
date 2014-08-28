@@ -1104,16 +1104,15 @@ create_directories(struct list_head *dentry_list,
 
 		/* If the root dentry is being extracted, it was already done so
 		 * in prepare_target().  */
-		if (dentry_is_root(dentry))
-			continue;
+		if (!dentry_is_root(dentry)) {
+			ret = create_directory(dentry, ctx);
+			if (ret)
+				return ret;
 
-		ret = create_directory(dentry, ctx);
-		if (ret)
-			return ret;
-
-		ret = create_any_empty_ads(dentry, ctx);
-		if (ret)
-			return ret;
+			ret = create_any_empty_ads(dentry, ctx);
+			if (ret)
+				return ret;
+		}
 
 		ret = report_file_created(&ctx->common);
 		if (ret)
@@ -1360,11 +1359,11 @@ create_nondirectories(struct list_head *dentry_list, struct win32_apply_ctx *ctx
 		if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
 			continue;
 		/* Call create_nondirectory() only once per inode  */
-		if (dentry != inode_first_extraction_dentry(inode))
-			continue;
-		ret = create_nondirectory(inode, ctx);
-		if (ret)
-			return ret;
+		if (dentry == inode_first_extraction_dentry(inode)) {
+			ret = create_nondirectory(inode, ctx);
+			if (ret)
+				return ret;
+		}
 		ret = report_file_created(&ctx->common);
 		if (ret)
 			return ret;
@@ -2171,12 +2170,25 @@ do_warnings(const struct win32_apply_ctx *ctx)
 	}
 }
 
+static uint64_t
+count_dentries(const struct list_head *dentry_list)
+{
+	const struct list_head *cur;
+	uint64_t count = 0;
+
+	list_for_each(cur, dentry_list)
+		count++;
+
+	return count;
+}
+
 /* Extract files from a WIM image to a directory on Windows  */
 static int
 win32_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 {
 	int ret;
 	struct win32_apply_ctx *ctx = (struct win32_apply_ctx *)_ctx;
+	uint64_t dentry_count;
 
 	ret = prepare_target(dentry_list, ctx);
 	if (ret)
@@ -2188,13 +2200,21 @@ win32_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 			goto out;
 	}
 
-	reset_file_progress(&ctx->common);
+	dentry_count = count_dentries(dentry_list);
+
+	ret = start_file_structure_phase(&ctx->common, dentry_count);
+	if (ret)
+		goto out;
 
 	ret = create_directories(dentry_list, ctx);
 	if (ret)
 		goto out;
 
 	ret = create_nondirectories(dentry_list, ctx);
+	if (ret)
+		goto out;
+
+	ret = end_file_structure_phase(&ctx->common);
 	if (ret)
 		goto out;
 
@@ -2210,9 +2230,15 @@ win32_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	if (ret)
 		goto out;
 
-	reset_file_progress(&ctx->common);
+	ret = start_file_metadata_phase(&ctx->common, dentry_count);
+	if (ret)
+		goto out;
 
 	ret = apply_metadata(dentry_list, ctx);
+	if (ret)
+		goto out;
+
+	ret = end_file_metadata_phase(&ctx->common);
 	if (ret)
 		goto out;
 

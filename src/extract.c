@@ -95,8 +95,47 @@
 int
 do_file_extract_progress(struct apply_ctx *ctx, enum wimlib_progress_msg msg)
 {
-	ctx->count_until_file_progress = 512;  /* Arbitrary value to limit calls  */
+	ctx->count_until_file_progress = 500;  /* Arbitrary value to limit calls  */
 	return extract_progress(ctx, msg);
+}
+
+static int
+start_file_phase(struct apply_ctx *ctx, uint64_t end_file_count, enum wimlib_progress_msg msg)
+{
+	ctx->progress.extract.current_file_count = 0;
+	ctx->progress.extract.end_file_count = end_file_count;
+	return do_file_extract_progress(ctx, msg);
+}
+
+int
+start_file_structure_phase(struct apply_ctx *ctx, uint64_t end_file_count)
+{
+	return start_file_phase(ctx, end_file_count, WIMLIB_PROGRESS_MSG_EXTRACT_FILE_STRUCTURE);
+}
+
+int
+start_file_metadata_phase(struct apply_ctx *ctx, uint64_t end_file_count)
+{
+	return start_file_phase(ctx, end_file_count, WIMLIB_PROGRESS_MSG_EXTRACT_METADATA);
+}
+
+static int
+end_file_phase(struct apply_ctx *ctx, enum wimlib_progress_msg msg)
+{
+	ctx->progress.extract.current_file_count = ctx->progress.extract.end_file_count;
+	return do_file_extract_progress(ctx, msg);
+}
+
+int
+end_file_structure_phase(struct apply_ctx *ctx)
+{
+	return end_file_phase(ctx, WIMLIB_PROGRESS_MSG_EXTRACT_FILE_STRUCTURE);
+}
+
+int
+end_file_metadata_phase(struct apply_ctx *ctx)
+{
+	return end_file_phase(ctx, WIMLIB_PROGRESS_MSG_EXTRACT_METADATA);
 }
 
 /* Check whether the extraction of a dentry should be skipped completely.  */

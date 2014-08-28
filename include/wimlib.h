@@ -552,7 +552,9 @@ enum wimlib_progress_msg {
 	/** This message may be sent periodically (not for every file) while
 	 * files or directories are being created, prior to data stream
 	 * extraction.  @p info will point to ::wimlib_progress_info.extract.
-	 */
+	 * In particular, the @p current_file_count and @p end_file_count
+	 * members may be used to track the progress of this phase of
+	 * extraction.  */
 	WIMLIB_PROGRESS_MSG_EXTRACT_FILE_STRUCTURE = 3,
 
 	/** File data is currently being extracted.  @p info will point to
@@ -567,7 +569,9 @@ enum wimlib_progress_msg {
 	/** This message may be sent periodically (not for every file) while
 	 * file and directory metadata is being applied, following data stream
 	 * extraction.  @p info will point to ::wimlib_progress_info.extract.
-	 */
+	 * In particular, the @p current_file_count and @p end_file_count
+	 * members may be used to track the progress of this phase of
+	 * extraction.  */
 	WIMLIB_PROGRESS_MSG_EXTRACT_METADATA = 6,
 
 	/** Confirms that the image has been successfully extracted.  @p info
@@ -984,6 +988,30 @@ union wimlib_progress_info {
 		/** Currently only used for
 		 * ::WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN.  */
 		uint8_t guid[WIMLIB_GUID_LEN];
+
+		/** For ::WIMLIB_PROGRESS_MSG_EXTRACT_FILE_STRUCTURE and
+		 * ::WIMLIB_PROGRESS_MSG_EXTRACT_METADATA messages, this is the
+		 * number of files that have been processed so far.  Once the
+		 * corresponding phase of extraction is complete, this value
+		 * will be equal to @c end_file_count.  */
+		uint64_t current_file_count;
+
+		/** For ::WIMLIB_PROGRESS_MSG_EXTRACT_FILE_STRUCTURE and
+		 * ::WIMLIB_PROGRESS_MSG_EXTRACT_METADATA messages, this is
+		 * total number of files that will be processed.
+		 *
+		 * This number is provided for informational purposes only.
+		 * This number will not necessarily be equal to the number of
+		 * files actually being extracted.  This is because extraction
+		 * backends are free to implement an extraction algorithm that
+		 * might be more efficient than processing every file in the
+		 * "extract file structure" and "extract metadata" phases.  For
+		 * example, the current implementation of the UNIX extraction
+		 * backend will create files on-demand during the stream
+		 * extraction phase. Therefore, when using that particular
+		 * extraction backend, @p end_file_count will only include
+		 * directories and empty files.  */
+		uint64_t end_file_count;
 	} extract;
 
 	/** Valid on messages ::WIMLIB_PROGRESS_MSG_RENAME. */

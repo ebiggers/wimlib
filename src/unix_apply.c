@@ -472,6 +472,29 @@ unix_create_dirs_and_empty_files(const struct list_head *dentry_list,
 	return 0;
 }
 
+static void
+unix_count_dentries(const struct list_head *dentry_list,
+		    uint64_t *dir_count_ret, uint64_t *empty_file_count_ret)
+{
+	const struct wim_dentry *dentry;
+	uint64_t dir_count = 0;
+	uint64_t empty_file_count = 0;
+
+	list_for_each_entry(dentry, dentry_list, d_extraction_list_node) {
+
+		const struct wim_inode *inode = dentry->d_inode;
+
+		if (inode_is_directory(inode))
+			dir_count++;
+		else if ((dentry == inode_first_extraction_dentry(inode)) &&
+			 !inode_unnamed_lte_resolved(inode))
+			empty_file_count++;
+	}
+
+	*dir_count_ret = dir_count;
+	*empty_file_count_ret = empty_file_count;
+}
+
 static int
 unix_create_symlink(const struct wim_inode *inode, const char *path,
 		    const u8 *rpdata, u16 rpdatalen, bool rpfix,
@@ -699,6 +722,8 @@ unix_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	int ret;
 	struct unix_apply_ctx *ctx = (struct unix_apply_ctx *)_ctx;
 	size_t path_max;
+	uint64_t dir_count;
+	uint64_t empty_file_count;
 
 	/* Compute the maximum path length that will be needed, then allocate
 	 * some path buffers.  */
@@ -720,8 +745,18 @@ unix_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	 * because we can't extract any other files until their directories
 	 * exist.  Empty files are needed because they don't have
 	 * representatives in the stream list.  */
-	reset_file_progress(&ctx->common);
+
+	unix_count_dentries(dentry_list, &dir_count, &empty_file_count);
+
+	ret = start_file_structure_phase(&ctx->common, dir_count + empty_file_count);
+	if (ret)
+		goto out;
+
 	ret = unix_create_dirs_and_empty_files(dentry_list, ctx);
+	if (ret)
+		goto out;
+
+	ret = end_file_structure_phase(&ctx->common);
 	if (ret)
 		goto out;
 
@@ -754,10 +789,18 @@ unix_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 
 	/* Set directory metadata.  We do this last so that we get the right
 	 * directory timestamps.  */
-	reset_file_progress(&ctx->common);
+	ret = start_file_metadata_phase(&ctx->common, dir_count);
+	if (ret)
+		goto out;
+
 	ret = unix_set_dir_metadata(dentry_list, ctx);
 	if (ret)
 		goto out;
+
+	ret = end_file_metadata_phase(&ctx->common);
+	if (ret)
+		goto out;
+
 	if (ctx->num_special_files_ignored) {
 		WARNING("%lu special files were not extracted due to EPERM!",
 			ctx->num_special_files_ignored);
