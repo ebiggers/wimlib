@@ -53,6 +53,7 @@ struct win32_apply_ctx {
 		void *mem_prepopulate_pats;
 		u8 wim_lookup_table_hash[SHA1_HASH_SIZE];
 		bool wof_running;
+		bool tried_to_load_prepopulate_list;
 	} wimboot;
 
 	/* Open handle to the target directory  */
@@ -256,6 +257,8 @@ load_prepopulate_pats(struct win32_apply_ctx *ctx)
 	void *mem;
 	struct text_file_section sec;
 
+	ctx->wimboot.tried_to_load_prepopulate_list = true;
+
 	dentry = get_dentry(ctx->common.wim, path, WIMLIB_CASE_INSENSITIVE);
 	if (!dentry ||
 	    (dentry->d_inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
@@ -337,6 +340,12 @@ win32_will_externally_back(struct wim_dentry *dentry, struct apply_ctx *_ctx)
 	if (!(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT))
 		return WIM_BACKING_NOT_ENABLED;
 
+	if (!ctx->wimboot.tried_to_load_prepopulate_list) {
+		ret = load_prepopulate_pats(ctx);
+		if (ret == WIMLIB_ERR_NOMEM)
+			return ret;
+	}
+
 	if (dentry->d_inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
 					     FILE_ATTRIBUTE_REPARSE_POINT |
 					     FILE_ATTRIBUTE_ENCRYPTED))
@@ -411,9 +420,11 @@ start_wimboot_extraction(struct win32_apply_ctx *ctx)
 	int ret;
 	WIMStruct *wim = ctx->common.wim;
 
-	ret = load_prepopulate_pats(ctx);
-	if (ret == WIMLIB_ERR_NOMEM)
-		return ret;
+	if (!ctx->wimboot.tried_to_load_prepopulate_list) {
+		ret = load_prepopulate_pats(ctx);
+		if (ret == WIMLIB_ERR_NOMEM)
+			return ret;
+	}
 
 	if (!wim_info_get_wimboot(wim->wim_info, wim->current_image))
 		WARNING("Image is not marked as WIMBoot compatible!");
