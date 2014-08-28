@@ -675,11 +675,11 @@ ntfs_3g_create_nondirectories(struct list_head *dentry_list,
 		inode = dentry->d_inode;
 		if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
 			continue;
-		if (dentry != inode_first_extraction_dentry(inode))
-			continue;
-		ret = ntfs_3g_create_nondirectory(inode, ctx);
-		if (ret)
-			return ret;
+		if (dentry == inode_first_extraction_dentry(inode)) {
+			ret = ntfs_3g_create_nondirectory(inode, ctx);
+			if (ret)
+				return ret;
+		}
 		ret = report_file_created(&ctx->common);
 		if (ret)
 			return ret;
@@ -891,6 +891,25 @@ out:
 	return ret;
 }
 
+static uint64_t
+ntfs_3g_count_dentries(const struct list_head *dentry_list)
+{
+	const struct wim_dentry *dentry;
+	uint64_t count = 0;
+
+	list_for_each_entry(dentry, dentry_list, d_extraction_list_node) {
+		count++;
+		if ((dentry->d_inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) &&
+		    dentry_has_short_name(dentry))
+		{
+			count++;
+		}
+
+	}
+
+	return count;
+}
+
 static int
 ntfs_3g_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 {
@@ -916,13 +935,20 @@ ntfs_3g_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	/* Create all inodes and aliases, including short names, and set
 	 * metadata (attributes, security descriptors, and timestamps).  */
 
-	reset_file_progress(&ctx->common);
+	ret = start_file_structure_phase(&ctx->common,
+					 ntfs_3g_count_dentries(dentry_list));
+	if (ret)
+		goto out_unmount;
 
 	ret = ntfs_3g_create_directories(root, dentry_list, ctx);
 	if (ret)
 		goto out_unmount;
 
 	ret = ntfs_3g_create_nondirectories(dentry_list, ctx);
+	if (ret)
+		goto out_unmount;
+
+	ret = end_file_structure_phase(&ctx->common);
 	if (ret)
 		goto out_unmount;
 

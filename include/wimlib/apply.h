@@ -91,21 +91,22 @@ extract_progress(struct apply_ctx *ctx, enum wimlib_progress_msg msg)
 extern int
 do_file_extract_progress(struct apply_ctx *ctx, enum wimlib_progress_msg msg);
 
+#define COUNT_PER_FILE_PROGRESS 256
+
 static inline int
 maybe_do_file_progress(struct apply_ctx *ctx, enum wimlib_progress_msg msg)
 {
+	ctx->progress.extract.current_file_count++;
 	if (unlikely(!--ctx->count_until_file_progress))
 		return do_file_extract_progress(ctx, msg);
 	return 0;
 }
 
-/* Call this to reset the counter for report_file_created() and
- * report_file_metadata_applied().  */
-static inline void
-reset_file_progress(struct apply_ctx *ctx)
-{
-	ctx->count_until_file_progress = 1;
-}
+extern int
+start_file_structure_phase(struct apply_ctx *ctx, uint64_t end_file_count);
+
+extern int
+start_file_metadata_phase(struct apply_ctx *ctx, uint64_t end_file_count);
 
 /* Report that a file was created, prior to stream extraction.  */
 static inline int
@@ -120,6 +121,12 @@ report_file_metadata_applied(struct apply_ctx *ctx)
 {
 	return maybe_do_file_progress(ctx, WIMLIB_PROGRESS_MSG_EXTRACT_METADATA);
 }
+
+extern int
+end_file_structure_phase(struct apply_ctx *ctx);
+
+extern int
+end_file_metadata_phase(struct apply_ctx *ctx);
 
 /* Returns any of the aliases of an inode that are being extracted.  */
 #define inode_first_extraction_dentry(inode)		\

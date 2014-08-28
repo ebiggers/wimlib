@@ -1160,6 +1160,17 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 			 T("NTFS volume") : T("directory")),
 			info->extract.target);
 		break;
+	case WIMLIB_PROGRESS_MSG_EXTRACT_FILE_STRUCTURE:
+		if (info->extract.end_file_count >= 2000) {
+			percent_done = TO_PERCENT(info->extract.current_file_count,
+						  info->extract.end_file_count);
+			imagex_printf(T("\rCreating files: %"PRIu64" of %"PRIu64" (%u%%) done"),
+				      info->extract.current_file_count,
+				      info->extract.end_file_count, percent_done);
+			if (info->extract.current_file_count == info->extract.end_file_count)
+				imagex_printf(T("\n"));
+		}
+		break;
 	case WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS:
 		percent_done = TO_PERCENT(info->extract.completed_bytes,
 					  info->extract.total_bytes);
@@ -1173,6 +1184,17 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 			percent_done);
 		if (info->extract.completed_bytes >= info->extract.total_bytes)
 			imagex_printf(T("\n"));
+		break;
+	case WIMLIB_PROGRESS_MSG_EXTRACT_METADATA:
+		if (info->extract.end_file_count >= 2000) {
+			percent_done = TO_PERCENT(info->extract.current_file_count,
+						  info->extract.end_file_count);
+			imagex_printf(T("\rApplying metadata to files: %"PRIu64" of %"PRIu64" (%u%%) done"),
+				      info->extract.current_file_count,
+				      info->extract.end_file_count, percent_done);
+			if (info->extract.current_file_count == info->extract.end_file_count)
+				imagex_printf(T("\n"));
+		}
 		break;
 	case WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN:
 		if (info->extract.total_parts != 1) {
