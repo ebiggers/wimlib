@@ -859,19 +859,21 @@ set_short_name(HANDLE h, const struct wim_dentry *dentry,
 	 * with the former case being removing the existing short name if
 	 * present, rather than setting one.
 	 *
-	 * FileName seemingly does not, however, need to be null-terminated in
-	 * any case.
+	 * The null terminator is seemingly optional, but to be safe we include
+	 * space for it and zero all unused space.
 	 */
 
 	size_t bufsize = offsetof(FILE_NAME_INFORMATION, FileName) +
-			 max(dentry->short_name_nbytes, 2 * sizeof(wchar_t));
+			 max(dentry->short_name_nbytes, sizeof(wchar_t)) +
+			 sizeof(wchar_t);
 	u8 buf[bufsize] _aligned_attribute(8);
 	FILE_NAME_INFORMATION *info = (FILE_NAME_INFORMATION *)buf;
 	NTSTATUS status;
 
+	memset(buf, 0, bufsize);
+
 	info->FileNameLength = dentry->short_name_nbytes;
 	memcpy(info->FileName, dentry->short_name, dentry->short_name_nbytes);
-
 
 retry:
 	status = (*func_NtSetInformationFile)(h, &ctx->iosb, info, bufsize,
