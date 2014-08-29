@@ -1,6 +1,7 @@
 #ifndef _WIMBOOT_H_
 #define _WIMBOOT_H_
 
+#include "wimlib/win32_common.h"
 #include "wimlib/sha1.h"
 #include "wimlib/types.h"
 #include "wimlib/header.h"
@@ -14,7 +15,7 @@ wimboot_alloc_data_source_id(const wchar_t *wim_path,
 			     bool *wof_running_ret);
 
 extern int
-wimboot_set_pointer(OBJECT_ATTRIBUTES *attr,
+wimboot_set_pointer(HANDLE h,
 		    const wchar_t *printable_path,
 		    const struct wim_lookup_table_entry *lte,
 		    u64 data_source_id,
