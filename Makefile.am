@@ -47,6 +47,7 @@ libwim_la_SOURCES =		\
 	src/lz_linked_suffix_array.c	\
 	src/lz_mf.c		\
 	src/lz_null.c		\
+	src/lz_repsearch.c	\
 	src/lz_suffix_array_utils.c	\
 	src/lzms-common.c	\
 	src/lzms-compress.c	\
@@ -106,6 +107,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/lz_hash3.h	\
 	include/wimlib/lz_mf.h		\
 	include/wimlib/lz_mf_ops.h	\
+	include/wimlib/lz_repsearch.h	\
 	include/wimlib/lz_suffix_array_utils.h	\
 	include/wimlib/lzms.h		\
 	include/wimlib/lzx.h		\

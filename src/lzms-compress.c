@@ -41,6 +41,7 @@
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/lz_mf.h"
+#include "wimlib/lz_repsearch.h"
 #include "wimlib/lzms.h"
 #include "wimlib/util.h"
 
@@ -840,6 +841,20 @@ lzms_get_lz_match_cost(struct lzms_compressor *ctx,
 	       lzms_get_length_cost(&ctx->length_encoder, length);
 }
 
+static inline u32
+lzms_repsearch(const u8 * const strptr, const u32 bytes_remaining,
+	       const struct lzms_lz_lru_queues *queue, u32 *offset_ret)
+{
+	u32 len;
+	unsigned slot = 0;
+
+	len = lz_repsearch(strptr, bytes_remaining, UINT32_MAX,
+			   queue->recent_offsets, LZMS_NUM_RECENT_OFFSETS, &slot);
+	*offset_ret = queue->recent_offsets[slot];
+	return len;
+}
+
+
 static struct lz_match
 lzms_match_chooser_reverse_list(struct lzms_compressor *ctx, unsigned cur_pos)
 {
@@ -899,21 +914,12 @@ lzms_get_near_optimal_item(struct lzms_compressor *ctx)
 	ctx->optimum_cur_idx = 0;
 	ctx->optimum_end_idx = 0;
 
-	longest_rep_len = ctx->params.min_match_length - 1;
 	if (lz_mf_get_position(ctx->mf) >= LZMS_MAX_INIT_RECENT_OFFSET) {
-		u32 limit = lz_mf_get_bytes_remaining(ctx->mf);
-		for (int i = 0; i < LZMS_NUM_RECENT_OFFSETS; i++) {
-			u32 offset = ctx->lru.lz.recent_offsets[i];
-			const u8 *strptr = lz_mf_get_window_ptr(ctx->mf);
-			const u8 *matchptr = strptr - offset;
-			u32 len = 0;
-			while (len < limit && strptr[len] == matchptr[len])
-				len++;
-			if (len > longest_rep_len) {
-				longest_rep_len = len;
-				longest_rep_offset = offset;
-			}
-		}
+		longest_rep_len = lzms_repsearch(lz_mf_get_window_ptr(ctx->mf),
+						 lz_mf_get_bytes_remaining(ctx->mf),
+						 &ctx->lru.lz, &longest_rep_offset);
+	} else {
+		longest_rep_len = 0;
 	}
 
 	if (longest_rep_len >= ctx->params.nice_match_length) {
@@ -972,7 +978,7 @@ lzms_get_near_optimal_item(struct lzms_compressor *ctx)
 	}
 	end_pos = longest_len;
 
-	if (longest_rep_len >= ctx->params.min_match_length) {
+	if (longest_rep_len) {
 		struct lzms_adaptive_state state;
 		u32 cost;
 
@@ -1002,21 +1008,13 @@ lzms_get_near_optimal_item(struct lzms_compressor *ctx)
 		if (cur_pos == end_pos || cur_pos == ctx->params.optim_array_length)
 			return lzms_match_chooser_reverse_list(ctx, cur_pos);
 
-		longest_rep_len = ctx->params.min_match_length - 1;
 		if (lz_mf_get_position(ctx->mf) >= LZMS_MAX_INIT_RECENT_OFFSET) {
-			u32 limit = lz_mf_get_bytes_remaining(ctx->mf);
-			for (int i = 0; i < LZMS_NUM_RECENT_OFFSETS; i++) {
-				u32 offset = ctx->optimum[cur_pos].state.lru.recent_offsets[i];
-				const u8 *strptr = lz_mf_get_window_ptr(ctx->mf);
-				const u8 *matchptr = strptr - offset;
-				u32 len = 0;
-				while (len < limit && strptr[len] == matchptr[len])
-					len++;
-				if (len > longest_rep_len) {
-					longest_rep_len = len;
-					longest_rep_offset = offset;
-				}
-			}
+			longest_rep_len = lzms_repsearch(lz_mf_get_window_ptr(ctx->mf),
+							 lz_mf_get_bytes_remaining(ctx->mf),
+							 &ctx->optimum[cur_pos].state.lru,
+							 &longest_rep_offset);
+		} else {
+			longest_rep_len = 0;
 		}
 
 		if (longest_rep_len >= ctx->params.nice_match_length) {

@@ -198,8 +198,8 @@
 #include "wimlib/compress_common.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
-#include "wimlib/lz_extend.h"
 #include "wimlib/lz_mf.h"
+#include "wimlib/lz_repsearch.h"
 #include "wimlib/lzx.h"
 #include "wimlib/util.h"
 #include <string.h>
@@ -1501,28 +1501,9 @@ static inline u32
 lzx_repsearch(const u8 * const strptr, const u32 bytes_remaining,
 	      const struct lzx_lru_queue *queue, unsigned *slot_ret)
 {
-	u32 best_len = 0;
-
 	BUILD_BUG_ON(LZX_MIN_MATCH_LEN != 2);
-	if (likely(bytes_remaining >= 2)) {
-		const u32 max_len = min(LZX_MAX_MATCH_LEN, bytes_remaining);
-		const u16 str = *(const u16 *)strptr;
-		for (unsigned i = 0; i < LZX_NUM_RECENT_OFFSETS; i++) {
-			const u8 * const matchptr = strptr - queue->R[i];
-
-			/* Check the first two bytes.  If they match, then
-			 * extend the match to its full length.  */
-			if (*(const u16 *)matchptr == str) {
-				const u32 len = lz_extend(strptr, matchptr,
-							  2, max_len);
-				if (len > best_len) {
-					best_len = len;
-					*slot_ret = i;
-				}
-			}
-		}
-	}
-	return best_len;
+	return lz_repsearch(strptr, bytes_remaining, LZX_MAX_MATCH_LEN,
+			    queue->R, LZX_NUM_RECENT_OFFSETS, slot_ret);
 }
 
 /*
