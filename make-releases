@@ -4,5 +4,5 @@ set -e -u
 
 ./configure && make distcheck
 for arch in i686 x86_64; do
-	./make-windows-release ${arch} ${arch}-w64-mingw32-gcc
+	./make-windows-release ${arch}
 done
