@@ -242,7 +242,7 @@ match_pattern_list(const tchar *path, size_t path_nchars,
  * As a special case, the empty string will be interpreted as a single path
  * separator (which means the root of capture itself).
  */
-bool
+static bool
 should_exclude_path(const tchar *path, size_t path_nchars,
 		    const struct capture_config *config)
 {
@@ -261,4 +261,72 @@ should_exclude_path(const tchar *path, size_t path_nchars,
 	return match_pattern_list(path, path_nchars, &config->exclusion_pats) &&
 	      !match_pattern_list(path, path_nchars, &config->exclusion_exception_pats);
 
+}
+
+/*
+ * Determine if a file should be excluded from capture.
+ *
+ * This function tests exclusions from both of the two possible sources of
+ * exclusions:
+ *
+ *	(1) The capture configuration file
+ *	(2) The user-provided progress function
+ *
+ * The capture implementation must have set params->capture_root_nchars to an
+ * appropriate value.  Example for UNIX:  if the capture root directory is
+ * "foobar/subdir", then all paths will be provided starting with
+ * "foobar/subdir", so params->capture_root_nchars must be set to
+ * strlen("foobar/subdir") so that try_exclude() can use the appropriate suffix
+ * when it calls should_exclude_path().
+ *
+ *
+ * Returns:
+ *	< 0 if excluded
+ *	= 0 if not excluded and no error
+ *	> 0 (wimlib error code) if error
+ */
+int
+try_exclude(const tchar *full_path, size_t full_path_nchars,
+	    const struct add_image_params *params)
+{
+	int ret;
+
+	if (should_exclude_path(full_path + params->capture_root_nchars,
+				full_path_nchars - params->capture_root_nchars,
+				params->config))
+		return -1;
+
+	if (unlikely(params->add_flags & WIMLIB_ADD_FLAG_TEST_FILE_EXCLUSION)) {
+		union wimlib_progress_info info;
+
+		info.test_file_exclusion.path = full_path;
+		info.test_file_exclusion.will_exclude = false;
+
+	#ifdef __WIN32__
+		/* Hack for Windows...  */
+
+		wchar_t *p_question_mark = NULL;
+
+		if (!wcsncmp(full_path, L"\\??\\", 4)) {
+			/* Trivial transformation:  NT namespace => Win32 namespace  */
+			p_question_mark = (wchar_t *)&full_path[1];
+			*p_question_mark = L'\\';
+		}
+	#endif
+
+		ret = call_progress(params->progfunc, WIMLIB_PROGRESS_MSG_TEST_FILE_EXCLUSION,
+				    &info, params->progctx);
+
+	#ifdef __WIN32__
+		if (p_question_mark)
+			*p_question_mark = L'?';
+	#endif
+
+		if (ret)
+			return ret;
+		if (info.test_file_exclusion.will_exclude)
+			return -1;
+	}
+
+	return 0;
 }

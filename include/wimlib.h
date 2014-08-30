@@ -700,6 +700,20 @@ enum wimlib_progress_msg {
 	/** wimlib_verify_wim() is verifying stream integrity.  @p info will
 	 * point to ::wimlib_progress_info.verify_streams.  */
 	WIMLIB_PROGRESS_MSG_VERIFY_STREAMS = 29,
+
+	/**
+	 * The progress function is being asked whether a file should be
+	 * excluded from capture or not.  @p info will point to
+	 * ::wimlib_progress_info.test_file_exclusion.  This is a bidirectional
+	 * message that allows the progress function to set a flag if the file
+	 * should be excluded.
+	 *
+	 * This message is only received if the flag
+	 * ::WIMLIB_ADD_FLAG_TEST_FILE_EXCLUSION is used.  This method for file
+	 * exclusions is independent of the "capture configuration file"
+	 * mechanism.
+	 */
+	WIMLIB_PROGRESS_MSG_TEST_FILE_EXCLUSION = 30,
 };
 
 /** Valid return values from user-provided progress functions
@@ -1170,6 +1184,32 @@ union wimlib_progress_info {
 		uint64_t completed_streams;
 		uint64_t completed_bytes;
 	} verify_streams;
+
+	/** Valid on messages ::WIMLIB_PROGRESS_MSG_TEST_FILE_EXCLUSION.  */
+	struct wimlib_progress_info_test_file_exclusion {
+
+		/**
+		 * Path to the file for which exclusion is being tested.
+		 *
+		 * UNIX capture mode:  The path will be a standard relative or
+		 * absolute UNIX filesystem path.
+		 *
+		 * NTFS-3g capture mode:  The path will be given relative to the
+		 * root of the NTFS volume, with a leading slash.
+		 *
+		 * Windows capture mode:  The path will be a Win32 namespace
+		 * path to the file.
+		 */
+		const wimlib_tchar *path;
+
+		/**
+		 * Indicates whether the file or directory will be excluded from
+		 * capture or not.  This will be <tt>false</tt> by default.  The
+		 * progress function can set this to <tt>true</tt> if it decides
+		 * that the file needs to be excluded.
+		 */
+		bool will_exclude;
+	} test_file_exclusion;
 };
 
 /**
@@ -1681,6 +1721,15 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * This was the default behavior in wimlib v1.6.2 and earlier.
  */
 #define WIMLIB_ADD_FLAG_NO_REPLACE		0x00002000
+
+/**
+ * Send ::WIMLIB_PROGRESS_MSG_TEST_FILE_EXCLUSION messages to the progress
+ * function.
+ *
+ * Note: This method for file exclusions is independent from the capture
+ * configuration file mechanism.
+ */
+#define WIMLIB_ADD_FLAG_TEST_FILE_EXCLUSION 0x00004000
 
 #define WIMLIB_ADD_IMAGE_FLAG_NTFS		WIMLIB_ADD_FLAG_NTFS
 #define WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE	WIMLIB_ADD_FLAG_DEREFERENCE

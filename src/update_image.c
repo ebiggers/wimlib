@@ -1224,7 +1224,8 @@ check_add_command(struct wimlib_update_command *cmd,
 			  WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE |
 			  WIMLIB_ADD_FLAG_WINCONFIG |
 			  WIMLIB_ADD_FLAG_WIMBOOT |
-			  WIMLIB_ADD_FLAG_NO_REPLACE))
+			  WIMLIB_ADD_FLAG_NO_REPLACE |
+			  WIMLIB_ADD_FLAG_TEST_FILE_EXCLUSION))
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	bool is_entire_image = WIMLIB_IS_WIM_ROOT_PATH(cmd->add.wim_target_path);

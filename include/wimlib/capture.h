@@ -52,10 +52,14 @@ struct add_image_params {
 	/* Progress data.  */
 	union wimlib_progress_info progress;
 
+	/* The capture implementation must set this to the number of characters
+	 * that try_exclude() will strip from the path before testing exclusion
+	 * patterns from the capture configuration file.  */
+	size_t capture_root_nchars;
+
 	/* Can be used by the capture implementation.  */
 	u64 capture_root_ino;
 	u64 capture_root_dev;
-	size_t capture_root_nchars;
 };
 
 /* capture_common.c */
@@ -78,9 +82,9 @@ extern bool
 match_pattern_list(const tchar *path, size_t path_nchars,
 		   const struct string_set *list);
 
-extern bool
-should_exclude_path(const tchar *path, size_t path_nchars,
-		    const struct capture_config *config);
+extern int
+try_exclude(const tchar *full_path, size_t full_path_nchars,
+	    const struct add_image_params *params);
 
 typedef int (*capture_tree_t)(struct wim_dentry **, const tchar *,
 			      struct add_image_params *);

@@ -5,13 +5,17 @@ Version 1.7.2-BETA:
 
 	Faster "WIMBoot" extraction on Windows.
 
-	Added file count progress data for
-	WIMLIB_PROGRESS_MSG_EXTRACT_FILE_STRUCTURE and
-	WIMLIB_PROGRESS_MSG_EXTRACT_METADATA.
-
 	Updated dependent DLLs in Windows release.  libxml2 is slimmed down.
 
-	Some documentation improvements.
+	Library changes:
+		Added file count progress data for
+		WIMLIB_PROGRESS_MSG_EXTRACT_FILE_STRUCTURE and
+		WIMLIB_PROGRESS_MSG_EXTRACT_METADATA.
+
+		Added support for testing file exclusions via the user-provided
+		progress function.
+
+		Some documentation improvements.
 
 Version 1.7.1:
 	Made more improvements to the XPRESS, LZX, and LZMS compressors.

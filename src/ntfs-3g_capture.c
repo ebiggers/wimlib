@@ -341,7 +341,7 @@ insert_dos_name(struct dos_name_map *map, const ntfschar *dos_name,
 	DEBUG("DOS name_len = %zu", name_nbytes);
 	new_node = MALLOC(sizeof(struct dos_name_node));
 	if (!new_node)
-		return -1;
+		return WIMLIB_ERR_NOMEM;
 
 	/* DOS names are supposed to be 12 characters max (that's 24 bytes,
 	 * assuming 2-byte ntfs characters) */
@@ -363,7 +363,7 @@ insert_dos_name(struct dos_name_map *map, const ntfschar *dos_name,
 		ERROR("NTFS inode %"PRIu64" has multiple DOS names",
 			le64_to_cpu(ntfs_ino));
 		FREE(new_node);
-		return -1;
+		return WIMLIB_ERR_NOMEM;
 	}
 	DEBUG("Inserted DOS name for inode %"PRIu64, le64_to_cpu(ntfs_ino));
 	return 0;
@@ -432,6 +432,7 @@ struct readdir_ctx {
 	struct dos_name_map *dos_name_map;
 	ntfs_volume *vol;
 	struct add_image_params *params;
+	int ret;
 };
 
 static int
@@ -513,6 +514,7 @@ out_free_mbs_name:
 	FREE(mbs_name);
 out:
 	ctx->path[ctx->path_len] = '\0';
+	ctx->ret = ret;
 	return ret;
 }
 
@@ -534,11 +536,11 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	struct wim_dentry *root = NULL;
 	struct wim_inode *inode = NULL;
 
-	if (should_exclude_path(path, path_len, params->config)) {
-		/* Exclude a file or directory tree based on the capture
-		 * configuration file.  */
+	ret = try_exclude(path, path_len, params);
+	if (ret < 0) /* Excluded? */
 		goto out_progress;
-	}
+	if (ret > 0) /* Error? */
+		goto out;
 
 	/* Get file attributes */
 	ret = ntfs_get_ntfs_attrib(ni, (char*)&attributes, sizeof(attributes));
@@ -624,11 +626,18 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 			.dos_name_map    = &dos_name_map,
 			.vol             = vol,
 			.params          = params,
+			.ret 		 = 0,
 		};
 		ret = ntfs_readdir(ni, &pos, &ctx, wim_ntfs_capture_filldir);
 		if (ret) {
-			ERROR_WITH_ERRNO("Error reading directory \"%s\"", path);
-			ret = WIMLIB_ERR_NTFS_3G;
+			if (ctx.ret) {
+				/* wimlib error  */
+				ret = ctx.ret;
+			} else {
+				/* error from ntfs_readdir() itself  */
+				ERROR_WITH_ERRNO("Error reading directory \"%s\"", path);
+				ret = WIMLIB_ERR_NTFS_3G;
+			}
 		} else {
 			struct wim_dentry *child;
 
