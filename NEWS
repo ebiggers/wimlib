@@ -9,6 +9,8 @@ Version 1.7.2-BETA:
 	WIMLIB_PROGRESS_MSG_EXTRACT_FILE_STRUCTURE and
 	WIMLIB_PROGRESS_MSG_EXTRACT_METADATA.
 
+	Updated dependent DLLs in Windows release.  libxml2 is slimmed down.
+
 	Some documentation improvements.
 
 Version 1.7.1:

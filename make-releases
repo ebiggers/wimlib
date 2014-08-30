@@ -2,9 +2,7 @@
 
 set -e -u
 
-MINGW_COMPILER_DIR=/mnt/btrfs/fedora-2013-08-23/bin
-
 ./configure && make distcheck
 for arch in i686 x86_64; do
-	./make-windows-release ${arch} CC=${MINGW_COMPILER_DIR}/${arch}-w64-mingw32-gcc
+	./make-windows-release ${arch} ${arch}-w64-mingw32-gcc
 done
