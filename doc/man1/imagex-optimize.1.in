@@ -8,8 +8,11 @@
 WIM is written to a temporary file, and it is renamed to the original file when
 it's ready.  This action will remove any holes that have been left as a result
 of appending images, so the new WIM may be slightly smaller than the old WIM.
-In addition, some errors in the original WIM may be fixed by re-writing it
-(although most cannot).
+.PP
+By default, compressed data will be re-used, and not recompressed.  Use the
+\fB--recompress\fR or \fB--compress\fR=\fITYPE\fR[:\fILEVEL\fR] option to
+request recompression.
+.PP
 This command is also available as simply \fBwimoptimize\fR if the appropriate
 hard link or batch file has been installed.
 .SH OPTIONS
@@ -27,11 +30,9 @@ include an integrity table in the rebuilt WIM file.
 .TP
 \fB--recompress\fR
 Recompress all compressed streams in \fIWIMFILE\fR when rebuilding it.  This
-will increase the time needed to rebuild the WIM, unless the WIM is
-uncompressed, but it may result in a better compression ratio if wimlib can do a
-better job than the program that wrote the original file.  A side effect of this
-is that every stream in the original WIM will be checksummed, so this can help
-verify that the WIM is intact (equivalent to applying all the images from it).
+will greatly increase the time needed to rebuild the WIM file, but it may result
+in a better compression ratio if wimlib can do a better job than the program
+that wrote the original file.
 .TP
 \fB--compress\fR=\fITYPE\fR[:\fILEVEL\fR]
 Recompress the WIM file using the specified compression type, and optionally the
@@ -63,8 +64,8 @@ more details.
 .TP
 \fB--threads\fR=\fINUM_THREADS\fR
 Number of threads to use for compressing data.  Default: autodetect (number of
-processors).  This parameter is only meaningful when \fB--recompress\fR is also
-specified.
+processors).  This parameter only has an effect when data recompression is
+requested.
 .TP
 \fB--pipable\fR
 Rebuild the WIM so that it can be applied fully sequentially, including from a
@@ -83,6 +84,29 @@ Rebuild the WIM in the non-pipable format.  (This is the default if
 .RS
 .PP
 \fB@IMAGEX_PROGNAME@ export\fR \fIWIMFILE\fR all tmp.wim && mv tmp.wim \fIWIMFILE\fR
+.RE
+.PP
+.SH EXAMPLES
+Rebuild the WIM file 'install.wim':
+.RS
+.PP
+wimoptimize install.wim
+.RE
+.PP
+Rebuild and recompress the WIM file 'install.wim':
+.RS
+.PP
+wimoptimize install.wim --recompress
+.RE
+.PP
+Rebuild and recompress the WIM file 'install.wim', using "maximum" (LZX)
+compression at a higher-than-default compression level.  The compression chunk
+size remains unchanged.  This command will be slow, but it might be useful for
+optimizing files for distribution.  See the COMPRESSION RATIO section of the
+README file for some benchmark results.
+.RS
+.PP
+wimoptimize install.wim --compress=maximum:100
 .RE
 .PP
 .SH SEE ALSO
