@@ -178,8 +178,15 @@ read_capture_config(const tchar *config_file, const void *buf,
 
 	/* [PrepopulateList] is used for apply, not capture.  But since we do
 	 * understand it, recognize it, thereby avoiding the unrecognized
-	 * section warning, but discard the resulting strings.  */
+	 * section warning, but discard the resulting strings.
+	 *
+	 * We currently ignore [CompressionExclusionList] and
+	 * [CompressionFolderList].  This is a known issue that doesn't seem to
+	 * have any real consequences, so don't issue warnings about not
+	 * recognizing those sections.  */
 	STRING_SET(prepopulate_pats);
+	STRING_SET(compression_exclusion_pats);
+	STRING_SET(compression_folder_pats);
 
 	struct text_file_section sections[] = {
 		{T("ExclusionList"),
@@ -188,6 +195,10 @@ read_capture_config(const tchar *config_file, const void *buf,
 			&config->exclusion_exception_pats},
 		{T("PrepopulateList"),
 			&prepopulate_pats},
+		{T("CompressionExclusionList"),
+			&compression_exclusion_pats},
+		{T("CompressionFolderList"),
+			&compression_folder_pats},
 	};
 	void *mem;
 
@@ -198,6 +209,8 @@ read_capture_config(const tchar *config_file, const void *buf,
 		return ret;
 
 	FREE(prepopulate_pats.strings);
+	FREE(compression_exclusion_pats.strings);
+	FREE(compression_folder_pats.strings);
 
 	config->buf = mem;
 	return 0;
