@@ -232,31 +232,34 @@ downloaded the Windows binary distribution of wimlib and wimlib-imagex then all
 dependencies were already included and this section is irrelevant.
 
 * libxml2 (required)
-	This is a commonly used free library to read and write XML files.  You
-	likely already have it installed as a dependency for some other program.
-	For more information see http://xmlsoft.org/.
+	This is a commonly used free library to read and write XML documents.
+	Almost all Linux distributions should include this; however, you may
+	need to install the header files, which might be in a package named
+	"libxml2-dev" or similar.  For more information see http://xmlsoft.org/.
 
-* libfuse (optional but highly recommended)
-	Unless configured with --without-fuse, wimlib requires a non-ancient
-	version of libfuse to be installed.  Most Linux distributions already
-	include this, but make sure you have the libfuse package installed, and
-	also libfuse-dev if your distribution distributes header files
-	separately.  FUSE also requires a kernel module.  If the kernel module
-	is available it will automatically be loaded if you try to mount a WIM
-	file.  For more information see http://fuse.sourceforge.net/.  FUSE is
-	also available for FreeBSD.
+* libfuse (optional but recommended)
+	Unless configured --without-fuse, wimlib requires a non-ancient version
+	of libfuse.  Most Linux distributions already include this, but make
+	sure you have the libfuse package installed, and also libfuse-dev if
+	your distribution distributes header files separately.  FUSE also
+	requires a kernel module.  If the kernel module is available it should
+	automatically be loaded if you try to mount a WIM image.  For more
+	information see http://fuse.sourceforge.net/.
 
-* libntfs-3g (optional but highly recommended)
-	Unless configured with --without-ntfs-3g, wimlib requires the library
-	and headers for libntfs-3g version 2011-4-12 or later to be installed.
-	Versions dated 2010-3-6 and earlier do not work because they are missing
-	the header xattrs.h (and the file xattrs.c, which contains functions we
-	need).  libntfs-3g version 2013-1-13 is compatible only with wimlib
-	1.2.4 and later.
+* libattr (optional but recommended)
+	Unless configured --without-fuse, wimlib also requires libattr.  Almost
+	all Linux distributions should include this; however, you may need to
+	install the header files, which might be in a package named "attr-dev",
+	"libattr1-dev", or similar.
+
+* libntfs-3g (optional but recommended)
+	Unless configured --without-ntfs-3g, wimlib requires the library and
+	headers for libntfs-3g version 2011-4-12 or later to be installed.
 
 * OpenSSL / libcrypto (optional)
-	wimlib can use the SHA1 message digest code from OpenSSL instead of
-	compiling in yet another SHA1 implementation. (See LICENSE section.)
+	wimlib can use the SHA-1 message digest implementation from libcrypto
+	(usually provided by OpenSSL) instead of compiling in yet another SHA-1
+	implementation.
 
 * cdrkit (optional)
 * mtools (optional)
@@ -279,44 +282,43 @@ This section documents the most important options that may be passed to the
 --without-ntfs-3g
 	If libntfs-3g is not available or is not version 2011-4-12 or later,
 	wimlib can be built without it, in which case it will not be possible to
-	apply or capture images directly to/from NTFS volumes.
+	capture or apply WIM images directly from/to NTFS volumes.
+
+	The default is --with-ntfs-3g when building for any UNIX-like system,
+	and --without-ntfs-3g when building for Windows.
 
 --without-fuse
-	If libfuse or the FUSE kernel module is not available, wimlib can be
-	compiled with --without-fuse.  This will remove the ability to mount and
-	unmount WIM files.
+	The --without-fuse option completely disables support for mounting WIM
+	images.  This removes dependencies on libfuse, librt, and libattr.  The
+	wimmount, wimmountrw, and wimunmount commands will not work.
+
+	The default is --with-fuse when building for Linux, and --without-fuse
+	otherwise.
 
 --without-libcrypto
-	Build in functions for SHA1 rather than using external SHA1 functions
-	from libcrypto (part of OpenSSL).  The default is to use libcrypto if it
-	is found on the system.
+	Build in functions for SHA-1 rather than using external SHA-1 functions
+	from libcrypto (usually provided by OpenSSL).
 
---disable-multithreaded-compression
-	By default, data will be compressed using multiple threads when writing
-	a WIM, unless only 1 processor is detected.  Specify this option to
-	disable support for this.
-
---enable-ssse3-sha1
-	Use a very fast assembly language implementation of SHA1 from Intel.
-	Only use this if the build target supports the SSSE3 instructions.
-
---disable-error-messages
-	Save some space by removing all error messages from the library.
-
---disable-assertions
-	Remove assertions included by default.
+	The default is to use libcrypto if it is found on your system.
 
                                   PORTABILITY
 
 wimlib works on both UNIX-like systems (Linux, Mac OS X, FreeBSD, etc.) and
 Windows (XP and later).
 
-On UNIX-like systems other than Linux, you must compile --without-fuse.
-In addition, --without-ntfs-3g and --without-libcrypto are needed if the
-corresponding libraries are not available on your system.
+As much code as possible is shared among all supported platforms, but there
+necessarily are some differences in what features are supported on each platform
+and how they are implemented.  Most notable is that file tree scanning and
+extraction are implemented separately for Windows, UNIX, and UNIX (NTFS-3g
+mode), to ensure a fast and feature-rich implementation of each platform/mode.
 
-wimlib works on x86 and x86_64, but it should work on any other GCC-supported
-32-bit or 64-bit architecture.
+wimlib is mainly used on x86 and x86_64 CPUs, but it should also work on a
+number of other GCC-supported 32-bit or 64-bit architectures.  No assumptions
+are made about endianness, but some code assumes that unaligned memory accesses
+are supported and relatively efficient.
+
+Currently, gcc and clang are the only supported compilers.  A few nonstandard
+extensions are used in the code.
 
                                    REFERENCES
 

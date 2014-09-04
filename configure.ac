@@ -140,7 +140,7 @@ if test "x$ENABLE_MORE_ASSERTIONS" = "xyes"; then
 fi
 
 
-AC_MSG_CHECKING([whether to include compression verification])
+AC_MSG_CHECKING([whether to include automatic compression verification])
 AC_ARG_ENABLE([verify_compression],
 	      AS_HELP_STRING([--enable-verify-compression], [always
 				check if blocks we compress can be correctly
@@ -171,8 +171,8 @@ fi
 PTHREAD_LDADD="-lpthread"
 AC_SUBST([PTHREAD_LDADD], [$PTHREAD_LDADD])
 
-WITH_NTFS_3G_DEFAULT="yes"
-WITH_FUSE_DEFAULT="yes"
+WITH_NTFS_3G_DEFAULT="no"
+WITH_FUSE_DEFAULT="no"
 WINDOWS_NATIVE_BUILD="no"
 VISIBILITY_CFLAGS="-fvisibility=hidden"
 WINDOWS_CFLAGS=""
@@ -183,8 +183,6 @@ WINDOWS_LDADD=""
 case "$host_os" in
 	mingw*)
 		# Native Windows
-		WITH_NTFS_3G_DEFAULT="no"
-		WITH_FUSE_DEFAULT="no"
 		WINDOWS_NATIVE_BUILD="yes"
 		VISIBILITY_CFLAGS=""
 		WINDOWS_CFLAGS="-municode"
@@ -192,8 +190,14 @@ case "$host_os" in
 		WINDOWS_LDFLAGS="-no-undefined"
 		WINDOWS_LDADD="-lshlwapi"
 		;;
+	linux*)
+		# Linux
+		WITH_FUSE_DEFAULT="yes"
+		WITH_NTFS_3G_DEFAULT="yes"
+		;;
 	*)
-		# UNIX / other
+		# Other UNIX
+		WITH_NTFS_3G_DEFAULT="yes"
 		;;
 esac
 
@@ -204,29 +208,37 @@ AC_SUBST([WINDOWS_CPPFLAGS], [$WINDOWS_CPPFLAGS])
 AC_SUBST([WINDOWS_CFLAGS], [$WINDOWS_CFLAGS])
 AM_CONDITIONAL([WINDOWS_NATIVE_BUILD], [test "x$WINDOWS_NATIVE_BUILD" = "xyes"])
 
+
+AM_ICONV
+if test "x$am_cv_func_iconv" != "xyes"; then
+	AC_MSG_ERROR([Cannot find the iconv() function.  iconv() is used to
+		      convert between encodings of WIM filenames and XML data.
+		      wimlib cannot be compiled without it.  iconv() is
+		      available in the latest version of glibc and sometimes in
+		      other libraries.])
+fi
+
 AC_MSG_CHECKING([whether to include support for ntfs-3g])
 AC_ARG_WITH([ntfs-3g],
-	      AS_HELP_STRING([--without-ntfs-3g], [build without NTFS-3g.
-			      On UNIX, this will disable the ability to use NTFS-specific
-			      information when capturing or applying WIMs to a
-			      NTFS filesystem.]),
-	[WITH_NTFS_3G=$withval],
-	[WITH_NTFS_3G=$WITH_NTFS_3G_DEFAULT]
-	)
+	    [AS_HELP_STRING([--without-ntfs-3g],
+			    [build without libntfs-3g.  This will disable the
+			     ability to capture or apply a WIM image directly
+			     from/to an unmounted NTFS volume.])],
+	    [WITH_NTFS_3G=$withval],
+	    [WITH_NTFS_3G=$WITH_NTFS_3G_DEFAULT])
+
 AC_MSG_RESULT([$WITH_NTFS_3G])
 if test "x$WITH_NTFS_3G" = "xyes"; then
-	AC_DEFINE([WITH_NTFS_3G], [1], [On UNIX, define to 1 to enable support
-		   for NTFS-specific information])
+	AC_DEFINE([WITH_NTFS_3G], [1], [Define to 1 to enable NTFS-3g support.])
 
 	dnl This effectively checks for NTFS-3g 2011.4.12 or later
 	AC_CHECK_LIB([ntfs-3g], [ntfs_xattr_system_setxattr], [],
 			[AC_MSG_ERROR([Cannot find libntfs-3g version 2011-4-12
-	or later. Without libntfs-3g, wimlib cannot include support for
-	capturing and applying WIMs on NTFS filesystems while preserving
-	NTFS-specific data such as security descriptors and alternate data
-	streams.  You should either install libntfs-3g, or configure with
-	--without-ntfs-3g to disable support for these NTFS-specific
-	features.])])
+	or later!  Without libntfs-3g, wimlib cannot include support for
+	capturing or applying a WIM image directly from/to an unmounted NTFS
+	volume while preserving NTFS-specific data such as security descriptors
+	and named data streams.  Either install libntfs-3g, or configure
+	--without-ntfs-3g to disable this feature.])])
 
 	PKG_CHECK_MODULES([LIBNTFS_3G], [libntfs-3g])
 	PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES libntfs-3g"
@@ -242,40 +254,37 @@ if test "x$WITH_NTFS_3G" = "xyes"; then
 fi
 AM_CONDITIONAL([WITH_NTFS_3G], [test "x$WITH_NTFS_3G" = "xyes"])
 
-AM_ICONV
-if test "x$am_cv_func_iconv" != "xyes"; then
-	AC_MSG_ERROR([Cannot find the iconv() function.
-	iconv() is used to convert between encodings of WIM filenames and XML data.
-	wimlib cannot be compiled without it.  iconv() is available in the latest
-	version of glibc and sometimes in other libraries.])
-fi
-
 AC_MSG_CHECKING([whether to include support for mounting WIMs])
 AC_ARG_WITH([fuse],
-		AS_HELP_STRING([--without-fuse], [build without libfuse.
-					This will disable the ability to mount
-					WIM files.]),
+	[AS_HELP_STRING([--without-fuse],
+			[build without libfuse.  This will disable the ability
+			 to mount WIM images.])],
 	[WITH_FUSE=$withval],
-	[WITH_FUSE=$WITH_FUSE_DEFAULT]
-	)
+	[WITH_FUSE=$WITH_FUSE_DEFAULT])
+
 AC_MSG_RESULT([$WITH_FUSE])
 if test "x$WITH_FUSE" = "xyes"; then
 	AC_DEFINE([WITH_FUSE], [1], [Define to 1 if using FUSE.])
 
+	AC_CHECK_LIB([fuse], [fuse_main_real], [],
+			[AC_MSG_ERROR([Cannot find libfuse!
+	Without libfuse, wimlib cannot include support for mounting WIM images.
+	Either install libfuse, or configure --without-fuse to disable this
+	feature.])])
 
-	AC_CHECK_LIB([fuse], [fuse_main_real], [have_fuse=true],
-			[AC_MSG_ERROR([Cannot find libfuse.
-	Without libfuse, wimlib cannot include support for mounting WIMs.  You
-	should either install libfuse, or configure with --without-fuse to
-	disable support for mounting WIMs.])
-	])
-	AC_CHECK_LIB([rt], [mq_open], [have_posix_mq=true],
-		     [AC_MSG_ERROR([Cannot find librt for POSIX message queue
-	functions.  Without these functions, wimlib cannot include support for
-	mounting WIMs.  You should either update your C library to a recent
-	version of glibc, or configure with --without-fuse to disable support
-	for mounting WIMs.])
-	])
+	AC_CHECK_LIB([rt], [mq_open], [],
+		     [AC_MSG_ERROR([Cannot find librt (the POSIX.1b Realtime
+	Extensions Library)!  wimlib needs this for the POSIX message queue
+	functions, which are used in the code for mounting WIM images.  Recent
+	versions of glibc include this library.  Either install this library, or
+	configure --without-fuse to disable support for mounting WIM images.])])
+
+	AC_CHECK_LIB([attr], [getxattr], [],
+		     [AC_MSG_ERROR([Cannot find libattr!
+	wimlib needs this for the extended attribute functions, which are used
+	in the code for mounting WIM images.  Either install this library, or
+	configure --without-fuse to disable support for mounting WIM images.])])
+
 	PKG_CHECK_MODULES([LIBFUSE], [fuse])
 	PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES fuse"
 	PKGCONFIG_PRIVATE_LIBS="$PKGCONFIG_PRIVATE_LIBS -lrt"
@@ -283,19 +292,18 @@ if test "x$WITH_FUSE" = "xyes"; then
 fi
 AM_CONDITIONAL([WITH_FUSE], [test "x$WITH_FUSE" = "xyes"])
 
-AC_MSG_CHECKING([whether to use SSSE3-accelerated SHA1 ])
+AC_MSG_CHECKING([whether to use SSSE3-accelerated SHA-1])
 AC_ARG_ENABLE([ssse3-sha1],
-	    AS_HELP_STRING([--enable-ssse3-sha1], [use assembly language implementation
-				of SHA1 from Intel, accelerated with vector
-				instructions (SSSE3-enabled CPU required)]),
-	[ENABLE_SSSE3_SHA1=$enableval],
-	[ENABLE_SSSE3_SHA1=no]
-	)
+	      [AS_HELP_STRING([--enable-ssse3-sha1],
+			      [Include SSSE3-accelerated SHA-1 implementation by
+			       Intel.  This implies --without-libcrypto.])],
+	      [ENABLE_SSSE3_SHA1=$enableval],
+	      [ENABLE_SSSE3_SHA1=no])
 
 AC_MSG_RESULT([$ENABLE_SSSE3_SHA1])
 if test "x$ENABLE_SSSE3_SHA1" = "xyes"; then
 	AC_DEFINE([ENABLE_SSSE3_SHA1], [1],
-			[Define to 1 if using vectorized implementation of SHA1])
+		  [Define to 1 if using SSSE3 implementation of SHA-1])
 	SSSE3_SHA1_OBJ=src/sha1-ssse3.lo
 	AC_PROG_NASM
 	NASM_SYMBOL_PREFIX=""
@@ -319,21 +327,23 @@ if test "x$ENABLE_SSSE3_SHA1" = "xyes"; then
 	WITH_LIBCRYPTO=no
 else
 	AC_ARG_WITH([libcrypto],
-	    AS_HELP_STRING([--without-libcrypto], [build in the SHA1 algorithm,
-					rather than use external libcrypto from
-					OpenSSL (default is autodetect)]),
+		    [AS_HELP_STRING([--without-libcrypto],
+				    [build in the SHA-1 algorithm, rather than
+				     use external libcrypto from OpenSSL
+				     (default is autodetect)])],
 	[WITH_LIBCRYPTO=$withval],
-	[AC_CHECK_LIB([crypto], [SHA1],
-		     [WITH_LIBCRYPTO=yes],
-		     [AC_MSG_WARN([Cannot find libcrypto: using stand-alone SHA1 code instead of OpenSSL])
-		     WITH_LIBCRYPTO=no
-		     ])])
+	[AC_CHECK_LIB([crypto],
+		      [SHA1],
+		      [WITH_LIBCRYPTO=yes],
+		      [AC_MSG_WARN([Cannot find libcrypto: using stand-alone
+				    SHA-1 code instead of OpenSSL])
+		       WITH_LIBCRYPTO=no])])
 fi
-AC_MSG_CHECKING([whether to use SHA1 function from system libcrypto])
+AC_MSG_CHECKING([whether to use SHA-1 implementation from system libcrypto])
 AC_MSG_RESULT([$WITH_LIBCRYPTO])
 
 if test "x$WITH_LIBCRYPTO" = "xyes" -a "x$ENABLE_SSSE3_SHA1" = "xno"; then
-	AC_DEFINE([WITH_LIBCRYPTO], [1], [Define to 1 if using libcrypto SHA1])
+	AC_DEFINE([WITH_LIBCRYPTO], [1], [Define to 1 if using libcrypto SHA-1])
 	PKG_CHECK_MODULES([LIBCRYPTO], [libcrypto])
 	PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES libcrypto"
 fi
