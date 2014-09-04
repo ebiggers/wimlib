@@ -2434,6 +2434,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_MOUNTED_IMAGE_IS_BUSY              = 79,
 	WIMLIB_ERR_NOT_A_MOUNTPOINT                   = 80,
 	WIMLIB_ERR_NOT_PERMITTED_TO_UNMOUNT           = 81,
+	WIMLIB_ERR_FVE_LOCKED_VOLUME		      = 82,
 };
 
 
@@ -4339,6 +4340,9 @@ wimlib_unmount_image_with_progress(const wimlib_tchar *dir,
  * be rolled back, and no visible changes shall have been made to @p wim.
  * Possible error codes include:
  *
+ * @retval ::WIMLIB_ERR_FVE_LOCKED_VOLUME
+ *	Windows-only: One of the "add" commands attempted to add files from an
+ *	encrypted BitLocker volume that hasn't yet been unlocked.
  * @retval ::WIMLIB_ERR_INVALID_CAPTURE_CONFIG
  *	The capture configuration structure specified for an add command was
  *	invalid.

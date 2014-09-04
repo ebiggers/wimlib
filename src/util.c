@@ -381,6 +381,8 @@ static const tchar *error_strings[] = {
 		= T("There is not a WIM image mounted on the directory"),
 	[WIMLIB_ERR_NOT_PERMITTED_TO_UNMOUNT]
 		= T("The current user does not have permission to unmount the WIM image"),
+	[WIMLIB_ERR_FVE_LOCKED_VOLUME]
+		= T("The volume must be unlocked before it can be used"),
 };
 
 /* API function documented in wimlib.h  */
