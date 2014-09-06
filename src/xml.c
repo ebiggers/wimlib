@@ -272,21 +272,13 @@ static int
 node_get_string(const xmlNode *string_node, tchar **tstr_ret)
 {
 	xmlNode *child;
-	tchar *tstr = NULL;
-	int ret;
 
 	if (*tstr_ret)
 		return 0;
 
-	for_node_child(string_node, child) {
-		if (node_is_text(child) && child->content) {
-			ret = utf8_to_tstr_simple(child->content, &tstr);
-			if (ret)
-				return ret;
-			break;
-		}
-	}
-	*tstr_ret = tstr;
+	for_node_child(string_node, child)
+		if (node_is_text(child) && child->content)
+			return utf8_to_tstr_simple(child->content, tstr_ret);
 	return 0;
 }
 
