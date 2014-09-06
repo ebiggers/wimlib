@@ -1237,13 +1237,17 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	 * However, we need to explicitly check for directories and files with
 	 * only 1 link and refuse to hard link them.  This is because Windows
 	 * has a bug where it can return duplicate File IDs for files and
-	 * directories on the FAT filesystem. */
+	 * directories on the FAT filesystem.
+	 *
+	 * Since we don't follow mount points on Windows, we don't need to query
+	 * the volume ID per-file.  Just once, for the root, is enough.  But we
+	 * can't simply pass 0, because then there could be inode collisions
+	 * among multiple calls to win32_build_dentry_tree() that are scanning
+	 * files on different volumes.  */
 	ret = inode_table_new_dentry(params->inode_table,
 				     filename,
 				     file_info.InternalInformation.IndexNumber.QuadPart,
-				     0, /* We don't follow mount points, so we
-					   currently don't need to get the
-					   volume ID / device number.  */
+				     params->capture_root_dev,
 				     (file_info.StandardInformation.NumberOfLinks <= 1 ||
 				        (file_info.BasicInformation.FileAttributes &
 					 FILE_ATTRIBUTE_DIRECTORY)),
