@@ -15,138 +15,161 @@
 #include "wimlib/endianness.h"
 #include "wimlib/types.h"
 
-/* Structure to encapsulate a block of in-memory data that is being interpreted
- * as a stream of bits.
- *
- * This is geared specifically towards the XPRESS and LZX compression formats
- * with regards to the actual ordering the bits within the byte sequence.  */
+/* Structure that encapsulates a block of in-memory data being interpreted as a
+ * stream of bits, optionally with interwoven literal bytes.  Bits are assumed
+ * to be stored in little endian 16-bit coding units, with the bits ordered high
+ * to low.  */
 struct input_bitstream {
 
-	/* A variable of length at least 32 bits that is used to hold bits that
-	 * have been read from the stream.  The bits are ordered from high-order
-	 * to low-order, and the next bit is always the high-order bit.  */
+	/* Bits that have been read from the input buffer.  The bits are
+	 * left-justified; the next bit is always bit 31.  */
 	u32 bitbuf;
 
-	/* Number of bits in @bitbuf that are valid.  */
-	unsigned bitsleft;
+	/* Number of bits currently held in @bitbuf.  */
+	u32 bitsleft;
 
-	/* Pointer to the next byte to be retrieved from the input.  */
-	const u8 *data;
+	/* Pointer to the next byte to be retrieved from the input buffer.  */
+	const u8 *next;
 
-	/* Number of bytes of data that are left.  */
-	u32 data_bytes_left;
+	/* Pointer past the end of the input buffer.  */
+	const u8 *end;
 };
 
-/* Initializes a bitstream to receive its input from @data. */
+/* Initialize a bitstream to read from the specified input buffer.  */
 static inline void
-init_input_bitstream(struct input_bitstream *istream,
-		     const void *data, u32 num_data_bytes)
+init_input_bitstream(struct input_bitstream *is, const void *buffer, u32 size)
 {
-	istream->bitbuf          = 0;
-	istream->bitsleft        = 0;
-	istream->data            = data;
-	istream->data_bytes_left = num_data_bytes;
+	is->bitbuf = 0;
+	is->bitsleft = 0;
+	is->next = buffer;
+	is->end = is->next + size;
 }
 
-/* Ensures the bit buffer variable for the bitstream contains at least @num_bits
- * bits.  Following this, bitstream_peek_bits() and/or bitstream_remove_bits()
- * may be called on the bitstream to peek or remove up to @num_bits bits.
- *
- * If the input data is exhausted, any further bits are assumed to be 0.  */
-static inline void
-bitstream_ensure_bits(struct input_bitstream *istream, const unsigned num_bits)
-{
-	u16 nextword;
-	unsigned shift;
+/* Note: for performance reasons, the following methods don't return error codes
+ * to the caller if the input buffer is overrun.  Instead, they just assume that
+ * all overrun data is zeroes.  This has no effect on well-formed compressed
+ * data.  The only disadvantage is that bad compressed data may go undetected,
+ * but even this is irrelevant if higher level code checksums the uncompressed
+ * data anyway.  */
 
+/* Ensure the bit buffer variable for the bitstream contains at least @num_bits
+ * bits.  Following this, bitstream_peek_bits() and/or bitstream_remove_bits()
+ * may be called on the bitstream to peek or remove up to @num_bits bits.  */
+static inline void
+bitstream_ensure_bits(struct input_bitstream *is, const unsigned num_bits)
+{
 	/* This currently works for at most 17 bits.  */
 	wimlib_assert2(num_bits <= 17);
 
-	if (istream->bitsleft >= num_bits)
+	if (is->bitsleft >= num_bits)
 		return;
 
-	if (unlikely(istream->data_bytes_left < 2)) {
-		istream->bitsleft = num_bits;
-		return;
+	if (unlikely(is->end - is->next < 2))
+		goto overflow;
+
+	is->bitbuf |= (u32)le16_to_cpu(*(const le16 *)is->next)
+			<< (16 - is->bitsleft);
+	is->next += 2;
+	is->bitsleft += 16;
+
+	if (unlikely(num_bits == 17 && is->bitsleft == 16)) {
+		if (unlikely(is->end - is->next < 2))
+			goto overflow;
+
+		is->bitbuf |= (u32)le16_to_cpu(*(const le16 *)is->next);
+		is->next += 2;
+		is->bitsleft = 32;
 	}
 
-	nextword = le16_to_cpu(*(const le16*)istream->data);
-	shift = sizeof(istream->bitbuf) * 8 - 16 - istream->bitsleft;
-	istream->bitbuf |= (u32)nextword << shift;
-	istream->data += 2;
-	istream->bitsleft += 16;
-	istream->data_bytes_left -= 2;
+	return;
 
-	/* Help the compiler: If it's known at compile-time that num_bits <= 16,
-	 * a second word will never be needed.  */
-	if (!(is_constant(num_bits) && num_bits <= 16) &&
-	    unlikely(istream->bitsleft < num_bits))
-	{
-		if (unlikely(istream->data_bytes_left < 2)) {
-			istream->bitsleft = num_bits;
-			return;
-		}
-		nextword = le16_to_cpu(*(const le16*)istream->data);
-		shift = sizeof(istream->bitbuf) * 8 - 16 - istream->bitsleft;
-		istream->bitbuf |= (u32)nextword << shift;
-		istream->data += 2;
-		istream->bitsleft += 16;
-		istream->data_bytes_left -= 2;
-	}
+overflow:
+	is->bitsleft = 32;
 }
 
-/* Returns the next @num_bits bits from the bitstream, without removing them.
+/* Return the next @num_bits bits from the bitstream, without removing them.
  * There must be at least @num_bits remaining in the buffer variable, from a
  * previous call to bitstream_ensure_bits().  */
 static inline u32
-bitstream_peek_bits(const struct input_bitstream *istream, unsigned num_bits)
+bitstream_peek_bits(const struct input_bitstream *is, const unsigned num_bits)
 {
 	if (unlikely(num_bits == 0))
 		return 0;
-	return istream->bitbuf >> (sizeof(istream->bitbuf) * 8 - num_bits);
+	return is->bitbuf >> (32 - num_bits);
 }
 
-/* Removes @num_bits from the bitstream.  There must be at least @num_bits
+/* Remove @num_bits from the bitstream.  There must be at least @num_bits
  * remaining in the buffer variable, from a previous call to
  * bitstream_ensure_bits().  */
 static inline void
-bitstream_remove_bits(struct input_bitstream *istream, unsigned num_bits)
+bitstream_remove_bits(struct input_bitstream *is, unsigned num_bits)
 {
-	istream->bitbuf <<= num_bits;
-	istream->bitsleft -= num_bits;
+	is->bitbuf <<= num_bits;
+	is->bitsleft -= num_bits;
 }
 
-/* Removes and returns @num_bits bits from the bitstream.  There must be at
- * least @num_bits remaining in the buffer variable, from a previous call to
+/* Remove and return @num_bits bits from the bitstream.  There must be at least
+ * @num_bits remaining in the buffer variable, from a previous call to
  * bitstream_ensure_bits().  */
 static inline u32
-bitstream_pop_bits(struct input_bitstream *istream, unsigned num_bits)
+bitstream_pop_bits(struct input_bitstream *is, unsigned num_bits)
 {
-	u32 n = bitstream_peek_bits(istream, num_bits);
-	bitstream_remove_bits(istream, num_bits);
-	return n;
+	u32 bits = bitstream_peek_bits(is, num_bits);
+	bitstream_remove_bits(is, num_bits);
+	return bits;
 }
 
-/* Reads and returns the next @num_bits bits from the bitstream.
- * If the input data is exhausted, the bits are assumed to be 0.  */
+/* Read and return the next @num_bits bits from the bitstream.  */
 static inline u32
-bitstream_read_bits(struct input_bitstream *istream, unsigned num_bits)
+bitstream_read_bits(struct input_bitstream *is, unsigned num_bits)
 {
-	bitstream_ensure_bits(istream, num_bits);
-	return bitstream_pop_bits(istream, num_bits);
+	bitstream_ensure_bits(is, num_bits);
+	return bitstream_pop_bits(is, num_bits);
 }
 
-/* Reads and returns the next literal byte embedded in the bitstream.
- * If the input data is exhausted, the byte is assumed to be 0.  */
+/* Read and return the next literal byte embedded in the bitstream.  */
 static inline u8
-bitstream_read_byte(struct input_bitstream *istream)
+bitstream_read_byte(struct input_bitstream *is)
 {
-	if (unlikely(istream->data_bytes_left == 0))
+	if (unlikely(is->end - is->next < 1))
 		return 0;
-	istream->data_bytes_left--;
-	return *istream->data++;
+	return *is->next++;
 }
 
+/* Read and return the next 32-bit integer embedded in the bitstream.  */
+static inline u32
+bitstream_read_u32(struct input_bitstream *is)
+{
+	u32 v;
+
+	if (unlikely(is->end - is->next < 4))
+		return 0;
+	v = le32_to_cpu(*(const le32 *)is->next);
+	is->next += 4;
+	return v;
+}
+
+/* Read an array of literal bytes embedded in the bitstream.  Return a pointer
+ * to the resulting array, or NULL if the read overflows the input buffer.  */
+static inline const u8 *
+bitstream_read_bytes(struct input_bitstream *is, size_t count)
+{
+	const u8 *p;
+
+	if (unlikely(is->end - is->next < count))
+		return NULL;
+	p = is->next;
+	is->next += count;
+	return p;
+}
+
+/* Align the input bitstream on a coding-unit boundary.  */
+static inline void
+bitstream_align(struct input_bitstream *is)
+{
+	is->bitsleft = 0;
+	is->bitbuf = 0;
+}
 
 /* Needed alignment of decode_table parameter to make_huffman_decode_table().
  *

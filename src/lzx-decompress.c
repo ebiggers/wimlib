@@ -378,22 +378,11 @@ lzx_read_block_header(struct input_bitstream *istream,
 		 * *already* aligned, the correct thing to do is to throw away
 		 * the next 16 bits.  */
 
-		if (istream->bitsleft == 0) {
-			if (istream->data_bytes_left < 14)
-				return -1;
-			istream->data += 2;
-			istream->data_bytes_left -= 2;
-		} else {
-			if (istream->data_bytes_left < 12)
-				return -1;
-			istream->bitsleft = 0;
-			istream->bitbuf = 0;
-		}
-		queue->R[0] = le32_to_cpu(*(le32*)(istream->data + 0));
-		queue->R[1] = le32_to_cpu(*(le32*)(istream->data + 4));
-		queue->R[2] = le32_to_cpu(*(le32*)(istream->data + 8));
-		istream->data += 12;
-		istream->data_bytes_left -= 12;
+		bitstream_ensure_bits(istream, 1);
+		bitstream_align(istream);
+		queue->R[0] = bitstream_read_u32(istream);
+		queue->R[1] = bitstream_read_u32(istream);
+		queue->R[2] = bitstream_read_u32(istream);
 		break;
 
 	default:
@@ -644,21 +633,19 @@ lzx_decompress(const void *compressed_data, size_t compressed_size,
 		} else {
 
 			/* Uncompressed block.  */
+			const u8 *p;
 
-			if (istream.data_bytes_left < block_size)
+			p = bitstream_read_bytes(&istream, block_size);
+			if (!p)
 				return -1;
 
-			memcpy(&((u8*)uncompressed_data)[window_pos], istream.data,
-			       block_size);
-			istream.data += block_size;
-			istream.data_bytes_left -= block_size;
+			memcpy(&((u8*)uncompressed_data)[window_pos], p, block_size);
 
 			/* Re-align the bitstream if an odd number of bytes was
 			 * read.  */
-			if (istream.data_bytes_left && (block_size & 1)) {
-				istream.data_bytes_left--;
-				istream.data++;
-			}
+			if (block_size & 1)
+				bitstream_read_byte(&istream);
+
 			may_have_e8_byte = true;
 		}
 	}
