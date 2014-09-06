@@ -74,6 +74,9 @@
 #include "wimlib/error.h"
 #include "wimlib/xpress.h"
 
+/* This value is chosen for fast decompression.  */
+#define XPRESS_TABLEBITS 12
+
 /*
  * Decodes a symbol @sym that begins an XPRESS match.
  *
