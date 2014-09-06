@@ -70,19 +70,21 @@
 #define LZX_PRECODE_TABLEBITS		6
 #define LZX_ALIGNEDCODE_TABLEBITS	7
 
+#define LZX_READ_LENS_MAX_OVERRUN 50
+
 /* Huffman decoding tables, and arrays that map symbols to codeword lengths.  */
 struct lzx_tables {
 
 	u16 maincode_decode_table[(1 << LZX_MAINCODE_TABLEBITS) +
 					(LZX_MAINCODE_MAX_NUM_SYMBOLS * 2)]
 					_aligned_attribute(DECODE_TABLE_ALIGNMENT);
-	u8 maincode_lens[LZX_MAINCODE_MAX_NUM_SYMBOLS];
+	u8 maincode_lens[LZX_MAINCODE_MAX_NUM_SYMBOLS + LZX_READ_LENS_MAX_OVERRUN];
 
 
 	u16 lencode_decode_table[(1 << LZX_LENCODE_TABLEBITS) +
 					(LZX_LENCODE_NUM_SYMBOLS * 2)]
 					_aligned_attribute(DECODE_TABLE_ALIGNMENT);
-	u8 lencode_lens[LZX_LENCODE_NUM_SYMBOLS];
+	u8 lencode_lens[LZX_LENCODE_NUM_SYMBOLS + LZX_READ_LENS_MAX_OVERRUN];
 
 
 	u16 alignedcode_decode_table[(1 << LZX_ALIGNEDCODE_TABLEBITS) +
@@ -149,7 +151,8 @@ read_huffsym_using_alignedcode(struct input_bitstream *istream,
  * @lens:
  *	An array that contains the length values from the previous time the
  *	codeword lengths for this Huffman code were read, or all 0's if this is
- *	the first time.
+ *	the first time.  This array must have at least (@num_lens +
+ *	LZX_READ_LENS_MAX_OVERRUN) entries.
  *
  * @num_lens:
  *	Number of length values to decode.
@@ -157,13 +160,14 @@ read_huffsym_using_alignedcode(struct input_bitstream *istream,
  * Returns 0 on success, or -1 if the data was invalid.
  */
 static int
-lzx_read_codeword_lens(struct input_bitstream *istream, u8 lens[], unsigned num_lens)
+lzx_read_codeword_lens(struct input_bitstream *istream, u8 *lens, unsigned num_lens)
 {
-	/* Declare the decoding table and length table for the precode.  */
 	u16 precode_decode_table[(1 << LZX_PRECODE_TABLEBITS) +
 					(LZX_PRECODE_NUM_SYMBOLS * 2)]
 					_aligned_attribute(DECODE_TABLE_ALIGNMENT);
 	u8 precode_lens[LZX_PRECODE_NUM_SYMBOLS];
+	u8 *len_ptr = lens;
+	u8 *lens_end = lens + num_lens;
 	int ret;
 
 	/* Read the lengths of the precode codewords.  These are given
@@ -182,71 +186,58 @@ lzx_read_codeword_lens(struct input_bitstream *istream, u8 lens[], unsigned num_
 	if (ret)
 		return ret;
 
-	/* Pointer past the last length value that needs to be filled in.  */
-	u8 *lens_end = lens + num_lens;
-
-	for (;;) {
-
+	/* Decode the codeword lengths.  */
+	do {
 		unsigned presym;
-		unsigned run_len;
-		signed char value;
+		u8 len;
 
-		/* Decode a symbol from the input.
-		 *
-		 * If the symbol is between 0 and 16, it is the difference from
-		 * the old length, modulo 17.
-		 *
-		 * If the symbol is between 17 and 19, it is a special symbol
-		 * that indicates that some number of the next lengths are all
-		 * 0, or that some number of the next lengths are all equal to
-		 * the next symbol.  */
-
+		/* Read the next precode symbol.  */
 		presym = read_huffsym_using_precode(istream,
 						    precode_decode_table);
-		switch (presym) {
+		if (presym < 17) {
+			/* Difference from old length  */
+			len = *len_ptr - presym;
+			if ((s8)len < 0)
+				len += 17;
+			*len_ptr++ = len;
+		} else {
+			/* Special RLE values  */
 
-		case 17: /* Run of 0's  */
-			run_len = 4 + bitstream_read_bits(istream, 4);
+			unsigned run_len;
+
+			if (presym == 17) {
+				/* Run of 0's  */
+				run_len = 4 + bitstream_read_bits(istream, 4);
+				len = 0;
+			} else if (presym == 18) {
+				/* Longer run of 0's  */
+				run_len = 20 + bitstream_read_bits(istream, 5);
+				len = 0;
+			} else {
+				/* Run of identical lengths  */
+				run_len = 4 + bitstream_read_bits(istream, 1);
+				presym = read_huffsym_using_precode(istream,
+								    precode_decode_table);
+				len = *len_ptr - presym;
+				if ((s8)len < 0)
+					len += 17;
+			}
+
 			do {
-				*lens = 0;
-				if (++lens == lens_end)
-					return 0;
+				*len_ptr++ = len;
 			} while (--run_len);
-			break;
-
-		case 18: /* Longer run of 0's  */
-			run_len = 20 + bitstream_read_bits(istream, 5);
-			do {
-				*lens = 0;
-				if (++lens == lens_end)
-					return 0;
-			} while (--run_len);
-			break;
-
-		case 19: /* Run of identical lengths  */
-			run_len = 4 + bitstream_read_bits(istream, 1);
-			presym = read_huffsym_using_precode(istream,
-							    precode_decode_table);
-			value = (signed char)*lens - (signed char)presym;
-			if (value < 0)
-				value += 17;
-			do {
-				*lens = value;
-				if (++lens == lens_end)
-					return 0;
-			} while (--run_len);
-			break;
-
-		default: /* Difference from old length  */
-			value = (signed char)*lens - (signed char)presym;
-			if (value < 0)
-				value += 17;
-			*lens = value;
-			if (++lens == lens_end)
-				return 0;
-			break;
+			/* Worst case overrun is when presym == 18,
+			 * run_len == 20 + 31, and only 1 length was remaining.
+			 * So LZX_READ_LENS_MAX_OVERRUN == 50.
+			 *
+			 * Overrun while reading the first half of maincode_lens
+			 * can corrupt the previous values in the second half.
+			 * This doesn't really matter because the resulting
+			 * lengths will still be in range, and data that
+			 * generates overruns is invalid anyway.  */
 		}
-	}
+	} while (len_ptr < lens_end);
+	return 0;
 }
 
 /*
@@ -535,8 +526,8 @@ lzx_decompress(const void *compressed_data, size_t compressed_size,
 	lzx_lru_queue_init(&queue);
 
 	/* Codeword lengths begin as all 0's for delta encoding purposes.  */
-	memset(dec->tables.maincode_lens, 0, sizeof(dec->tables.maincode_lens));
-	memset(dec->tables.lencode_lens, 0, sizeof(dec->tables.lencode_lens));
+	memset(dec->tables.maincode_lens, 0, dec->num_main_syms);
+	memset(dec->tables.lencode_lens, 0, LZX_LENCODE_NUM_SYMBOLS);
 
 	/* Set this to true if there may be 0xe8 bytes in the uncompressed data.
 	 */
