@@ -131,9 +131,22 @@ bitstream_read_bits(struct input_bitstream *is, unsigned num_bits)
 static inline u8
 bitstream_read_byte(struct input_bitstream *is)
 {
-	if (unlikely(is->end - is->next < 1))
+	if (unlikely(is->end == is->next))
 		return 0;
 	return *is->next++;
+}
+
+/* Read and return the next 16-bit integer embedded in the bitstream.  */
+static inline u16
+bitstream_read_u16(struct input_bitstream *is)
+{
+	u16 v;
+
+	if (unlikely(is->end - is->next < 2))
+		return 0;
+	v = le16_to_cpu(*(const le16 *)is->next);
+	is->next += 2;
+	return v;
 }
 
 /* Read and return the next 32-bit integer embedded in the bitstream.  */
