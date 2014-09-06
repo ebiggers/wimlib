@@ -1484,12 +1484,6 @@ out:
 	return ret;
 }
 
-static int
-update1(WIMStruct *wim, int image, const struct wimlib_update_command *cmd)
-{
-	return wimlib_update_image(wim, image, cmd, 1, 0);
-}
-
 WIMLIBAPI int
 wimlib_delete_path(WIMStruct *wim, int image,
 		   const tchar *path, int delete_flags)
@@ -1500,7 +1494,7 @@ wimlib_delete_path(WIMStruct *wim, int image,
 	cmd.delete_.wim_path = (tchar *)path;
 	cmd.delete_.delete_flags = delete_flags;
 
-	return update1(wim, image, &cmd);
+	return wimlib_update_image(wim, image, &cmd, 1, 0);
 }
 
 WIMLIBAPI int
@@ -1514,7 +1508,7 @@ wimlib_rename_path(WIMStruct *wim, int image,
 	cmd.rename.wim_target_path = (tchar *)dest_path;
 	cmd.rename.rename_flags = 0;
 
-	return update1(wim, image, &cmd);
+	return wimlib_update_image(wim, image, &cmd, 1, 0);
 }
 
 WIMLIBAPI int
@@ -1530,5 +1524,5 @@ wimlib_add_tree(WIMStruct *wim, int image,
 	cmd.add.add_flags = add_flags;
 	cmd.add.config_file = NULL;
 
-	return update1(wim, image, &cmd);
+	return wimlib_update_image(wim, image, &cmd, 1, 0);
 }
