@@ -383,6 +383,10 @@ lzx_read_block_header(struct input_bitstream *istream,
 		queue->R[0] = bitstream_read_u32(istream);
 		queue->R[1] = bitstream_read_u32(istream);
 		queue->R[2] = bitstream_read_u32(istream);
+
+		/* Offsets of 0 are invalid.  */
+		if (queue->R[0] == 0 || queue->R[1] == 0 || queue->R[2] == 0)
+			return -1;
 		break;
 
 	default:
