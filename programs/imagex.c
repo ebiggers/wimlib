@@ -407,6 +407,7 @@ static const struct option update_options[] = {
 
 static const struct option verify_options[] = {
 	{T("ref"), required_argument, NULL, IMAGEX_REF_OPTION},
+	{T("nocheck"), no_argument, NULL, IMAGEX_NOCHECK_OPTION},
 
 	{NULL, 0, NULL, 0},
 };
@@ -4025,6 +4026,9 @@ imagex_verify(int argc, tchar **argv, int cmd)
 			ret = string_set_append(&refglobs, optarg);
 			if (ret)
 				goto out_free_refglobs;
+			break;
+		case IMAGEX_NOCHECK_OPTION:
+			open_flags &= ~WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 			break;
 		default:
 			goto out_usage;

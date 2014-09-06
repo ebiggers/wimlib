@@ -32,6 +32,9 @@ File glob of additional WIMs or split WIM parts to reference resources from.
 This option can be specified multiple times.  Note: \fIGLOB\fR is listed in
 quotes because it is interpreted by \fB@IMAGEX_PROGNAME@\fR and may need to be
 quoted to protect against shell expansion.
+.TP
+\fB--nocheck\fR
+Do not check the WIM file's contents against its integrity table (if it has one).
 .SH NOTES
 This is a read-only command.  It will never modify the WIM file.
 .PP
