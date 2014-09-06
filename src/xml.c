@@ -514,7 +514,6 @@ xml_read_image_info(xmlNode *image_node, struct image_info *image_info)
 		else if (node_name_is(child, "LASTMODIFICATIONTIME"))
 			image_info->last_modification_time = node_get_timestamp(child);
 		else if (node_name_is(child, "WINDOWS")) {
-			DEBUG("Found <WINDOWS> tag");
 			ret = xml_read_windows_info(child,
 						    &image_info->windows_info);
 			image_info->windows_info_exists = true;
@@ -538,7 +537,6 @@ xml_read_image_info(xmlNode *image_node, struct image_info *image_info)
 	}
 	if (!image_info->name) {
 		tchar *empty_name;
-		/*WARNING("Image with index %d has no name", image_info->index);*/
 		empty_name = MALLOC(sizeof(tchar));
 		if (!empty_name)
 			return WIMLIB_ERR_NOMEM;
@@ -588,7 +586,6 @@ xml_read_wim_info(const xmlNode *wim_node, struct wim_info **wim_info_ret)
 			if (!node_is_element(child))
 				continue;
 			if (node_name_is(child, "IMAGE")) {
-				DEBUG("Found <IMAGE> tag");
 				ret = xml_read_image_info(child,
 							  &wim_info->images[i]);
 				if (ret != 0)
@@ -632,10 +629,7 @@ err:
 	return ret;
 }
 
-/* Prints the information contained in a `struct windows_info'.
- *
- * Warning: any strings printed here are in UTF-8 encoding.  If the locale
- * character encoding is not UTF-8, the printed strings may be garbled. */
+/* Prints the information contained in a `struct windows_info'.  */
 static void
 print_windows_info(const struct windows_info *windows_info)
 {
@@ -1250,9 +1244,6 @@ calculate_dentry_statistics(struct wim_dentry *dentry, void *arg)
 /*
  * Calculate what to put in the <FILECOUNT>, <DIRCOUNT>, <TOTALBYTES>, and
  * <HARDLINKBYTES> elements of each <IMAGE>.
- *
- * Please note there is no official documentation for exactly how this is done.
- * But, see calculate_dentry_statistics().
  */
 void
 xml_update_image_info(WIMStruct *wim, int image)
