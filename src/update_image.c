@@ -869,8 +869,6 @@ execute_add_command(struct update_command_journal *j,
 #ifdef WITH_NTFS_3G
 	wim_get_current_image_metadata(wim)->ntfs_vol = ntfs_vol;
 #endif
-	if (add_flags & WIMLIB_ADD_FLAG_RPFIX)
-		wim->hdr.flags |= WIM_HDR_FLAG_RP_FIX;
 	ret = 0;
 	goto out_destroy_config;
 out_cleanup_after_capture:
@@ -1478,6 +1476,11 @@ wimlib_update_image(WIMStruct *wim,
 	 * directories, may have changed.  Call xml_update_image_info() to
 	 * recalculate these statistics. */
 	xml_update_image_info(wim, image);
+
+	for (size_t i = 0; i < num_cmds; i++)
+		if (cmds_copy[i].op == WIMLIB_UPDATE_OP_ADD &&
+		    cmds_copy[i].add.add_flags & WIMLIB_ADD_FLAG_RPFIX)
+			wim->hdr.flags |= WIM_HDR_FLAG_RP_FIX;
 out_free_cmds_copy:
 	free_update_commands(cmds_copy, num_cmds);
 out:
