@@ -277,13 +277,22 @@ lz_copy(u8 *dst, u32 length, u32 offset, const u8 *winend)
 			unsigned long v;
 		} _packed_attribute;
 
-		const u8 *end = dst + length;
-		do {
-			unsigned long v = ((struct ulong_wrapper *)src)->v;
-			((struct ulong_wrapper *)dst)->v = v;
-			dst += sizeof(unsigned long);
-			src += sizeof(unsigned long);
-		} while (dst < end);
+		const u8 * const end = dst + length;
+		unsigned long v;
+
+		v = ((struct ulong_wrapper *)src)->v;
+		((struct ulong_wrapper *)dst)->v = v;
+		dst += sizeof(unsigned long);
+		src += sizeof(unsigned long);
+
+		if (dst < end) {
+			do {
+				v = ((struct ulong_wrapper *)src)->v;
+				((struct ulong_wrapper *)dst)->v = v;
+				dst += sizeof(unsigned long);
+				src += sizeof(unsigned long);
+			} while (dst < end);
+		}
 
 		return;
 	}
