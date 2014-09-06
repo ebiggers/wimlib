@@ -221,8 +221,8 @@ static inline u16
 read_huffsym(struct input_bitstream *istream, const u16 decode_table[],
 	     unsigned table_bits, unsigned max_codeword_len)
 {
-	u16 entry;
-	u16 key_bits;
+	unsigned entry;
+	unsigned key_bits;
 
 	bitstream_ensure_bits(istream, max_codeword_len);
 
