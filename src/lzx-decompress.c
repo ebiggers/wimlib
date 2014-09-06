@@ -400,117 +400,6 @@ lzx_read_block_header(struct input_bitstream *istream,
 }
 
 /*
- * Decode a match and copy its bytes into the decompression window.
- *
- * Return the length of the match in bytes, or 0 if the match underflowed the
- * window or overflowed the current block.
- */
-static u32
-lzx_decode_match(unsigned main_symbol, int block_type,
-		 u32 bytes_remaining, u8 *window, u32 window_pos,
-		 const struct lzx_tables *tables,
-		 struct lzx_lru_queue *queue,
-		 struct input_bitstream *istream)
-{
-	unsigned length_header;
-	unsigned position_slot;
-	u32 match_len;
-	u32 match_offset;
-	unsigned num_extra_bits;
-	u32 verbatim_bits;
-	u32 aligned_bits;
-
-	/* The main symbol is offset by 256 because values under 256 indicate a
-	 * literal value.  */
-	main_symbol -= LZX_NUM_CHARS;
-
-	/* The length header consists of the lower 3 bits of the main element.
-	 * The position slot is the rest of it. */
-	length_header = main_symbol & LZX_NUM_PRIMARY_LENS;
-	position_slot = main_symbol >> 3;
-
-	/* If the length_header is less than LZX_NUM_PRIMARY_LENS (= 7), it
-	 * gives the match length as the offset from LZX_MIN_MATCH_LEN.
-	 * Otherwise, the length is given by an additional symbol encoded using
-	 * the length code, offset by 9 (LZX_MIN_MATCH_LEN +
-	 * LZX_NUM_PRIMARY_LENS) */
-	match_len = LZX_MIN_MATCH_LEN + length_header;
-	if (length_header == LZX_NUM_PRIMARY_LENS)
-		match_len += read_huffsym_using_lencode(istream, tables);
-
-	/* If the position_slot is 0, 1, or 2, the match offset is retrieved
-	 * from the LRU queue.  Otherwise, the match offset is not in the LRU
-	 * queue. */
-	if (position_slot <= 2) {
-		/* Note: This isn't a real LRU queue, since using the R2 offset
-		 * doesn't bump the R1 offset down to R2.  This quirk allows all
-		 * 3 recent offsets to be handled by the same code.  (For R0,
-		 * the swap is a no-op.)  */
-		match_offset = queue->R[position_slot];
-		queue->R[position_slot] = queue->R[0];
-		queue->R[0] = match_offset;
-	} else {
-		/* Otherwise, the offset was not encoded as one the offsets in
-		 * the queue.  Depending on the position slot, there is a
-		 * certain number of extra bits that need to be read to fully
-		 * decode the match offset. */
-
-		/* Look up the number of extra bits that need to be read. */
-		num_extra_bits = lzx_get_num_extra_bits(position_slot);
-
-		/* For aligned blocks, if there are at least 3 extra bits, the
-		 * actual number of extra bits is 3 less, and they encode a
-		 * number of 8-byte words that are added to the offset; there
-		 * is then an additional symbol read using the aligned offset
-		 * code that specifies the actual byte alignment. */
-		if (block_type == LZX_BLOCKTYPE_ALIGNED && num_extra_bits >= 3) {
-
-			/* There is an error in the LZX "specification" at this
-			 * point; it indicates that a Huffman symbol is to be
-			 * read only if num_extra_bits is greater than 3, but
-			 * actually it is if num_extra_bits is greater than or
-			 * equal to 3.  (Note that in the case with
-			 * num_extra_bits == 3, the assignment to verbatim_bits
-			 * will just set it to 0. ) */
-			verbatim_bits = bitstream_read_bits(istream,
-							    num_extra_bits - 3);
-			verbatim_bits <<= 3;
-			aligned_bits = read_huffsym_using_alignedcode(istream,
-								      tables);
-		} else {
-			/* For non-aligned blocks, or for aligned blocks with
-			 * less than 3 extra bits, the extra bits are added
-			 * directly to the match offset, and the correction for
-			 * the alignment is taken to be 0. */
-			verbatim_bits = bitstream_read_bits(istream, num_extra_bits);
-			aligned_bits = 0;
-		}
-
-		/* Calculate the match offset. */
-		match_offset = lzx_position_base[position_slot] +
-			       verbatim_bits + aligned_bits - LZX_OFFSET_OFFSET;
-
-		/* Update the LRU queue. */
-		queue->R[2] = queue->R[1];
-		queue->R[1] = queue->R[0];
-		queue->R[0] = match_offset;
-	}
-
-	/* Validate the match, then copy it to the current position.  */
-
-	if (unlikely(match_len > bytes_remaining))
-		return 0;
-
-	if (unlikely(match_offset > window_pos))
-		return 0;
-
-	lz_copy(&window[window_pos], match_len, match_offset,
-		&window[window_pos + bytes_remaining]);
-
-	return match_len;
-}
-
-/*
  * Decompress an LZX-compressed block of data.
  *
  * @block_type:
@@ -543,30 +432,85 @@ lzx_decompress_block(int block_type, u32 block_size,
 		     struct lzx_lru_queue *queue,
 		     struct input_bitstream *istream)
 {
-	u32 block_end;
-	unsigned main_symbol;
+	u8 *window_ptr = &window[window_pos];
+	u8 *window_end = window_ptr + block_size;
+	unsigned mainsym;
 	u32 match_len;
+	unsigned position_slot;
+	u32 match_offset;
+	unsigned num_extra_bits;
 
-	block_end = window_pos + block_size;
-	while (window_pos < block_end) {
-		main_symbol = read_huffsym_using_maincode(istream, tables);
-		if (main_symbol < LZX_NUM_CHARS) {
+	while (window_ptr != window_end) {
+
+		mainsym = read_huffsym_using_maincode(istream, tables);
+		if (mainsym < LZX_NUM_CHARS) {
 			/* Literal  */
-			window[window_pos++] = main_symbol;
-		} else {
-			/* Match  */
-			match_len = lzx_decode_match(main_symbol,
-						     block_type,
-						     block_end - window_pos,
-						     window,
-						     window_pos,
-						     tables,
-						     queue,
-						     istream);
-			if (unlikely(match_len == 0))
-				return -1;
-			window_pos += match_len;
+			*window_ptr++ = mainsym;
+			continue;
 		}
+
+		/* Match  */
+
+		/* Decode the length header and position slot.  */
+		mainsym -= LZX_NUM_CHARS;
+		match_len = mainsym & 0x7;
+		position_slot = mainsym >> 3;
+
+		/* If needed, read a length symbol to decode the full length. */
+		if (match_len == 0x7)
+			match_len += read_huffsym_using_lencode(istream, tables);
+		match_len += LZX_MIN_MATCH_LEN;
+
+		if (position_slot <= 2) {
+			/* Repeat offset  */
+
+			/* Note: This isn't a real LRU queue, since using the R2
+			 * offset doesn't bump the R1 offset down to R2.  This
+			 * quirk allows all 3 recent offsets to be handled by
+			 * the same code.  (For R0, the swap is a no-op.)  */
+			match_offset = queue->R[position_slot];
+			queue->R[position_slot] = queue->R[0];
+			queue->R[0] = match_offset;
+		} else {
+			/* Explicit offset  */
+
+			/* Look up the number of extra bits that need to be read
+			 * to decode offsets with this position slot.  */
+			num_extra_bits = lzx_get_num_extra_bits(position_slot);
+
+			/* Start with the position slot base value.  */
+			match_offset = lzx_position_base[position_slot];
+
+			/* In aligned offset blocks, the low-order 3 bits of
+			 * each offset are encoded using the aligned offset
+			 * code.  Otherwise, all the extra bits are literal.  */
+			if (block_type == LZX_BLOCKTYPE_ALIGNED && num_extra_bits >= 3) {
+				match_offset += bitstream_read_bits(istream, num_extra_bits - 3) << 3;
+				match_offset += read_huffsym_using_alignedcode(istream, tables);
+			} else {
+				match_offset += bitstream_read_bits(istream, num_extra_bits);
+			}
+
+			/* Adjust the offset.  */
+			match_offset -= LZX_OFFSET_OFFSET;
+
+			/* Update the match offset LRU queue.  */
+			queue->R[2] = queue->R[1];
+			queue->R[1] = queue->R[0];
+			queue->R[0] = match_offset;
+		}
+
+		/* Validate the match, then copy it to the current position.  */
+
+		if (unlikely(match_len > window_end - window_ptr))
+			return -1;
+
+		if (unlikely(match_offset > window_ptr - window))
+			return -1;
+
+		lz_copy(window_ptr, match_len, match_offset, window_end);
+
+		window_ptr += match_len;
 	}
 	return 0;
 }
