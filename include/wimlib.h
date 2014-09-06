@@ -71,6 +71,19 @@
  * source code of <b>wimlib-imagex</b></a>, which is complicated but uses most
  * capabilities of wimlib.
  *
+ * @section backwards_compatibility Backwards Compatibility
+ *
+ * New releases of wimlib are intended to be API/ABI compatible with old
+ * releases, except when the libtool "age" is reset.  This most recently
+ * occurred for the v1.4.0 (libwim7), v1.5.0 (libwim9), and v1.7.0 (libwim15)
+ * releases.  However, the library is becoming increasingly stable, and the goal
+ * is to maintain the current API/ABI for as long as possible unless there is a
+ * strong reason not to.  Even for the v1.7.0 release (libwim15), the changes
+ * were fairly limited.
+ *
+ * As with any other library, applications should not rely on internal
+ * implementation details that may be subject to change.
+ *
  * @section sec_basic_wim_handling_concepts Basic WIM handling concepts
  *
  * wimlib wraps up a WIM file in an opaque ::WIMStruct structure.   There are
