@@ -659,9 +659,9 @@ lzx_make_huffman_codes(const struct lzx_freqs *freqs,
  *
  * @os:
  *	The bitstream to which to write the match.
- * @block_type:
- *	The type of the LZX block (LZX_BLOCKTYPE_ALIGNED or
- *	LZX_BLOCKTYPE_VERBATIM)
+ * @ones_if_aligned
+ *	A mask of all ones if the block is of type LZX_BLOCKTYPE_ALIGNED,
+ *	otherwise 0.
  * @match:
  *	The match data.
  * @codes:
@@ -669,7 +669,7 @@ lzx_make_huffman_codes(const struct lzx_freqs *freqs,
  *	and aligned offset Huffman codes for the current LZX compressed block.
  */
 static void
-lzx_write_match(struct lzx_output_bitstream *os, int block_type,
+lzx_write_match(struct lzx_output_bitstream *os, unsigned ones_if_aligned,
 		struct lzx_item match, const struct lzx_codes *codes)
 {
 	unsigned match_len_minus_2 = match.data & 0xff;
@@ -719,7 +719,7 @@ lzx_write_match(struct lzx_output_bitstream *os, int block_type,
 
 	num_extra_bits = lzx_get_num_extra_bits(position_slot);
 
-	if ((block_type == LZX_BLOCKTYPE_ALIGNED) && (num_extra_bits >= 3)) {
+	if ((num_extra_bits & ones_if_aligned) >= 3) {
 
 		/* Aligned offset blocks: The low 3 bits of the position footer
 		 * are Huffman-encoded using the aligned offset code.  The
@@ -948,12 +948,14 @@ lzx_write_items(struct lzx_output_bitstream *os, int block_type,
 		const struct lzx_item items[], u32 num_items,
 		const struct lzx_codes *codes)
 {
+	unsigned ones_if_aligned = 0U - (block_type == LZX_BLOCKTYPE_ALIGNED);
+
 	for (u32 i = 0; i < num_items; i++) {
 		/* The high bit of the 32-bit intermediate representation
 		 * indicates whether the item is an actual LZ-style match (1) or
 		 * a literal byte (0).  */
 		if (items[i].data & 0x80000000)
-			lzx_write_match(os, block_type, items[i], codes);
+			lzx_write_match(os, ones_if_aligned, items[i], codes);
 		else
 			lzx_write_literal(os, items[i].data, codes);
 	}
