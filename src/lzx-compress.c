@@ -749,141 +749,92 @@ lzx_write_literal(struct lzx_output_bitstream *os, unsigned literal,
 }
 
 static unsigned
-lzx_build_precode(const u8 lens[restrict],
-		  const u8 prev_lens[restrict],
-		  const unsigned num_syms,
-		  u32 precode_freqs[restrict LZX_PRECODE_NUM_SYMBOLS],
-		  u8 output_syms[restrict num_syms],
-		  u8 precode_lens[restrict LZX_PRECODE_NUM_SYMBOLS],
-		  u32 precode_codewords[restrict LZX_PRECODE_NUM_SYMBOLS],
-		  unsigned *num_additional_bits_ret)
+lzx_compute_precode_items(const u8 lens[restrict],
+			  const u8 prev_lens[restrict],
+			  const unsigned num_lens,
+			  u32 precode_freqs[restrict],
+			  unsigned precode_items[restrict])
 {
-	memset(precode_freqs, 0,
-	       LZX_PRECODE_NUM_SYMBOLS * sizeof(precode_freqs[0]));
+	unsigned *itemptr;
+	unsigned run_start;
+	unsigned run_end;
+	unsigned extra_bits;
+	int delta;
+	u8 len;
 
-	/* Since the code word lengths use a form of RLE encoding, the goal here
-	 * is to find each run of identical lengths when going through them in
-	 * symbol order (including runs of length 1).  For each run, as many
-	 * lengths are encoded using RLE as possible, and the rest are output
-	 * literally.
-	 *
-	 * output_syms[] will be filled in with the length symbols that will be
-	 * output, including RLE codes, not yet encoded using the precode.
-	 *
-	 * cur_run_len keeps track of how many code word lengths are in the
-	 * current run of identical lengths.  */
-	unsigned output_syms_idx = 0;
-	unsigned cur_run_len = 1;
-	unsigned num_additional_bits = 0;
-	for (unsigned i = 1; i <= num_syms; i++) {
+	itemptr = precode_items;
+	run_start = 0;
+	do {
+		/* Find the next run of codeword lengths.  */
 
-		if (i != num_syms && lens[i] == lens[i - 1]) {
-			/* Still in a run--- keep going. */
-			cur_run_len++;
+		/* len = the length being repeated  */
+		len = lens[run_start];
+
+		run_end = run_start + 1;
+
+		/* Fast case for a single length.  */
+		if (likely(run_end == num_lens || len != lens[run_end])) {
+			delta = prev_lens[run_start] - len;
+			if (delta < 0)
+				delta += 17;
+			precode_freqs[delta]++;
+			*itemptr++ = delta;
+			run_start++;
 			continue;
 		}
 
-		/* Run ended! Check if it is a run of zeroes or a run of
-		 * nonzeroes. */
+		/* Extend the run.  */
+		do {
+			run_end++;
+		} while (run_end != num_lens && len == lens[run_end]);
 
-		/* The symbol that was repeated in the run--- not to be confused
-		 * with the length *of* the run (cur_run_len) */
-		unsigned len_in_run = lens[i - 1];
+		if (len == 0) {
+			/* Run of zeroes.  */
 
-		if (len_in_run == 0) {
-			/* A run of 0's.  Encode it in as few length
-			 * codes as we can. */
-
-			/* The magic length 18 indicates a run of 20 + n zeroes,
-			 * where n is an uncompressed literal 5-bit integer that
-			 * follows the magic length. */
-			while (cur_run_len >= 20) {
-				unsigned additional_bits;
-
-				additional_bits = min(cur_run_len - 20, 0x1f);
-				num_additional_bits += 5;
+			/* Symbol 18: RLE 20 to 51 zeroes at a time.  */
+			while ((run_end - run_start) >= 20) {
+				extra_bits = min((run_end - run_start) - 20, 0x1f);
 				precode_freqs[18]++;
-				output_syms[output_syms_idx++] = 18;
-				output_syms[output_syms_idx++] = additional_bits;
-				cur_run_len -= 20 + additional_bits;
+				*itemptr++ = 18 | (extra_bits << 5);
+				run_start += 20 + extra_bits;
 			}
 
-			/* The magic length 17 indicates a run of 4 + n zeroes,
-			 * where n is an uncompressed literal 4-bit integer that
-			 * follows the magic length. */
-			while (cur_run_len >= 4) {
-				unsigned additional_bits;
-
-				additional_bits = min(cur_run_len - 4, 0xf);
-				num_additional_bits += 4;
+			/* Symbol 17: RLE 4 to 19 zeroes at a time.  */
+			if ((run_end - run_start) >= 4) {
+				extra_bits = min((run_end - run_start) - 4, 0xf);
 				precode_freqs[17]++;
-				output_syms[output_syms_idx++] = 17;
-				output_syms[output_syms_idx++] = additional_bits;
-				cur_run_len -= 4 + additional_bits;
+				*itemptr++ = 17 | (extra_bits << 5);
+				run_start += 4 + extra_bits;
 			}
-
 		} else {
 
 			/* A run of nonzero lengths. */
 
-			/* The magic length 19 indicates a run of 4 + n
-			 * nonzeroes, where n is a literal bit that follows the
-			 * magic length, and where the value of the lengths in
-			 * the run is given by an extra length symbol, encoded
-			 * with the precode, that follows the literal bit.
-			 *
-			 * The extra length symbol is encoded as a difference
-			 * from the length of the codeword for the first symbol
-			 * in the run in the previous code.
-			 * */
-			while (cur_run_len >= 4) {
-				unsigned additional_bits;
-				signed char delta;
-
-				additional_bits = (cur_run_len > 4);
-				num_additional_bits += 1;
-				delta = (signed char)prev_lens[i - cur_run_len] -
-					(signed char)len_in_run;
+			/* Symbol 19: RLE 4 to 5 of any length at a time.  */
+			while ((run_end - run_start) >= 4) {
+				extra_bits = (run_end - run_start) > 4;
+				delta = prev_lens[run_start] - len;
 				if (delta < 0)
 					delta += 17;
 				precode_freqs[19]++;
-				precode_freqs[(unsigned char)delta]++;
-				output_syms[output_syms_idx++] = 19;
-				output_syms[output_syms_idx++] = additional_bits;
-				output_syms[output_syms_idx++] = delta;
-				cur_run_len -= 4 + additional_bits;
+				precode_freqs[delta]++;
+				*itemptr++ = 19 | (extra_bits << 5) | (delta << 6);
+				run_start += 4 + extra_bits;
 			}
 		}
 
-		/* Any remaining lengths in the run are outputted without RLE,
-		 * as a difference from the length of that codeword in the
-		 * previous code. */
-		while (cur_run_len > 0) {
-			signed char delta;
-
-			delta = (signed char)prev_lens[i - cur_run_len] -
-				(signed char)len_in_run;
+		/* Output any remaining lengths without RLE.  */
+		while (run_start != run_end) {
+			delta = prev_lens[run_start] - len;
 			if (delta < 0)
 				delta += 17;
-
-			precode_freqs[(unsigned char)delta]++;
-			output_syms[output_syms_idx++] = delta;
-			cur_run_len--;
+			precode_freqs[delta]++;
+			*itemptr++ = delta;
+			run_start++;
 		}
+	} while (run_start != num_lens);
 
-		cur_run_len = 1;
-	}
-
-	/* Build the precode from the frequencies of the length symbols. */
-
-	make_canonical_huffman_code(LZX_PRECODE_NUM_SYMBOLS,
-				    LZX_MAX_PRE_CODEWORD_LEN,
-				    precode_freqs, precode_lens,
-				    precode_codewords);
-
-	*num_additional_bits_ret = num_additional_bits;
-
-	return output_syms_idx;
+	return itemptr - precode_items;
 }
 
 /*
@@ -912,61 +863,64 @@ lzx_build_precode(const u8 lens[restrict],
  * @prev_lens:
  *	The codeword lengths, indexed by symbol, in the corresponding Huffman
  *	code in the previous block, or all zeroes if this is the first block.
- * @num_syms:
+ * @num_lens:
  *	The number of symbols in the Huffman code.
  */
 static void
 lzx_write_compressed_code(struct lzx_output_bitstream *os,
 			  const u8 lens[restrict],
 			  const u8 prev_lens[restrict],
-			  unsigned num_syms)
+			  unsigned num_lens)
 {
 	u32 precode_freqs[LZX_PRECODE_NUM_SYMBOLS];
-	u8 output_syms[num_syms];
 	u8 precode_lens[LZX_PRECODE_NUM_SYMBOLS];
 	u32 precode_codewords[LZX_PRECODE_NUM_SYMBOLS];
+	unsigned precode_items[num_lens];
+	unsigned num_precode_items;
+	unsigned precode_item;
+	unsigned precode_sym;
 	unsigned i;
-	unsigned num_output_syms;
-	u8 precode_sym;
-	unsigned dummy;
 
-	num_output_syms = lzx_build_precode(lens,
-					    prev_lens,
-					    num_syms,
-					    precode_freqs,
-					    output_syms,
-					    precode_lens,
-					    precode_codewords,
-					    &dummy);
+	for (i = 0; i < LZX_PRECODE_NUM_SYMBOLS; i++)
+		precode_freqs[i] = 0;
 
-	/* Write the lengths of the precode codes to the output. */
+	/* Compute the "items" (RLE / literal tokens and extra bits) with which
+	 * the codeword lengths in the larger code will be output.  */
+	num_precode_items = lzx_compute_precode_items(lens,
+						      prev_lens,
+						      num_lens,
+						      precode_freqs,
+						      precode_items);
+
+	/* Build the precode.  */
+	make_canonical_huffman_code(LZX_PRECODE_NUM_SYMBOLS,
+				    LZX_MAX_PRE_CODEWORD_LEN,
+				    precode_freqs, precode_lens,
+				    precode_codewords);
+
+	/* Output the lengths of the codewords in the precode.  */
 	for (i = 0; i < LZX_PRECODE_NUM_SYMBOLS; i++)
 		lzx_write_bits(os, precode_lens[i], LZX_PRECODE_ELEMENT_SIZE);
 
-	/* Write the length symbols, encoded with the precode, to the output. */
-
-	for (i = 0; i < num_output_syms; ) {
-		precode_sym = output_syms[i++];
-
+	/* Output the encoded lengths of the codewords in the larger code.  */
+	for (i = 0; i < num_precode_items; i++) {
+		precode_item = precode_items[i];
+		precode_sym = precode_item & 0x1F;
 		lzx_write_varbits(os, precode_codewords[precode_sym],
 				  precode_lens[precode_sym],
 				  LZX_MAX_PRE_CODEWORD_LEN);
-		switch (precode_sym) {
-		case 17:
-			lzx_write_bits(os, output_syms[i++], 4);
-			break;
-		case 18:
-			lzx_write_bits(os, output_syms[i++], 5);
-			break;
-		case 19:
-			lzx_write_bits(os, output_syms[i++], 1);
-			lzx_write_varbits(os, precode_codewords[output_syms[i]],
-					  precode_lens[output_syms[i]],
-					  LZX_MAX_PRE_CODEWORD_LEN);
-			i++;
-			break;
-		default:
-			break;
+		if (precode_sym >= 17) {
+			if (precode_sym == 17) {
+				lzx_write_bits(os, precode_item >> 5, 4);
+			} else if (precode_sym == 18) {
+				lzx_write_bits(os, precode_item >> 5, 5);
+			} else {
+				lzx_write_bits(os, (precode_item >> 5) & 1, 1);
+				precode_sym = precode_item >> 6;
+				lzx_write_varbits(os, precode_codewords[precode_sym],
+						  precode_lens[precode_sym],
+						  LZX_MAX_PRE_CODEWORD_LEN);
+			}
 		}
 	}
 }
