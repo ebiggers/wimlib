@@ -430,6 +430,7 @@ lzx_decompress_block(int block_type, u32 block_size,
 	unsigned position_slot;
 	u32 match_offset;
 	unsigned num_extra_bits;
+	unsigned ones_if_aligned = 0U - (block_type == LZX_BLOCKTYPE_ALIGNED);
 
 	while (window_ptr != window_end) {
 
@@ -475,7 +476,9 @@ lzx_decompress_block(int block_type, u32 block_size,
 			/* In aligned offset blocks, the low-order 3 bits of
 			 * each offset are encoded using the aligned offset
 			 * code.  Otherwise, all the extra bits are literal.  */
-			if (block_type == LZX_BLOCKTYPE_ALIGNED && num_extra_bits >= 3) {
+
+			/*if (block_type == LZX_BLOCKTYPE_ALIGNED && num_extra_bits >= 3) {*/
+			if ((num_extra_bits & ones_if_aligned) >= 3) {
 				match_offset += bitstream_read_bits(istream, num_extra_bits - 3) << 3;
 				match_offset += read_huffsym_using_alignedcode(istream, tables);
 			} else {
