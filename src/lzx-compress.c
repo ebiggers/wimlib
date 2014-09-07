@@ -1463,7 +1463,7 @@ lzx_repsearch(const u8 * const strptr, const u32 bytes_remaining,
 }
 
 /*
- * lzx_choose_near_optimal_match() -
+ * lzx_choose_near_optimal_item() -
  *
  * Choose an approximately optimal match or literal to use at the next position
  * in the string, or "window", being LZ-encoded.
@@ -1624,17 +1624,21 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 		}
 
 		do {
+			u32 cost;
 			unsigned len_header;
 			unsigned main_symbol;
-			u32 cost;
 
 			cost = position_cost;
 
-			len_header = min(len - LZX_MIN_MATCH_LEN, LZX_NUM_PRIMARY_LENS);
+			if (len - LZX_MIN_MATCH_LEN < LZX_NUM_PRIMARY_LENS) {
+				len_header = len - LZX_MIN_MATCH_LEN;
+			} else {
+				len_header = LZX_NUM_PRIMARY_LENS;
+				cost += c->costs.len[len - LZX_MIN_MATCH_LEN - LZX_NUM_PRIMARY_LENS];
+			}
+
 			main_symbol = ((position_slot << 3) | len_header) + LZX_NUM_CHARS;
 			cost += c->costs.main[main_symbol];
-			if (len_header == LZX_NUM_PRIMARY_LENS)
-				cost += c->costs.len[len - LZX_MIN_MATCH_LEN - LZX_NUM_PRIMARY_LENS];
 
 			optimum[len].queue = queue;
 			optimum[len].prev.link = 0;
@@ -1827,22 +1831,25 @@ lzx_choose_near_optimal_item(struct lzx_compressor *c)
 		have_position_cost:
 
 			do {
+				u32 cost;
 				unsigned len_header;
 				unsigned main_symbol;
-				u32 cost;
 
 				cost = position_cost;
 
-				len_header = min(len - LZX_MIN_MATCH_LEN,
-						 LZX_NUM_PRIMARY_LENS);
-				main_symbol = ((position_slot << 3) | len_header) +
-						LZX_NUM_CHARS;
-				cost += c->costs.main[main_symbol];
-				if (len_header == LZX_NUM_PRIMARY_LENS) {
+				if (len - LZX_MIN_MATCH_LEN < LZX_NUM_PRIMARY_LENS) {
+					len_header = len - LZX_MIN_MATCH_LEN;
+				} else {
+					len_header = LZX_NUM_PRIMARY_LENS;
 					cost += c->costs.len[len -
 							LZX_MIN_MATCH_LEN -
 							LZX_NUM_PRIMARY_LENS];
 				}
+
+				main_symbol = ((position_slot << 3) | len_header) +
+						LZX_NUM_CHARS;
+				cost += c->costs.main[main_symbol];
+
 				if (cost < optimum[cur_pos + len].cost) {
 					if (position_slot < LZX_NUM_RECENT_OFFSETS) {
 						optimum[cur_pos + len].queue = optimum[cur_pos].queue;
