@@ -1292,7 +1292,7 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		if (!NT_SUCCESS(status)) {
 			set_errno_from_nt_status(status);
 			ERROR_WITH_ERRNO("\"%ls\": Can't read security "
-					 "descriptor (status=0x%08"PRIu32")",
+					 "descriptor (status=0x%08"PRIx32")",
 					 printable_path(full_path),
 					 (u32)status);
 			ret = WIMLIB_ERR_STAT;
