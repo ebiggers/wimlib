@@ -1788,6 +1788,8 @@ lzx_choose_lazy_items_for_block(struct lzx_compressor *c,
 			 * length 3 match.  Output the previous match if there
 			 * is one; otherwise output a literal.  */
 
+		no_match_found:
+
 			if (prev_len) {
 				skip_len = prev_len - 2;
 				goto output_prev_match;
@@ -1825,11 +1827,8 @@ lzx_choose_lazy_items_for_block(struct lzx_compressor *c,
 		if (unlikely(cur_len > block_end - (window_ptr - 1))) {
 			/* Nearing end of block.  */
 			cur_len = block_end - (window_ptr - 1);
-			if (cur_len < 3) {
-				lzx_declare_literal(c, *(window_ptr - 1), &next_chosen_item);
-				prev_len = 0;
-				continue;
-			}
+			if (cur_len < 3)
+				goto no_match_found;
 		}
 
 		if (prev_len == 0 || cur_score > prev_score) {
