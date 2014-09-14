@@ -33,9 +33,9 @@
 #  include <emmintrin.h>
 #endif
 
-/* Mapping: position slot => first match offset that uses that position slot.
+/* Mapping: offset slot => first match offset that uses that offset slot.
  */
-const u32 lzx_position_base[LZX_MAX_POSITION_SLOTS] = {
+const u32 lzx_offset_slot_base[LZX_MAX_OFFSET_SLOTS] = {
 	0      , 1      , 2      , 3      , 4      ,	/* 0  --- 4  */
 	6      , 8      , 12     , 16     , 24     ,	/* 5  --- 9  */
 	32     , 48     , 64     , 96     , 128    ,    /* 10 --- 14 */
@@ -49,10 +49,9 @@ const u32 lzx_position_base[LZX_MAX_POSITION_SLOTS] = {
 	2097152						/* 50	     */
 };
 
-/* Mapping: position slot => how many extra bits must be read and added to the
- * corresponding position base to decode the match offset.  */
-#ifdef USE_LZX_EXTRA_BITS_ARRAY
-const u8 lzx_extra_bits[LZX_MAX_POSITION_SLOTS] = {
+/* Mapping: offset slot => how many extra bits must be read and added to the
+ * corresponding offset slot base to decode the match offset.  */
+const u8 lzx_extra_offset_bits[LZX_MAX_OFFSET_SLOTS] = {
 	0 , 0 , 0 , 0 , 1 ,
 	1 , 2 , 2 , 3 , 3 ,
 	4 , 4 , 5 , 5 , 6 ,
@@ -65,7 +64,6 @@ const u8 lzx_extra_bits[LZX_MAX_POSITION_SLOTS] = {
 	17, 17, 17, 17, 17,
 	17
 };
-#endif
 
 /* Round the specified compression block size (not LZX block size) up to the
  * next valid LZX window size, and return its order (log2).  Or, if the block
@@ -96,31 +94,31 @@ lzx_get_num_main_syms(unsigned window_order)
 	/* NOTE: the calculation *should* be as follows:
 	 *
 	 * u32 max_offset = window_size - LZX_MIN_MATCH_LEN;
-	 * u32 max_formatted_offset = max_offset + LZX_OFFSET_OFFSET;
-	 * u32 num_position_slots = 1 + lzx_get_position_slot_raw(max_formatted_offset);
+	 * u32 max_adjusted_offset = max_offset + LZX_OFFSET_OFFSET;
+	 * u32 num_offset_slots = 1 + lzx_get_offset_slot_raw(max_adjusted_offset);
 	 *
 	 * However since LZX_MIN_MATCH_LEN == LZX_OFFSET_OFFSET, we would get
-	 * max_formatted_offset == window_size, which would bump the number of
-	 * position slots up by 1 since every valid LZX window size is equal to
-	 * a position base value.  The format doesn't do this, and instead
+	 * max_adjusted_offset == window_size, which would bump the number of
+	 * offset slots up by 1 since every valid LZX window size is equal to a
+	 * offset slot base value.  The format doesn't do this, and instead
 	 * disallows matches with minimum length and maximum offset.  This sets
-	 * max_formatted_offset = window_size - 1, so instead we must calculate:
+	 * max_adjusted_offset = window_size - 1, so instead we must calculate:
 	 *
-	 * num_position_slots = 1 + lzx_get_position_slot_raw(window_size - 1);
+	 * num_offset_slots = 1 + lzx_get_offset_slot_raw(window_size - 1);
 	 *
 	 * ... which is the same as
 	 *
-	 * num_position_slots = lzx_get_position_slot_raw(window_size);
+	 * num_offset_slots = lzx_get_offset_slot_raw(window_size);
 	 *
-	 * ... since every valid window size is equal to a position base value.
+	 * ... since every valid window size is equal to an offset base value.
 	 */
-	unsigned num_position_slots = lzx_get_position_slot_raw(window_size);
+	unsigned num_offset_slots = lzx_get_offset_slot_raw(window_size);
 
 	/* Now calculate the number of main symbols as LZX_NUM_CHARS literal
-	 * symbols, plus 8 symbols per position slot (since there are 8 possible
-	 * length headers, and we need all (position slot, length header)
+	 * symbols, plus 8 symbols per offset slot (since there are 8 possible
+	 * length headers, and we need all (offset slot, length header)
 	 * combinations).  */
-	return LZX_NUM_CHARS + (num_position_slots << 3);
+	return LZX_NUM_CHARS + (num_offset_slots << 3);
 }
 
 static void

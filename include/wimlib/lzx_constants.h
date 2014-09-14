@@ -24,9 +24,9 @@
  * + LZX_MIN_MATCH_LEN, and a length symbol follows.  */
 #define LZX_NUM_PRIMARY_LENS         7
 
-/* Maximum number of position slots.  The actual number of position slots will
+/* Maximum number of offset slots.  The actual number of offset slots will
  * depend on the window size.  */
-#define LZX_MAX_POSITION_SLOTS	51
+#define LZX_MAX_OFFSET_SLOTS	51
 
 #define LZX_MIN_WINDOW_ORDER	15
 #define LZX_MAX_WINDOW_ORDER	21
@@ -35,7 +35,7 @@
 
 /* Maximum number of symbols in the main code.  The actual number of symbols in
  * the main code will depend on the window size.  */
-#define LZX_MAINCODE_MAX_NUM_SYMBOLS	(LZX_NUM_CHARS + (LZX_MAX_POSITION_SLOTS << 3))
+#define LZX_MAINCODE_MAX_NUM_SYMBOLS	(LZX_NUM_CHARS + (LZX_MAX_OFFSET_SLOTS << 3))
 
 /* Number of symbols in the length code.  */
 #define LZX_LENCODE_NUM_SYMBOLS		249

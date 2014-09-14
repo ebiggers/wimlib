@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2013 Eric Biggers
+ * Copyright (C) 2013, 2014 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
  *
@@ -38,14 +38,11 @@
  * Constant tables initialized by lzms_compute_slots():        *
  ***************************************************************/
 
-/* Table: position slot => position slot base value  */
-u32 lzms_position_slot_base[LZMS_MAX_NUM_OFFSET_SYMS + 1];
+/* Table: offset slot => offset slot base value  */
+u32 lzms_offset_slot_base[LZMS_MAX_NUM_OFFSET_SYMS + 1];
 
-/* Table: position slot => number of extra position bits  */
-u8 lzms_extra_position_bits[LZMS_MAX_NUM_OFFSET_SYMS];
-
-/* Table: log2(position) => [lower bound, upper bound] on position slot  */
-u16 lzms_order_to_position_slot_bounds[30][2];
+/* Table: offset slot => number of extra offset bits  */
+u8 lzms_extra_offset_bits[LZMS_MAX_NUM_OFFSET_SYMS];
 
 /* Table: length slot => length slot base value  */
 u32 lzms_length_slot_base[LZMS_NUM_LEN_SYMS + 1];
@@ -53,17 +50,14 @@ u32 lzms_length_slot_base[LZMS_NUM_LEN_SYMS + 1];
 /* Table: length slot => number of extra length bits  */
 u8 lzms_extra_length_bits[LZMS_NUM_LEN_SYMS];
 
-/* Table: length (< LZMS_NUM_FAST_LENGTHS only) => length slot  */
-u8 lzms_length_slot_fast[LZMS_NUM_FAST_LENGTHS];
-
-u32
+unsigned
 lzms_get_slot(u32 value, const u32 slot_base_tab[], unsigned num_slots)
 {
-	u32 l = 0;
-	u32 r = num_slots - 1;
+	unsigned l = 0;
+	unsigned r = num_slots - 1;
 	for (;;) {
 		LZMS_ASSERT(r >= l);
-		u32 slot = (l + r) / 2;
+		unsigned slot = (l + r) / 2;
 		if (value >= slot_base_tab[slot]) {
 			if (value < slot_base_tab[slot + 1])
 				return slot;
@@ -79,16 +73,16 @@ static void
 lzms_decode_delta_rle_slot_bases(u32 slot_bases[],
 				 u8 extra_bits[],
 				 const u8 delta_run_lens[],
-				 u32 num_run_lens,
+				 unsigned num_run_lens,
 				 u32 final,
-				 u32 expected_num_slots)
+				 unsigned expected_num_slots)
 {
-	u32 order = 0;
+	unsigned order = 0;
 	u32 delta = 1;
 	u32 base = 0;
-	u32 slot = 0;
-	for (u32 i = 0; i < num_run_lens; i++) {
-		u8 run_len = delta_run_lens[i];
+	unsigned slot = 0;
+	for (unsigned i = 0; i < num_run_lens; i++) {
+		unsigned run_len = delta_run_lens[i];
 		while (run_len--) {
 			base += delta;
 			if (slot > 0)
@@ -105,17 +99,17 @@ lzms_decode_delta_rle_slot_bases(u32 slot_bases[],
 	extra_bits[slot - 1] = bsr32(slot_bases[slot] - slot_bases[slot - 1]);
 }
 
-/* Initialize the global position and length slot tables.  */
+/* Initialize the global offset and length slot tables.  */
 static void
 lzms_compute_slots(void)
 {
-	/* If an explicit formula that maps LZMS position and length slots to
-	 * slot bases exists, then it could be used here.  But until one is
-	 * found, the following code fills in the slots using the observation
-	 * that the increase from one slot base to the next is an increasing
-	 * power of 2.  Therefore, run-length encoding of the delta of adjacent
-	 * entries can be used.  */
-	static const u8 position_slot_delta_run_lens[] = {
+	/* If an explicit formula that maps LZMS offset and length slots to slot
+	 * bases exists, then it could be used here.  But until one is found,
+	 * the following code fills in the slots using the observation that the
+	 * increase from one slot base to the next is an increasing power of 2.
+	 * Therefore, run-length encoding of the delta of adjacent entries can
+	 * be used.  */
+	static const u8 offset_slot_delta_run_lens[] = {
 		9,   0,   9,   7,   10,  15,  15,  20,
 		20,  30,  33,  40,  42,  45,  60,  73,
 		80,  85,  95,  105, 6,
@@ -127,22 +121,13 @@ lzms_compute_slots(void)
 		1,
 	};
 
-	/* Position slots  */
-	lzms_decode_delta_rle_slot_bases(lzms_position_slot_base,
-					 lzms_extra_position_bits,
-					 position_slot_delta_run_lens,
-					 ARRAY_LEN(position_slot_delta_run_lens),
+	/* Offset slots  */
+	lzms_decode_delta_rle_slot_bases(lzms_offset_slot_base,
+					 lzms_extra_offset_bits,
+					 offset_slot_delta_run_lens,
+					 ARRAY_LEN(offset_slot_delta_run_lens),
 					 0x7fffffff,
 					 LZMS_MAX_NUM_OFFSET_SYMS);
-
-	for (u32 order = 0; order < 30; order++) {
-		lzms_order_to_position_slot_bounds[order][0] =
-			lzms_get_slot(1U << order, lzms_position_slot_base,
-				      LZMS_MAX_NUM_OFFSET_SYMS);
-		lzms_order_to_position_slot_bounds[order][1] =
-			lzms_get_slot((1U << (order + 1)) - 1, lzms_position_slot_base,
-				      LZMS_MAX_NUM_OFFSET_SYMS);
-	}
 
 	/* Length slots  */
 	lzms_decode_delta_rle_slot_bases(lzms_length_slot_base,
@@ -151,17 +136,9 @@ lzms_compute_slots(void)
 					 ARRAY_LEN(length_slot_delta_run_lens),
 					 0x400108ab,
 					 LZMS_NUM_LEN_SYMS);
-
-	/* Create table mapping short lengths to length slots.  */
-	for (u32 slot = 0, i = 0; i < LZMS_NUM_FAST_LENGTHS; i++) {
-		if (i >= lzms_length_slot_base[slot + 1])
-			slot++;
-		lzms_length_slot_fast[i] = slot;
-	}
 }
 
-/* Initialize the global position and length slot tables if not done so already.
- * */
+/* Initialize the global offset and length slot tables if not already done.  */
 void
 lzms_init_slots(void)
 {
@@ -337,7 +314,7 @@ lzms_x86_filter(u8 data[restrict], s32 size,
 	}
 }
 
-static void
+void
 lzms_init_lz_lru_queues(struct lzms_lz_lru_queues *lz)
 {
 	/* Recent offsets for LZ matches  */
@@ -348,7 +325,7 @@ lzms_init_lz_lru_queues(struct lzms_lz_lru_queues *lz)
 	lz->upcoming_offset = 0;
 }
 
-static void
+void
 lzms_init_delta_lru_queues(struct lzms_delta_lru_queues *delta)
 {
 	/* Recent offsets and powers for LZ matches  */
@@ -371,7 +348,7 @@ lzms_init_lru_queues(struct lzms_lru_queues *lru)
 }
 
 void
-lzms_update_lz_lru_queues(struct lzms_lz_lru_queues *lz)
+lzms_update_lz_lru_queue(struct lzms_lz_lru_queues *lz)
 {
 	if (lz->prev_offset != 0) {
 		for (int i = LZMS_NUM_RECENT_OFFSETS - 1; i >= 0; i--)
@@ -400,6 +377,6 @@ lzms_update_delta_lru_queues(struct lzms_delta_lru_queues *delta)
 void
 lzms_update_lru_queues(struct lzms_lru_queues *lru)
 {
-	lzms_update_lz_lru_queues(&lru->lz);
+	lzms_update_lz_lru_queue(&lru->lz);
 	lzms_update_delta_lru_queues(&lru->delta);
 }

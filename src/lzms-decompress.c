@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2013 Eric Biggers
+ * Copyright (C) 2013, 2014 Eric Biggers
  *
  * This file is part of wimlib, a library for working with WIM files.
  *
@@ -66,11 +66,17 @@
  *
  * For LZ matches, up to 3 repeat offsets are allowed, similar to some other
  * LZ-based formats such as LZX and LZMA.  They must updated in an LRU fashion,
- * except for a quirk: updates to the queue must be delayed by one LZMS item,
- * except for the removal of a repeat match.  As a result, 4 entries are
- * actually needed in the queue, even though it is only possible to decode
- * references to the first 3 at any given time.  The queue must be initialized
- * to the offsets {1, 2, 3, 4}.
+ * except for a quirk: inserting anything to the front of the queue must be
+ * delayed by one LZMS item.  The reason for this is presumably that there is
+ * almost no reason to code the same match offset twice in a row, since you
+ * might as well have coded a longer match at that offset.  For this same
+ * reason, it also is a requirement that when an offset in the queue is used,
+ * that offset is removed from the queue immediately (and made pending for
+ * front-insertion after the following decoded item), and everything to the
+ * right is shifted left one queue slot.  This creates a need for an "overflow"
+ * fourth entry in the queue, even though it is only possible to decode
+ * references to the first 3 entries at any given time.  The queue must be
+ * initialized to the offsets {1, 2, 3, 4}.
  *
  * Repeat delta matches are handled similarly, but for them there are two queues
  * updated in lock-step: one for powers and one for raw offsets.  The power
@@ -131,10 +137,10 @@
  *    1024 symbols have been decoded with it.
  *
  *  - The LZ offset code, used for decoding the offsets of standard LZ77
- *    matches.  Each symbol represents a position slot, which corresponds to a
+ *    matches.  Each symbol represents an offset slot, which corresponds to a
  *    base value and some number of extra bits which must be read and added to
  *    the base value to reconstitute the full offset.  The number of symbols in
- *    this code is the number of position slots needed to represent all possible
+ *    this code is the number of offset slots needed to represent all possible
  *    offsets in the uncompressed block.  This code must be rebuilt whenever
  *    1024 symbols have been decoded with it.
  *
@@ -145,7 +151,7 @@
  *    symbols have been decoded with it.
  *
  *  - The delta offset code, used for decoding the offsets of delta matches.
- *    Each symbol corresponds to a position slot, which corresponds to a base
+ *    Each symbol corresponds to an offset slot, which corresponds to a base
  *    value and some number of extra bits which must be read and added to the
  *    base value to reconstitute the full offset.  The number of symbols in this
  *    code is equal to the number of symbols in the LZ offset code.  This code
@@ -508,38 +514,15 @@ lzms_range_decode_bit(struct lzms_range_decoder *dec)
 	/* Load the probability entry corresponding to the current state.  */
 	prob_entry = &dec->prob_entries[dec->state];
 
-	/* Treat the number of zero bits in the most recently decoded
-	 * LZMS_PROBABILITY_MAX bits with this probability entry as the chance,
-	 * out of LZMS_PROBABILITY_MAX, that the next bit will be a 0.  However,
-	 * don't allow 0% or 100% probabilities.  */
-	prob = prob_entry->num_recent_zero_bits;
-	if (prob == LZMS_PROBABILITY_MAX)
-		prob = LZMS_PROBABILITY_MAX - 1;
-	else if (prob == 0)
-		prob = 1;
+	/* Get the probability that the next bit is 0.  */
+	prob = lzms_get_probability(prob_entry);
 
 	/* Decode the next bit.  */
 	bit = lzms_range_decoder_raw_decode_bit(dec->rd, prob);
 
-	/* Update the state based on the newly decoded bit.  */
+	/* Update the state and probability entry based on the decoded bit.  */
 	dec->state = (((dec->state << 1) | bit) & dec->mask);
-
-	/* Update the recent bits, including the cached count of 0's.  */
-	BUILD_BUG_ON(LZMS_PROBABILITY_MAX > sizeof(prob_entry->recent_bits) * 8);
-	if (bit == 0) {
-		if (prob_entry->recent_bits & (1ULL << (LZMS_PROBABILITY_MAX - 1))) {
-			/* Replacing 1 bit with 0 bit; increment the zero count.
-			 */
-			prob_entry->num_recent_zero_bits++;
-		}
-	} else {
-		if (!(prob_entry->recent_bits & (1ULL << (LZMS_PROBABILITY_MAX - 1)))) {
-			/* Replacing 0 bit with 1 bit; decrement the zero count.
-			 */
-			prob_entry->num_recent_zero_bits--;
-		}
-	}
-	prob_entry->recent_bits = (prob_entry->recent_bits << 1) | bit;
+	lzms_update_probability_entry(prob_entry, bit);
 
 	/* Return the decoded bit.  */
 	return bit;
@@ -647,8 +630,8 @@ lzms_decode_value(struct lzms_huffman_decoder *dec)
 	LZMS_ASSERT(dec->slot_base_tab != NULL);
 	LZMS_ASSERT(dec->extra_bits_tab != NULL);
 
-	/* Read the slot (position slot, length slot, etc.), which is encoded as
-	 * a Huffman symbol.  */
+	/* Read the slot (offset slot, length slot, etc.), which is encoded as a
+	 * Huffman symbol.  */
 	slot = lzms_huffman_decode_symbol(dec);
 
 	/* Get the number of extra bits needed to represent the range of values
@@ -887,7 +870,7 @@ lzms_init_decompressor(struct lzms_decompressor *ctx,
 		       const void *cdata, unsigned clen,
 		       void *ubuf, unsigned ulen)
 {
-	unsigned num_position_slots;
+	unsigned num_offset_slots;
 
 	LZMS_DEBUG("Initializing decompressor (clen=%u, ulen=%u)", clen, ulen);
 
@@ -903,11 +886,11 @@ lzms_init_decompressor(struct lzms_decompressor *ctx,
 	 * backwards)  */
 	lzms_input_bitstream_init(&ctx->is, cdata, clen / 2);
 
-	/* Calculate the number of position slots needed for this compressed
+	/* Calculate the number of offset slots needed for this compressed
 	 * block.  */
-	num_position_slots = lzms_get_position_slot(ulen - 1) + 1;
+	num_offset_slots = lzms_get_offset_slot(ulen - 1) + 1;
 
-	LZMS_DEBUG("Using %u position slots", num_position_slots);
+	LZMS_DEBUG("Using %u offset slots", num_offset_slots);
 
 	/* Initialize Huffman decoders for each alphabet used in the compressed
 	 * representation.  */
@@ -916,9 +899,9 @@ lzms_init_decompressor(struct lzms_decompressor *ctx,
 				  LZMS_LITERAL_CODE_REBUILD_FREQ);
 
 	lzms_init_huffman_decoder(&ctx->lz_offset_decoder, &ctx->is,
-				  lzms_position_slot_base,
-				  lzms_extra_position_bits,
-				  num_position_slots,
+				  lzms_offset_slot_base,
+				  lzms_extra_offset_bits,
+				  num_offset_slots,
 				  LZMS_LZ_OFFSET_CODE_REBUILD_FREQ);
 
 	lzms_init_huffman_decoder(&ctx->length_decoder, &ctx->is,
@@ -928,9 +911,9 @@ lzms_init_decompressor(struct lzms_decompressor *ctx,
 				  LZMS_LENGTH_CODE_REBUILD_FREQ);
 
 	lzms_init_huffman_decoder(&ctx->delta_offset_decoder, &ctx->is,
-				  lzms_position_slot_base,
-				  lzms_extra_position_bits,
-				  num_position_slots,
+				  lzms_offset_slot_base,
+				  lzms_extra_offset_bits,
+				  num_offset_slots,
 				  LZMS_DELTA_OFFSET_CODE_REBUILD_FREQ);
 
 	lzms_init_huffman_decoder(&ctx->delta_power_decoder, &ctx->is,
@@ -1007,7 +990,7 @@ lzms_decompress(const void *compressed_data, size_t compressed_size,
 	}
 
 	/* Handle the trivial case where nothing needs to be decompressed.
-	 * (Necessary because a window of size 0 does not have a valid position
+	 * (Necessary because a window of size 0 does not have a valid offset
 	 * slot.)  */
 	if (uncompressed_size == 0)
 		return 0;
@@ -1039,8 +1022,8 @@ lzms_create_decompressor(size_t max_block_size, void **ctx_ret)
 	struct lzms_decompressor *ctx;
 
 	/* The x86 post-processor requires that the uncompressed length fit into
-	 * a signed 32-bit integer.  Also, the position slot table cannot be
-	 * searched for a position of INT32_MAX or greater.  */
+	 * a signed 32-bit integer.  Also, the offset slot table cannot be
+	 * searched for an offset of INT32_MAX or greater.  */
 	if (max_block_size >= INT32_MAX)
 		return WIMLIB_ERR_INVALID_PARAM;
 
@@ -1049,7 +1032,7 @@ lzms_create_decompressor(size_t max_block_size, void **ctx_ret)
 	if (ctx == NULL)
 		return WIMLIB_ERR_NOMEM;
 
-	/* Initialize position and length slot data if not done already.  */
+	/* Initialize offset and length slot data if not done already.  */
 	lzms_init_slots();
 
 	*ctx_ret = ctx;

@@ -78,18 +78,18 @@ create the file.  When applicable, the results with the equivalent Microsoft
 implementation in WIMGAPI is included.
 
   =============================================================================
-  | Compression            ||  wimlib (v1.7.2-BETA)  |  WIMGAPI (Windows 8.1) |
+  | Compression            ||  wimlib (v1.7.2)       |  WIMGAPI (Windows 8.1) |
   =============================================================================
-  | None             [1]   ||  361,404,682 in 3.4s   |  361,364,994 in 4.2s   |
-  | XPRESS           [2]   ||  138,398,747 in 4.2s   |  140,468,002 in 5.1s   |
-  | XPRESS (slow)    [3]   ||  135,284,950 in 10.3s  |  N/A                   |
-  | LZX (quick)      [4]   ||  131,861,913 in 4.7s   |  N/A                   |
-  | LZX (normal)     [5]   ||  126,855,247 in 14.9s  |  127,301,774 in 18.2s  |
-  | LZX (slow)       [6]   ||  126,245,561 in 32.1s  |  N/A                   |
-  | LZMS (non-solid) [7]   ||  122,126,328 in 16.4s  |  N/A                   |
-  | LZMS (solid)     [8]   ||  93,795,440  in 47.4s  |  88,789,426 in 96.8s   |
-  | "WIMBoot"        [9]   ||  167,121,495 in 5.3s   |  169,124,968 in 9.3s   |
-  | "WIMBoot" (slow) [10]  ||  165,219,818 in 9.4s   |  N/A                   |
+  | None             [1]   ||  361,314,224 in 3.4s   |  361,315,338 in 4.5s   |
+  | XPRESS           [2]   ||  138,380,918 in 4.2s   |  140,457,487 in 6.3s   |
+  | XPRESS (slow)    [3]   ||  135,269,627 in 11.1s  |  N/A                   |
+  | LZX (quick)      [4]   ||  130,332,081 in 4.7s   |  N/A                   |
+  | LZX (normal)     [5]   ||  126,714,941 in 12.9s  |  127,293,240 in 19.2s  |
+  | LZX (slow)       [6]   ||  126,150,725 in 23.4s  |  N/A                   |
+  | LZMS (non-solid) [7]   ||  121,909,750 in 13.3s  |  N/A                   |
+  | LZMS (solid)     [8]   ||  93,650,894  in 44.4s  |  88,771,192 in 109.2   |
+  | "WIMBoot"        [9]   ||  167,095,369 in 6.4s   |  169,109,650 in 10.7s  |
+  | "WIMBoot" (slow) [10]  ||  165,195,668 in 9.5s   |  N/A                   |
   =============================================================================
 
 Notes:
@@ -139,36 +139,39 @@ Testing environment:
 
 The compression ratio provided by wimlib is also competitive with commonly used
 archive formats.  Below are file sizes that result when the Canterbury corpus is
-compressed with wimlib (v1.7.0), WIMGAPI (Windows 8), and some other
+compressed with wimlib (v1.7.2), WIMGAPI (Windows 8.1), and some other
 formats/programs:
 
-     =================================================
-     | Format                         | Size (bytes) |
-     =================================================
-     | tar                            | 2,826,240    |
-     | WIM (WIMGAPI, None)            | 2,814,278    |
-     | WIM (wimlib, None)             | 2,813,856    |
-     | WIM (WIMGAPI, XPRESS)          | 825,410      |
-     | WIM (wimlib, XPRESS)           | 792,024      |
-     | tar.gz (gzip, default)         | 738,796      |
-     | ZIP (Info-ZIP, default)        | 735,334      |
-     | tar.gz (gzip, -9)              | 733,971      |
-     | ZIP (Info-ZIP, -9)             | 732,297      |
-     | WIM (wimlib, LZX quick)        | 722,196      |
-     | WIM (WIMGAPI, LZX)             | 651,766      |
-     | WIM (wimlib, LZX normal)       | 649,204      |
-     | WIM (wimlib, LZX slow)         | 639,618      |
-     | WIM (wimlib, LZMS non-solid)   | 592,136      |
-     | tar.bz2 (bzip, default)        | 565,008      |
-     | tar.bz2 (bzip, -9)             | 565,008      |
-     | WIM (wimlib, LZMS solid)       | 525,270      |
-     | WIM (wimlib, LZMS solid, slow) | 521,700      |
-     | WIM (WIMGAPI, LZMS solid)      | 521,232      |
-     | tar.xz (xz, default)           | 486,916      |
-     | tar.xz (xz, -9)                | 486,904      |
-     | 7z  (7-zip, default)           | 484,700      |
-     | 7z  (7-zip, -9)                | 483,239      |
-     =================================================
+     =====================================================
+     | Format                             | Size (bytes) |
+     =====================================================
+     | tar                                | 2,826,240    |
+     | WIM (WIMGAPI, None)                | 2,814,254    |
+     | WIM (wimlib, None)                 | 2,814,216    |
+     | WIM (WIMGAPI, XPRESS)              | 825,536      |
+     | WIM (wimlib, XPRESS)               | 790,016      |
+     | tar.gz (gzip, default)             | 738,796      |
+     | ZIP (Info-ZIP, default)            | 735,334      |
+     | tar.gz (gzip, -9)                  | 733,971      |
+     | ZIP (Info-ZIP, -9)                 | 732,297      |
+     | WIM (wimlib, LZX quick)            | 704,006      |
+     | WIM (WIMGAPI, LZX)                 | 651,866      |
+     | WIM (wimlib, LZX normal)           | 632,614      |
+     | WIM (wimlib, LZX slow)             | 625,050      |
+     | WIM (wimlib, LZMS non-solid)       | 581,960      |
+     | tar.bz2 (bzip, default)            | 565,008      |
+     | tar.bz2 (bzip, -9)                 | 565,008      |
+     | WIM (wimlib, LZX solid)            | 532,700      |
+     | WIM (wimlib, LZMS solid)           | 525,990      |
+     | WIM (wimlib, LZX solid, slow)      | 525,140      |
+     | WIM (wimlib, LZMS solid, slow)     | 523,728      |
+     | WIM (WIMGAPI, LZMS solid)          | 521,366      |
+     | WIM (wimlib, LZX solid, very slow) | 520,832      |
+     | tar.xz (xz, default)               | 486,916      |
+     | tar.xz (xz, -9)                    | 486,904      |
+     | 7z  (7-zip, default)               | 484,700      |
+     | 7z  (7-zip, -9)                    | 483,239      |
+     =====================================================
 
 Note: WIM does even better on directory trees containing duplicate files, which
 the Canterbury corpus doesn't have.

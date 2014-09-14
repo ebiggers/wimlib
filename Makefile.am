@@ -110,6 +110,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/lz_repsearch.h	\
 	include/wimlib/lz_suffix_array_utils.h	\
 	include/wimlib/lzms.h		\
+	include/wimlib/lzms_constants.h	\
 	include/wimlib/lzx.h		\
 	include/wimlib/lzx_constants.h	\
 	include/wimlib/metadata.h	\

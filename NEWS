@@ -1,5 +1,5 @@
 Version 1.7.2-BETA:
-	More compression performance improvements.
+	Made more improvements to the XPRESS, LZX, and LZMS compressors.
 
 	Fixes for setting short names on Windows.
 

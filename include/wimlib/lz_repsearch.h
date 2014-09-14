@@ -11,45 +11,56 @@
 #define _LZ_REPSEARCH_H
 
 #include "wimlib/lz_extend.h"
-#include "wimlib/util.h"
 
 extern u32
 lz_extend_repmatch(const u8 *strptr, const u8 *matchptr, u32 max_len);
 
 /*
- * Find the longest repeat offset match.
+ * Given a pointer to the current string and a queue of 3 recent match offsets,
+ * find the longest repeat offset match.
  *
  * If no match of at least 2 bytes is found, then return 0.
  *
  * If a match of at least 2 bytes is found, then return its length and set
- * *slot_ret to the index of its offset in @queue.
- */
+ * *rep_max_idx_ret to the index of its offset in @recent_offsets.
+*/
 static inline u32
-lz_repsearch(const u8 * const strptr, const u32 bytes_remaining,
-	     const u32 max_match_len, const u32 repeat_offsets[],
-	     const unsigned num_repeat_offsets, unsigned *slot_ret)
+lz_repsearch3(const u8 * const strptr, const u32 max_len,
+	      const u32 recent_offsets[3], unsigned *rep_max_idx_ret)
 {
-	u32 best_len = 0;
+	unsigned rep_max_idx;
+	u32 rep_len;
+	u32 rep_max_len;
+	const u16 str = *(const u16 *)strptr;
+	const u8 *matchptr;
 
-	if (likely(bytes_remaining >= 2)) {
-		const u32 max_len = min(max_match_len, bytes_remaining);
-		const u16 str = *(const u16 *)strptr;
+	matchptr = strptr - recent_offsets[0];
+	if (*(const u16 *)matchptr == str)
+		rep_max_len = lz_extend_repmatch(strptr, matchptr, max_len);
+	else
+		rep_max_len = 0;
+	rep_max_idx = 0;
 
-		for (unsigned i = 0; i < num_repeat_offsets; i++) {
-			const u8 * const matchptr = strptr - repeat_offsets[i];
-
-			/* Check the first two bytes.  If they match, then
-			 * extend the match to its full length.  */
-			if (*(const u16 *)matchptr == str) {
-				const u32 len = lz_extend_repmatch(strptr, matchptr, max_len);
-				if (len > best_len) {
-					best_len = len;
-					*slot_ret = i;
-				}
-			}
+	matchptr = strptr - recent_offsets[1];
+	if (*(const u16 *)matchptr == str) {
+		rep_len = lz_extend_repmatch(strptr, matchptr, max_len);
+		if (rep_len > rep_max_len) {
+			rep_max_len = rep_len;
+			rep_max_idx = 1;
 		}
 	}
-	return best_len;
+
+	matchptr = strptr - recent_offsets[2];
+	if (*(const u16 *)matchptr == str) {
+		rep_len = lz_extend_repmatch(strptr, matchptr, max_len);
+		if (rep_len > rep_max_len) {
+			rep_max_len = rep_len;
+			rep_max_idx = 2;
+		}
+	}
+
+	*rep_max_idx_ret = rep_max_idx;
+	return rep_max_len;
 }
 
 #endif /* _LZ_REPSEARCH_H */

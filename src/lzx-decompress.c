@@ -427,7 +427,7 @@ lzx_decompress_block(int block_type, u32 block_size,
 	u8 *window_end = window_ptr + block_size;
 	unsigned mainsym;
 	u32 match_len;
-	unsigned position_slot;
+	unsigned offset_slot;
 	u32 match_offset;
 	unsigned num_extra_bits;
 	unsigned ones_if_aligned = 0U - (block_type == LZX_BLOCKTYPE_ALIGNED);
@@ -443,35 +443,35 @@ lzx_decompress_block(int block_type, u32 block_size,
 
 		/* Match  */
 
-		/* Decode the length header and position slot.  */
+		/* Decode the length header and offset slot.  */
 		mainsym -= LZX_NUM_CHARS;
 		match_len = mainsym & 0x7;
-		position_slot = mainsym >> 3;
+		offset_slot = mainsym >> 3;
 
 		/* If needed, read a length symbol to decode the full length. */
 		if (match_len == 0x7)
 			match_len += read_huffsym_using_lencode(istream, tables);
 		match_len += LZX_MIN_MATCH_LEN;
 
-		if (position_slot <= 2) {
+		if (offset_slot <= 2) {
 			/* Repeat offset  */
 
 			/* Note: This isn't a real LRU queue, since using the R2
 			 * offset doesn't bump the R1 offset down to R2.  This
 			 * quirk allows all 3 recent offsets to be handled by
 			 * the same code.  (For R0, the swap is a no-op.)  */
-			match_offset = queue->R[position_slot];
-			queue->R[position_slot] = queue->R[0];
+			match_offset = queue->R[offset_slot];
+			queue->R[offset_slot] = queue->R[0];
 			queue->R[0] = match_offset;
 		} else {
 			/* Explicit offset  */
 
 			/* Look up the number of extra bits that need to be read
-			 * to decode offsets with this position slot.  */
-			num_extra_bits = lzx_get_num_extra_bits(position_slot);
+			 * to decode offsets with this offset slot.  */
+			num_extra_bits = lzx_extra_offset_bits[offset_slot];
 
-			/* Start with the position slot base value.  */
-			match_offset = lzx_position_base[position_slot];
+			/* Start with the offset slot base value.  */
+			match_offset = lzx_offset_slot_base[offset_slot];
 
 			/* In aligned offset blocks, the low-order 3 bits of
 			 * each offset are encoded using the aligned offset
