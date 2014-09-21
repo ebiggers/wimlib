@@ -73,12 +73,12 @@ lzx_get_window_order(size_t max_block_size)
 {
 	unsigned order;
 
-	if (max_block_size == 0 || max_block_size > (1 << LZX_MAX_WINDOW_ORDER))
+	if (max_block_size == 0 || max_block_size > LZX_MAX_WINDOW_SIZE)
 		return 0;
 
 	order = bsr32(max_block_size);
 
-	if ((1 << order) != max_block_size)
+	if (((u32)1 << order) != max_block_size)
 		order++;
 
 	return max(order, LZX_MIN_WINDOW_ORDER);
@@ -89,7 +89,7 @@ lzx_get_window_order(size_t max_block_size)
 unsigned
 lzx_get_num_main_syms(unsigned window_order)
 {
-	u32 window_size = 1 << window_order;
+	u32 window_size = (u32)1 << window_order;
 
 	/* NOTE: the calculation *should* be as follows:
 	 *

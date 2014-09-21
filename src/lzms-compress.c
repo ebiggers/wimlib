@@ -716,7 +716,7 @@ lzms_do_init_rc_costs(void)
 		for (u32 j = 0; j < LZMS_COST_SHIFT; j++) {
 			w *= w;
 			bit_count <<= 1;
-			while (w >= (1U << 16)) {
+			while (w >= ((u32)1 << 16)) {
 				w >>= 1;
 				++bit_count;
 			}
@@ -888,8 +888,7 @@ lzms_consider_lz_explicit_offset_matches(const struct lzms_compressor *c,
 	len = 2;
 	i = 0;
 	do {
-		position_cost = base_cost + lzms_lz_offset_cost(c,
-								matches[i].offset);
+		position_cost = base_cost + lzms_lz_offset_cost(c, matches[i].offset);
 		do {
 			cost = position_cost + lzms_fast_length_cost(c, len);
 			if (cost < (cur_optimum_ptr + len)->cost) {
@@ -1218,8 +1217,8 @@ begin:
 		 *	the parser will not go too long without updating the
 		 *	probability tables.
 		 *
-		 * Note: no check for end-of-block is needed because
-		 * end-of-block will trigger condition (1).
+		 * Note: no check for end-of-window is needed because
+		 * end-of-window will trigger condition (1).
 		 */
 		if (cur_optimum_ptr == end_optimum_ptr ||
 		    cur_optimum_ptr == c->optimum_end)
@@ -1376,26 +1375,26 @@ lzms_finalize(struct lzms_compressor *c, u8 *cdata, size_t csize_avail)
  * maximum window size.  */
 static void
 lzms_build_params(unsigned int compression_level,
-		  struct lzms_compressor_params *lzms_params)
+		  struct lzms_compressor_params *params)
 {
 	/* Allow length 2 matches if the compression level is sufficiently high.
 	 */
 	if (compression_level >= 45)
-		lzms_params->min_match_length = 2;
+		params->min_match_length = 2;
 	else
-		lzms_params->min_match_length = 3;
+		params->min_match_length = 3;
 
 	/* Scale nice_match_length and max_search_depth with the compression
 	 * level.  But to allow an optimization on length cost calculations,
 	 * don't allow nice_match_length to exceed LZMS_NUM_FAST_LENGTH.  */
-	lzms_params->nice_match_length = ((u64)compression_level * 32) / 50;
-	if (lzms_params->nice_match_length < lzms_params->min_match_length)
-		lzms_params->nice_match_length = lzms_params->min_match_length;
-	if (lzms_params->nice_match_length > LZMS_NUM_FAST_LENGTHS)
-		lzms_params->nice_match_length = LZMS_NUM_FAST_LENGTHS;
-	lzms_params->max_search_depth = compression_level;
+	params->nice_match_length = ((u64)compression_level * 32) / 50;
+	if (params->nice_match_length < params->min_match_length)
+		params->nice_match_length = params->min_match_length;
+	if (params->nice_match_length > LZMS_NUM_FAST_LENGTHS)
+		params->nice_match_length = LZMS_NUM_FAST_LENGTHS;
+	params->max_search_depth = compression_level;
 
-	lzms_params->optim_array_length = 1024;
+	params->optim_array_length = 1024;
 }
 
 /* Given the internal compression parameters and maximum window size, build the

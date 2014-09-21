@@ -136,7 +136,7 @@ struct xpress_mc_pos_data {
 	 */
 	u32 mc_item_data;
 #define MC_OFFSET_SHIFT 16
-#define MC_LEN_MASK ((1 << MC_OFFSET_SHIFT) - 1)
+#define MC_LEN_MASK (((u32)1 << MC_OFFSET_SHIFT) - 1)
 };
 
 
@@ -589,7 +589,7 @@ xpress_set_costs(u8 costs[], const u8 lens[])
  * @matches must be sorted by strictly increasing length and strictly
  * increasing offset.  This is guaranteed by the match-finder.
  *
- * We consider each length from the minimum (2) to the longest
+ * We consider each length from the minimum (3) to the longest
  * (matches[num_matches - 1].len).  For each length, we consider only
  * the smallest offset for which that length is available.  Although
  * this is not guaranteed to be optimal due to the possibility of a
@@ -793,8 +793,8 @@ begin:
 		 *	XPRESS_OPTIM_ARRAY_LENGTH is high enough that on most
 		 *	inputs this limit is never reached.
 		 *
-		 * Note: no check for end-of-block is needed because
-		 * end-of-block will trigger condition (1).
+		 * Note: no check for end-of-window is needed because
+		 * end-of-window will trigger condition (1).
 		 */
 		if (cur_optimum_ptr == end_optimum_ptr ||
 		    cur_optimum_ptr == &c->optimum[XPRESS_OPTIM_ARRAY_LENGTH])
@@ -1208,14 +1208,16 @@ xpress_compress(const void *uncompressed_data, size_t uncompressed_size,
 	c->cur_window_size = uncompressed_size;
 	lz_mf_load_window(c->mf, c->cur_window, c->cur_window_size);
 	memset(c->freqs, 0, sizeof(c->freqs));
+
 	num_chosen_items = xpress_choose_items(c);
+
 	c->freqs[XPRESS_END_OF_DATA]++;
 	xpress_make_huffman_code(c);
 
 	/* Output the Huffman code as a series of 512 4-bit lengths.  */
 	cptr = compressed_data;
 	for (unsigned i = 0; i < XPRESS_NUM_SYMBOLS; i += 2)
-		*cptr++ = (c->lens[i] & 0xf) | (c->lens[i + 1] << 4);
+		*cptr++ = (c->lens[i + 1] << 4) | c->lens[i];
 
 	/* Output the encoded matches/literals.  */
 	xpress_init_output(&os, cptr,
@@ -1239,8 +1241,8 @@ xpress_free_compressor(void *_c)
 
 	if (c) {
 		lz_mf_free(c->mf);
-		FREE(c->cached_matches);
 		FREE(c->optimum);
+		FREE(c->cached_matches);
 		FREE(c->chosen_items);
 		FREE(c);
 	}

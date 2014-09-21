@@ -904,8 +904,7 @@ lzx_get_matches_nocache_multiblock(struct lzx_compressor *c,
  * offset.
  */
 static inline unsigned
-lzx_get_matches(struct lzx_compressor *c,
-		const struct lz_match **matches_ret)
+lzx_get_matches(struct lzx_compressor *c, const struct lz_match **matches_ret)
 {
 	return (*c->get_matches_func)(c, matches_ret);
 }
@@ -1207,7 +1206,7 @@ lzx_match_cost_raw(unsigned len, unsigned offset_slot,
 	unsigned main_symbol;
 
 	if (len - LZX_MIN_MATCH_LEN < LZX_NUM_PRIMARY_LENS) {
-		len_header = len - LZX_MIN_MATCH_LEN ;
+		len_header = len - LZX_MIN_MATCH_LEN;
 		cost = 0;
 	} else {
 		len_header = LZX_NUM_PRIMARY_LENS;
@@ -1892,11 +1891,11 @@ static int
 lzx_choose_verbatim_or_aligned(const struct lzx_freqs * freqs,
 			       const struct lzx_codes * codes)
 {
-	unsigned aligned_cost = 0;
-	unsigned verbatim_cost = 0;
+	u32 aligned_cost = 0;
+	u32 verbatim_cost = 0;
 
-	/* A verbatim block require 3 bits in each place that an aligned symbol
-	 * was used.  */
+	/* A verbatim block requires 3 bits in each place that an aligned symbol
+	 * would be used in an aligned offset block.  */
 	for (unsigned i = 0; i < LZX_ALIGNEDCODE_NUM_SYMBOLS; i++) {
 		verbatim_cost += 3 * freqs->aligned[i];
 		aligned_cost += codes->lens.aligned[i] * freqs->aligned[i];
