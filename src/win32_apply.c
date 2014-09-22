@@ -2009,11 +2009,13 @@ end_extract_stream(struct wim_lookup_table_entry *stream, int status, void *_ctx
 /* Set the security descriptor @desc, of @desc_size bytes, on the file with open
  * handle @h.  */
 static NTSTATUS
-set_security_descriptor(HANDLE h, const void *desc,
+set_security_descriptor(HANDLE h, const void *_desc,
 			size_t desc_size, struct win32_apply_ctx *ctx)
 {
 	SECURITY_INFORMATION info;
 	NTSTATUS status;
+	SECURITY_DESCRIPTOR_RELATIVE *desc;
+
 
 	/* We really just want to set entire the security descriptor as-is, but
 	 * all available APIs require specifying the specific parts of the
@@ -2024,6 +2026,54 @@ set_security_descriptor(HANDLE h, const void *desc,
 	info = OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION |
 	       DACL_SECURITY_INFORMATION | SACL_SECURITY_INFORMATION;
 
+	/*
+	 * Ideally, we would just pass in the security descriptor buffer as-is.
+	 * But it turns out that Windows can mess up the security descriptor
+	 * even when using the low-level NtSetSecurityObject() function:
+	 *
+	 * - Windows will clear SE_DACL_AUTO_INHERITED if it is set in the
+	 *   passed buffer.  To actually get Windows to set
+	 *   SE_DACL_AUTO_INHERITED, the application must set the non-persistent
+	 *   flag SE_DACL_AUTO_INHERIT_REQ.  As usual, Microsoft didn't bother
+	 *   to properly document either of these flags.  It's unclear how
+	 *   important SE_DACL_AUTO_INHERITED actually is, but to be safe we use
+	 *   the SE_DACL_AUTO_INHERIT_REQ workaround to set it if needed.
+	 *
+	 * - The above also applies to the equivalent SACL flags,
+	 *   SE_SACL_AUTO_INHERITED and SE_SACL_AUTO_INHERIT_REQ.
+	 *
+	 * - If the application says that it's setting
+	 *   DACL_SECURITY_INFORMATION, then Windows sets SE_DACL_PRESENT in the
+	 *   resulting security descriptor, even if the security descriptor the
+	 *   application provided did not have a DACL.  This seems to be
+	 *   unavoidable, since omitting DACL_SECURITY_INFORMATION would cause a
+	 *   default DACL to remain.  Fortunately, this behavior seems harmless,
+	 *   since the resulting DACL will still be "null" --- but it will be
+	 *   "the other representation of null".
+	 *
+	 * - The above also applies to SACL_SECURITY_INFORMATION and
+	 *   SE_SACL_PRESENT.  Again, it's seemingly unavoidable but "harmless"
+	 *   that Windows changes the representation of a "null SACL".
+	 */
+	if (likely(desc_size <= STACK_MAX)) {
+		desc = alloca(desc_size);
+	} else {
+		desc = MALLOC(desc_size);
+		if (!desc)
+			return STATUS_NO_MEMORY;
+	}
+
+	memcpy(desc, _desc, desc_size);
+
+	if (likely(desc_size >= 4)) {
+
+		if (desc->Control & SE_DACL_AUTO_INHERITED)
+			desc->Control |= SE_DACL_AUTO_INHERIT_REQ;
+
+		if (desc->Control & SE_SACL_AUTO_INHERITED)
+			desc->Control |= SE_SACL_AUTO_INHERIT_REQ;
+	}
+
 	/* Prefer NtSetSecurityObject() to SetFileSecurity().  SetFileSecurity()
 	 * itself necessarily uses NtSetSecurityObject() as the latter is the
 	 * underlying system call for setting security information, but
@@ -2033,9 +2083,10 @@ set_security_descriptor(HANDLE h, const void *desc,
 	 * Administrator can have access denied.  (Of course, this not mentioned
 	 * in the MS "documentation".)  */
 retry:
-	status = (*func_NtSetSecurityObject)(h, info, (PSECURITY_DESCRIPTOR)desc);
+	status = (*func_NtSetSecurityObject)(h, info, desc);
 	if (NT_SUCCESS(status))
-		return status;
+		goto out_maybe_free_desc;
+
 	/* Failed to set the requested parts of the security descriptor.  If the
 	 * error was permissions-related, try to set fewer parts of the security
 	 * descriptor, unless WIMLIB_EXTRACT_FLAG_STRICT_ACLS is enabled.  */
@@ -2066,6 +2117,10 @@ retry:
 	if (!(info & SACL_SECURITY_INFORMATION))
 		ctx->partial_security_descriptors--;
 	ctx->no_security_descriptors++;
+
+out_maybe_free_desc:
+	if (unlikely(desc_size > STACK_MAX))
+		FREE(desc);
 	return status;
 }
 
