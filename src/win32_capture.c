@@ -224,7 +224,7 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 			ret = WIMLIB_ERR_READ;
 	} else if (export_ctx.bytes_remaining != 0) {
 		ERROR("Only could read %"PRIu64" of %"PRIu64" bytes from "
-		      "encryted file \"%ls\"",
+		      "encrypted file \"%ls\"",
 		      size - export_ctx.bytes_remaining, size,
 		      printable_path(lte->file_on_disk));
 		ret = WIMLIB_ERR_READ;
@@ -594,8 +594,7 @@ out_close_root_dir:
 
 static int
 winnt_rpfix_progress(struct add_image_params *params, const wchar_t *path,
-		     const struct reparse_data *rpdata,
-		     enum wimlib_progress_msg msg)
+		     const struct reparse_data *rpdata, int scan_status)
 {
 	size_t print_name_nchars = rpdata->print_name_nbytes / sizeof(wchar_t);
 	wchar_t print_name0[print_name_nchars + 1];
@@ -605,7 +604,7 @@ winnt_rpfix_progress(struct add_image_params *params, const wchar_t *path,
 
 	params->progress.scan.cur_path = printable_path(path);
 	params->progress.scan.symlink_target = print_name0;
-	return do_capture_progress(params, msg, NULL);
+	return do_capture_progress(params, scan_status, NULL);
 }
 
 static int
@@ -670,7 +669,7 @@ winnt_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
 	}
 
 	/* We have an absolute target pointing within the directory being
-	 * captured, @rel_target is the suffix of the link target that is the
+	 * captured. @rel_target is the suffix of the link target that is the
 	 * part relative to the directory being captured.
 	 *
 	 * We will cut off the prefix before this part (which is the path to the
