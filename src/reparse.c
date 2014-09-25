@@ -117,6 +117,19 @@ make_reparse_buffer(const struct reparse_data * restrict rpdata,
 		(struct reparse_buffer_disk*)rpbuf;
 	u8 *data;
 
+	if (rpdata->rptag == WIM_IO_REPARSE_TAG_SYMLINK)
+		data = rpbuf_disk->symlink.data;
+	else
+		data = rpbuf_disk->junction.data;
+
+	if ((data - rpbuf) + rpdata->substitute_name_nbytes +
+	    rpdata->print_name_nbytes +
+	    2 * sizeof(utf16lechar) > REPARSE_POINT_MAX_SIZE)
+	{
+		ERROR("Reparse data is too long!");
+		return WIMLIB_ERR_INVALID_REPARSE_DATA;
+	}
+
 	rpbuf_disk->rptag = cpu_to_le32(rpdata->rptag);
 	rpbuf_disk->rpreserved = cpu_to_le16(rpdata->rpreserved);
 	rpbuf_disk->symlink.substitute_name_offset = cpu_to_le16(0);
@@ -124,23 +137,12 @@ make_reparse_buffer(const struct reparse_data * restrict rpdata,
 	rpbuf_disk->symlink.print_name_offset = cpu_to_le16(rpdata->substitute_name_nbytes + 2);
 	rpbuf_disk->symlink.print_name_nbytes = cpu_to_le16(rpdata->print_name_nbytes);
 
-	if (rpdata->rptag == WIM_IO_REPARSE_TAG_SYMLINK) {
+	if (rpdata->rptag == WIM_IO_REPARSE_TAG_SYMLINK)
 		rpbuf_disk->symlink.rpflags = cpu_to_le32(rpdata->rpflags);
-		data = rpbuf_disk->symlink.data;
-	} else {
-		data = rpbuf_disk->junction.data;
-	}
 
 	/* We null-terminate the substitute and print names, although this may
 	 * not be strictly necessary.  Note that the byte counts should not
 	 * include the null terminators. */
-	if (data + rpdata->substitute_name_nbytes +
-	    rpdata->print_name_nbytes +
-	    2 * sizeof(utf16lechar) - rpbuf > REPARSE_POINT_MAX_SIZE)
-	{
-		ERROR("Reparse data is too long!");
-		return WIMLIB_ERR_INVALID_REPARSE_DATA;
-	}
 	data = mempcpy(data, rpdata->substitute_name, rpdata->substitute_name_nbytes);
 	*(utf16lechar*)data = cpu_to_le16(0);
 	data += 2;
