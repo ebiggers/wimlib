@@ -62,7 +62,7 @@ struct compressor_thread_data {
 	struct wimlib_compressor *compressor;
 };
 
-#define MAX_CHUNKS_PER_MSG 2
+#define MAX_CHUNKS_PER_MSG 16
 
 struct message {
 	u8 *uncompressed_chunks[MAX_CHUNKS_PER_MSG];
@@ -433,7 +433,13 @@ new_parallel_chunk_compressor(int out_ctype, u32 out_chunk_size,
 	desired_num_threads = num_threads;
 
 	if (out_chunk_size < ((u32)1 << 23)) {
-		chunks_per_msg = MAX_CHUNKS_PER_MSG;
+		/* Relatively small chunks.  Use 2 messages per thread, each
+		 * with at least 2 chunks.  Use more chunks per message if there
+		 * are lots of threads and/or the chunks are very small.  */
+		chunks_per_msg = 2;
+		chunks_per_msg += num_threads * (65536 / out_chunk_size) / 16;
+		chunks_per_msg = max(chunks_per_msg, 2);
+		chunks_per_msg = min(chunks_per_msg, MAX_CHUNKS_PER_MSG);
 		msgs_per_thread = 2;
 	} else {
 		/* Big chunks: Just have one buffer per thread --- more would
