@@ -1,13 +1,17 @@
 Version 1.7.2-BETA:
 	Made more improvements to the XPRESS, LZX, and LZMS compressors.
 
-	Fixes for setting short names on Windows.
+	A number of improvements to the Windows port:
 
-	Faster "WIMBoot" extraction on Windows.
+		Fixes for setting short filenames.
 
-	Updated dependent DLLs in Windows release.  libxml2 is slimmed down.
+		Faster "WIMBoot" extraction.
 
-	ACL inheritance bits are now restored on Windows.
+		Updated and slimmed down the dependent DLLs.
+
+		ACL inheritence bits are now restored.
+
+		Mandatory integrity labels are now backed up and restored.
 
 	Library changes:
 		Added file count progress data for
