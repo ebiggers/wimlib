@@ -7,6 +7,8 @@ Version 1.7.2-BETA:
 
 	Updated dependent DLLs in Windows release.  libxml2 is slimmed down.
 
+	ACL inheritance bits are now restored on Windows.
+
 	Library changes:
 		Added file count progress data for
 		WIMLIB_PROGRESS_MSG_EXTRACT_FILE_STRUCTURE and
