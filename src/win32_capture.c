@@ -263,7 +263,7 @@ winnt_get_short_name(HANDLE h, struct wim_dentry *dentry)
 }
 
 /*
- * Load the security descriptor of a file into the corresponding inode, and the
+ * Load the security descriptor of a file into the corresponding inode and the
  * WIM image's security descriptor set.
  */
 static NTSTATUS
@@ -278,10 +278,27 @@ winnt_get_security_descriptor(HANDLE h, struct wim_inode *inode,
 	ULONG len_needed;
 	NTSTATUS status;
 
-	requestedInformation = DACL_SECURITY_INFORMATION |
+	/*
+	 * LABEL_SECURITY_INFORMATION is needed on Windows Vista and 7 because
+	 * Microsoft decided to add mandatory integrity labels to the SACL but
+	 * not have them returned by SACL_SECURITY_INFORMATION.
+	 *
+	 * BACKUP_SECURITY_INFORMATION is needed on Windows 8 because Microsoft
+	 * decided to add even more stuff to the SACL and still not have it
+	 * returned by SACL_SECURITY_INFORMATION; but they did remember that
+	 * backup applications exist and simply want to read the stupid thing
+	 * once and for all, so they added a flag to read the entire security
+	 * descriptor.
+	 *
+	 * Older versions of Windows tolerate these new flags being passed in.
+	 */
+	requestedInformation = OWNER_SECURITY_INFORMATION |
+			       GROUP_SECURITY_INFORMATION |
+			       DACL_SECURITY_INFORMATION |
 			       SACL_SECURITY_INFORMATION |
-			       OWNER_SECURITY_INFORMATION |
-			       GROUP_SECURITY_INFORMATION;
+			       LABEL_SECURITY_INFORMATION |
+			       BACKUP_SECURITY_INFORMATION;
+
 	buf = _buf;
 	bufsize = sizeof(_buf);
 
@@ -339,7 +356,9 @@ winnt_get_security_descriptor(HANDLE h, struct wim_inode *inode,
 			if (requestedInformation & SACL_SECURITY_INFORMATION) {
 				/* Try again without the SACL.  */
 				stats->num_get_sacl_priv_notheld++;
-				requestedInformation &= ~SACL_SECURITY_INFORMATION;
+				requestedInformation &= ~(SACL_SECURITY_INFORMATION |
+							  LABEL_SECURITY_INFORMATION |
+							  BACKUP_SECURITY_INFORMATION);
 				break;
 			}
 			/* Fake success (useful when capturing as

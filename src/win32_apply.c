@@ -2016,16 +2016,6 @@ set_security_descriptor(HANDLE h, const void *_desc,
 	NTSTATUS status;
 	SECURITY_DESCRIPTOR_RELATIVE *desc;
 
-
-	/* We really just want to set entire the security descriptor as-is, but
-	 * all available APIs require specifying the specific parts of the
-	 * descriptor being set.  Start out by requesting all parts be set.  If
-	 * permissions problems are encountered, fall back to omitting some
-	 * parts (first the SACL, then the DACL, then the owner), unless the
-	 * WIMLIB_EXTRACT_FLAG_STRICT_ACLS flag has been enabled.  */
-	info = OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION |
-	       DACL_SECURITY_INFORMATION | SACL_SECURITY_INFORMATION;
-
 	/*
 	 * Ideally, we would just pass in the security descriptor buffer as-is.
 	 * But it turns out that Windows can mess up the security descriptor
@@ -2074,14 +2064,40 @@ set_security_descriptor(HANDLE h, const void *_desc,
 			desc->Control |= SE_SACL_AUTO_INHERIT_REQ;
 	}
 
-	/* Prefer NtSetSecurityObject() to SetFileSecurity().  SetFileSecurity()
-	 * itself necessarily uses NtSetSecurityObject() as the latter is the
-	 * underlying system call for setting security information, but
-	 * SetFileSecurity() opens the handle with NtCreateFile() without
-	 * FILE_OPEN_FILE_BACKUP_INTENT.  Hence, access checks are done and due
-	 * to the Windows security model, even a process running as the
-	 * Administrator can have access denied.  (Of course, this not mentioned
-	 * in the MS "documentation".)  */
+	/*
+	 * More API insanity.  We want to set the entire security descriptor
+	 * as-is.  But all available APIs require specifying the specific parts
+	 * of the security descriptor being set.  Especially annoying is that
+	 * mandatory integrity labels are part of the SACL, but they aren't set
+	 * with SACL_SECURITY_INFORMATION.  Instead, applications must also
+	 * specify LABEL_SECURITY_INFORMATION (Windows Vista, Windows 7) or
+	 * BACKUP_SECURITY_INFORMATION (Windows 8).  But at least older versions
+	 * of Windows don't error out if you provide these newer flags...
+	 *
+	 * Also, if the process isn't running as Administrator, then it probably
+	 * doesn't have SE_RESTORE_PRIVILEGE.  In this case, it will always get
+	 * the STATUS_PRIVILEGE_NOT_HELD error by trying to set the SACL, even
+	 * if the security descriptor it provided did not have a SACL.  By
+	 * default, in this case we try to recover and set as much of the
+	 * security descriptor as possible --- potentially excluding the DACL, and
+	 * even the owner, as well as the SACL.
+	 */
+
+	info = OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION |
+	       DACL_SECURITY_INFORMATION | SACL_SECURITY_INFORMATION |
+	       LABEL_SECURITY_INFORMATION | BACKUP_SECURITY_INFORMATION;
+
+
+	/*
+	 * It's also worth noting that SetFileSecurity() is unusable because it
+	 * doesn't request "backup semantics" when it opens the file internally.
+	 * NtSetSecurityObject() seems to be the best function to use in backup
+	 * applications.  (SetSecurityInfo() should also work, but it's harder
+	 * to use and must call NtSetSecurityObject() internally anyway.
+	 * BackupWrite() is theoretically usable as well, but it's inflexible
+	 * and poorly documented.)
+	 */
+
 retry:
 	status = (*func_NtSetSecurityObject)(h, info, desc);
 	if (NT_SUCCESS(status))
@@ -2095,7 +2111,9 @@ retry:
 	    !(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_ACLS))
 	{
 		if (info & SACL_SECURITY_INFORMATION) {
-			info &= ~SACL_SECURITY_INFORMATION;
+			info &= ~(SACL_SECURITY_INFORMATION |
+				  LABEL_SECURITY_INFORMATION |
+				  BACKUP_SECURITY_INFORMATION);
 			ctx->partial_security_descriptors++;
 			goto retry;
 		}
