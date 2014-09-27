@@ -1,12 +1,16 @@
 Unless otherwise specified, wimlib and all programs and scripts distributed with
-it, including 'wimlib-imagex', are released under the GNU GPL (General Public
-License), version 3.  See COPYING.GPLv3 for the full text of this license.
+it may be redistributed and/or modified under the terms of the GNU General
+Public License; either version 3 of the License, or (at your option) any later
+version.  See COPYING.GPLv3.
 
-However, as of version 1.7.0, the following exception applies to wimlib itself
---- that is, the shared library or DLL file:  If you do not use the libntfs-3g
-support in wimlib --- that is, your application never uses the flags
-WIMLIB_EXTRACT_FLAG_NTFS or WIMLIB_ADD_FLAG_NTFS, or wimlib is not linked to
-libntfs-3g at all, such as is the case for the Windows builds distributed on
-sourceforge.net --- you are also granted the rights of the GNU LGPL (Lesser
-General Public License), version 3.  See COPYING.LGPLv3 for the full text of
-this additional license.
+However, the following exception is granted.  When not prohibited by conflict
+with a third-party software license, you may opt to redistribute and/or modify
+the library portion of wimlib under the terms of the GNU Lesser General Public
+License; either version 3 of the License, or (at your option) any later version.
+See COPYING.LGPLv3.
+
+The following paragraph is informational only.  The above exception is known to
+be relevant for the third-party library "libntfs-3g", which is licensed GPLv2+.
+On UNIX-like systems, wimlib can optionally be compiled with libntfs-3g support.
+However, a binary copy of wimlib that was compiled without libntfs-3g support
+need not be affected by the libntfs-3g license (for example).
