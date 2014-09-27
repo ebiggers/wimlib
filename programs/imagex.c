@@ -2091,8 +2091,8 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		for (size_t i = 0; i < base_wimfiles.num_strings; i++) {
 			ret = wimlib_open_wim_with_progress(
 				    base_wimfiles.strings[i],
-				    open_flags, &base_wims[i],
-				    imagex_progress_func, NULL);
+				    open_flags & ~WIMLIB_OPEN_FLAG_WRITE_ACCESS,
+				    &base_wims[i], imagex_progress_func, NULL);
 			if (ret)
 				goto out_free_base_wims;
 
@@ -2127,7 +2127,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			template_wim = wim;
 		} else {
 			ret = wimlib_open_wim_with_progress(template_wimfile,
-							    open_flags,
+							    open_flags & ~WIMLIB_OPEN_FLAG_WRITE_ACCESS,
 							    &template_wim,
 							    imagex_progress_func,
 							    NULL);
