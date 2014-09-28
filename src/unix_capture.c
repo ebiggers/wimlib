@@ -121,6 +121,7 @@ unix_scan_regular_file(const char *path, u64 size, struct wim_inode *inode,
 		return WIMLIB_ERR_NOMEM;
 	}
 	lte->file_on_disk = file_on_disk;
+	lte->file_inode = inode;
 	lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
 	lte->size = size;
 	add_unhashed_stream(lte, inode, 0, unhashed_streams);

@@ -181,7 +181,7 @@ struct wim_inode {
 		 * WIMLIB_WRITE_FLAG_SEND_DONE_WITH_FILE_MESSAGES:  the number
 		 * of data streams this inode has that have not yet been fully
 		 * read.  */
-		u32 num_unread_streams;
+		u32 num_remaining_streams;
 
 #ifdef WITH_FUSE
 		struct {

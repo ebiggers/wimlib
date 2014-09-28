@@ -960,6 +960,7 @@ winnt_scan_stream(const wchar_t *path, size_t path_nchars,
 		stream_id = 0;
 		inode->i_lte = lte;
 	}
+	lte->file_inode = inode;
 	add_unhashed_stream(lte, inode, stream_id, unhashed_streams);
 	return 0;
 }

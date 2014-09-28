@@ -106,6 +106,8 @@ struct wim_lookup_table_entry {
 	 * need this.)  */
 	u32 dont_check_metadata_hash : 1;
 
+	u32 may_send_done_with_file : 1;
+
 	union {
 		/* (On-disk field) SHA1 message digest of the stream referenced
 		 * by this lookup table entry.  */
@@ -166,7 +168,10 @@ struct wim_lookup_table_entry {
 			struct wim_resource_spec *rspec;
 			u64 offset_in_res;
 		};
-		tchar *file_on_disk;
+		struct {
+			tchar *file_on_disk;
+			struct wim_inode *file_inode;
+		};
 		void *attached_buffer;
 	#ifdef WITH_FUSE
 		struct {

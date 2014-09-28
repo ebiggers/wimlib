@@ -13,6 +13,10 @@ Version 1.7.2-BETA:
 
 		Mandatory integrity labels are now backed up and restored.
 
+	Added a workaround for an issue where in rare cases, wimlib could create
+	a compressed data stream that could not be read correctly by Windows
+	after an extraction in "WIMBoot" mode.
+
 	Library changes:
 		Added file count progress data for
 		WIMLIB_PROGRESS_MSG_EXTRACT_FILE_STRUCTURE and
