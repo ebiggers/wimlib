@@ -36,6 +36,7 @@
 #include "wimlib/reparse.h"
 #include "wimlib/textfile.h"
 #include "wimlib/xml.h"
+#include "wimlib/wildcard.h"
 #include "wimlib/wimboot.h"
 
 struct win32_apply_ctx {
@@ -296,12 +297,11 @@ load_prepopulate_pats(struct win32_apply_ctx *ctx)
 	return 0;
 }
 
-/* Returns %true if the path to @dentry matches a pattern in [PrepopulateList]
- * of WimBootCompress.ini.  Otherwise returns %false.
- *
- * @dentry must have had its full path calculated.  */
+/* Returns %true if the specified absolute path to a file in the WIM image
+ * matches a pattern in [PrepopulateList] of WimBootCompress.ini.  Otherwise
+ * returns %false.  */
 static bool
-in_prepopulate_list(struct wim_dentry *dentry,
+in_prepopulate_list(const wchar_t *path, size_t path_nchars,
 		    const struct win32_apply_ctx *ctx)
 {
 	const struct string_set *pats = ctx->wimboot.prepopulate_pats;
@@ -309,8 +309,32 @@ in_prepopulate_list(struct wim_dentry *dentry,
 	if (!pats || !pats->num_strings)
 		return false;
 
-	return match_pattern_list(dentry->_full_path,
-				  wcslen(dentry->_full_path), pats);
+	return match_pattern_list(path, path_nchars, pats);
+}
+
+/* Returns %true if the specified absolute path to a file in the WIM image can
+ * be subject to external backing when extracted.  Otherwise returns %false.  */
+static bool
+can_externally_back_path(const wchar_t *path, size_t path_nchars,
+			 const struct win32_apply_ctx *ctx)
+{
+	if (in_prepopulate_list(path, path_nchars, ctx))
+		return false;
+
+	/* Since we attempt to modify the SYSTEM registry after it's extracted
+	 * (see end_wimboot_extraction()), it can't be extracted as externally
+	 * backed.  This extends to associated files such as SYSTEM.LOG that
+	 * also must be writable in order to write to the registry.  Normally,
+	 * SYSTEM is in [PrepopulateList], and the SYSTEM.* files match patterns
+	 * in [ExclusionList] and therefore are not captured in the WIM at all.
+	 * However, a WIM that wasn't specifically captured in "WIMBoot mode"
+	 * may contain SYSTEM.* files.  So to make things "just work", hard-code
+	 * the pattern.  */
+	if (match_path(path, path_nchars, L"\\Windows\\System32\\config\\SYSTEM*",
+		       OS_PREFERRED_PATH_SEPARATOR, false))
+		return false;
+
+	return true;
 }
 
 static const wchar_t *
@@ -361,7 +385,8 @@ win32_will_externally_back(struct wim_dentry *dentry, struct apply_ctx *_ctx)
 	if (ret)
 		return ret;
 
-	if (in_prepopulate_list(dentry, ctx))
+	if (!can_externally_back_path(dentry->_full_path,
+				      wcslen(dentry->_full_path), ctx))
 		return WIM_BACKING_EXCLUDED;
 
 	return 0;
