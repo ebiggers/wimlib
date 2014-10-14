@@ -75,19 +75,17 @@ query_device(HANDLE h, DWORD code, void *out, DWORD out_size)
  */
 static int
 query_partition_and_disk_info(const wchar_t *path,
-			      PARTITION_INFORMATION_EX *part_info_ret,
+			      PARTITION_INFORMATION_EX *part_info,
 			      DRIVE_LAYOUT_INFORMATION_EX *drive_info_ret)
 {
-	HANDLE h;
 	wchar_t vol_name[] = L"\\\\.\\X:";
 	wchar_t disk_name[] = L"\\\\?\\PhysicalDriveXXXXXXXXXX";
-
-	PARTITION_INFORMATION_EX part_info;
-	size_t extents_size = sizeof(VOLUME_DISK_EXTENTS) + 4 * sizeof(DISK_EXTENT);
-	VOLUME_DISK_EXTENTS *extents = alloca(extents_size);
-	size_t drive_info_size = sizeof(DRIVE_LAYOUT_INFORMATION_EX) +
-					8 * sizeof(PARTITION_INFORMATION_EX);
-	DRIVE_LAYOUT_INFORMATION_EX *drive_info = alloca(drive_info_size);
+	HANDLE h = INVALID_HANDLE_VALUE;
+	VOLUME_DISK_EXTENTS *extents = NULL;
+	size_t extents_size;
+	DRIVE_LAYOUT_INFORMATION_EX *drive_info = NULL;
+	size_t drive_info_size;
+	int ret;
 
 	wimlib_assert(path[0] != L'\0' && path[1] == L':');
 
@@ -95,36 +93,51 @@ query_partition_and_disk_info(const wchar_t *path,
 
 	h = open_file(vol_name, GENERIC_READ);
 	if (h == INVALID_HANDLE_VALUE) {
-		set_errno_from_GetLastError();
-		ERROR_WITH_ERRNO("\"%ls\": Can't open volume device", vol_name);
-		return WIMLIB_ERR_OPEN;
+		ERROR("\"%ls\": Can't open volume device (err=%"PRIu32")",
+		      vol_name, (u32)GetLastError());
+		ret = WIMLIB_ERR_OPEN;
+		goto out;
 	}
 
 	if (!query_device(h, IOCTL_DISK_GET_PARTITION_INFO_EX,
-			  &part_info, sizeof(part_info)))
+			  part_info, sizeof(PARTITION_INFORMATION_EX)))
 	{
-		ERROR("\"%ls\": Can't get partition info (err=0x%08"PRIx32")",
+		ERROR("\"%ls\": Can't get partition info (err=%"PRIu32")",
 		      vol_name, (u32)GetLastError());
-		CloseHandle(h);
-		return WIMLIB_ERR_READ;
+		ret = WIMLIB_ERR_READ;
+		goto out;
 	}
 
-	if (!query_device(h, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS,
-			  extents, extents_size))
-	{
-		ERROR("\"%ls\": Can't get volume extent info (err=0x%08"PRIx32")",
-		      vol_name, (u32)GetLastError());
-		CloseHandle(h);
-		return WIMLIB_ERR_READ;
+	extents_size = sizeof(VOLUME_DISK_EXTENTS);
+	for (;;) {
+		extents_size += 4 * sizeof(DISK_EXTENT);
+		extents = MALLOC(extents_size);
+		if (!extents) {
+			ret = WIMLIB_ERR_NOMEM;
+			goto out;
+		}
+
+		if (query_device(h, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS,
+				 extents, extents_size))
+			break;
+		if (GetLastError() != ERROR_MORE_DATA) {
+			ERROR("\"%ls\": Can't get volume extent info (err="PRIu32")",
+			      vol_name, (u32)GetLastError());
+			ret = WIMLIB_ERR_READ;
+			goto out;
+		}
+		FREE(extents);
 	}
 
 	CloseHandle(h);
+	h = INVALID_HANDLE_VALUE;
 
 	if (extents->NumberOfDiskExtents != 1) {
 		ERROR("\"%ls\": This volume has %"PRIu32" disk extents, "
 		      "but this code is untested for more than 1",
 		      vol_name, (u32)extents->NumberOfDiskExtents);
-		return WIMLIB_ERR_UNSUPPORTED;
+		ret = WIMLIB_ERR_UNSUPPORTED;
+		goto out;
 	}
 
 	wsprintf(wcschr(disk_name, L'X'), L"%"PRIu32,
@@ -132,52 +145,74 @@ query_partition_and_disk_info(const wchar_t *path,
 
 	h = open_file(disk_name, GENERIC_READ);
 	if (h == INVALID_HANDLE_VALUE) {
-		set_errno_from_GetLastError();
-		ERROR_WITH_ERRNO("\"%ls\": Can't open disk device", disk_name);
-		return WIMLIB_ERR_OPEN;
-	}
-
-	if (!query_device(h, IOCTL_DISK_GET_DRIVE_LAYOUT_EX,
-			  drive_info, drive_info_size))
-	{
-		ERROR("\"%ls\": Can't get disk info (err=0x%08"PRIx32")",
+		ERROR("\"%ls\": Can't open disk device (err=%"PRIu32")",
 		      disk_name, (u32)GetLastError());
-		CloseHandle(h);
-		return WIMLIB_ERR_READ;
+		ret = WIMLIB_ERR_OPEN;
+		goto out;
 	}
 
-	CloseHandle(h);
+	drive_info_size = sizeof(DRIVE_LAYOUT_INFORMATION_EX);
+	for (;;) {
+		drive_info_size += 4 * sizeof(PARTITION_INFORMATION_EX);
+		drive_info = MALLOC(drive_info_size);
+		if (!drive_info) {
+			ret = WIMLIB_ERR_NOMEM;
+			goto out;
+		}
 
-	if (drive_info->PartitionStyle != part_info.PartitionStyle) {
+		if (query_device(h, IOCTL_DISK_GET_DRIVE_LAYOUT_EX,
+				 drive_info, drive_info_size))
+			break;
+		if (GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+			ERROR("\"%ls\": Can't get disk info (err=%"PRIu32")",
+			      disk_name, (u32)GetLastError());
+			ret = WIMLIB_ERR_READ;
+			goto out;
+		}
+		FREE(drive_info);
+	}
+
+	*drive_info_ret = *drive_info;  /* doesn't include partitions */
+	CloseHandle(h);
+	h = INVALID_HANDLE_VALUE;
+
+	if (drive_info->PartitionStyle != part_info->PartitionStyle) {
 		ERROR("\"%ls\", \"%ls\": Inconsistent partition table type!",
 		      vol_name, disk_name);
-		return WIMLIB_ERR_UNSUPPORTED;
+		ret = WIMLIB_ERR_UNSUPPORTED;
+		goto out;
 	}
 
-	if (part_info.PartitionStyle == PARTITION_STYLE_GPT) {
-		BUILD_BUG_ON(sizeof(part_info.Gpt.PartitionId) !=
+	if (part_info->PartitionStyle == PARTITION_STYLE_GPT) {
+		BUILD_BUG_ON(sizeof(part_info->Gpt.PartitionId) !=
 			     sizeof(drive_info->Gpt.DiskId));
-		if (!memcmp(&part_info.Gpt.PartitionId,
+		if (!memcmp(&part_info->Gpt.PartitionId,
 			    &drive_info->Gpt.DiskId,
 			    sizeof(drive_info->Gpt.DiskId)))
 		{
 			ERROR("\"%ls\", \"%ls\": Partition GUID is the "
 			      "same as the disk GUID???", vol_name, disk_name);
-			return WIMLIB_ERR_UNSUPPORTED;
+			ret = WIMLIB_ERR_UNSUPPORTED;
+			goto out;
 		}
 	}
 
-	if (part_info.PartitionStyle != PARTITION_STYLE_MBR &&
-	    part_info.PartitionStyle != PARTITION_STYLE_GPT)
+	if (part_info->PartitionStyle != PARTITION_STYLE_MBR &&
+	    part_info->PartitionStyle != PARTITION_STYLE_GPT)
 	{
 		ERROR("\"%ls\": Unknown partition style 0x%08"PRIx32,
-		      vol_name, (u32)part_info.PartitionStyle);
-		return WIMLIB_ERR_UNSUPPORTED;
+		      vol_name, (u32)part_info->PartitionStyle);
+		ret = WIMLIB_ERR_UNSUPPORTED;
+		goto out;
 	}
 
-	*part_info_ret = part_info;
-	*drive_info_ret = *drive_info;
-	return 0;
+	ret = 0;
+out:
+	FREE(extents);
+	FREE(drive_info);
+	if (h != INVALID_HANDLE_VALUE)
+		CloseHandle(h);
+	return ret;
 }
 
 /*

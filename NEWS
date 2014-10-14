@@ -2,6 +2,9 @@ Version 1.7.3-BETA:
 	The library now permits making in-memory changes to a WIMStruct backed
 	by a read-only WIM file.
 
+	Extraction in "WIMBoot mode" without the WOF driver available no longer
+	fails if the disk containing the WIM file has too many partitions.
+
 Version 1.7.2:
 	Made more improvements to the XPRESS, LZX, and LZMS compressors.
 
