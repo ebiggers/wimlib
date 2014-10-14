@@ -2,8 +2,16 @@ Version 1.7.3-BETA:
 	The library now permits making in-memory changes to a WIMStruct backed
 	by a read-only WIM file.
 
-	Extraction in "WIMBoot mode" without the WOF driver available no longer
-	fails if the disk containing the WIM file has too many partitions.
+	Fixes for "WIMBoot" extraction mode (Windows only):
+
+		When not using the WOF driver, extraction no longer fails if the
+		disk containing the WIM file has too many partitions.
+
+		When matching patterns in [PrepopulateList], all hard links of
+		each file are now considered.
+
+		The system registry files are now automatically treated as being
+		in [PrepopulateList].
 
 Version 1.7.2:
 	Made more improvements to the XPRESS, LZX, and LZMS compressors.
