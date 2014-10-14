@@ -1667,13 +1667,8 @@ wimlib_set_image_name(WIMStruct *wim, int image, const tchar *name)
 {
 	tchar *p;
 	int i;
-	int ret;
 
 	DEBUG("Setting the name of image %d to %"TS, image, name);
-
-	ret = can_modify_wim(wim);
-	if (ret)
-		return ret;
 
 	if (name == NULL)
 		name = T("");
@@ -1708,11 +1703,6 @@ do_set_image_info_str(WIMStruct *wim, int image, const tchar *tstr,
 {
 	tchar *tstr_copy;
 	tchar **dest_tstr_p;
-	int ret;
-
-	ret = can_modify_wim(wim);
-	if (ret)
-		return ret;
 
 	if (image < 1 || image > wim->hdr.image_count) {
 		ERROR("%d is not a valid image", image);

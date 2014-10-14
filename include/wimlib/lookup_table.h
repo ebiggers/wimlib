@@ -134,10 +134,10 @@ struct wim_lookup_table_entry {
 
 	/* Number of times this lookup table entry is referenced by dentries in
 	 * the WIM.  When a WIM's lookup table is read, this field is
-	 * initialized from a corresponding entry; while it should be correct,
-	 * in general it may not be.  wim_recalculate_refcnts() recalculates the
-	 * reference counts for all streams and is run before doing any
-	 * deletions.  */
+	 * initialized from a corresponding entry.
+	 *
+	 * However, see lte_decrement_refcnt() for information about the
+	 * limitations of this field.  */
 	u32 refcnt;
 
 	/* When a WIM file is written, this is set to the number of references
@@ -228,10 +228,6 @@ struct wim_lookup_table_entry {
 				u32 alloc_stream_owners;
 			};
 		};
-
-		/* Actual reference count to this stream (only used while
-		 * verifying an image).  */
-		u32 real_refcnt;
 	};
 
 	/* Temporary list fields.  */
@@ -345,9 +341,6 @@ sort_stream_list_by_sequential_order(struct list_head *stream_list,
 
 extern int
 lte_zero_out_refcnt(struct wim_lookup_table_entry *lte, void *ignore);
-
-extern int
-lte_zero_real_refcnt(struct wim_lookup_table_entry *lte, void *ignore);
 
 static inline bool
 lte_is_partial(const struct wim_lookup_table_entry * lte)

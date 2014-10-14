@@ -88,10 +88,6 @@ wimlib_add_empty_image(WIMStruct *wim, const tchar *name, int *new_idx_ret)
 {
 	int ret;
 
-	ret = can_modify_wim(wim);
-	if (ret)
-		return ret;
-
 	if (!name)
 		name = T("");
 

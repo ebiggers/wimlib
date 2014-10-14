@@ -243,20 +243,34 @@ finalize_lte(struct wim_lookup_table_entry *lte)
 }
 
 /*
- * Decrements the reference count for the lookup table entry @lte, which must be
- * inserted in the stream lookup table @table.
+ * Decrements the reference count of the single-instance stream @lte, which must
+ * be inserted in the stream lookup table @table.
  *
- * If the reference count reaches 0, this may cause @lte to be destroyed.
- * However, we may retain entries with 0 reference count.  This does not affect
- * correctness, but it prevents the entries for valid streams in a WIM archive,
- * which will continue to be present after appending to the file, from being
- * lost merely because we dropped all references to them.
+ * If the stream's reference count reaches 0, we may unlink it from @table and
+ * free it.  However, we retain streams with 0 reference count that originated
+ * from WIM files (RESOURCE_IN_WIM).  We do this for two reasons:
+ *
+ * 1. This prevents information about valid streams in a WIM file --- streams
+ *    which will continue to be present after appending to the WIM file --- from
+ *    being lost merely because we dropped all references to them.
+ *
+ * 2. Stream reference counts we read from WIM files can't be trusted.  It's
+ *    possible that a WIM has reference counts that are too low; WIMGAPI
+ *    sometimes creates WIMs where this is the case.  It's also possible that
+ *    streams have been referenced from an external WIM; those streams can
+ *    potentially have any reference count at all, either lower or higher than
+ *    would be expected for this WIM ("this WIM" meaning the owner of @table) if
+ *    it were a standalone WIM.
+ *
+ * So we can't take the reference counts too seriously.  But at least, we do
+ * recalculate by default when writing a new WIM file.
  */
 void
 lte_decrement_refcnt(struct wim_lookup_table_entry *lte,
 		     struct wim_lookup_table *table)
 {
-	wimlib_assert(lte->refcnt != 0);
+	if (unlikely(lte->refcnt == 0))  /* See comment above  */
+		return;
 
 	if (--lte->refcnt == 0) {
 		if (lte->unhashed) {
@@ -563,7 +577,8 @@ struct wim_lookup_table_entry_disk {
 	/* Which part of the split WIM this stream is in; indexed from 1. */
 	le16 part_number;
 
-	/* Reference count of this stream over all WIM images. */
+	/* Reference count of this stream over all WIM images.  (But see comment
+	 * above lte_decrement_refcnt().)  */
 	le32 refcnt;
 
 	/* SHA1 message digest of the uncompressed data of this stream, or
@@ -1254,13 +1269,6 @@ write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
 	FREE(table_buf);
 	DEBUG("ret=%d", ret);
 	return ret;
-}
-
-int
-lte_zero_real_refcnt(struct wim_lookup_table_entry *lte, void *_ignore)
-{
-	lte->real_refcnt = 0;
-	return 0;
 }
 
 int

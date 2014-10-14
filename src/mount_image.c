@@ -2100,7 +2100,7 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 		if (!wim->filename)
 			return WIMLIB_ERR_NO_FILENAME;
-		ret = can_delete_from_wim(wim);
+		ret = can_modify_wim(wim);
 		if (ret)
 			return ret;
 	}

@@ -1433,14 +1433,6 @@ wimlib_update_image(WIMStruct *wim,
 
 	DEBUG("Updating image %d with %zu commands", image, num_cmds);
 
-	if (have_command_type(cmds, num_cmds, WIMLIB_UPDATE_OP_DELETE))
-		ret = can_delete_from_wim(wim);
-	else
-		ret = can_modify_wim(wim);
-
-	if (ret)
-		goto out;
-
 	/* Load the metadata for the image to modify (if not loaded already) */
 	ret = select_wim_image(wim, image);
 	if (ret)

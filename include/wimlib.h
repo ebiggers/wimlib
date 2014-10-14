@@ -1248,14 +1248,15 @@ struct wimlib_capture_source {
 	long reserved;
 };
 
-/** Set or unset the WIM header flag that marks it read-only
- * (WIM_HDR_FLAG_READONLY in Microsoft's documentation), based on the
- * ::wimlib_wim_info.is_marked_readonly member of the @p info parameter.  This
- * is distinct from basic file permissions; this flag can be set on a WIM file
- * that is physically writable.  If this flag is set, all further operations to
- * modify the WIM will fail, except calling wimlib_overwrite() with
- * ::WIMLIB_WRITE_FLAG_IGNORE_READONLY_FLAG specified, which is a loophole that
- * allows you to set this flag persistently on the underlying WIM file.
+/** Set or unset the "readonly" WIM header flag (WIM_HDR_FLAG_READONLY in
+ * Microsoft's documentation), based on the ::wimlib_wim_info.is_marked_readonly
+ * member of the @p info parameter.  This is distinct from basic file
+ * permissions; this flag can be set on a WIM file that is physically writable.
+ *
+ * wimlib disallows modifying on-disk WIM files with the readonly flag set.
+ * However, wimlib_overwrite() with ::WIMLIB_WRITE_FLAG_IGNORE_READONLY_FLAG
+ * will override this --- and in fact, this is necessary to set the readonly
+ * flag persistently on an existing WIM file.
  */
 #define WIMLIB_CHANGE_READONLY_FLAG		0x00000001
 
@@ -1973,8 +1974,8 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * only if it is writable at the filesystem level, does not have the
  * WIM_HDR_FLAG_READONLY flag set in its header, and is not part of a spanned
  * set.  It is not required to provide this flag before attempting to make
- * changes to the WIM, but with this flag you get an error sooner rather than
- * later.  */
+ * changes to the WIM, but with this flag you get an error immediately rather
+ * than potentially much later, when wimlib_overwrite() is finally called.  */
 #define WIMLIB_OPEN_FLAG_WRITE_ACCESS			0x00000004
 
 /** @} */
@@ -2468,10 +2469,6 @@ enum wimlib_error_code {
  *	There is already an image in @p wim named @p name.
  * @retval ::WIMLIB_ERR_NOMEM
  *	Failed to allocate the memory needed to add the new image.
- * @retval ::WIMLIB_ERR_WIM_IS_READONLY
- *	The WIM file is considered read-only because of any of the reasons
- *	mentioned in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS
- *	flag.
  */
 extern int
 wimlib_add_empty_image(WIMStruct *wim,
@@ -2634,10 +2631,6 @@ wimlib_create_new_wim(int ctype, WIMStruct **wim_ret);
  *
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  * 	@p image does not exist in the WIM and is not ::WIMLIB_ALL_IMAGES.
- * @retval ::WIMLIB_ERR_WIM_IS_READONLY
- *	The WIM file is considered read-only because of any of the reasons
- *	mentioned in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS
- *	flag.
  *
  * This function can additionally return ::WIMLIB_ERR_DECOMPRESSION,
  * ::WIMLIB_ERR_INVALID_METADATA_RESOURCE, ::WIMLIB_ERR_METADATA_NOT_FOUND,
@@ -2728,10 +2721,6 @@ wimlib_delete_path(WIMStruct *wim, int image,
  *	WIM parts were not referenced with wimlib_reference_resources() or
  *	wimlib_reference_resource_files() before the call to
  *	wimlib_export_image().
- * @retval ::WIMLIB_ERR_WIM_IS_READONLY
- *	@p dest_wim is considered read-only because of any of the reasons
- *	mentioned in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS
- *	flag.
  *
  * This function can additionally return ::WIMLIB_ERR_DECOMPRESSION,
  * ::WIMLIB_ERR_INVALID_METADATA_RESOURCE, ::WIMLIB_ERR_METADATA_NOT_FOUND,
@@ -3962,9 +3951,6 @@ wimlib_set_error_file_by_name(const wimlib_tchar *path);
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate the memory needed to duplicate the @p description
  * 	string.
- * @retval ::WIMLIB_ERR_WIM_IS_READONLY
- *	@p wim is considered read-only because of any of the reasons mentioned
- *	in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS flag.
  */
 extern int
 wimlib_set_image_descripton(WIMStruct *wim, int image,
@@ -4056,12 +4042,6 @@ wimlib_set_output_pack_compression_type(WIMStruct *wim, int ctype);
  *	::WIMLIB_CHANGE_BOOT_INDEX, and/or ::WIMLIB_CHANGE_RPFIX_FLAG.
  *
  * @return 0 on success; nonzero on failure.
- * @retval ::WIMLIB_ERR_WIM_IS_READONLY
- *	The WIM file is considered read-only because of any of the reasons
- *	mentioned in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS
- *	flag.  However, as a special case, if you are using
- *	::WIMLIB_CHANGE_READONLY_FLAG to unset the readonly flag, then this
- *	function will not fail due to the readonly flag being previously set.
  * @retval ::WIMLIB_ERR_IMAGE_COUNT
  *	::WIMLIB_CHANGE_BOOT_INDEX was specified, but
  *	::wimlib_wim_info.boot_index did not specify 0 or a valid 1-based image
@@ -4090,9 +4070,6 @@ wimlib_set_wim_info(WIMStruct *wim, const struct wimlib_wim_info *info,
  * 	@p image does not specify a single existing image in @p wim.
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate the memory needed to duplicate the @p flags string.
- * @retval ::WIMLIB_ERR_WIM_IS_READONLY
- *	@p wim is considered read-only because of any of the reasons mentioned
- *	in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS flag.
  */
 extern int
 wimlib_set_image_flags(WIMStruct *wim, int image, const wimlib_tchar *flags);
@@ -4118,9 +4095,6 @@ wimlib_set_image_flags(WIMStruct *wim, int image, const wimlib_tchar *flags);
  * 	@p image does not specify a single existing image in @p wim.
  * @retval ::WIMLIB_ERR_NOMEM
  * 	Failed to allocate the memory needed to duplicate the @p name string.
- * @retval ::WIMLIB_ERR_WIM_IS_READONLY
- *	@p wim is considered read-only because of any of the reasons mentioned
- *	in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS flag.
  */
 extern int
 wimlib_set_image_name(WIMStruct *wim, int image, const wimlib_tchar *name);
@@ -4405,10 +4379,6 @@ wimlib_unmount_image_with_progress(const wimlib_tchar *dir,
  *	a supported file type (e.g. a device file).  Only if
  *	::WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE specified in @p the add_flags
  *	for an update command.
- * @retval ::WIMLIB_ERR_WIM_IS_READONLY
- *	The WIM file is considered read-only because of any of the reasons
- *	mentioned in the documentation for the ::WIMLIB_OPEN_FLAG_WRITE_ACCESS
- *	flag.
  *
  * This function can additionally return ::WIMLIB_ERR_DECOMPRESSION,
  * ::WIMLIB_ERR_INVALID_METADATA_RESOURCE, ::WIMLIB_ERR_METADATA_NOT_FOUND,

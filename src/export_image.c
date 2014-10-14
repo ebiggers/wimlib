@@ -131,11 +131,6 @@ wimlib_export_image(WIMStruct *src_wim,
 	if (!wim_has_metadata(dest_wim))
 		return WIMLIB_ERR_METADATA_NOT_FOUND;
 
-	/* Destination WIM must be writable.  */
-	ret = can_modify_wim(dest_wim);
-	if (ret)
-		return ret;
-
 	if (src_image == WIMLIB_ALL_IMAGES) {
 		/* Multi-image export.  */
 		if ((!(export_flags & WIMLIB_EXPORT_FLAG_NO_NAMES) &&

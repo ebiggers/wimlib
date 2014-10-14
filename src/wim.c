@@ -203,7 +203,6 @@ wimlib_create_new_wim(int ctype, WIMStruct **wim_ret)
 		goto out_free_wim;
 	}
 	wim->lookup_table = table;
-	wim->refcnts_ok = 1;
 	wim->compression_type = ctype;
 	wim->out_compression_type = ctype;
 	wim->chunk_size = wim->hdr.chunk_size;
@@ -472,13 +471,15 @@ wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info)
 WIMLIBAPI int
 wimlib_set_wim_info(WIMStruct *wim, const struct wimlib_wim_info *info, int which)
 {
-	int ret;
-
 	if (which & ~(WIMLIB_CHANGE_READONLY_FLAG |
 		      WIMLIB_CHANGE_GUID |
 		      WIMLIB_CHANGE_BOOT_INDEX |
 		      WIMLIB_CHANGE_RPFIX_FLAG))
 		return WIMLIB_ERR_INVALID_PARAM;
+
+	if ((which & WIMLIB_CHANGE_BOOT_INDEX) &&
+	    info->boot_index > wim->hdr.image_count)
+		return WIMLIB_ERR_INVALID_IMAGE;
 
 	if (which & WIMLIB_CHANGE_READONLY_FLAG) {
 		if (info->is_marked_readonly)
@@ -487,21 +488,11 @@ wimlib_set_wim_info(WIMStruct *wim, const struct wimlib_wim_info *info, int whic
 			wim->hdr.flags &= ~WIM_HDR_FLAG_READONLY;
 	}
 
-	if ((which & ~WIMLIB_CHANGE_READONLY_FLAG) == 0)
-		return 0;
-
-	ret = can_modify_wim(wim);
-	if (ret)
-		return ret;
-
 	if (which & WIMLIB_CHANGE_GUID)
 		memcpy(wim->hdr.guid, info->guid, WIM_GUID_LEN);
 
-	if (which & WIMLIB_CHANGE_BOOT_INDEX) {
-		if (info->boot_index > wim->hdr.image_count)
-			return WIMLIB_ERR_INVALID_IMAGE;
+	if (which & WIMLIB_CHANGE_BOOT_INDEX)
 		wim->hdr.boot_idx = info->boot_index;
-	}
 
 	if (which & WIMLIB_CHANGE_RPFIX_FLAG) {
 		if (info->has_rpfix)
@@ -868,33 +859,6 @@ can_modify_wim(WIMStruct *wim)
 		ERROR("Cannot modify \"%"TS"\": is marked read-only",
 		      wim->filename);
 		return WIMLIB_ERR_WIM_IS_READONLY;
-	}
-	return 0;
-}
-
-/*
- * can_delete_from_wim - Check if files or images can be deleted from a given
- * WIM file.
- *
- * This theoretically should be exactly the same as can_modify_wim(), but
- * unfortunately, due to bugs in Microsoft's software that generate incorrect
- * reference counts for some WIM resources, we need to run expensive
- * verifications to make sure the reference counts are correct on all WIM
- * resources.  Otherwise we might delete a WIM resource whose reference count
- * has fallen to 0, but is actually still referenced somewhere.
- */
-int
-can_delete_from_wim(WIMStruct *wim)
-{
-	int ret;
-
-	ret = can_modify_wim(wim);
-	if (ret)
-		return ret;
-	if (!wim->refcnts_ok) {
-		ret = wim_recalculate_refcnts(wim);
-		if (ret)
-			return ret;
 	}
 	return 0;
 }

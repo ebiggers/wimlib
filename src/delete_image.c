@@ -37,10 +37,6 @@ wimlib_delete_image(WIMStruct *wim, int image)
 	int ret;
 	int first, last;
 
-	ret = can_delete_from_wim(wim);
-	if (ret)
-		return ret;
-
 	if (image == WIMLIB_ALL_IMAGES) {
 		last = wim->hdr.image_count;
 		first = 1;
@@ -52,16 +48,16 @@ wimlib_delete_image(WIMStruct *wim, int image)
 	for (image = last; image >= first; image--) {
 		DEBUG("Deleting image %d", image);
 
-		/* Even if the dentry tree is not allocated, we must select it (and
-		 * therefore allocate it) so that we can decrement the reference counts
-		 * in the lookup table.  */
+		/* Even if the dentry tree is not allocated, we must select it
+		 * (and therefore allocate it) so that we can decrement stream
+		 * reference counts.  */
 		ret = select_wim_image(wim, image);
 		if (ret)
 			return ret;
 
-		/* Unless the image metadata is shared by another WIMStruct, free the
-		 * dentry tree, any lookup table entries that have their refcnt
-		 * decremented to 0, and the security data. */
+		/* Unless the image metadata is shared by another WIMStruct,
+		 * free the dentry tree, free the security data, and decrement
+		 * stream reference counts.  */
 		put_image_metadata(wim->image_metadata[image - 1], wim->lookup_table);
 
 		/* Get rid of the empty slot in the image metadata array. */

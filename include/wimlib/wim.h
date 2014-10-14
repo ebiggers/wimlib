@@ -59,13 +59,6 @@ struct WIMStruct {
 	/* Have any images been deleted? */
 	u8 deletion_occurred : 1;
 
-	/* Do we know that all the stream reference counts in the WIM are
-	 * correct?  If so, this is set to 1 and deletions are safe; otherwise
-	 * this is set to 0 and deletions are not safe until reference counts
-	 * are recalculated.  (This is due to a bug in M$'s software that
-	 * generates WIMs with invalid reference counts.)  */
-	u8 refcnts_ok : 1;
-
 	/* Has the underlying WIM file been locked for appending?  */
 	u8 locked_for_append : 1;
 
@@ -116,9 +109,6 @@ static inline bool wim_has_metadata(const WIMStruct *wim)
 }
 
 extern int
-wim_recalculate_refcnts(WIMStruct *wim);
-
-extern int
 set_wim_hdr_cflags(int ctype, struct wim_header *hdr);
 
 extern int
@@ -157,8 +147,5 @@ open_wim_as_WIMStruct(const void *wim_filename_or_fd, int open_flags,
 
 extern int
 can_modify_wim(WIMStruct *wim);
-
-extern int
-can_delete_from_wim(WIMStruct *wim);
 
 #endif /* _WIMLIB_WIM_H */

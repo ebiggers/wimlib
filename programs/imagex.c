@@ -1713,7 +1713,7 @@ static int
 imagex_capture_or_append(int argc, tchar **argv, int cmd)
 {
 	int c;
-	int open_flags = WIMLIB_OPEN_FLAG_WRITE_ACCESS;
+	int open_flags = 0;
 	int add_image_flags = WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE |
 			      WIMLIB_ADD_IMAGE_FLAG_WINCONFIG |
 			      WIMLIB_ADD_IMAGE_FLAG_VERBOSE;
@@ -2007,8 +2007,11 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 
 	/* Open the existing WIM, or create a new one.  */
 	if (cmd == CMD_APPEND) {
-		ret = wimlib_open_wim_with_progress(wimfile, open_flags, &wim,
-						    imagex_progress_func, NULL);
+		ret = wimlib_open_wim_with_progress(wimfile,
+						    open_flags | WIMLIB_OPEN_FLAG_WRITE_ACCESS,
+						    &wim,
+						    imagex_progress_func,
+						    NULL);
 		if (ret)
 			goto out_free_capture_sources;
 	} else {
@@ -2090,8 +2093,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 
 		for (size_t i = 0; i < base_wimfiles.num_strings; i++) {
 			ret = wimlib_open_wim_with_progress(
-				    base_wimfiles.strings[i],
-				    open_flags & ~WIMLIB_OPEN_FLAG_WRITE_ACCESS,
+				    base_wimfiles.strings[i], open_flags,
 				    &base_wims[i], imagex_progress_func, NULL);
 			if (ret)
 				goto out_free_base_wims;
@@ -2127,7 +2129,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			template_wim = wim;
 		} else {
 			ret = wimlib_open_wim_with_progress(template_wimfile,
-							    open_flags & ~WIMLIB_OPEN_FLAG_WRITE_ACCESS,
+							    open_flags,
 							    &template_wim,
 							    imagex_progress_func,
 							    NULL);
