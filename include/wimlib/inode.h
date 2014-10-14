@@ -102,6 +102,9 @@ struct wim_inode {
 	 * has no ADS entries  */
 	u8 i_canonical_streams : 1;
 
+	/* Cached value  */
+	u8 i_can_externally_back : 1;
+
 	/* Pointer to a malloc()ed array of i_num_ads alternate data stream
 	 * entries for this inode.  */
 	struct wim_ads_entry *i_ads_entries;

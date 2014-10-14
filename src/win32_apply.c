@@ -192,6 +192,13 @@ get_vol_flags(const wchar_t *target, DWORD *vol_flags_ret,
 	}
 }
 
+static const wchar_t *
+current_path(struct win32_apply_ctx *ctx);
+
+static void
+build_extraction_path(const struct wim_dentry *dentry,
+		      struct win32_apply_ctx *ctx);
+
 static int
 win32_get_supported_features(const wchar_t *target,
 			     struct wim_features *supported_features)
@@ -337,16 +344,66 @@ can_externally_back_path(const wchar_t *path, size_t path_nchars,
 	return true;
 }
 
-static const wchar_t *
-current_path(struct win32_apply_ctx *ctx);
-
-static void
-build_extraction_path(const struct wim_dentry *dentry,
-		      struct win32_apply_ctx *ctx);
-
 #define WIM_BACKING_NOT_ENABLED		-1
 #define WIM_BACKING_NOT_POSSIBLE	-2
 #define WIM_BACKING_EXCLUDED		-3
+
+static int
+will_externally_back_inode(struct wim_inode *inode, struct win32_apply_ctx *ctx,
+			   const struct wim_dentry **excluded_dentry_ret)
+{
+	struct list_head *next;
+	struct wim_dentry *dentry;
+	struct wim_lookup_table_entry *stream;
+	int ret;
+
+	if (inode->i_can_externally_back)
+		return 0;
+
+	/* This may do redundant checks because the cached value
+	 * i_can_externally_back is 2-state (as opposed to 3-state:
+	 * unknown/no/yes).  But most files can be externally backed, so this
+	 * way is fine.  */
+
+	if (inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
+				   FILE_ATTRIBUTE_REPARSE_POINT |
+				   FILE_ATTRIBUTE_ENCRYPTED))
+		return WIM_BACKING_NOT_POSSIBLE;
+
+	stream = inode_unnamed_lte_resolved(inode);
+
+	if (!stream ||
+	    stream->resource_location != RESOURCE_IN_WIM ||
+	    stream->rspec->wim != ctx->common.wim ||
+	    stream->size != stream->rspec->uncompressed_size)
+		return WIM_BACKING_NOT_POSSIBLE;
+
+	/*
+	 * We need to check the patterns in [PrepopulateList] against every name
+	 * of the inode, in case any of them match.
+	 */
+	next = inode->i_extraction_aliases.next;
+	do {
+		dentry = list_entry(next, struct wim_dentry,
+				    d_extraction_alias_node);
+
+		ret = calculate_dentry_full_path(dentry);
+		if (ret)
+			return ret;
+
+		if (!can_externally_back_path(dentry->_full_path,
+					      wcslen(dentry->_full_path), ctx))
+		{
+			if (excluded_dentry_ret)
+				*excluded_dentry_ret = dentry;
+			return WIM_BACKING_EXCLUDED;
+		}
+		next = next->next;
+	} while (next != &inode->i_extraction_aliases);
+
+	inode->i_can_externally_back = 1;
+	return 0;
+}
 
 /*
  * Determines if the unnamed data stream of a file will be created as an
@@ -356,61 +413,37 @@ static int
 win32_will_externally_back(struct wim_dentry *dentry, struct apply_ctx *_ctx)
 {
 	struct win32_apply_ctx *ctx = (struct win32_apply_ctx *)_ctx;
-	struct wim_lookup_table_entry *stream;
-	int ret;
 
 	if (!(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT))
 		return WIM_BACKING_NOT_ENABLED;
 
-	if (!ctx->wimboot.tried_to_load_prepopulate_list) {
-		ret = load_prepopulate_pats(ctx);
-		if (ret == WIMLIB_ERR_NOMEM)
-			return ret;
-	}
+	if (!ctx->wimboot.tried_to_load_prepopulate_list)
+		if (load_prepopulate_pats(ctx) == WIMLIB_ERR_NOMEM)
+			return WIMLIB_ERR_NOMEM;
 
-	if (dentry->d_inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
-					     FILE_ATTRIBUTE_REPARSE_POINT |
-					     FILE_ATTRIBUTE_ENCRYPTED))
-		return WIM_BACKING_NOT_POSSIBLE;
-
-	stream = inode_unnamed_lte_resolved(dentry->d_inode);
-
-	if (!stream ||
-	    stream->resource_location != RESOURCE_IN_WIM ||
-	    stream->rspec->wim != ctx->common.wim ||
-	    stream->size != stream->rspec->uncompressed_size)
-		return WIM_BACKING_NOT_POSSIBLE;
-
-	ret = calculate_dentry_full_path(dentry);
-	if (ret)
-		return ret;
-
-	if (!can_externally_back_path(dentry->_full_path,
-				      wcslen(dentry->_full_path), ctx))
-		return WIM_BACKING_EXCLUDED;
-
-	return 0;
+	return will_externally_back_inode(dentry->d_inode, ctx, NULL);
 }
 
 static int
-set_external_backing(HANDLE h, struct wim_dentry *dentry, struct win32_apply_ctx *ctx)
+set_external_backing(HANDLE h, struct wim_inode *inode, struct win32_apply_ctx *ctx)
 {
 	int ret;
+	const struct wim_dentry *excluded_dentry;
 
-	ret = win32_will_externally_back(dentry, &ctx->common);
+	ret = will_externally_back_inode(inode, ctx, &excluded_dentry);
 	if (ret > 0) /* Error.  */
 		return ret;
 
 	if (ret < 0 && ret != WIM_BACKING_EXCLUDED)
 		return 0; /* Not externally backing, other than due to exclusion.  */
 
-	build_extraction_path(dentry, ctx);
-
-	if (ret == WIM_BACKING_EXCLUDED) {
+	if (unlikely(ret == WIM_BACKING_EXCLUDED)) {
 		/* Not externally backing due to exclusion.  */
 		union wimlib_progress_info info;
 
-		info.wimboot_exclude.path_in_wim = dentry->_full_path;
+		build_extraction_path(excluded_dentry, ctx);
+
+		info.wimboot_exclude.path_in_wim = excluded_dentry->_full_path;
 		info.wimboot_exclude.extraction_path = current_path(ctx);
 
 		return call_progress(ctx->common.progfunc,
@@ -418,12 +451,22 @@ set_external_backing(HANDLE h, struct wim_dentry *dentry, struct win32_apply_ctx
 				     &info, ctx->common.progctx);
 	} else {
 		/* Externally backing.  */
-		return wimboot_set_pointer(h,
-					   current_path(ctx),
-					   inode_unnamed_lte_resolved(dentry->d_inode),
-					   ctx->wimboot.data_source_id,
-					   ctx->wimboot.wim_lookup_table_hash,
-					   ctx->wimboot.wof_running);
+		if (unlikely(!wimboot_set_pointer(h,
+						  inode_unnamed_lte_resolved(inode),
+						  ctx->wimboot.data_source_id,
+						  ctx->wimboot.wim_lookup_table_hash,
+						  ctx->wimboot.wof_running)))
+		{
+			const DWORD err = GetLastError();
+
+			build_extraction_path(inode_first_extraction_dentry(inode), ctx);
+			set_errno_from_win32_error(err);
+			ERROR_WITH_ERRNO("\"%ls\": Couldn't set WIMBoot "
+					 "pointer data (err=%"PRIu32")",
+					 current_path(ctx), (u32)err);
+			return WIMLIB_ERR_WIMBOOT;
+		}
+		return 0;
 	}
 }
 
@@ -443,11 +486,9 @@ start_wimboot_extraction(struct win32_apply_ctx *ctx)
 	int ret;
 	WIMStruct *wim = ctx->common.wim;
 
-	if (!ctx->wimboot.tried_to_load_prepopulate_list) {
-		ret = load_prepopulate_pats(ctx);
-		if (ret == WIMLIB_ERR_NOMEM)
-			return ret;
-	}
+	if (!ctx->wimboot.tried_to_load_prepopulate_list)
+		if (load_prepopulate_pats(ctx) == WIMLIB_ERR_NOMEM)
+			return WIMLIB_ERR_NOMEM;
 
 	if (!wim_info_get_wimboot(wim->wim_info, wim->current_image))
 		WARNING("Image is not marked as WIMBoot compatible!");
@@ -1439,7 +1480,7 @@ create_links(HANDLE h, const struct wim_dentry *first_dentry,
 
 /* Create a nondirectory file, including all links.  */
 static int
-create_nondirectory(const struct wim_inode *inode, struct win32_apply_ctx *ctx)
+create_nondirectory(struct wim_inode *inode, struct win32_apply_ctx *ctx)
 {
 	struct wim_dentry *first_dentry;
 	HANDLE h;
@@ -1462,7 +1503,7 @@ create_nondirectory(const struct wim_inode *inode, struct win32_apply_ctx *ctx)
 
 	/* "WIMBoot" extraction: set external backing by the WIM file if needed.  */
 	if (!ret && unlikely(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT))
-		ret = set_external_backing(h, first_dentry, ctx);
+		ret = set_external_backing(h, inode, ctx);
 
 	(*func_NtClose)(h);
 	return ret;
@@ -1473,8 +1514,8 @@ create_nondirectory(const struct wim_inode *inode, struct win32_apply_ctx *ctx)
 static int
 create_nondirectories(struct list_head *dentry_list, struct win32_apply_ctx *ctx)
 {
-	const struct wim_dentry *dentry;
-	const struct wim_inode *inode;
+	struct wim_dentry *dentry;
+	struct wim_inode *inode;
 	int ret;
 
 	list_for_each_entry(dentry, dentry_list, d_extraction_list_node) {

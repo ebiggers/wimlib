@@ -1059,8 +1059,6 @@ out:
  *
  * @h
  *	Open handle to the file, with GENERIC_WRITE access.
- * @printable_name
- *	Printable representation of the path to the file.
  * @lte
  *	Unnamed data stream of the file.
  * @data_source_id
@@ -1071,11 +1069,10 @@ out:
  *	%true if the WOF driver appears to be available and working; %false if
  *	not.
  *
- * Returns 0 on success, or a positive error code on failure.
+ * Returns %true on success, or %false on failure with GetLastError() set.
  */
-int
+bool
 wimboot_set_pointer(HANDLE h,
-		    const wchar_t *printable_name,
 		    const struct wim_lookup_table_entry *lte,
 		    u64 data_source_id,
 		    const u8 lookup_table_hash[SHA1_HASH_SIZE],
@@ -1106,7 +1103,7 @@ wimboot_set_pointer(HANDLE h,
 		if (!DeviceIoControl(h, FSCTL_SET_EXTERNAL_BACKING,
 				     &in, sizeof(in), NULL, 0,
 				     &bytes_returned, NULL))
-			goto fail;
+			return false;
 	} else {
 
 		/* The WOF driver is running.  We need to create the reparse
@@ -1144,7 +1141,7 @@ wimboot_set_pointer(HANDLE h,
 
 		if (!DeviceIoControl(h, FSCTL_SET_REPARSE_POINT,
 				     &in, sizeof(in), NULL, 0, &bytes_returned, NULL))
-			goto fail;
+			return false;
 
 		/* We also need to create an unnamed data stream of the correct
 		 * size.  Otherwise the file shows up as zero length.  It can be
@@ -1152,25 +1149,18 @@ wimboot_set_pointer(HANDLE h,
 		 * are unimportant.  */
 		if (!DeviceIoControl(h, FSCTL_SET_SPARSE, NULL, 0, NULL, 0,
 				     &bytes_returned, NULL))
-			goto fail;
+			return false;
 
 		if (!SetFilePointerEx(h,
 				      (LARGE_INTEGER){ .QuadPart = lte->size},
 				      NULL, FILE_BEGIN))
-			goto fail;
+			return false;
 
 		if (!SetEndOfFile(h))
-			goto fail;
+			return false;
 	}
 
-	return 0;
-
-fail:
-	err = GetLastError();
-	set_errno_from_win32_error(err);
-	ERROR_WITH_ERRNO("\"%ls\": Couldn't set WIMBoot pointer data "
-			 "(err=%"PRIu32")", printable_name, (u32)err);
-	return WIMLIB_ERR_WIMBOOT;
+	return true;
 }
 
 #endif /* __WIN32__ */

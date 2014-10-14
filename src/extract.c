@@ -737,6 +737,7 @@ destroy_dentry_list(struct list_head *dentry_list)
 		inode = dentry->d_inode;
 		dentry_reset_extraction_list_node(dentry);
 		inode->i_visited = 0;
+		inode->i_can_externally_back = 0;
 		if ((void *)dentry->d_extraction_name != (void *)dentry->file_name)
 			FREE(dentry->d_extraction_name);
 		dentry->d_extraction_name = NULL;
@@ -1476,11 +1477,11 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 	if (ret)
 		goto out_cleanup;
 
+	dentry_list_build_inode_alias_lists(&dentry_list);
+
 	ret = dentry_list_ref_streams(&dentry_list, ctx);
 	if (ret)
 		goto out_cleanup;
-
-	dentry_list_build_inode_alias_lists(&dentry_list);
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_FROM_PIPE) {
 		/* When extracting from a pipe, the number of bytes of data to
