@@ -121,7 +121,7 @@ query_partition_and_disk_info(const wchar_t *path,
 				 extents, extents_size))
 			break;
 		if (GetLastError() != ERROR_MORE_DATA) {
-			ERROR("\"%ls\": Can't get volume extent info (err="PRIu32")",
+			ERROR("\"%ls\": Can't get volume extent info (err=%"PRIu32")",
 			      vol_name, (u32)GetLastError());
 			ret = WIMLIB_ERR_READ;
 			goto out;
