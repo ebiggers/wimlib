@@ -13,6 +13,10 @@ Version 1.7.3-BETA:
 		The system registry files are now automatically treated as being
 		in [PrepopulateList].
 
+	Added a workaround that tries to prevent short filename conflicts.  It
+	can have an effect primarily on versions of Windows that do not support
+	removing short names from files (earlier than Windows 7).
+
 Version 1.7.2:
 	Made more improvements to the XPRESS, LZX, and LZMS compressors.
 

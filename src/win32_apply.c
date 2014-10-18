@@ -126,7 +126,10 @@ struct win32_apply_ctx {
 	unsigned long no_security_descriptors;
 
 	/* Number of files for which we couldn't set the short name.  */
-	unsigned long num_short_name_failures;
+	unsigned long num_set_short_name_failures;
+
+	/* Number of files for which we couldn't remove the short name.  */
+	unsigned long num_remove_short_name_failures;
 
 	/* Have we tried to enable short name support on the target volume yet?
 	 */
@@ -785,9 +788,11 @@ prepare_target(struct list_head *dentry_list, struct win32_apply_ctx *ctx)
 
 	path_max = compute_path_max(dentry_list);
 
-	/* Add some extra for building Win32 paths for the file encryption APIs
-	 * ...  */
-	path_max += 2 + (ctx->target_ntpath.Length / sizeof(wchar_t));
+	/* Add some extra for building Win32 paths for the file encryption APIs,
+	 * and ensure we have at least enough to potentially use a 8.3 name for
+	 * the last component.  */
+	path_max += max(2 + (ctx->target_ntpath.Length / sizeof(wchar_t)),
+			8 + 1 + 3);
 
 	ctx->pathbuf.MaximumLength = path_max * sizeof(wchar_t);
 	ctx->pathbuf.Buffer = MALLOC(ctx->pathbuf.MaximumLength);
@@ -991,6 +996,72 @@ fail:
 	return false;
 }
 
+static NTSTATUS
+remove_conflicting_short_name(const struct wim_dentry *dentry, struct win32_apply_ctx *ctx)
+{
+	wchar_t *name;
+	wchar_t *end;
+	NTSTATUS status;
+	HANDLE h;
+	size_t bufsize = offsetof(FILE_NAME_INFORMATION, FileName) +
+			 (13 * sizeof(wchar_t));
+	u8 buf[bufsize] _aligned_attribute(8);
+	bool retried = false;
+	FILE_NAME_INFORMATION *info = (FILE_NAME_INFORMATION *)buf;
+
+	memset(buf, 0, bufsize);
+
+	/* Build the path with the short name.  */
+	name = &ctx->pathbuf.Buffer[ctx->pathbuf.Length / sizeof(wchar_t)];
+	while (name != ctx->pathbuf.Buffer && *(name - 1) != L'\\')
+		name--;
+	end = mempcpy(name, dentry->short_name, dentry->short_name_nbytes);
+	ctx->pathbuf.Length = ((u8 *)end - (u8 *)ctx->pathbuf.Buffer);
+
+	/* Open the conflicting file (by short name).  */
+	status = (*func_NtOpenFile)(&h, GENERIC_WRITE | DELETE,
+				    &ctx->attr, &ctx->iosb,
+				    FILE_SHARE_VALID_FLAGS,
+				    FILE_OPEN_REPARSE_POINT | FILE_OPEN_FOR_BACKUP_INTENT);
+	if (!NT_SUCCESS(status)) {
+		WARNING("Can't open \"%ls\" (status=0x%08"PRIx32")",
+			current_path(ctx), (u32)status);
+		goto out;
+	}
+
+#if 0
+	WARNING("Overriding conflicting short name; path=\"%ls\"",
+		current_path(ctx));
+#endif
+
+	/* Try to remove the short name on the conflicting file.  */
+
+retry:
+	status = (*func_NtSetInformationFile)(h, &ctx->iosb, info, bufsize,
+					      FileShortNameInformation);
+
+	if (status == STATUS_INVALID_PARAMETER && !retried) {
+
+		/* Microsoft forgot to make it possible to remove short names
+		 * until Windows 7.  Oops.  Use a random short name instead.  */
+
+		info->FileNameLength = 12 * sizeof(wchar_t);
+		for (int i = 0; i < 8; i++)
+			info->FileName[i] = 'A' + (rand() % 26);
+		info->FileName[8] = L'.';
+		info->FileName[9] = L'W';
+		info->FileName[10] = L'L';
+		info->FileName[11] = L'B';
+		info->FileName[12] = L'\0';
+		retried = true;
+		goto retry;
+	}
+	(*func_NtClose)(h);
+out:
+	build_extraction_path(dentry, ctx);
+	return status;
+}
+
 /* Set the short name on the open file @h which has been created at the location
  * indicated by @dentry.
  *
@@ -1027,6 +1098,7 @@ set_short_name(HANDLE h, const struct wim_dentry *dentry,
 	u8 buf[bufsize] _aligned_attribute(8);
 	FILE_NAME_INFORMATION *info = (FILE_NAME_INFORMATION *)buf;
 	NTSTATUS status;
+	bool tried_to_remove_existing = false;
 
 	memset(buf, 0, bufsize);
 
@@ -1057,10 +1129,38 @@ retry:
 		}
 	}
 
+	/*
+	 * Short names can conflict in several cases:
+	 *
+	 * - a file being extracted has a short name conflicting with an
+	 *   existing file
+	 *
+	 * - a file being extracted has a short name conflicting with another
+	 *   file being extracted (possible, but shouldn't happen)
+	 *
+	 * - a file being extracted has a short name that conflicts with the
+	 *   automatically generated short name of a file we previously
+	 *   extracted, but failed to set the short name for.  Sounds unlikely,
+	 *   but this actually does happen fairly often on versions of Windows
+	 *   prior to Windows 7 because they do not support removing short names
+	 *   from files.
+	 */
+	if (unlikely(status == STATUS_OBJECT_NAME_COLLISION) &&
+	    dentry->short_name_nbytes && !tried_to_remove_existing)
+	{
+		tried_to_remove_existing = true;
+		status = remove_conflicting_short_name(dentry, ctx);
+		if (NT_SUCCESS(status))
+			goto retry;
+	}
+
 	/* By default, failure to set short names is not an error (since short
 	 * names aren't too important anymore...).  */
 	if (!(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_SHORT_NAMES)) {
-		ctx->num_short_name_failures++;
+		if (dentry->short_name_nbytes)
+			ctx->num_set_short_name_failures++;
+		else
+			ctx->num_remove_short_name_failures++;
 		return 0;
 	}
 
@@ -2344,17 +2444,28 @@ apply_metadata(struct list_head *dentry_list, struct win32_apply_ctx *ctx)
 static void
 do_warnings(const struct win32_apply_ctx *ctx)
 {
-	if (ctx->partial_security_descriptors == 0 &&
-	    ctx->no_security_descriptors == 0 &&
-	    ctx->num_short_name_failures == 0)
+	if (ctx->partial_security_descriptors == 0
+	    && ctx->no_security_descriptors == 0
+	    && ctx->num_set_short_name_failures == 0
+	#if 0
+	    && ctx->num_remove_short_name_failures == 0
+	#endif
+	    )
 		return;
 
 	WARNING("Extraction to \"%ls\" complete, but with one or more warnings:",
 		ctx->common.target);
-	if (ctx->num_short_name_failures) {
+	if (ctx->num_set_short_name_failures) {
 		WARNING("- Could not set short names on %lu files or directories",
-			ctx->num_short_name_failures);
+			ctx->num_set_short_name_failures);
 	}
+#if 0
+	if (ctx->num_remove_short_name_failures) {
+		WARNING("- Could not remove short names on %lu files or directories"
+			"          (This is expected on Vista and earlier)",
+			ctx->num_remove_short_name_failures);
+	}
+#endif
 	if (ctx->partial_security_descriptors) {
 		WARNING("- Could only partially set the security descriptor\n"
 			"            on %lu files or directories.",
