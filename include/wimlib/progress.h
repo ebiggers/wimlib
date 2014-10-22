@@ -2,6 +2,7 @@
 #define _WIMLIB_PROGRESS_H
 
 #include "wimlib.h"
+#include "wimlib/types.h"
 
 /* If specified, call the user-provided progress function and check its result.
  */
@@ -28,4 +29,8 @@ call_progress(wimlib_progress_func_t progfunc,
 	return 0;
 }
 
-#endif
+extern int
+report_error(wimlib_progress_func_t progfunc,
+	     void *progctx, int error_code, const tchar *path);
+
+#endif /* _WIMLIB_PROGRESS_H */

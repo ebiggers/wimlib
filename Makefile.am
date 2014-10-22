@@ -59,6 +59,7 @@ libwim_la_SOURCES =		\
 	src/mount_image.c	\
 	src/pathlist.c		\
 	src/paths.c		\
+	src/progress.c		\
 	src/resource.c		\
 	src/reference.c		\
 	src/security.c		\

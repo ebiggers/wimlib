@@ -708,6 +708,25 @@ enum wimlib_progress_msg {
 	 * mechanism.
 	 */
 	WIMLIB_PROGRESS_MSG_TEST_FILE_EXCLUSION = 30,
+
+	/**
+	 * An error has occurred and the progress function is being asked
+	 * whether to ignore the error or not.  @p info will point to
+	 * ::wimlib_progress_info.handle_error.  This is a bidirectional
+	 * message.
+	 *
+	 * This message provides a limited capability for applications to
+	 * recover from "unexpected" errors (i.e. those with no in-library
+	 * handling policy) arising from the underlying operating system.
+	 * Normally, any such error will cause the library to abort the current
+	 * operation.  By implementing a handler for this message, the
+	 * application can instead choose to ignore a given error.
+	 *
+	 * Currently, only the following types of errors will result in this
+	 * progress message being sent:
+	 *
+	 */
+	WIMLIB_PROGRESS_MSG_HANDLE_ERROR = 31,
 };
 
 /** Valid return values from user-provided progress functions
@@ -1204,6 +1223,24 @@ union wimlib_progress_info {
 		 */
 		bool will_exclude;
 	} test_file_exclusion;
+
+	/** Valid on messages ::WIMLIB_PROGRESS_MSG_HANDLE_ERROR.  */
+	struct wimlib_progress_info_handle_error {
+
+		/** Path to the file for which the error occurred, or NULL if
+		 * not relevant.  */
+		const wimlib_tchar *path;
+
+		/** The wimlib error code associated with the error.  */
+		int error_code;
+
+		/**
+		 * Indicates whether the error will be ignored or not.  This
+		 * will be <tt>false</tt> by default; the progress function may
+		 * set it to <tt>true</tt>.
+		 */
+		bool will_ignore;
+	} handle_error;
 };
 
 /**
@@ -1724,7 +1761,7 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * Note: This method for file exclusions is independent from the capture
  * configuration file mechanism.
  */
-#define WIMLIB_ADD_FLAG_TEST_FILE_EXCLUSION 0x00004000
+#define WIMLIB_ADD_FLAG_TEST_FILE_EXCLUSION	0x00004000
 
 #define WIMLIB_ADD_IMAGE_FLAG_NTFS		WIMLIB_ADD_FLAG_NTFS
 #define WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE	WIMLIB_ADD_FLAG_DEREFERENCE
