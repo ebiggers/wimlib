@@ -725,6 +725,7 @@ enum wimlib_progress_msg {
 	 * Currently, only the following types of errors will result in this
 	 * progress message being sent:
 	 *
+	 *	- Directory tree scan errors, e.g. from wimlib_add_image()
 	 */
 	WIMLIB_PROGRESS_MSG_HANDLE_ERROR = 31,
 };

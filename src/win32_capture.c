@@ -1383,10 +1383,12 @@ out_progress:
 out:
 	if (likely(h != INVALID_HANDLE_VALUE))
 		(*func_NtClose)(h);
-	if (likely(ret == 0))
-		*root_ret = root;
-	else
+	if (unlikely(ret)) {
 		free_dentry_tree(root, params->lookup_table);
+		root = NULL;
+		ret = report_capture_error(params, ret, full_path);
+	}
+	*root_ret = root;
 	return ret;
 }
 

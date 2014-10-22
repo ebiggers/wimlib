@@ -437,10 +437,12 @@ out_progress:
 	else
 		ret = do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
 out:
-	if (likely(ret == 0))
-		*tree_ret = tree;
-	else
+	if (unlikely(ret)) {
 		free_dentry_tree(tree, params->lookup_table);
+		tree = NULL;
+		ret = report_capture_error(params, ret, full_path);
+	}
+	*tree_ret = tree;
 	return ret;
 }
 

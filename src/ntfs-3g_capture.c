@@ -704,10 +704,12 @@ out_progress:
 	else
 		ret = do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
 out:
-	if (ret == 0)
-		*root_ret = root;
-	else
+	if (unlikely(ret)) {
 		free_dentry_tree(root, params->lookup_table);
+		root = NULL;
+		ret = report_capture_error(params, ret, path);
+	}
+	*root_ret = root;
 	return ret;
 }
 

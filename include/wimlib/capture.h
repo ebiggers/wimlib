@@ -4,6 +4,7 @@
 #include "wimlib.h"
 #include "wimlib/inode_table.h"
 #include "wimlib/list.h"
+#include "wimlib/progress.h"
 #include "wimlib/security.h"
 #include "wimlib/textfile.h"
 #include "wimlib/util.h"
@@ -114,5 +115,12 @@ unix_build_dentry_tree(struct wim_dentry **root_ret,
 #endif
 
 #define WIMLIB_ADD_FLAG_ROOT	0x80000000
+
+static inline int
+report_capture_error(struct add_image_params *params, int error_code,
+		     const tchar *path)
+{
+	return report_error(params->progfunc, params->progctx, error_code, path);
+}
 
 #endif /* _WIMLIB_CAPTURE_H */
