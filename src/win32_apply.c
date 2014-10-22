@@ -203,6 +203,23 @@ build_extraction_path(const struct wim_dentry *dentry,
 		      struct win32_apply_ctx *ctx);
 
 static int
+report_dentry_apply_error(const struct wim_dentry *dentry,
+			  struct win32_apply_ctx *ctx, int ret)
+{
+	build_extraction_path(dentry, ctx);
+	return report_apply_error(&ctx->common, ret, current_path(ctx));
+}
+
+static inline int
+check_apply_error(const struct wim_dentry *dentry,
+		  struct win32_apply_ctx *ctx, int ret)
+{
+	if (unlikely(ret))
+		ret = report_dentry_apply_error(dentry, ctx, ret);
+	return ret;
+}
+
+static int
 win32_get_supported_features(const wchar_t *target,
 			     struct wim_features *supported_features)
 {
@@ -1366,10 +1383,12 @@ create_directories(struct list_head *dentry_list,
 		 * in prepare_target().  */
 		if (!dentry_is_root(dentry)) {
 			ret = create_directory(dentry, ctx);
+			ret = check_apply_error(dentry, ctx, ret);
 			if (ret)
 				return ret;
 
 			ret = create_any_empty_ads(dentry, ctx);
+			ret = check_apply_error(dentry, ctx, ret);
 			if (ret)
 				return ret;
 		}
@@ -1625,6 +1644,7 @@ create_nondirectories(struct list_head *dentry_list, struct win32_apply_ctx *ctx
 		/* Call create_nondirectory() only once per inode  */
 		if (dentry == inode_first_extraction_dentry(inode)) {
 			ret = create_nondirectory(inode, ctx);
+			ret = check_apply_error(dentry, ctx, ret);
 			if (ret)
 				return ret;
 		}
@@ -1644,17 +1664,17 @@ close_handles(struct win32_apply_ctx *ctx)
 
 /* Prepare to read the next stream, which has size @stream_size, into an
  * in-memory buffer.  */
-static int
+static bool
 prepare_data_buffer(struct win32_apply_ctx *ctx, u64 stream_size)
 {
 	if (stream_size > ctx->data_buffer_size) {
 		/* Larger buffer needed.  */
 		void *new_buffer;
 		if ((size_t)stream_size != stream_size)
-			return WIMLIB_ERR_NOMEM;
+			return false;
 		new_buffer = REALLOC(ctx->data_buffer, stream_size);
 		if (!new_buffer)
-			return WIMLIB_ERR_NOMEM;
+			return false;
 		ctx->data_buffer = new_buffer;
 		ctx->data_buffer_size = stream_size;
 	}
@@ -1662,7 +1682,7 @@ prepare_data_buffer(struct win32_apply_ctx *ctx, u64 stream_size)
 	 * extract_chunk() that the data buffer needs to be filled while reading
 	 * the stream data.  */
 	ctx->data_buffer_ptr = ctx->data_buffer;
-	return 0;
+	return true;
 }
 
 static int
@@ -1698,8 +1718,10 @@ begin_extract_stream_instance(const struct wim_lookup_table_entry *stream,
 		 * with FSCTL_SET_REPARSE_POINT, which requires that all the
 		 * data be available.  So, stage the data in a buffer.  */
 
+		if (!prepare_data_buffer(ctx, stream->size))
+			return WIMLIB_ERR_NOMEM;
 		list_add_tail(&dentry->tmp_list, &ctx->reparse_dentries);
-		return prepare_data_buffer(ctx, stream->size);
+		return 0;
 	}
 
 	/* Encrypted file?  */
@@ -1720,8 +1742,10 @@ begin_extract_stream_instance(const struct wim_lookup_table_entry *stream,
 		 * TODO: This isn't sufficient for extremely large encrypted
 		 * files.  Perhaps we should create an extra thread to write
 		 * such files...  */
+		if (!prepare_data_buffer(ctx, stream->size))
+			return WIMLIB_ERR_NOMEM;
 		list_add_tail(&dentry->tmp_list, &ctx->encrypted_dentries);
-		return prepare_data_buffer(ctx, stream->size);
+		return 0;
 	}
 
 	if (ctx->num_open_handles == MAX_OPEN_STREAMS) {
@@ -2041,6 +2065,7 @@ begin_extract_stream(struct wim_lookup_table_entry *stream, void *_ctx)
 			dentry = inode_first_extraction_dentry(inode);
 			ret = begin_extract_stream_instance(stream, dentry,
 							    stream_name, ctx);
+			ret = check_apply_error(dentry, ctx, ret);
 			if (ret)
 				goto fail;
 		} else {
@@ -2056,6 +2081,7 @@ begin_extract_stream(struct wim_lookup_table_entry *stream, void *_ctx)
 								    dentry,
 								    stream_name,
 								    ctx);
+				ret = check_apply_error(dentry, ctx, ret);
 				if (ret)
 					goto fail;
 				next = next->next;
@@ -2133,7 +2159,8 @@ end_extract_stream(struct wim_lookup_table_entry *stream, int status, void *_ctx
 			      "%"PRIu64" bytes (exceeds %u bytes)",
 			      current_path(ctx), stream->size,
 			      REPARSE_DATA_MAX_SIZE);
-			return WIMLIB_ERR_INVALID_REPARSE_DATA;
+			ret = WIMLIB_ERR_INVALID_REPARSE_DATA;
+			return check_apply_error(dentry, ctx, ret);
 		}
 		/* In the WIM format, reparse streams are just the reparse data
 		 * and omit the header.  But we can reconstruct the header.  */
@@ -2145,6 +2172,7 @@ end_extract_stream(struct wim_lookup_table_entry *stream, int status, void *_ctx
 			ret = set_reparse_data(dentry, &ctx->rpbuf,
 					       stream->size + REPARSE_DATA_OFFSET,
 					       ctx);
+			ret = check_apply_error(dentry, ctx, ret);
 			if (ret)
 				return ret;
 		}
@@ -2154,6 +2182,7 @@ end_extract_stream(struct wim_lookup_table_entry *stream, int status, void *_ctx
 		ctx->encrypted_size = stream->size;
 		list_for_each_entry(dentry, &ctx->encrypted_dentries, tmp_list) {
 			ret = extract_encrypted_file(dentry, ctx);
+			ret = check_apply_error(dentry, ctx, ret);
 			if (ret)
 				return ret;
 		}
@@ -2429,6 +2458,7 @@ apply_metadata(struct list_head *dentry_list, struct win32_apply_ctx *ctx)
 	list_for_each_entry_reverse(dentry, dentry_list, d_extraction_list_node)
 	{
 		ret = apply_metadata_to_file(dentry, ctx);
+		ret = check_apply_error(dentry, ctx, ret);
 		if (ret)
 			return ret;
 		ret = report_file_metadata_applied(&ctx->common);

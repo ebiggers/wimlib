@@ -726,6 +726,8 @@ enum wimlib_progress_msg {
 	 * progress message being sent:
 	 *
 	 *	- Directory tree scan errors, e.g. from wimlib_add_image()
+	 *	- Most extraction errors; currently restricted to the Windows
+	 *	  build of the library only.
 	 */
 	WIMLIB_PROGRESS_MSG_HANDLE_ERROR = 31,
 };

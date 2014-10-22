@@ -128,6 +128,12 @@ end_file_structure_phase(struct apply_ctx *ctx);
 extern int
 end_file_metadata_phase(struct apply_ctx *ctx);
 
+static inline int
+report_apply_error(struct apply_ctx *ctx, int error_code, const tchar *path)
+{
+	return report_error(ctx->progfunc, ctx->progctx, error_code, path);
+}
+
 /* Returns any of the aliases of an inode that are being extracted.  */
 #define inode_first_extraction_dentry(inode)		\
 	list_first_entry(&(inode)->i_extraction_aliases,	\
