@@ -133,13 +133,13 @@ static int
 unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 				 char *path, size_t path_len,
 				 int dirfd, const char *relpath,
-				 struct add_image_params *params);
+				 struct capture_params *params);
 
 static int
 unix_scan_directory(struct wim_dentry *dir_dentry,
 		    char *full_path, size_t full_path_len,
 		    int parent_dirfd, const char *dir_relpath,
-		    struct add_image_params *params)
+		    struct capture_params *params)
 {
 
 	int dirfd;
@@ -251,7 +251,7 @@ unix_fixup_abslink(char *dest, u64 ino, u64 dev)
 
 static int
 unix_scan_symlink(const char *full_path, int dirfd, const char *relpath,
-		  struct wim_inode *inode, struct add_image_params *params)
+		  struct wim_inode *inode, struct capture_params *params)
 {
 	char deref_name_buf[4096];
 	ssize_t deref_name_len;
@@ -326,7 +326,7 @@ static int
 unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 				 char *full_path, size_t full_path_len,
 				 int dirfd, const char *relpath,
-				 struct add_image_params *params)
+				 struct capture_params *params)
 {
 	struct wim_dentry *tree = NULL;
 	struct wim_inode *inode = NULL;
@@ -457,7 +457,7 @@ out:
  *
  * @root_disk_path:  The path to the root of the directory tree on disk.
  *
- * @params:     See doc for `struct add_image_params'.
+ * @params:     See doc for `struct capture_params'.
  *
  * @return:	0 on success, nonzero on failure.  It is a failure if any of
  *		the files cannot be `stat'ed, or if any of the needed
@@ -469,7 +469,7 @@ out:
 int
 unix_build_dentry_tree(struct wim_dentry **root_ret,
 		       const char *root_disk_path,
-		       struct add_image_params *params)
+		       struct capture_params *params)
 {
 	size_t path_len;
 	size_t path_bufsz;

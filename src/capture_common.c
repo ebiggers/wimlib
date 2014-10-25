@@ -50,7 +50,7 @@
  *	via additional hard links, inode->i_nlink will be greater than 1.
  */
 int
-do_capture_progress(struct add_image_params *params, int status,
+do_capture_progress(struct capture_params *params, int status,
 		    const struct wim_inode *inode)
 {
 	switch (status) {
@@ -298,7 +298,7 @@ should_exclude_path(const tchar *path, size_t path_nchars,
  */
 int
 try_exclude(const tchar *full_path, size_t full_path_nchars,
-	    const struct add_image_params *params)
+	    const struct capture_params *params)
 {
 	int ret;
 

@@ -429,7 +429,7 @@ struct readdir_ctx {
 	size_t path_len;
 	struct dos_name_map *dos_name_map;
 	ntfs_volume *vol;
-	struct add_image_params *params;
+	struct capture_params *params;
 	int ret;
 };
 
@@ -440,7 +440,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p,
 				 size_t path_len,
 				 int name_type,
 				 ntfs_volume *ntfs_vol,
-				 struct add_image_params *params);
+				 struct capture_params *params);
 
 static int
 wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
@@ -527,7 +527,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 				 size_t path_len,
 				 int name_type,
 				 ntfs_volume *vol,
-				 struct add_image_params *params)
+				 struct capture_params *params)
 {
 	u32 attributes;
 	int ret;
@@ -727,7 +727,7 @@ do_ntfs_umount(struct _ntfs_volume *vol)
 int
 build_dentry_tree_ntfs(struct wim_dentry **root_p,
 		       const char *device,
-		       struct add_image_params *params)
+		       struct capture_params *params)
 {
 	ntfs_volume *vol;
 	ntfs_inode *root_ni;

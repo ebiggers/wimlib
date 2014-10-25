@@ -765,7 +765,7 @@ execute_add_command(struct update_command_journal *j,
 	tchar *fs_source_path;
 	tchar *wim_target_path;
 	const tchar *config_file;
-	struct add_image_params params;
+	struct capture_params params;
 	struct capture_config config;
 	capture_tree_t capture_tree = platform_default_capture_tree;
 #ifdef WITH_NTFS_3G

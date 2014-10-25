@@ -21,7 +21,7 @@ struct capture_config {
 
 /* Common parameters to implementations of building an in-memory dentry tree
  * from an on-disk directory structure. */
-struct add_image_params {
+struct capture_params {
 	/* Pointer to the lookup table of the WIM.  */
 	struct wim_lookup_table *lookup_table;
 
@@ -66,7 +66,7 @@ struct add_image_params {
 /* capture_common.c */
 
 extern int
-do_capture_progress(struct add_image_params *params, int status,
+do_capture_progress(struct capture_params *params, int status,
 		    const struct wim_inode *inode);
 
 extern int
@@ -85,17 +85,17 @@ match_pattern_list(const tchar *path, size_t path_nchars,
 
 extern int
 try_exclude(const tchar *full_path, size_t full_path_nchars,
-	    const struct add_image_params *params);
+	    const struct capture_params *params);
 
 typedef int (*capture_tree_t)(struct wim_dentry **, const tchar *,
-			      struct add_image_params *);
+			      struct capture_params *);
 
 #ifdef WITH_NTFS_3G
 /* ntfs-3g_capture.c */
 extern int
 build_dentry_tree_ntfs(struct wim_dentry **root_p,
 		       const tchar *device,
-		       struct add_image_params *params);
+		       struct capture_params *params);
 #endif
 
 #ifdef __WIN32__
@@ -103,21 +103,21 @@ build_dentry_tree_ntfs(struct wim_dentry **root_p,
 extern int
 win32_build_dentry_tree(struct wim_dentry **root_ret,
 			const tchar *root_disk_path,
-			struct add_image_params *params);
+			struct capture_params *params);
 #define platform_default_capture_tree win32_build_dentry_tree
 #else
 /* unix_capture.c */
 extern int
 unix_build_dentry_tree(struct wim_dentry **root_ret,
 		       const tchar *root_disk_path,
-		       struct add_image_params *params);
+		       struct capture_params *params);
 #define platform_default_capture_tree unix_build_dentry_tree
 #endif
 
 #define WIMLIB_ADD_FLAG_ROOT	0x80000000
 
 static inline int
-report_capture_error(struct add_image_params *params, int error_code,
+report_capture_error(struct capture_params *params, int error_code,
 		     const tchar *path)
 {
 	return report_error(params->progfunc, params->progctx, error_code, path);

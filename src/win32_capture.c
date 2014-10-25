@@ -385,7 +385,7 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				  size_t full_path_nchars,
 				  const wchar_t *filename,
 				  size_t filename_nchars,
-				  struct add_image_params *params,
+				  struct capture_params *params,
 				  struct winnt_scan_stats *stats,
 				  u32 vol_flags);
 
@@ -394,7 +394,7 @@ winnt_recurse_directory(HANDLE h,
 			wchar_t *full_path,
 			size_t full_path_nchars,
 			struct wim_dentry *parent,
-			struct add_image_params *params,
+			struct capture_params *params,
 			struct winnt_scan_stats *stats,
 			u32 vol_flags)
 {
@@ -610,7 +610,7 @@ out_close_root_dir:
 }
 
 static int
-winnt_rpfix_progress(struct add_image_params *params, const wchar_t *path,
+winnt_rpfix_progress(struct capture_params *params, const wchar_t *path,
 		     const struct reparse_data *rpdata, int scan_status)
 {
 	size_t print_name_nchars = rpdata->print_name_nbytes / sizeof(wchar_t);
@@ -627,7 +627,7 @@ winnt_rpfix_progress(struct add_image_params *params, const wchar_t *path,
 static int
 winnt_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
 		u64 capture_root_ino, u64 capture_root_dev,
-		const wchar_t *path, struct add_image_params *params)
+		const wchar_t *path, struct capture_params *params)
 {
 	struct reparse_data rpdata;
 	const wchar_t *rel_target;
@@ -746,7 +746,7 @@ winnt_try_rpfix(u8 *rpbuf, u16 *rpbuflen_p,
  */
 static int
 winnt_get_reparse_data(HANDLE h, const wchar_t *path,
-		       struct add_image_params *params,
+		       struct capture_params *params,
 		       u8 *rpbuf, u16 *rpbuflen_ret)
 {
 	DWORD bytes_returned;
@@ -1100,7 +1100,7 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				  size_t full_path_nchars,
 				  const wchar_t *filename,
 				  size_t filename_nchars,
-				  struct add_image_params *params,
+				  struct capture_params *params,
 				  struct winnt_scan_stats *stats,
 				  u32 vol_flags)
 {
@@ -1420,7 +1420,7 @@ winnt_do_scan_warnings(const wchar_t *path, const struct winnt_scan_stats *stats
 int
 win32_build_dentry_tree(struct wim_dentry **root_ret,
 			const wchar_t *root_disk_path,
-			struct add_image_params *params)
+			struct capture_params *params)
 {
 	wchar_t *path;
 	int ret;
