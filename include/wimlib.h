@@ -1766,6 +1766,8 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  */
 #define WIMLIB_ADD_FLAG_TEST_FILE_EXCLUSION	0x00004000
 
+/* Note: the WIMLIB_ADD_IMAGE_FLAG names are retained for source compatibility.
+ * Use the WIMLIB_ADD_FLAG names in new code.  */
 #define WIMLIB_ADD_IMAGE_FLAG_NTFS		WIMLIB_ADD_FLAG_NTFS
 #define WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE	WIMLIB_ADD_FLAG_DEREFERENCE
 #define WIMLIB_ADD_IMAGE_FLAG_VERBOSE		WIMLIB_ADD_FLAG_VERBOSE

@@ -1714,9 +1714,9 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 {
 	int c;
 	int open_flags = 0;
-	int add_image_flags = WIMLIB_ADD_IMAGE_FLAG_EXCLUDE_VERBOSE |
-			      WIMLIB_ADD_IMAGE_FLAG_WINCONFIG |
-			      WIMLIB_ADD_IMAGE_FLAG_VERBOSE;
+	int add_flags = WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE |
+			WIMLIB_ADD_FLAG_WINCONFIG |
+			WIMLIB_ADD_FLAG_VERBOSE;
 	int write_flags = 0;
 	int compression_type = WIMLIB_COMPRESSION_TYPE_INVALID;
 	uint32_t chunk_size = UINT32_MAX;
@@ -1756,7 +1756,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	for_opt(c, capture_or_append_options) {
 		switch (c) {
 		case IMAGEX_BOOT_OPTION:
-			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_BOOT;
+			add_flags |= WIMLIB_ADD_FLAG_BOOT;
 			break;
 		case IMAGEX_CHECK_OPTION:
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
@@ -1767,7 +1767,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			break;
 		case IMAGEX_CONFIG_OPTION:
 			config_file = optarg;
-			add_image_flags &= ~WIMLIB_ADD_IMAGE_FLAG_WINCONFIG;
+			add_flags &= ~WIMLIB_ADD_FLAG_WINCONFIG;
 			break;
 		case IMAGEX_COMPRESS_OPTION:
 			compression_type = get_compression_type(optarg);
@@ -1799,7 +1799,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			flags_element = optarg;
 			break;
 		case IMAGEX_DEREFERENCE_OPTION:
-			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_DEREFERENCE;
+			add_flags |= WIMLIB_ADD_FLAG_DEREFERENCE;
 			break;
 		case IMAGEX_VERBOSE_OPTION:
 			/* No longer does anything.  */
@@ -1813,22 +1813,22 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			write_flags |= WIMLIB_WRITE_FLAG_REBUILD;
 			break;
 		case IMAGEX_UNIX_DATA_OPTION:
-			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_UNIX_DATA;
+			add_flags |= WIMLIB_ADD_FLAG_UNIX_DATA;
 			break;
 		case IMAGEX_SOURCE_LIST_OPTION:
 			source_list = true;
 			break;
 		case IMAGEX_NO_ACLS_OPTION:
-			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_NO_ACLS;
+			add_flags |= WIMLIB_ADD_FLAG_NO_ACLS;
 			break;
 		case IMAGEX_STRICT_ACLS_OPTION:
-			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_STRICT_ACLS;
+			add_flags |= WIMLIB_ADD_FLAG_STRICT_ACLS;
 			break;
 		case IMAGEX_RPFIX_OPTION:
-			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_RPFIX;
+			add_flags |= WIMLIB_ADD_FLAG_RPFIX;
 			break;
 		case IMAGEX_NORPFIX_OPTION:
-			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_NORPFIX;
+			add_flags |= WIMLIB_ADD_FLAG_NORPFIX;
 			break;
 		case IMAGEX_PIPABLE_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_PIPABLE;
@@ -1867,7 +1867,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			write_flags |= WIMLIB_WRITE_FLAG_SKIP_EXTERNAL_WIMS;
 			break;
 		case IMAGEX_WIMBOOT_OPTION:
-			add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_WIMBOOT;
+			add_flags |= WIMLIB_ADD_FLAG_WIMBOOT;
 			break;
 		default:
 			goto out_usage;
@@ -1888,7 +1888,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID) {
 		/* No compression type specified.  Use the default.  */
 
-		if (add_image_flags & WIMLIB_ADD_IMAGE_FLAG_WIMBOOT) {
+		if (add_flags & WIMLIB_ADD_FLAG_WIMBOOT) {
 			/* With --wimboot, default to XPRESS compression.  */
 			compression_type = WIMLIB_COMPRESSION_TYPE_XPRESS;
 		} else if (write_flags & WIMLIB_WRITE_FLAG_PACK_STREAMS) {
@@ -2026,7 +2026,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		ret = wimlib_set_output_chunk_size(wim, chunk_size);
 		if (ret)
 			goto out_free_wim;
-	} else if ((add_image_flags & WIMLIB_ADD_IMAGE_FLAG_WIMBOOT) &&
+	} else if ((add_flags & WIMLIB_ADD_FLAG_WIMBOOT) &&
 		   compression_type == WIMLIB_COMPRESSION_TYPE_XPRESS) {
 		ret = wimlib_set_output_chunk_size(wim, 4096);
 		if (ret)
@@ -2053,7 +2053,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			if (S_ISBLK(stbuf.st_mode) || S_ISREG(stbuf.st_mode)) {
 				imagex_printf(T("Capturing WIM image from NTFS "
 					  "filesystem on \"%"TS"\"\n"), source);
-				add_image_flags |= WIMLIB_ADD_IMAGE_FLAG_NTFS;
+				add_flags |= WIMLIB_ADD_FLAG_NTFS;
 			}
 		} else {
 			if (errno != ENOENT) {
@@ -2168,7 +2168,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 					   num_sources,
 					   name,
 					   config_file,
-					   add_image_flags);
+					   add_flags);
 	if (ret)
 		goto out_free_template_wim;
 
