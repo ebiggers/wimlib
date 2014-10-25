@@ -1084,11 +1084,14 @@ wimboot_set_pointer(HANDLE h,
 	if (wof_running) {
 		/* The WOF driver is running.  We can create the reparse point
 		 * using FSCTL_SET_EXTERNAL_BACKING.  */
-
+		unsigned int max_retries = 4;
 		struct {
 			struct wof_external_info wof_info;
 			struct wim_provider_external_info wim_info;
 		} in;
+
+	retry:
+		memset(&in, 0, sizeof(in));
 
 		in.wof_info.version = WOF_CURRENT_VERSION;
 		in.wof_info.provider = WOF_PROVIDER_WIM;
@@ -1103,7 +1106,22 @@ wimboot_set_pointer(HANDLE h,
 		if (!DeviceIoControl(h, FSCTL_SET_EXTERNAL_BACKING,
 				     &in, sizeof(in), NULL, 0,
 				     &bytes_returned, NULL))
+		{
+			/* Try to track down sporadic errors  */
+			if (wimlib_print_errors) {
+				WARNING("FSCTL_SET_EXTERNAL_BACKING failed (err=%u); data was %zu bytes:",
+					(u32)GetLastError(), sizeof(in));
+				print_byte_field((const u8 *)&in, sizeof(in), wimlib_error_file);
+				putc('\n', wimlib_error_file);
+			}
+			if (--max_retries) {
+				WARNING("Retrying after 100ms...");
+				Sleep(100);
+				goto retry;
+			}
+			WARNING("Too many retries; returning failure");
 			return false;
+		}
 	} else {
 
 		/* The WOF driver is running.  We need to create the reparse
