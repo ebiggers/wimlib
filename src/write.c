@@ -1603,9 +1603,10 @@ write_stream_list(struct list_head *stream_list,
 							    out_chunk_size,
 							    num_threads, 0,
 							    &ctx.compressor);
-			if (ret) {
-				DEBUG("Couldn't create parallel chunk compressor "
-				      "(status %d)", ret);
+			if (ret > 0) {
+				WARNING("Couldn't create parallel chunk compressor: %"TS".\n"
+					"          Falling back to single-threaded compression.",
+					wimlib_get_error_string(ret));
 			}
 		}
 	#endif
