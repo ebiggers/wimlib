@@ -73,7 +73,7 @@ win32_get_avail_memory(void)
 		.dwLength = sizeof(status),
 	};
 	GlobalMemoryStatusEx(&status);
-	return status.ullTotalPhys;
+	return (u64)min(status.ullTotalPhys, status.ullTotalVirtual) * 85 / 100;
 }
 
 /* Replacement for POSIX-2008 realpath().  Warning: partial functionality only
