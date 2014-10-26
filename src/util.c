@@ -413,7 +413,6 @@ retry:
 			size++;
 			goto retry;
 		}
-		ERROR("memory exhausted");
 	}
 	return ptr;
 }
@@ -429,10 +428,7 @@ wimlib_realloc(void *ptr, size_t size)
 {
 	if (size == 0)
 		size = 1;
-	ptr = (*wimlib_realloc_func)(ptr, size);
-	if (ptr == NULL)
-		ERROR("memory exhausted");
-	return ptr;
+	return (*wimlib_realloc_func)(ptr, size);
 }
 
 void *
