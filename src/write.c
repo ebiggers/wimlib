@@ -882,12 +882,42 @@ should_rewrite_stream_uncompressed(const struct write_streams_ctx *ctx,
 	 * Exception: if the compressed size happens to be *exactly* the same as
 	 * the uncompressed size, then the stream *must* be written uncompressed
 	 * in order to remain compatible with the Windows Overlay Filesystem
-	 * Filter Driver (WOF).  */
+	 * Filter Driver (WOF).
+	 *
+	 * TODO: we are currently assuming that the optimization for
+	 * single-chunk resources in maybe_rewrite_stream_uncompressed()
+	 * prevents this case from being triggered too often.  To fully prevent
+	 * excessive decompressions in degenerate cases, we really should
+	 * obtain the uncompressed data by decompressing the compressed data we
+	 * wrote to the output file.
+	 */
 	if ((lte->flags & WIM_RESHDR_FLAG_PACKED_STREAMS) &&
 	    (lte->out_reshdr.size_in_wim != lte->out_reshdr.uncompressed_size))
 		return false;
 
 	return true;
+}
+
+static int
+maybe_rewrite_stream_uncompressed(struct write_streams_ctx *ctx,
+				  struct wim_lookup_table_entry *lte)
+{
+	if (!should_rewrite_stream_uncompressed(ctx, lte))
+		return 0;
+
+	/* Regular (non-solid) WIM resources with exactly one chunk and
+	 * compressed size equal to uncompressed size are exactly the same as
+	 * the corresponding compressed data --- since there must be 0 entries
+	 * in the chunk table and the only chunk must be stored uncompressed.
+	 * In this case, there's no need to rewrite anything.  */
+	if (ctx->chunk_index == 1 &&
+	    lte->out_reshdr.size_in_wim == lte->out_reshdr.uncompressed_size)
+	{
+		lte->out_reshdr.flags &= ~WIM_RESHDR_FLAG_COMPRESSED;
+		return 0;
+	}
+
+	return write_stream_uncompressed(lte, ctx->out_fd);
 }
 
 /* Write the next chunk of (typically compressed) data to the output WIM,
@@ -996,14 +1026,10 @@ write_chunk(struct write_streams_ctx *ctx, const void *cchunk,
 			if (ctx->compressor != NULL)
 				lte->out_reshdr.flags |= WIM_RESHDR_FLAG_COMPRESSED;
 
-			if (should_rewrite_stream_uncompressed(ctx, lte)) {
-				DEBUG("Stream of size %"PRIu64" did not compress to "
-				      "less than original size; writing uncompressed.",
-				      lte->size);
-				ret = write_stream_uncompressed(lte, ctx->out_fd);
-				if (ret)
-					return ret;
-			}
+			ret = maybe_rewrite_stream_uncompressed(ctx, lte);
+			if (ret)
+				return ret;
+
 			wimlib_assert(lte->out_reshdr.uncompressed_size == lte->size);
 
 			ctx->cur_write_stream_offset = 0;
