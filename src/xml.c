@@ -1668,23 +1668,18 @@ wimlib_set_image_name(WIMStruct *wim, int image, const tchar *name)
 	tchar *p;
 	int i;
 
-	DEBUG("Setting the name of image %d to %"TS, image, name);
-
 	if (name == NULL)
 		name = T("");
 
-	if (image < 1 || image > wim->hdr.image_count) {
-		ERROR("%d is not a valid image", image);
+	if (image < 1 || image > wim->hdr.image_count)
 		return WIMLIB_ERR_INVALID_IMAGE;
-	}
 
-	for (i = 1; i <= wim->hdr.image_count; i++) {
-		if (i == image)
-			continue;
-		if (!tstrcmp(wim->wim_info->images[i - 1].name, name)) {
-			ERROR("The name \"%"TS"\" is already in use in the WIM!",
-			      name);
-			return WIMLIB_ERR_IMAGE_NAME_COLLISION;
+	if (*name) {
+		for (i = 1; i <= wim->hdr.image_count; i++) {
+			if (i == image)
+				continue;
+			if (!tstrcmp(wim->wim_info->images[i - 1].name, name))
+				return WIMLIB_ERR_IMAGE_NAME_COLLISION;
 		}
 	}
 
