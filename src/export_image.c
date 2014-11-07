@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013 Eric Biggers
+ * Copyright (C) 2012, 2013, 2014 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -24,13 +24,32 @@
 #endif
 
 #include "wimlib.h"
-#include "wimlib/dentry.h"
 #include "wimlib/error.h"
 #include "wimlib/inode.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
 #include "wimlib/xml.h"
-#include <stdlib.h>
+
+static int
+lte_set_not_exported(struct wim_lookup_table_entry *lte, void *_ignore)
+{
+	lte->out_refcnt = 0;
+	lte->was_exported = 0;
+	return 0;
+}
+
+static int
+lte_rollback_export(struct wim_lookup_table_entry *lte, void *_lookup_table)
+{
+	struct wim_lookup_table *lookup_table = _lookup_table;
+
+	lte->refcnt -= lte->out_refcnt;
+	if (lte->was_exported) {
+		lookup_table_unlink(lookup_table, lte);
+		free_lookup_table_entry(lte);
+	}
+	return 0;
+}
 
 static int
 inode_export_streams(struct wim_inode *inode,
@@ -71,6 +90,7 @@ inode_export_streams(struct wim_inode *inode,
 			}
 			dest_lte->refcnt = 0;
 			dest_lte->out_refcnt = 0;
+			dest_lte->was_exported = 1;
 			lookup_table_insert(dest_lookup_table, dest_lte);
 		}
 
@@ -86,21 +106,6 @@ inode_export_streams(struct wim_inode *inode,
 	return 0;
 }
 
-static int
-lte_unexport(struct wim_lookup_table_entry *lte, void *_lookup_table)
-{
-	struct wim_lookup_table *lookup_table = _lookup_table;
-
-	if (lte->out_refcnt) {
-		lte->refcnt -= lte->out_refcnt;
-		if (lte->refcnt == 0) {
-			lookup_table_unlink(lookup_table, lte);
-			free_lookup_table_entry(lte);
-		}
-	}
-	return 0;
-}
-
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_export_image(WIMStruct *src_wim,
@@ -111,11 +116,11 @@ wimlib_export_image(WIMStruct *src_wim,
 		    int export_flags)
 {
 	int ret;
-	int start_image;
-	int end_image;
+	int start_src_image;
+	int end_src_image;
+	int orig_dest_image_count;
 	int image;
-	u32 orig_dest_boot_idx;
-	u32 orig_dest_image_count;
+	bool all_images = (src_image == WIMLIB_ALL_IMAGES);
 
 	/* Check for sane parameters.  */
 	if (export_flags & ~(WIMLIB_EXPORT_FLAG_BOOT |
@@ -128,10 +133,10 @@ wimlib_export_image(WIMStruct *src_wim,
 	if (src_wim == NULL || dest_wim == NULL)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	if (!wim_has_metadata(dest_wim))
+	if (!wim_has_metadata(src_wim) || !wim_has_metadata(dest_wim))
 		return WIMLIB_ERR_METADATA_NOT_FOUND;
 
-	if (src_image == WIMLIB_ALL_IMAGES) {
+	if (all_images) {
 		/* Multi-image export.  */
 		if ((!(export_flags & WIMLIB_EXPORT_FLAG_NO_NAMES) &&
 			dest_name) ||
@@ -143,12 +148,13 @@ wimlib_export_image(WIMStruct *src_wim,
 			      "multiple images");
 			return WIMLIB_ERR_INVALID_PARAM;
 		}
-		start_image = 1;
-		end_image = src_wim->hdr.image_count;
+		start_src_image = 1;
+		end_src_image = src_wim->hdr.image_count;
 	} else {
-		start_image = src_image;
-		end_image = src_image;
+		start_src_image = src_image;
+		end_src_image = src_image;
 	}
+	orig_dest_image_count = dest_wim->hdr.image_count;
 
 	/* Stream checksums must be known before proceeding.  */
 	ret = wim_checksum_unhashed_streams(src_wim);
@@ -158,49 +164,33 @@ wimlib_export_image(WIMStruct *src_wim,
 	if (ret)
 		return ret;
 
-	/* Zero 'out_refcnt' in all lookup table entries in the destination WIM;
-	 * this tracks the number of references found from the source WIM
-	 * image(s).  */
-	for_lookup_table_entry(dest_wim->lookup_table, lte_zero_out_refcnt,
-			       NULL);
-
-	/* Save the original count of images in the destination WIM and the boot
-	 * index (used if rollback necessary).  */
-	orig_dest_image_count = dest_wim->hdr.image_count;
-	orig_dest_boot_idx = dest_wim->hdr.boot_idx;
+	/* Enable rollbacks  */
+	for_lookup_table_entry(dest_wim->lookup_table, lte_set_not_exported, NULL);
 
 	/* Export each requested image.  */
-	for (image = start_image; image <= end_image; image++) {
+	for (src_image = start_src_image;
+	     src_image <= end_src_image;
+	     src_image++)
+	{
 		const tchar *next_dest_name, *next_dest_description;
 		struct wim_image_metadata *src_imd;
 		struct wim_inode *inode;
 
-		DEBUG("Exporting image %d from \"%"TS"\"",
-		      image, src_wim->filename);
-
 		/* Determine destination image name and description.  */
 
-		if (export_flags & WIMLIB_EXPORT_FLAG_NO_NAMES) {
+		if (export_flags & WIMLIB_EXPORT_FLAG_NO_NAMES)
 			next_dest_name = T("");
-		} else if (dest_name) {
+		else if (dest_name)
 			next_dest_name = dest_name;
-		} else {
-			next_dest_name = wimlib_get_image_name(src_wim,
-							       image);
-		}
+		else
+			next_dest_name = wimlib_get_image_name(src_wim, src_image);
 
-		DEBUG("Using name \"%"TS"\"", next_dest_name);
-
-		if (export_flags & WIMLIB_EXPORT_FLAG_NO_DESCRIPTIONS) {
+		if (export_flags & WIMLIB_EXPORT_FLAG_NO_DESCRIPTIONS)
 			next_dest_description = T("");
-		} else if (dest_description) {
+		else if (dest_description)
 			next_dest_description = dest_description;
-		} else {
-			next_dest_description = wimlib_get_image_description(
-							src_wim, image);
-		}
-
-		DEBUG("Using description \"%"TS"\"", next_dest_description);
+		else
+			next_dest_description = wimlib_get_image_description(src_wim, src_image);
 
 		/* Check for name conflict.  */
 		if (wimlib_image_name_in_use(dest_wim, next_dest_name)) {
@@ -211,7 +201,7 @@ wimlib_export_image(WIMStruct *src_wim,
 		}
 
 		/* Load metadata for source image into memory.  */
-		ret = select_wim_image(src_wim, image);
+		ret = select_wim_image(src_wim, src_image);
 		if (ret)
 			goto out_rollback;
 
@@ -229,7 +219,7 @@ wimlib_export_image(WIMStruct *src_wim,
 		}
 
 		/* Export XML information into the destination WIM.  */
-		ret = xml_export_image(src_wim->wim_info, image,
+		ret = xml_export_image(src_wim->wim_info, src_image,
 				       &dest_wim->wim_info, next_dest_name,
 				       next_dest_description);
 		if (ret)
@@ -246,34 +236,33 @@ wimlib_export_image(WIMStruct *src_wim,
 		 * this.  */
 		src_imd->modified = 1;
 
-		/* Set boot index in destination WIM.  */
-		if ((export_flags & WIMLIB_EXPORT_FLAG_BOOT) &&
-		    (src_image != WIMLIB_ALL_IMAGES ||
-		     image == src_wim->hdr.boot_idx))
-		{
-			DEBUG("Marking destination image %u as bootable.",
-			      dest_wim->hdr.image_count);
-			dest_wim->hdr.boot_idx = dest_wim->hdr.image_count;
-		}
-
-		/* Possibly set WIMBoot flag  */
-		if (export_flags & WIMLIB_EXPORT_FLAG_WIMBOOT) {
-			wim_info_set_wimboot(dest_wim->wim_info,
-					     dest_wim->hdr.image_count,
-					     true);
-		}
-
 	}
-	/* Set the reparse point fixup flag on the destination WIM if the flag
-	 * is set on the source WIM. */
+
+	/* Image export complete.  Finish by setting any needed special metadata
+	 * on the destination WIM.  */
+
 	if (src_wim->hdr.flags & WIM_HDR_FLAG_RP_FIX)
 		dest_wim->hdr.flags |= WIM_HDR_FLAG_RP_FIX;
+
+	for (src_image = start_src_image;
+	     src_image <= end_src_image;
+	     src_image++)
+	{
+		int dst_image = orig_dest_image_count + 1 +
+				(src_image - start_src_image);
+
+		if (export_flags & WIMLIB_EXPORT_FLAG_WIMBOOT)
+			wim_info_set_wimboot(dest_wim->wim_info, dst_image, true);
+
+		if ((export_flags & WIMLIB_EXPORT_FLAG_BOOT) &&
+		    (!all_images || src_image == src_wim->hdr.boot_idx))
+			dest_wim->hdr.boot_idx = dst_image;
+	}
 
 	if (export_flags & WIMLIB_EXPORT_FLAG_GIFT) {
 		free_lookup_table(src_wim->lookup_table);
 		src_wim->lookup_table = NULL;
 	}
-	DEBUG("Export operation successful.");
 	return 0;
 
 out_rollback:
@@ -287,8 +276,7 @@ out_rollback:
 		put_image_metadata(dest_wim->image_metadata[
 					--dest_wim->hdr.image_count], NULL);
 	}
-	for_lookup_table_entry(dest_wim->lookup_table, lte_unexport,
+	for_lookup_table_entry(dest_wim->lookup_table, lte_rollback_export,
 			       dest_wim->lookup_table);
-	dest_wim->hdr.boot_idx = orig_dest_boot_idx;
 	return ret;
 }

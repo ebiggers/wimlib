@@ -1271,13 +1271,6 @@ write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
 	return ret;
 }
 
-int
-lte_zero_out_refcnt(struct wim_lookup_table_entry *lte, void *_ignore)
-{
-	lte->out_refcnt = 0;
-	return 0;
-}
-
 /* Allocate a stream entry for the contents of the buffer, or re-use an existing
  * entry in @lookup_table for the same stream.  */
 struct wim_lookup_table_entry *

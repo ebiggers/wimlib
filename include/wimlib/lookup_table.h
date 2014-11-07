@@ -108,6 +108,9 @@ struct wim_lookup_table_entry {
 
 	u32 may_send_done_with_file : 1;
 
+	/* Only used by wimlib_export_image() */
+	u32 was_exported : 1;
+
 	union {
 		/* (On-disk field) SHA1 message digest of the stream referenced
 		 * by this lookup table entry.  */
