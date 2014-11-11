@@ -292,13 +292,7 @@ make_huffman_decode_table(u16 decode_table[const restrict],
 
 			v = MAKE_DIRECT_ENTRY(sorted_syms[sym_idx], codeword_len);
 			v |= v << 16;
-			if (sizeof(unsigned long) == 8) {
-				/* This may produce a compiler warning if an
-				 * 'unsigned long' is 32 bits, but this won't be
-				 * executed unless an 'unsigned long' is at
-				 * least 64 bits anyway.  */
-				v |= v << 32;
-			}
+			v |= v << (sizeof(unsigned long) == 8 ? 32 : 0);
 
 			p = (aliased_long_t *)decode_table_ptr;
 			n = stores_per_loop;
