@@ -126,6 +126,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/textfile.h	\
 	include/wimlib/timestamp.h	\
 	include/wimlib/types.h		\
+	include/wimlib/unaligned.h	\
 	include/wimlib/unix_data.h	\
 	include/wimlib/util.h		\
 	include/wimlib/version.h	\

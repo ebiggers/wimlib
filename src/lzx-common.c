@@ -25,6 +25,7 @@
 
 #include "wimlib/endianness.h"
 #include "wimlib/lzx.h"
+#include "wimlib/unaligned.h"
 #include "wimlib/util.h"
 
 #ifdef __SSE2__
@@ -120,12 +121,11 @@ lzx_get_num_main_syms(unsigned window_order)
 }
 
 static void
-do_translate_target(sle32 *target, s32 input_pos)
+do_translate_target(void *target, s32 input_pos)
 {
 	s32 abs_offset, rel_offset;
 
-	/* XXX: This assumes unaligned memory accesses are okay.  */
-	rel_offset = le32_to_cpu(*target);
+	rel_offset = le32_to_cpu(load_le32_unaligned(target));
 	if (rel_offset >= -input_pos && rel_offset < LZX_WIM_MAGIC_FILESIZE) {
 		if (rel_offset < LZX_WIM_MAGIC_FILESIZE - input_pos) {
 			/* "good translation" */
@@ -134,30 +134,29 @@ do_translate_target(sle32 *target, s32 input_pos)
 			/* "compensating translation" */
 			abs_offset = rel_offset - LZX_WIM_MAGIC_FILESIZE;
 		}
-		*target = cpu_to_le32(abs_offset);
+		store_le32_unaligned(cpu_to_le32(abs_offset), target);
 	}
 }
 
 static void
-undo_translate_target(sle32 *target, s32 input_pos)
+undo_translate_target(void *target, s32 input_pos)
 {
 	s32 abs_offset, rel_offset;
 
-	/* XXX: This assumes unaligned memory accesses are okay.  */
-	abs_offset = le32_to_cpu(*target);
+	abs_offset = le32_to_cpu(load_le32_unaligned(target));
 	if (abs_offset >= 0) {
 		if (abs_offset < LZX_WIM_MAGIC_FILESIZE) {
 			/* "good translation" */
 			rel_offset = abs_offset - input_pos;
 
-			*target = cpu_to_le32(rel_offset);
+			store_le32_unaligned(cpu_to_le32(rel_offset), target);
 		}
 	} else {
 		if (abs_offset >= -input_pos) {
 			/* "compensating translation" */
 			rel_offset = abs_offset + LZX_WIM_MAGIC_FILESIZE;
 
-			*target = cpu_to_le32(rel_offset);
+			store_le32_unaligned(cpu_to_le32(rel_offset), target);
 		}
 	}
 }
@@ -194,7 +193,7 @@ inline  /* Although inlining the 'process_target' function still speeds up the
 	   SSE2 case, it bloats the binary more.  */
 #endif
 void
-lzx_e8_filter(u8 *data, u32 size, void (*process_target)(sle32 *, s32))
+lzx_e8_filter(u8 *data, u32 size, void (*process_target)(void *, s32))
 {
 #ifdef __SSE2__
 	/* SSE2 vectorized implementation for x86_64.  This speeds up LZX
@@ -249,7 +248,7 @@ lzx_e8_filter(u8 *data, u32 size, void (*process_target)(sle32 *, s32))
 
 					/* Do (or undo) the e8 translation.  */
 					u8 *p8 = (u8 *)p128 + bit;
-					(*process_target)((sle32 *)(p8 + 1),
+					(*process_target)(p8 + 1,
 							  p8 - data);
 
 					/* Don't start an e8 translation in the
@@ -279,7 +278,7 @@ lzx_e8_filter(u8 *data, u32 size, void (*process_target)(sle32 *, s32))
 		u8 *p8_end = data + size - 10;
 		do {
 			if (*p8 == 0xe8) {
-				(*process_target)((sle32 *)(p8 + 1), p8 - data);
+				(*process_target)(p8 + 1, p8 - data);
 				p8 += 5;
 			} else {
 				p8++;

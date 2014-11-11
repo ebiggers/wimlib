@@ -316,9 +316,8 @@ extraction are implemented separately for Windows, UNIX, and UNIX (NTFS-3g
 mode), to ensure a fast and feature-rich implementation of each platform/mode.
 
 wimlib is mainly used on x86 and x86_64 CPUs, but it should also work on a
-number of other GCC-supported 32-bit or 64-bit architectures.  No assumptions
-are made about endianness, but some code assumes that unaligned memory accesses
-are supported and relatively efficient.
+number of other GCC-supported 32-bit or 64-bit architectures.  It has been
+tested on the ARM architecture.
 
 Currently, gcc and clang are the only supported compilers.  A few nonstandard
 extensions are used in the code.

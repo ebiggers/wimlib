@@ -28,6 +28,7 @@
 
 #include "wimlib/endianness.h"
 #include "wimlib/lzms.h"
+#include "wimlib/unaligned.h"
 #include "wimlib/util.h"
 
 #include <pthread.h>
@@ -157,20 +158,20 @@ lzms_maybe_do_x86_translation(u8 data[restrict], s32 i, s32 num_op_bytes,
 		if (i - *closest_target_usage_p <= max_trans_offset) {
 			LZMS_DEBUG("Undid x86 translation at position %d "
 				   "(opcode 0x%02x)", i, data[i]);
-			le32 *p32 = (le32*)&data[i + num_op_bytes];
-			u32 n = le32_to_cpu(*p32);
-			*p32 = cpu_to_le32(n - i);
+			void *p32 = &data[i + num_op_bytes];
+			u32 n = le32_to_cpu(load_le32_unaligned(p32));
+			store_le32_unaligned(cpu_to_le32(n - i), p32);
 		}
-		pos = i + le16_to_cpu(*(const le16*)&data[i + num_op_bytes]);
+		pos = i + le16_to_cpu(load_le16_unaligned(&data[i + num_op_bytes]));
 	} else {
-		pos = i + le16_to_cpu(*(const le16*)&data[i + num_op_bytes]);
+		pos = i + le16_to_cpu(load_le16_unaligned(&data[i + num_op_bytes]));
 
 		if (i - *closest_target_usage_p <= max_trans_offset) {
 			LZMS_DEBUG("Did x86 translation at position %d "
 				   "(opcode 0x%02x)", i, data[i]);
-			le32 *p32 = (le32*)&data[i + num_op_bytes];
-			u32 n = le32_to_cpu(*p32);
-			*p32 = cpu_to_le32(n + i);
+			void *p32 = &data[i + num_op_bytes];
+			u32 n = le32_to_cpu(load_le32_unaligned(p32));
+			store_le32_unaligned(cpu_to_le32(n + i), p32);
 		}
 	}
 
