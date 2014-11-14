@@ -1,4 +1,4 @@
-.TH WIMLIB-IMAGEX 1 "October 2014" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH WIMLIB-IMAGEX 1 "November 2014" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@ \- Extract, create, modify, or mount a WIM (Windows Imaging Format) archive
 .SH SYNOPSIS

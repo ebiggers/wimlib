@@ -1,4 +1,4 @@
-.TH WIMLIB-IMAGEX "1" "October 2014" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH WIMLIB-IMAGEX "1" "November 2014" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
 .SH NAME
 @IMAGEX_PROGNAME@-export \- Exports an image from a WIM archive to an existing or new WIM archive
 .SH SYNOPSIS

@@ -15,7 +15,7 @@ endif
 
 lib_LTLIBRARIES = libwim.la
 
-libwim_la_LDFLAGS = -version-info 17:0:2 $(WINDOWS_LDFLAGS)
+libwim_la_LDFLAGS = -version-info 18:0:3 $(WINDOWS_LDFLAGS)
 
 libwim_la_SOURCES =		\
 	src/add_image.c		\
