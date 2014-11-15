@@ -3183,7 +3183,7 @@ wimlib_get_image_name(const WIMStruct *wim, int image);
  * bits contain the patch version.
  *
  * In other words, the returned value is equal to <code>((WIMLIB_MAJOR_VERSION
- * << 22) | (WIMLIB_MINOR_VERSION << 10) | WIMLIB_PATCH_VERSION)</code> for the
+ * << 20) | (WIMLIB_MINOR_VERSION << 10) | WIMLIB_PATCH_VERSION)</code> for the
  * corresponding header file.
  */
 extern uint32_t
