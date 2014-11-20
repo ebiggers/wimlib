@@ -18,6 +18,7 @@
 
 #include "wimlib/endianness.h"
 #include "wimlib/sha1.h"
+#include "wimlib/unaligned.h"
 
 /* Dummy SHA-1 message digest of all 0's.  This is used in the WIM format to
  * mean "SHA-1 not specified".  */
@@ -203,13 +204,12 @@ sha1_final(u8 md[20], SHA_CTX *ctx)
 	 * final length is a multiple of the block size.  */
 	static const u8 padding[64] = {0x80, };
 	be64 finalcount = cpu_to_be64(ctx->bytecount << 3);
-	be32 *out = (be32 *)md;
 
 	sha1_update(ctx, padding, 64 - ((ctx->bytecount + 8) & 63));
 	sha1_update(ctx, &finalcount, 8);
 
 	for (int i = 0; i < 5; i++)
-		out[i] = cpu_to_be32(ctx->state[i]);
+		store_be32_unaligned(cpu_to_be32(ctx->state[i]), &md[i * 4]);
 }
 
 /* Calculate the SHA-1 message digest of the specified buffer.
