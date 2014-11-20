@@ -33,6 +33,7 @@
 #include "wimlib/metadata.h"
 #include "wimlib/ntfs_3g.h"
 #include "wimlib/resource.h"
+#include "wimlib/unaligned.h"
 #include "wimlib/util.h"
 #include "wimlib/write.h"
 
@@ -377,7 +378,7 @@ lookup_stream(const struct wim_lookup_table *table, const u8 hash[])
 	struct wim_lookup_table_entry *lte;
 	struct hlist_node *pos;
 
-	i = *(size_t*)hash % table->capacity;
+	i = load_size_t_unaligned(hash) % table->capacity;
 	hlist_for_each_entry(lte, pos, &table->array[i], hash_list)
 		if (hashes_equal(hash, lte->hash))
 			return lte;

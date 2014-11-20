@@ -34,5 +34,6 @@ store_##type##_unaligned(type val, void *p)			\
 DEFINE_UNALIGNED_TYPE(le16);
 DEFINE_UNALIGNED_TYPE(le32);
 DEFINE_UNALIGNED_TYPE(le64);
+DEFINE_UNALIGNED_TYPE(size_t);
 
 #endif /* _WIMLIB_UNALIGNED_H */
