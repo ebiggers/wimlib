@@ -34,9 +34,6 @@
 /*
  * Reads and parses a metadata resource for an image in the WIM file.
  *
- * @wim:
- *	Pointer to the WIMStruct for the WIM file.
- *
  * @imd:
  *	Pointer to the image metadata structure for the image whose metadata
  *	resource we are reading.  Its `metadata_lte' member specifies the lookup
@@ -52,7 +49,7 @@
  *	WIMLIB_ERR_DECOMPRESSION
  */
 int
-read_metadata_resource(WIMStruct *wim, struct wim_image_metadata *imd)
+read_metadata_resource(struct wim_image_metadata *imd)
 {
 	const struct wim_lookup_table_entry *metadata_lte;
 	void *buf;

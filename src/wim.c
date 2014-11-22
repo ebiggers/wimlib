@@ -355,7 +355,7 @@ select_wim_image(WIMStruct *wim, int image)
 	if (imd->root_dentry || imd->modified) {
 		ret = 0;
 	} else {
-		ret = read_metadata_resource(wim, imd);
+		ret = read_metadata_resource(imd);
 		if (ret)
 			wim->current_image = WIMLIB_NO_IMAGE;
 	}

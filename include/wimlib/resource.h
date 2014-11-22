@@ -306,8 +306,7 @@ sha1_stream(struct wim_lookup_table_entry *lte);
 /* Functions to read/write metadata resources.  */
 
 extern int
-read_metadata_resource(WIMStruct *wim,
-		       struct wim_image_metadata *image_metadata);
+read_metadata_resource(struct wim_image_metadata *imd);
 
 extern int
 write_metadata_resource(WIMStruct *wim, int image, int write_resource_flags);
