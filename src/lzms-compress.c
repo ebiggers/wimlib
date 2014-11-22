@@ -347,15 +347,6 @@ lzms_output_bitstream_put_varbits(struct lzms_output_bitstream *os,
 	}
 }
 
-/* Use when @num_bits is a compile-time constant.  Otherwise use
- * lzms_output_bitstream_put_bits().  */
-static inline void
-lzms_output_bitstream_put_bits(struct lzms_output_bitstream *os,
-			       u32 bits, unsigned num_bits)
-{
-	lzms_output_bitstream_put_varbits(os, bits, num_bits, num_bits);
-}
-
 /* Flush the output bitstream, ensuring that all bits written to it have been
  * written to memory.  Returns %true if all bits have been output successfully,
  * or %false if an overrun occurred.  */
