@@ -29,6 +29,10 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
 #include "wimlib/lz_mf.h"
 #include "wimlib/lz_suffix_array_utils.h"
 #include "wimlib/util.h"

@@ -8,6 +8,10 @@
  *
  */
 
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
 #include "wimlib/lz_repsearch.h"
 #include "wimlib/lz_extend.h"
 

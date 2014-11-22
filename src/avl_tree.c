@@ -11,6 +11,10 @@
  * You can do whatever you want with this file.
  */
 
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
 #include "wimlib/avl_tree.h"
 
 /* Starts an in-order traversal of the tree: returns the least-valued node, or
