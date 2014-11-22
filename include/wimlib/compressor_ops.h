@@ -7,7 +7,7 @@
 #ifndef _WIMLIB_COMPRESSOR_OPS_H
 #define _WIMLIB_COMPRESSOR_OPS_H
 
-#include <wimlib/types.h>
+#include "wimlib/types.h"
 
 struct compressor_ops {
 

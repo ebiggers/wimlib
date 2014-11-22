@@ -7,7 +7,7 @@
 #ifndef _WIMLIB_CHUNK_COMPRESSOR_H
 #define _WIMLIB_CHUNK_COMPRESSOR_H
 
-#include <wimlib/types.h>
+#include "wimlib/types.h"
 
 /* Interface for chunk compression.  Users can submit chunks of data to be
  * compressed, then retrieve them later in order.  This interface can be

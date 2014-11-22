@@ -1,7 +1,7 @@
 #ifndef _WIMLIB_WILDCARD_H
 #define _WIMLIB_WILDCARD_H
 
-#include <wimlib/types.h>
+#include "wimlib/types.h"
 
 struct wim_dentry;
 

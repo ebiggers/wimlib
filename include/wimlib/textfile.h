@@ -1,7 +1,7 @@
 #ifndef _WIMLIB_TEXTFILE_H_
 #define _WIMLIB_TEXTFILE_H_
 
-#include <wimlib/types.h>
+#include "wimlib/types.h"
 
 struct string_set {
 	tchar **strings;

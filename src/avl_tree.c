@@ -11,7 +11,7 @@
  * You can do whatever you want with this file.
  */
 
-#include <wimlib/avl_tree.h>
+#include "wimlib/avl_tree.h"
 
 /* Starts an in-order traversal of the tree: returns the least-valued node, or
  * NULL if the tree is empty.  */
