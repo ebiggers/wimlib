@@ -1265,6 +1265,8 @@ create_any_empty_ads(const struct wim_dentry *dentry,
 		const struct wim_ads_entry *entry;
 		NTSTATUS status;
 		HANDLE h;
+		bool retried;
+		DWORD disposition;
 
 		entry = &inode->i_ads_entries[i];
 
@@ -1285,9 +1287,23 @@ create_any_empty_ads(const struct wim_dentry *dentry,
 					       entry->stream_name_nbytes /
 							sizeof(wchar_t));
 		path_modified = true;
+
+		retried = false;
+		disposition = FILE_SUPERSEDE;
+	retry:
 		status = do_create_file(&h, FILE_WRITE_DATA, &allocation_size,
-					0, FILE_SUPERSEDE, 0, ctx);
-		if (!NT_SUCCESS(status)) {
+					0, disposition, 0, ctx);
+		if (unlikely(!NT_SUCCESS(status))) {
+			if (status == STATUS_OBJECT_NAME_NOT_FOUND && !retried) {
+				/* Workaround for defect in the Windows PE
+				 * in-memory filesystem implementation:
+				 * FILE_SUPERSEDE does not create the file, as
+				 * expected and documented, when the named file
+				 * does not exist.  */
+				retried = true;
+				disposition = FILE_CREATE;
+				goto retry;
+			}
 			set_errno_from_nt_status(status);
 			ERROR_WITH_ERRNO("Can't create \"%ls\" "
 					 "(status=0x%08"PRIx32")",
@@ -1415,6 +1431,7 @@ create_nondirectory_inode(HANDLE *h_ret, const struct wim_dentry *dentry,
 	ULONG attrib;
 	NTSTATUS status;
 	bool retried = false;
+	DWORD disposition;
 
 	inode = dentry->d_inode;
 
@@ -1441,11 +1458,12 @@ create_nondirectory_inode(HANDLE *h_ret, const struct wim_dentry *dentry,
 						 FILE_ATTRIBUTE_ENCRYPTED));
 	}
 	build_extraction_path(dentry, ctx);
+	disposition = FILE_SUPERSEDE;
 retry:
 	status = do_create_file(h_ret, GENERIC_READ | GENERIC_WRITE | DELETE,
-				NULL, attrib, FILE_SUPERSEDE,
+				NULL, attrib, disposition,
 				FILE_NON_DIRECTORY_FILE, ctx);
-	if (NT_SUCCESS(status)) {
+	if (likely(NT_SUCCESS(status))) {
 		int ret;
 
 		ret = adjust_compression_attribute(*h_ret, dentry, ctx);
@@ -1481,6 +1499,16 @@ retry:
 			return ret;
 		}
 		return 0;
+	}
+
+	if (status == STATUS_OBJECT_NAME_NOT_FOUND && !retried) {
+		/* Workaround for defect in the Windows PE in-memory filesystem
+		 * implementation: FILE_SUPERSEDE does not create the file, as
+		 * expected and documented, when the named file does not exist.
+		 */
+		retried = true;
+		disposition = FILE_CREATE;
+		goto retry;
 	}
 
 	if (status == STATUS_ACCESS_DENIED && !retried) {

@@ -1,3 +1,8 @@
+Version 1.7.4-BETA:
+	Extracting files to a Windows PE in-memory filesystem no longer fails if
+	the target files do not yet exist.  (Broken since v1.7.0, but actually a
+	result of a Microsoft bug.)
+
 Version 1.7.3:
 	Fix for very slow export from solid WIM / ESD files.
 
