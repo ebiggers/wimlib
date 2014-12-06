@@ -594,7 +594,7 @@ inode_to_stbuf(const struct wim_inode *inode,
 	stbuf->st_mtime = wim_timestamp_to_unix(inode->i_last_write_time);
 	stbuf->st_ctime = stbuf->st_mtime;
 #endif
-	stbuf->st_blocks = (stbuf->st_size + 511) / 512;
+	stbuf->st_blocks = DIV_ROUND_UP(stbuf->st_size, 512);
 	return 0;
 }
 
@@ -1144,7 +1144,7 @@ commit_image(struct wimfs_context *ctx, int unmount_flags, mqd_t mq)
 	return wimlib_overwrite(ctx->wim, write_flags, 0);
 }
 
-/* In the case of an allow_other mount, only the owner and root should be
+/* In the case of an allow_other mount, only the mount owner and root are
  * allowed to unmount the filesystem.  */
 static bool
 may_unmount_wimfs(void)

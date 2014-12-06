@@ -70,7 +70,7 @@ wim_get_current_security_data(WIMStruct *wim)
 	return wim_get_current_image_metadata(wim)->security_data;
 }
 
-/* Iterate over each inode in a WIM image that has not yet been hashed */
+/* Iterate over each inode in a WIM image  */
 #define image_for_each_inode(inode, imd) \
 	list_for_each_entry(inode, &(imd)->inode_list, i_list)
 

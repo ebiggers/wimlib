@@ -1241,7 +1241,7 @@ calculate_dentry_statistics(struct wim_dentry *dentry, void *arg)
 
 /*
  * Calculate what to put in the <FILECOUNT>, <DIRCOUNT>, <TOTALBYTES>, and
- * <HARDLINKBYTES> elements of each <IMAGE>.
+ * <HARDLINKBYTES> elements of the specified WIM image.
  */
 void
 xml_update_image_info(WIMStruct *wim, int image)

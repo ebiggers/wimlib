@@ -62,7 +62,7 @@ struct wim_dentry {
 	 * long names but share the same case insensitive long name.  */
 	struct list_head d_ci_conflict_list;
 
-	/* The parent of this directory entry. */
+	/* The parent of this directory entry. (The root is its own parent.)  */
 	struct wim_dentry *d_parent;
 
 	/* Linked list node that places this dentry in the list of aliases for
