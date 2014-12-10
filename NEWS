@@ -3,6 +3,10 @@ Version 1.7.4-BETA:
 	the target files do not yet exist.  (Broken since v1.7.0, but actually a
 	result of a Microsoft bug.)
 
+	More fixes for wimlib on non-x86 architectures such as ARM.
+
+	Slight performance improvements in compression and decompression.
+
 Version 1.7.3:
 	Fix for very slow export from solid WIM / ESD files.
 
