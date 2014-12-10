@@ -26,6 +26,7 @@
 #  include "config.h"
 #endif
 
+#include "wimlib/bitops.h"
 #include "wimlib/endianness.h"
 #include "wimlib/lzms.h"
 #include "wimlib/unaligned.h"
@@ -95,7 +96,7 @@ lzms_decode_delta_rle_slot_bases(u32 slot_bases[],
 	LZMS_ASSERT(slot == expected_num_slots);
 
 	slot_bases[slot] = final;
-	extra_bits[slot - 1] = bsr32(slot_bases[slot] - slot_bases[slot - 1]);
+	extra_bits[slot - 1] = fls32(slot_bases[slot] - slot_bases[slot - 1]);
 }
 
 /* Initialize the global offset and length slot tables.  */
@@ -159,19 +160,19 @@ lzms_maybe_do_x86_translation(u8 data[restrict], s32 i, s32 num_op_bytes,
 			LZMS_DEBUG("Undid x86 translation at position %d "
 				   "(opcode 0x%02x)", i, data[i]);
 			void *p32 = &data[i + num_op_bytes];
-			u32 n = le32_to_cpu(load_le32_unaligned(p32));
-			store_le32_unaligned(cpu_to_le32(n - i), p32);
+			u32 n = get_unaligned_u32_le(p32);
+			put_unaligned_u32_le(n - i, p32);
 		}
-		pos = i + le16_to_cpu(load_le16_unaligned(&data[i + num_op_bytes]));
+		pos = i + get_unaligned_u16_le(&data[i + num_op_bytes]);
 	} else {
-		pos = i + le16_to_cpu(load_le16_unaligned(&data[i + num_op_bytes]));
+		pos = i + get_unaligned_u16_le(&data[i + num_op_bytes]);
 
 		if (i - *closest_target_usage_p <= max_trans_offset) {
 			LZMS_DEBUG("Did x86 translation at position %d "
 				   "(opcode 0x%02x)", i, data[i]);
 			void *p32 = &data[i + num_op_bytes];
-			u32 n = le32_to_cpu(load_le32_unaligned(p32));
-			store_le32_unaligned(cpu_to_le32(n + i), p32);
+			u32 n = get_unaligned_u32_le(p32);
+			put_unaligned_u32_le(n + i, p32);
 		}
 	}
 

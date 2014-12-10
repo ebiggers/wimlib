@@ -209,6 +209,7 @@
 #include "wimlib/decompress_common.h"
 #include "wimlib/error.h"
 #include "wimlib/lzms.h"
+#include "wimlib/unaligned.h"
 #include "wimlib/util.h"
 
 #include <limits.h>
@@ -393,7 +394,7 @@ lzms_input_bitstream_ensure_bits(struct lzms_input_bitstream *is,
 		if (unlikely(is->num_le16_remaining == 0))
 			return -1;
 
-		next = le16_to_cpu(*--is->in);
+		next = get_unaligned_u16_le(--is->in);
 		is->num_le16_remaining--;
 
 		is->bitbuf |= next << (sizeof(is->bitbuf) * 8 - is->num_filled_bits - 16);
@@ -450,8 +451,8 @@ lzms_range_decoder_raw_init(struct lzms_range_decoder_raw *rd,
 			    const le16 *in, size_t in_limit)
 {
 	rd->range = 0xffffffff;
-	rd->code = ((u32)le16_to_cpu(in[0]) << 16) |
-		   ((u32)le16_to_cpu(in[1]) <<  0);
+	rd->code = ((u32)get_unaligned_u16_le(&in[0]) << 16) |
+		   ((u32)get_unaligned_u16_le(&in[1]) <<  0);
 	rd->in = in + 2;
 	rd->num_le16_remaining = in_limit - 2;
 }
@@ -465,7 +466,7 @@ lzms_range_decoder_raw_normalize(struct lzms_range_decoder_raw *rd)
 		rd->range <<= 16;
 		if (unlikely(rd->num_le16_remaining == 0))
 			return -1;
-		rd->code = (rd->code << 16) | le16_to_cpu(*rd->in++);
+		rd->code = (rd->code << 16) | get_unaligned_u16_le(rd->in++);
 		rd->num_le16_remaining--;
 	}
 	return 0;
@@ -667,7 +668,7 @@ lzms_copy_lz_match(struct lzms_decompressor *ctx, u32 length, u32 offset)
 
 	out_next = ctx->out_next;
 
-	lz_copy(out_next, length, offset, ctx->out_end);
+	lz_copy(out_next, length, offset, ctx->out_end, 1);
 	ctx->out_next = out_next + length;
 
 	return 0;

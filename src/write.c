@@ -517,8 +517,8 @@ end_chunk_table(struct write_streams_ctx *ctx, u64 res_actual_size,
 						0 != (ctx->write_resource_flags &
 						      WRITE_RESOURCE_FLAG_PACK_STREAMS));
 
-	typedef le64 __attribute__((may_alias)) aliased_le64_t;
-	typedef le32 __attribute__((may_alias)) aliased_le32_t;
+	typedef le64 _may_alias_attribute aliased_le64_t;
+	typedef le32 _may_alias_attribute aliased_le32_t;
 
 	if (chunk_entry_size == 4) {
 		aliased_le32_t *entries = (aliased_le32_t*)ctx->chunk_csizes;

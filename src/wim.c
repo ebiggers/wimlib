@@ -24,6 +24,7 @@
 #endif
 
 #include "wimlib.h"
+#include "wimlib/bitops.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/file_io.h"
@@ -96,7 +97,7 @@ wim_chunk_size_valid(u32 chunk_size, int ctype)
 	/* Chunk size must be power of 2.  */
 	if (chunk_size == 0)
 		return false;
-	order = bsr32(chunk_size);
+	order = fls32(chunk_size);
 	if (chunk_size != 1U << order)
 		return false;
 

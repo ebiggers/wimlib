@@ -84,7 +84,7 @@ xpress_decode_window(struct input_bitstream *istream, const u16 *decode_table,
 	u8 *window_end = &window[window_size];
 	unsigned sym;
 	unsigned match_len;
-	unsigned offset_bsr;
+	unsigned offset_high_bit;
 	unsigned match_offset;
 
 	while (window_ptr != window_end) {
@@ -99,12 +99,12 @@ xpress_decode_window(struct input_bitstream *istream, const u16 *decode_table,
 
 		/* Match  */
 		match_len = sym & 0xf;
-		offset_bsr = (sym >> 4) & 0xf;
+		offset_high_bit = (sym >> 4) & 0xf;
 
 		bitstream_ensure_bits(istream, 16);
 
-		match_offset = (1 << offset_bsr) |
-				bitstream_pop_bits(istream, offset_bsr);
+		match_offset = (1 << offset_high_bit) |
+				bitstream_pop_bits(istream, offset_high_bit);
 
 		if (match_len == 0xf) {
 			match_len += bitstream_read_byte(istream);
@@ -119,7 +119,8 @@ xpress_decode_window(struct input_bitstream *istream, const u16 *decode_table,
 		if (unlikely(match_len > window_end - window_ptr))
 			return -1;
 
-		lz_copy(window_ptr, match_len, match_offset, window_end);
+		lz_copy(window_ptr, match_len, match_offset, window_end,
+			XPRESS_MIN_MATCH_LEN);
 
 		window_ptr += match_len;
 	}

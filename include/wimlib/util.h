@@ -6,20 +6,6 @@
 
 #include <stdio.h>
 
-#ifndef min
-#define min(a, b) ({ typeof(a) __a = (a); typeof(b) __b = (b); \
-					(__a < __b) ? __a : __b; })
-#endif
-
-#ifndef max
-#define max(a, b) ({ typeof(a) __a = (a); typeof(b) __b = (b); \
-					(__a > __b) ? __a : __b; })
-#endif
-
-#ifndef swap
-#define swap(a, b) ({typeof(a) _a = a; (a) = (b); (b) = _a;})
-#endif
-
 /**
  * container_of - cast a member of a structure out to the containing structure
  * @ptr:	the pointer to the member.
@@ -46,8 +32,6 @@
 /* Used for buffering FILE IO in a few places */
 #define BUFFER_SIZE 32768
 
-#define BUILD_BUG_ON(condition) ((void)sizeof(char[1 - 2*!!(condition)]))
-
 /* Maximum number of array elements to allocate on the stack (used in various
  * places when large temporary buffers are needed).  */
 #define STACK_MAX 32768
@@ -59,7 +43,7 @@ extern void
 wimlib_free_memory(void *p);
 
 extern void *
-wimlib_realloc(void *, size_t) _warn_unused_result_attribute;
+wimlib_realloc(void *, size_t);
 
 extern void *
 wimlib_calloc(size_t nmemb, size_t size) _malloc_attribute;
@@ -106,22 +90,6 @@ randomize_char_array_with_alnum(tchar p[], size_t n);
 
 extern void
 print_byte_field(const u8 field[], size_t len, FILE *out);
-
-static inline u32
-bsr32(u32 n)
-{
-#if defined(__x86__) || defined(__x86_64__)
-	asm("bsrl %0, %0;"
-			: "=r"(n)
-			: "0" (n));
-	return n;
-#else
-	u32 pow = 0;
-	while ((n >>= 1) != 0)
-		pow++;
-	return pow;
-#endif
-}
 
 static inline bool
 is_power_of_2(unsigned long n)

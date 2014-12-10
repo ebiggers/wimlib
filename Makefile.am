@@ -3,7 +3,7 @@ ACLOCAL_AMFLAGS = -I m4
 AM_CPPFLAGS	= -I$(top_srcdir)/include $(WINDOWS_CPPFLAGS) \
 		  -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE
 
-AM_CFLAGS	= -std=gnu99 -Wmissing-prototypes -Wstrict-prototypes	\
+AM_CFLAGS	= -std=c99 -Wmissing-prototypes -Wstrict-prototypes	\
 		  -Werror-implicit-function-declaration			\
 		  -fno-common -Wundef -Wno-pointer-sign
 
@@ -82,10 +82,12 @@ libwim_la_SOURCES =		\
 	include/wimlib/apply.h		\
 	include/wimlib/assert.h		\
 	include/wimlib/avl_tree.h	\
+	include/wimlib/bitops.h		\
 	include/wimlib/callback.h	\
 	include/wimlib/capture.h	\
 	include/wimlib/case.h		\
 	include/wimlib/compiler.h	\
+	include/wimlib/compiler-gcc.h	\
 	include/wimlib/compressor_ops.h	\
 	include/wimlib/compress_common.h	\
 	include/wimlib/chunk_compressor.h	\

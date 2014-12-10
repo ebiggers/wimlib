@@ -23,6 +23,7 @@
 #  include "config.h"
 #endif
 
+#include "wimlib/bitops.h"
 #include "wimlib/endianness.h"
 #include "wimlib/lzx.h"
 #include "wimlib/unaligned.h"
@@ -75,7 +76,7 @@ lzx_get_window_order(size_t max_block_size)
 	if (max_block_size == 0 || max_block_size > LZX_MAX_WINDOW_SIZE)
 		return 0;
 
-	order = bsr32(max_block_size);
+	order = fls32(max_block_size);
 
 	if (((u32)1 << order) != max_block_size)
 		order++;
@@ -125,7 +126,7 @@ do_translate_target(void *target, s32 input_pos)
 {
 	s32 abs_offset, rel_offset;
 
-	rel_offset = le32_to_cpu(load_le32_unaligned(target));
+	rel_offset = get_unaligned_u32_le(target);
 	if (rel_offset >= -input_pos && rel_offset < LZX_WIM_MAGIC_FILESIZE) {
 		if (rel_offset < LZX_WIM_MAGIC_FILESIZE - input_pos) {
 			/* "good translation" */
@@ -134,7 +135,7 @@ do_translate_target(void *target, s32 input_pos)
 			/* "compensating translation" */
 			abs_offset = rel_offset - LZX_WIM_MAGIC_FILESIZE;
 		}
-		store_le32_unaligned(cpu_to_le32(abs_offset), target);
+		put_unaligned_u32_le(abs_offset, target);
 	}
 }
 
@@ -143,20 +144,18 @@ undo_translate_target(void *target, s32 input_pos)
 {
 	s32 abs_offset, rel_offset;
 
-	abs_offset = le32_to_cpu(load_le32_unaligned(target));
+	abs_offset = get_unaligned_u32_le(target);
 	if (abs_offset >= 0) {
 		if (abs_offset < LZX_WIM_MAGIC_FILESIZE) {
 			/* "good translation" */
 			rel_offset = abs_offset - input_pos;
-
-			store_le32_unaligned(cpu_to_le32(rel_offset), target);
+			put_unaligned_u32_le(rel_offset, target);
 		}
 	} else {
 		if (abs_offset >= -input_pos) {
 			/* "compensating translation" */
 			rel_offset = abs_offset + LZX_WIM_MAGIC_FILESIZE;
-
-			store_le32_unaligned(cpu_to_le32(rel_offset), target);
+			put_unaligned_u32_le(rel_offset, target);
 		}
 	}
 }
@@ -195,6 +194,7 @@ inline  /* Although inlining the 'process_target' function still speeds up the
 void
 lzx_e8_filter(u8 *data, u32 size, void (*process_target)(void *, s32))
 {
+	u8 *p = data;
 #ifdef __SSE2__
 	/* SSE2 vectorized implementation for x86_64.  This speeds up LZX
 	 * decompression by about 5-8% overall.  (Usually --- the performance
@@ -202,11 +202,11 @@ lzx_e8_filter(u8 *data, u32 size, void (*process_target)(void *, s32))
 	 * consists entirely of 0xe8 bytes.  Also, this optimization affects
 	 * compression as well, but the percentage improvement is less because
 	 * LZX compression is much slower than LZX decompression. ) */
-	__m128i *p128 = (__m128i *)data;
-	u32 valid_mask = 0xFFFFFFFF;
+	if (size >= 32 && (uintptr_t)p % 16 == 0) {
 
-	if (size >= 32 && (uintptr_t)data % 16 == 0) {
-		__m128i * const end128 = p128 + size / 16 - 1;
+		u32 valid_mask = 0xFFFFFFFF;
+
+		u8 * const vec_end = p + (size & ~15) - 16;
 
 		/* Create a vector of all 0xe8 bytes  */
 		const __m128i e8_bytes = _mm_set1_epi8(0xe8);
@@ -216,7 +216,8 @@ lzx_e8_filter(u8 *data, u32 size, void (*process_target)(void *, s32))
 			/* Compare the current 16-byte vector with the vector of
 			 * all 0xe8 bytes.  This produces 0xff where the byte is
 			 * 0xe8 and 0x00 where it is not.  */
-			__m128i cmpresult = _mm_cmpeq_epi8(*p128, e8_bytes);
+			__m128i cmpresult = _mm_cmpeq_epi8(*(const __m128i *)p,
+							   e8_bytes);
 
 			/* Map the comparison results into a single 16-bit
 			 * number.  It will contain a 1 bit when the
@@ -244,12 +245,11 @@ lzx_e8_filter(u8 *data, u32 size, void (*process_target)(void *, s32))
 					 * index of the byte, within the 16, at
 					 * which the next e8 translation should
 					 * be done.  */
-					u32 bit = __builtin_ctz(e8_mask);
+					int bit = ffs32(e8_mask);
 
 					/* Do (or undo) the e8 translation.  */
-					u8 *p8 = (u8 *)p128 + bit;
-					(*process_target)(p8 + 1,
-							  p8 - data);
+					(*process_target)(p + bit + 1,
+							  p + bit - data);
 
 					/* Don't start an e8 translation in the
 					 * next 4 bytes.  */
@@ -260,30 +260,27 @@ lzx_e8_filter(u8 *data, u32 size, void (*process_target)(void *, s32))
 				valid_mask >>= 16;
 				valid_mask |= 0xFFFF0000;
 			}
-		} while (++p128 < end128);
-	}
+		} while ((p += 16) < vec_end);
 
-	u8 *p8 = (u8 *)p128;
-	while (!(valid_mask & 1)) {
-		p8++;
-		valid_mask >>= 1;
+		while (!(valid_mask & 1)) {
+			p++;
+			valid_mask >>= 1;
+		}
 	}
-#else /* __SSE2__  */
-	u8 *p8 = data;
 #endif /* !__SSE2__  */
 
 	if (size > 10) {
 		/* Finish any bytes that weren't processed by the vectorized
 		 * implementation.  */
-		u8 *p8_end = data + size - 10;
+		u8 *end = data + size - 10;
 		do {
-			if (*p8 == 0xe8) {
-				(*process_target)(p8 + 1, p8 - data);
-				p8 += 5;
+			if (*p == 0xe8) {
+				(*process_target)(p + 1, p - data);
+				p += 5;
 			} else {
-				p8++;
+				p++;
 			}
-		} while (p8 < p8_end);
+		} while (p < end);
 	}
 }
 

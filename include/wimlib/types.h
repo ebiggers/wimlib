@@ -47,4 +47,13 @@ typedef struct WIMStruct WIMStruct;
 #  define WIMLIB_WIMSTRUCT_DECLARED
 #endif
 
-#endif
+/*
+ * Type of a machine word.  'unsigned long' would be logical, but that is only
+ * 32 bits on x86_64 Windows.  The same applies to 'uint_fast32_t'.  So the best
+ * we can do without a bunch of #ifdefs appears to be 'size_t'.
+ */
+typedef size_t machine_word_t;
+
+#define WORDSIZE	sizeof(machine_word_t)
+
+#endif /* _WIMLIB_TYPES_H */

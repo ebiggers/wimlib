@@ -15,16 +15,16 @@
 #endif
 
 #include "wimlib/decompress_common.h"
-#include "wimlib/util.h" /* for BUILD_BUG_ON()  */
 
 #include <string.h>
 
+#define USE_WORD_FILL
+
 #ifdef __GNUC__
 #  ifdef __SSE2__
+#    undef USE_WORD_FILL
 #    define USE_SSE2_FILL
 #    include <emmintrin.h>
-#  else
-#    define USE_LONG_FILL
 #  endif
 #endif
 
@@ -142,8 +142,8 @@ make_huffman_decode_table(u16 decode_table[const restrict],
 	unsigned stores_per_loop;
 	unsigned decode_table_pos;
 
-#ifdef USE_LONG_FILL
-	const unsigned entries_per_long = sizeof(unsigned long) / sizeof(decode_table[0]);
+#ifdef USE_WORD_FILL
+	const unsigned entries_per_word = WORDSIZE / sizeof(decode_table[0]);
 #endif
 
 #ifdef USE_SSE2_FILL
@@ -230,7 +230,7 @@ make_huffman_decode_table(u16 decode_table[const restrict],
 	 * have the most entries.  From there, the number of entries per
 	 * codeword will decrease.  As an optimization, we may begin filling
 	 * entries with SSE2 vector accesses (8 entries/store), then change to
-	 * 'unsigned long' accesses (2 or 4 entries/store), then change to
+	 * 'machine_word_t' accesses (2 or 4 entries/store), then change to
 	 * 16-bit accesses (1 entry/store).  */
 	decode_table_ptr = decode_table;
 	sym_idx = 0;
@@ -242,11 +242,11 @@ make_huffman_decode_table(u16 decode_table[const restrict],
 	for (; stores_per_loop != 0; codeword_len++, stores_per_loop >>= 1) {
 		unsigned end_sym_idx = sym_idx + len_counts[codeword_len];
 		for (; sym_idx < end_sym_idx; sym_idx++) {
-			/* Note: unlike in the 'long' version below, the __m128i
-			 * type already has __attribute__((may_alias)), so using
-			 * it to access the decode table, which is an array of
-			 * unsigned shorts, will not violate strict aliasing.
-			 */
+			/* Note: unlike in the machine_word_t version below, the
+			 * __m128i type already has __attribute__((may_alias)),
+			 * so using it to access the decode table, which is an
+			 * array of unsigned shorts, will not violate strict
+			 * aliasing.  */
 			u16 entry;
 			__m128i v;
 			__m128i *p;
@@ -265,36 +265,33 @@ make_huffman_decode_table(u16 decode_table[const restrict],
 	}
 #endif /* USE_SSE2_FILL */
 
-#ifdef USE_LONG_FILL
-	/* Fill the entries one 'unsigned long' at a time.
+#ifdef USE_WORD_FILL
+	/* Fill the entries one machine word at a time.
 	 * On 32-bit systems this is 2 entries per store, while on 64-bit
 	 * systems this is 4 entries per store.  */
-	stores_per_loop = (1 << (table_bits - codeword_len)) / entries_per_long;
+	stores_per_loop = (1 << (table_bits - codeword_len)) / entries_per_word;
 	for (; stores_per_loop != 0; codeword_len++, stores_per_loop >>= 1) {
 		unsigned end_sym_idx = sym_idx + len_counts[codeword_len];
 		for (; sym_idx < end_sym_idx; sym_idx++) {
 
-			/* Accessing the array of unsigned shorts as unsigned
-			 * longs would violate strict aliasing and would require
-			 * compiling the code with -fno-strict-aliasing to
-			 * guarantee correctness.  To work around this problem,
-			 * use the gcc 'may_alias' extension to define a special
-			 * unsigned long type that may alias any other in-memory
-			 * variable.  */
-			typedef unsigned long __attribute__((may_alias)) aliased_long_t;
+			/* Accessing the array of u16 as u32 or u64 would
+			 * violate strict aliasing and would require compiling
+			 * the code with -fno-strict-aliasing to guarantee
+			 * correctness.  To work around this problem, use the
+			 * gcc 'may_alias' extension.  */
+			typedef machine_word_t _may_alias_attribute aliased_word_t;
 
-			unsigned long v;
-			aliased_long_t *p;
+			machine_word_t v;
+			aliased_word_t *p;
 			unsigned n;
 
-			BUILD_BUG_ON(sizeof(unsigned long) != 4 &&
-				     sizeof(unsigned long) != 8);
+			BUILD_BUG_ON(WORDSIZE != 4 && WORDSIZE != 8);
 
 			v = MAKE_DIRECT_ENTRY(sorted_syms[sym_idx], codeword_len);
 			v |= v << 16;
-			v |= v << (sizeof(unsigned long) == 8 ? 32 : 0);
+			v |= v << (WORDSIZE == 8 ? 32 : 0);
 
-			p = (aliased_long_t *)decode_table_ptr;
+			p = (aliased_word_t *)decode_table_ptr;
 			n = stores_per_loop;
 
 			do {
@@ -303,7 +300,7 @@ make_huffman_decode_table(u16 decode_table[const restrict],
 			decode_table_ptr = p;
 		}
 	}
-#endif /* USE_LONG_FILL */
+#endif /* USE_WORD_FILL */
 
 	/* Fill the entries one 16-bit integer at a time.  */
 	stores_per_loop = (1 << (table_bits - codeword_len));

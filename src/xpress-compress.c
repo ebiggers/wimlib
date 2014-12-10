@@ -26,11 +26,13 @@
 #  include "config.h"
 #endif
 
+#include "wimlib/bitops.h"
 #include "wimlib/compress_common.h"
 #include "wimlib/compressor_ops.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/lz_mf.h"
+#include "wimlib/unaligned.h"
 #include "wimlib/util.h"
 #include "wimlib/xpress.h"
 
@@ -216,7 +218,7 @@ xpress_write_bits(struct xpress_output_bitstream *os,
 	if (os->bitcount > 16) {
 		os->bitcount -= 16;
 		if (os->end - os->next_byte >= 2) {
-			*(le16 *)os->next_bits = cpu_to_le16(os->bitbuf >> os->bitcount);
+			put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next_bits);
 			os->next_bits = os->next_bits2;
 			os->next_bits2 = os->next_byte;
 			os->next_byte += 2;
@@ -244,8 +246,8 @@ xpress_flush_output(struct xpress_output_bitstream *os)
 	if (unlikely(os->end - os->next_byte < 2))
 		return 0;
 
-	*(le16 *)os->next_bits = cpu_to_le16(os->bitbuf << (16 - os->bitcount));
-	*(le16 *)os->next_bits2 = cpu_to_le16(0);
+	put_unaligned_u16_le(os->bitbuf << (16 - os->bitcount), os->next_bits);
+	put_unaligned_u16_le(0, os->next_bits2);
 
 	return os->next_byte - os->start;
 }
@@ -332,8 +334,8 @@ xpress_declare_match(struct xpress_compressor *c,
 {
 	unsigned adjusted_len = len - XPRESS_MIN_MATCH_LEN;
 	unsigned len_hdr = min(adjusted_len, 0xf);
-	unsigned offset_bsr = bsr32(offset);
-	unsigned sym = XPRESS_NUM_CHARS + ((offset_bsr << 4) | len_hdr);
+	unsigned offset_high_bit = fls32(offset);
+	unsigned sym = XPRESS_NUM_CHARS + ((offset_high_bit << 4) | len_hdr);
 
 	c->freqs[sym]++;
 
@@ -341,8 +343,8 @@ xpress_declare_match(struct xpress_compressor *c,
 		*(*next_chosen_item)++ = (struct xpress_item) {
 			.data = (u64)sym |
 				((u64)adjusted_len << 9) |
-				((u64)offset_bsr << 25) |
-				((u64)(offset ^ (1U << offset_bsr)) << 29),
+				((u64)offset_high_bit << 25) |
+				((u64)(offset ^ (1U << offset_high_bit)) << 29),
 		};
 	}
 }
@@ -605,7 +607,7 @@ xpress_consider_matches(struct xpress_compressor *c,
 	u32 cost;
 	u32 position_cost;
 	unsigned offset;
-	unsigned offset_bsr;
+	unsigned offset_high_bit;
 	unsigned adjusted_len;
 	unsigned len_hdr;
 	unsigned sym;
@@ -614,11 +616,11 @@ xpress_consider_matches(struct xpress_compressor *c,
 		/* All lengths are small.  Optimize accordingly.  */
 		do {
 			offset = matches[i].offset;
-			offset_bsr = bsr32(offset);
+			offset_high_bit = fls32(offset);
 			len_hdr = len - XPRESS_MIN_MATCH_LEN;
-			sym = XPRESS_NUM_CHARS + ((offset_bsr << 4) | len_hdr);
+			sym = XPRESS_NUM_CHARS + ((offset_high_bit << 4) | len_hdr);
 
-			position_cost = cur_optimum_ptr->cost + offset_bsr;
+			position_cost = cur_optimum_ptr->cost + offset_high_bit;
 			do {
 				cost = position_cost + c->costs[sym];
 				if (cost < (cur_optimum_ptr + len)->cost) {
@@ -633,12 +635,12 @@ xpress_consider_matches(struct xpress_compressor *c,
 		/* Some lengths are big.  */
 		do {
 			offset = matches[i].offset;
-			offset_bsr = bsr32(offset);
-			position_cost = cur_optimum_ptr->cost + offset_bsr;
+			offset_high_bit = fls32(offset);
+			position_cost = cur_optimum_ptr->cost + offset_high_bit;
 			do {
 				adjusted_len = len - XPRESS_MIN_MATCH_LEN;
 				len_hdr = min(adjusted_len, 0xf);
-				sym = XPRESS_NUM_CHARS + ((offset_bsr << 4) | len_hdr);
+				sym = XPRESS_NUM_CHARS + ((offset_high_bit << 4) | len_hdr);
 
 				cost = position_cost + c->costs[sym];
 				if (adjusted_len >= 0xf) {

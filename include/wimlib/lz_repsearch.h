@@ -11,6 +11,7 @@
 #define _LZ_REPSEARCH_H
 
 #include "wimlib/lz_extend.h"
+#include "wimlib/unaligned.h"
 
 extern u32
 lz_extend_repmatch(const u8 *strptr, const u8 *matchptr, u32 max_len);
@@ -31,18 +32,18 @@ lz_repsearch3(const u8 * const strptr, const u32 max_len,
 	unsigned rep_max_idx;
 	u32 rep_len;
 	u32 rep_max_len;
-	const u16 str = *(const u16 *)strptr;
+	const u16 str = load_u16_unaligned(strptr);
 	const u8 *matchptr;
 
 	matchptr = strptr - recent_offsets[0];
-	if (*(const u16 *)matchptr == str)
+	if (load_u16_unaligned(matchptr) == str)
 		rep_max_len = lz_extend_repmatch(strptr, matchptr, max_len);
 	else
 		rep_max_len = 0;
 	rep_max_idx = 0;
 
 	matchptr = strptr - recent_offsets[1];
-	if (*(const u16 *)matchptr == str) {
+	if (load_u16_unaligned(matchptr) == str) {
 		rep_len = lz_extend_repmatch(strptr, matchptr, max_len);
 		if (rep_len > rep_max_len) {
 			rep_max_len = rep_len;
@@ -51,7 +52,7 @@ lz_repsearch3(const u8 * const strptr, const u32 max_len,
 	}
 
 	matchptr = strptr - recent_offsets[2];
-	if (*(const u16 *)matchptr == str) {
+	if (load_u16_unaligned(matchptr) == str) {
 		rep_len = lz_extend_repmatch(strptr, matchptr, max_len);
 		if (rep_len > rep_max_len) {
 			rep_max_len = rep_len;

@@ -23,12 +23,15 @@
 #  include "config.h"
 #endif
 
+/* Make sure the POSIX-compatible strerror_r() is declared, rather than the GNU
+ * version, which has a different return type. */
 #ifdef _GNU_SOURCE
 #  define _GNU_SOURCE_DEFINED 1
 #  undef _GNU_SOURCE
+#  ifndef _POSIX_C_SOURCE
+#    define _POSIX_C_SOURCE 200112L
+#  endif
 #endif
-/* Make sure the POSIX-compatible strerror_r() is declared, rather than the GNU
- * version, which has a different return type. */
 #include <string.h>
 #ifdef _GNU_SOURCE_DEFINED
 #  define _GNU_SOURCE

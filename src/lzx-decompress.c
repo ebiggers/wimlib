@@ -500,7 +500,8 @@ lzx_decompress_block(int block_type, u32 block_size,
 		if (unlikely(match_offset > window_ptr - window))
 			return -1;
 
-		lz_copy(window_ptr, match_len, match_offset, window_end);
+		lz_copy(window_ptr, match_len, match_offset, window_end,
+			LZX_MIN_MATCH_LEN);
 
 		window_ptr += match_len;
 	}

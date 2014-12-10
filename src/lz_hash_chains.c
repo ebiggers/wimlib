@@ -138,6 +138,7 @@ lz_hc_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 	struct lz_match *lz_matchptr = matches;
 	u32 hash;
 	u32 cur_match;
+	u32 sequence;
 
 	if (unlikely(bytes_remaining < LZ_HASH_REQUIRED_NBYTES + 1))
 		return 0;
@@ -159,6 +160,9 @@ lz_hc_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 	if (unlikely(best_len >= max_len))
 		return 0;
 
+	if (UNALIGNED_ACCESS_IS_FAST)
+		sequence = load_u24_unaligned(strptr);
+
 	/* Search the appropriate hash chain for matches.  */
 	for (; cur_match && depth_remaining--; cur_match = prev_tab[cur_match]) {
 
@@ -173,59 +177,59 @@ lz_hc_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 		if (matchptr[best_len] != strptr[best_len])
 			goto next_match;
 
-	#if HAVE_FAST_LZ_EXTEND
-		if ((*(const u32 *)strptr & 0xFFFFFF) !=
-		    (*(const u32 *)matchptr & 0xFFFFFF))
-			goto next_match;
+		if (UNALIGNED_ACCESS_IS_FAST) {
+			if (load_u24_unaligned(matchptr) != sequence)
+				goto next_match;
 
-		len = lz_extend(strptr, matchptr, 3, max_len);
+			len = lz_extend(strptr, matchptr, 3, max_len);
 
-		if (len > best_len) {
-			best_len = len;
+			if (len > best_len) {
+				best_len = len;
 
+				*lz_matchptr++ = (struct lz_match) {
+					.len = best_len,
+					.offset = strptr - matchptr,
+				};
+
+				if (best_len >= nice_len)
+					break;
+			}
+		} else {
+
+			/* The bytes at indices 'best_len - 1' and '0' are less
+			 * important to check separately.  But doing so still
+			 * gives a slight performance improvement, at least on
+			 * x86_64, probably because they create separate
+			 * branches for the CPU to predict independently of the
+			 * branches in the main comparison loops.
+			 */
+			 if (matchptr[best_len - 1] != strptr[best_len - 1] ||
+			     matchptr[0] != strptr[0])
+				goto next_match;
+
+			for (len = 1; len < best_len - 1; len++)
+				if (matchptr[len] != strptr[len])
+					goto next_match;
+
+			/* The match is the longest found so far --- at least
+			 * 'best_len' + 1 bytes.  Continue extending it.  */
+
+			if (++best_len != max_len &&
+			    strptr[best_len] == matchptr[best_len])
+				while (++best_len != max_len)
+					if (strptr[best_len] != matchptr[best_len])
+						break;
+
+			/* Record the match.  */
 			*lz_matchptr++ = (struct lz_match) {
 				.len = best_len,
 				.offset = strptr - matchptr,
 			};
 
+			/* Terminate the search if 'nice_len' was reached.  */
 			if (best_len >= nice_len)
 				break;
 		}
-
-	#else /* HAVE_FAST_LZ_EXTEND */
-
-		/* The bytes at indices 'best_len - 1' and '0' are less
-		 * important to check separately.  But doing so still gives a
-		 * slight performance improvement, at least on x86_64, probably
-		 * because they create separate branches for the CPU to predict
-		 * independently of the branches in the main comparison loops.
-		 */
-		 if (matchptr[best_len - 1] != strptr[best_len - 1] ||
-		     matchptr[0] != strptr[0])
-			goto next_match;
-
-		for (len = 1; len < best_len - 1; len++)
-			if (matchptr[len] != strptr[len])
-				goto next_match;
-
-		/* The match is the longest found so far ---
-		 * at least 'best_len' + 1 bytes.  Continue extending it.  */
-
-		if (++best_len != max_len && strptr[best_len] == matchptr[best_len])
-			while (++best_len != max_len)
-				if (strptr[best_len] != matchptr[best_len])
-					break;
-
-		/* Record the match.  */
-		*lz_matchptr++ = (struct lz_match) {
-			.len = best_len,
-			.offset = strptr - matchptr,
-		};
-
-		/* Terminate the search if 'nice_len' was reached.  */
-		if (best_len >= nice_len)
-			break;
-	#endif /* !HAVE_FAST_LZ_EXTEND */
 
 	next_match:
 		/* Continue to next match in the chain.  */

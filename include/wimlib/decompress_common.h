@@ -14,6 +14,7 @@
 #include "wimlib/compiler.h"
 #include "wimlib/endianness.h"
 #include "wimlib/types.h"
+#include "wimlib/unaligned.h"
 
 /* Structure that encapsulates a block of in-memory data being interpreted as a
  * stream of bits, optionally with interwoven literal bytes.  Bits are assumed
@@ -67,8 +68,7 @@ bitstream_ensure_bits(struct input_bitstream *is, const unsigned num_bits)
 	if (unlikely(is->end - is->next < 2))
 		goto overflow;
 
-	is->bitbuf |= (u32)le16_to_cpu(*(const le16 *)is->next)
-			<< (16 - is->bitsleft);
+	is->bitbuf |= (u32)get_unaligned_u16_le(is->next) << (16 - is->bitsleft);
 	is->next += 2;
 	is->bitsleft += 16;
 
@@ -76,7 +76,7 @@ bitstream_ensure_bits(struct input_bitstream *is, const unsigned num_bits)
 		if (unlikely(is->end - is->next < 2))
 			goto overflow;
 
-		is->bitbuf |= (u32)le16_to_cpu(*(const le16 *)is->next);
+		is->bitbuf |= (u32)get_unaligned_u16_le(is->next);
 		is->next += 2;
 		is->bitsleft = 32;
 	}
@@ -144,7 +144,7 @@ bitstream_read_u16(struct input_bitstream *is)
 
 	if (unlikely(is->end - is->next < 2))
 		return 0;
-	v = le16_to_cpu(*(const le16 *)is->next);
+	v = get_unaligned_u16_le(is->next);
 	is->next += 2;
 	return v;
 }
@@ -157,7 +157,7 @@ bitstream_read_u32(struct input_bitstream *is)
 
 	if (unlikely(is->end - is->next < 4))
 		return 0;
-	v = le32_to_cpu(*(const le32 *)is->next);
+	v = get_unaligned_u32_le(is->next);
 	is->next += 4;
 	return v;
 }
@@ -256,7 +256,7 @@ make_huffman_decode_table(u16 decode_table[], unsigned num_syms,
 
 
 /*
- * Copy a LZ77 match at (dst - offset) to dst.
+ * Copy an LZ77 match at (dst - offset) to dst.
  *
  * The length and offset must be already validated --- that is, (dst - offset)
  * can't underrun the output buffer, and (dst + length) can't overrun the output
@@ -266,50 +266,88 @@ make_huffman_decode_table(u16 decode_table[], unsigned num_syms,
  * This function won't write any data beyond this position.
  */
 static inline void
-lz_copy(u8 *dst, u32 length, u32 offset, const u8 *winend)
+lz_copy(u8 *dst, u32 length, u32 offset, const u8 *winend, u32 min_length)
 {
 	const u8 *src = dst - offset;
-#if defined(__x86_64__) || defined(__i386__)
-	/* Copy one 'unsigned long' at a time.  On i386 and x86_64 this is
+	const u8 * const end = dst + length;
+
+	/*
+	 * Try to copy one machine word at a time.  On i386 and x86_64 this is
 	 * faster than copying one byte at a time, unless the data is
 	 * near-random and all the matches have very short lengths.  Note that
 	 * since this requires unaligned memory accesses, it won't necessarily
 	 * be faster on every architecture.
 	 *
 	 * Also note that we might copy more than the length of the match.  For
-	 * example, if an 'unsigned long' is 8 bytes and the match is of length
-	 * 5, then we'll simply copy 8 bytes.  This is okay as long as we don't
-	 * write beyond the end of the output buffer, hence the check for
-	 * (winend - (dst + length) >= sizeof(unsigned long) - 1).  */
-	if (offset >= sizeof(unsigned long) &&
-			winend - (dst + length) >= sizeof(unsigned long) - 1)
+	 * example, if a word is 8 bytes and the match is of length 5, then
+	 * we'll simply copy 8 bytes.  This is okay as long as we don't write
+	 * beyond the end of the output buffer, hence the check for (winend -
+	 * end >= WORDSIZE - 1).
+	 */
+	if (UNALIGNED_ACCESS_IS_VERY_FAST &&
+	    likely(winend - end >= WORDSIZE - 1))
 	{
-		/* Access memory through a packed struct.  This tricks the
-		 * compiler into allowing unaligned memory accesses.  */
-		struct ulong_wrapper {
-			unsigned long v;
-		} _packed_attribute;
 
-		const u8 * const end = dst + length;
-		unsigned long v;
+		if (offset >= WORDSIZE) {
+			/* The source and destination words don't overlap.  */
 
-		v = ((struct ulong_wrapper *)src)->v;
-		((struct ulong_wrapper *)dst)->v = v;
-		dst += sizeof(unsigned long);
-		src += sizeof(unsigned long);
+			/* To improve branch prediction, one iteration of this
+			 * loop is unrolled.  Most matches are short and will
+			 * fail the first check.  But if that check passes, then
+			 * it becomes increasing likely that the match is long
+			 * and we'll need to continue copying.  */
 
-		if (dst < end) {
+			copy_word_unaligned(src, dst);
+			src += WORDSIZE;
+			dst += WORDSIZE;
+
+			if (dst < end) {
+				do {
+					copy_word_unaligned(src, dst);
+					src += WORDSIZE;
+					dst += WORDSIZE;
+				} while (dst < end);
+			}
+			return;
+		} else if (offset == 1) {
+
+			/* Offset 1 matches are equivalent to run-length
+			 * encoding of the previous byte.  This case is common
+			 * if the data contains many repeated bytes.  */
+
+			machine_word_t v = repeat_byte(*(dst - 1));
 			do {
-				v = ((struct ulong_wrapper *)src)->v;
-				((struct ulong_wrapper *)dst)->v = v;
-				dst += sizeof(unsigned long);
-				src += sizeof(unsigned long);
+				store_word_unaligned(v, dst);
+				src += WORDSIZE;
+				dst += WORDSIZE;
 			} while (dst < end);
+			return;
 		}
-
-		return;
+		/*
+		 * We don't bother with special cases for other 'offset <
+		 * WORDSIZE', which are usually rarer than 'offset == 1'.  Extra
+		 * checks will just slow things down.  Actually, it's possible
+		 * to handle all the 'offset < WORDSIZE' cases using the same
+		 * code, but it still becomes more complicated doesn't seem any
+		 * faster overall; it definitely slows down the more common
+		 * 'offset == 1' case.
+		 */
 	}
-#endif
+
+	/* Fall back to a bytewise copy.  */
+
+	if (min_length >= 2) {
+		*dst++ = *src++;
+		length--;
+	}
+	if (min_length >= 3) {
+		*dst++ = *src++;
+		length--;
+	}
+	if (min_length >= 4) {
+		*dst++ = *src++;
+		length--;
+	}
 	do {
 		*dst++ = *src++;
 	} while (--length);

@@ -357,7 +357,7 @@ lzx_write_varbits(struct lzx_output_bitstream *os,
 
 		/* Write a coding unit, unless it would overflow the buffer.  */
 		if (os->next != os->end)
-			*os->next++ = cpu_to_le16(os->bitbuf >> os->bitcount);
+			put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next++);
 
 		/* If writing 17 bits, a second coding unit might need to be
 		 * written.  But because 'max_num_bits' is a compile-time
@@ -365,7 +365,7 @@ lzx_write_varbits(struct lzx_output_bitstream *os,
 		 * call sites.  */
 		if (max_num_bits == 17 && os->bitcount == 16) {
 			if (os->next != os->end)
-				*os->next++ = cpu_to_le16(os->bitbuf);
+				put_unaligned_u16_le(os->bitbuf, os->next++);
 			os->bitcount = 0;
 		}
 	}
@@ -391,7 +391,7 @@ lzx_flush_output(struct lzx_output_bitstream *os)
 		return 0;
 
 	if (os->bitcount != 0)
-		*os->next++ = cpu_to_le16(os->bitbuf << (16 - os->bitcount));
+		put_unaligned_u16_le(os->bitbuf << (16 - os->bitcount), os->next++);
 
 	return (const u8 *)os->next - (const u8 *)os->start;
 }

@@ -8,6 +8,7 @@
 #define _WIMLIB_LZX_H
 
 #include "wimlib/assert.h"
+#include "wimlib/bitops.h"
 #include "wimlib/compiler.h"
 #include "wimlib/lzx_constants.h"
 #include "wimlib/util.h"
@@ -40,7 +41,7 @@ lzx_get_offset_slot_raw(u32 adjusted_offset)
 		return (adjusted_offset >> 17) + 34;
 	} else {
 		LZX_ASSERT(2 <= adjusted_offset && adjusted_offset < 655360);
-		unsigned mssb_idx = bsr32(adjusted_offset);
+		unsigned mssb_idx = fls32(adjusted_offset);
 		return (mssb_idx << 1) |
 			((adjusted_offset >> (mssb_idx - 1)) & 1);
 	}

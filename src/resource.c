@@ -26,6 +26,7 @@
 #endif
 
 #include "wimlib/assert.h"
+#include "wimlib/bitops.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
@@ -214,7 +215,7 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 		}
 	}
 
-	const u32 chunk_order = bsr32(chunk_size);
+	const u32 chunk_order = fls32(chunk_size);
 
 	/* Calculate the total number of chunks the resource is divided into.  */
 	const u64 num_chunks = (rspec->uncompressed_size + chunk_size - 1) >> chunk_order;
@@ -326,8 +327,8 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 		/* Now fill in chunk_offsets from the entries we have read in
 		 * chunk_tab_data.  We break aliasing rules here to avoid having
 		 * to allocate yet another array.  */
-		typedef le64 __attribute__((may_alias)) aliased_le64_t;
-		typedef le32 __attribute__((may_alias)) aliased_le32_t;
+		typedef le64 _may_alias_attribute aliased_le64_t;
+		typedef le32 _may_alias_attribute aliased_le32_t;
 		u64 * chunk_offsets_p = chunk_offsets;
 
 		if (alt_chunk_table) {

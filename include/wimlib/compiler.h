@@ -9,44 +9,72 @@
 #define _WIMLIB_COMPILER_H
 
 #ifdef __GNUC__
-#	if defined(__CYGWIN__) || defined(__WIN32__)
-#		define WIMLIBAPI __declspec(dllexport)
-#	else
-#		define WIMLIBAPI __attribute__((visibility("default")))
-#	endif
-#	define _always_inline_attribute inline __attribute__((always_inline))
-#	define _no_inline_attribute __attribute__((noinline))
-#	define _packed_attribute __attribute__((packed))
-#	define _format_attribute(type, format_str, args_start) \
-			/*__attribute__((format(type, format_str, args_start))) */
-#	if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 4)
-#		define _cold_attribute     __attribute__((cold))
-#	else
-#		define _cold_attribute
-#	endif
-#	define _malloc_attribute __attribute__((malloc))
-#	define _warn_unused_result_attribute __attribute__((warn_unused_result))
-#	define _aligned_attribute(size) __attribute__((aligned(size)))
-#	define likely(x) __builtin_expect(!!(x), 1)
-#	define unlikely(x) __builtin_expect(!!(x), 0)
-#	define inline inline __attribute__((always_inline))
-#	define prefetch(x) __builtin_prefetch(x)
-#	define is_constant(x) __builtin_constant_p(x)
+#  include "wimlib/compiler-gcc.h"
 #else
-#	define WIMLIBAPI
-#	define _always_inline_attribute inline
-#	define _no_inline_attribute
-#	define _format_attribute(type, format_str, args_start)
-#	define _cold_attribute
-#	define _packed_attribute
-#	define _malloc_attribute
-#	define _warn_unused_result_attribute
-#	define _aligned_attribute(size)
-#	define likely(x) (x)
-#	define unlikely(x) (x)
-#	define prefetch(x)
-#	define is_constant(x) (0)
-#endif /* __GNUC__ */
+#  error "Unrecognized compiler.  Please add a header file for your compiler."
+#endif
+
+#ifndef WIMLIBAPI
+#  define WIMLIBAPI
+#endif
+
+#ifndef _packed_attribute
+#  error "missing required definition of _packed_attribute"
+#endif
+
+#ifndef _aligned_attribute
+#  error "missing required definition of _aligned_attribute"
+#endif
+
+#ifndef _may_alias_attribute
+#  error "missing required definition of _may_alias_attribute"
+#endif
+
+#ifndef likely
+#  define likely(expr)		(expr)
+#endif
+
+#ifndef unlikely
+#  define unlikely(expr)	(expr)
+#endif
+
+#ifndef prefetch
+#  define prefetch(addr)
+#endif
+
+#ifndef _cold_attribute
+#  define _cold_attribute
+#endif
+
+#ifndef _malloc_attribute
+#  define _malloc_attribute
+#endif
+
+#ifndef _format_attribute
+#  define _format_attribute(type, format_str, format_start)
+#endif
+
+#ifndef CPU_IS_BIG_ENDIAN
+#  error "missing required definition of CPU_IS_BIG_ENDIAN"
+#endif
+
+#define CPU_IS_LITTLE_ENDIAN (!CPU_IS_BIG_ENDIAN)
+
+#ifndef UNALIGNED_ACCESS_SPEED
+#  define UNALIGNED_ACCESS_SPEED 0
+#endif
+
+#define UNALIGNED_ACCESS_IS_ALLOWED	(UNALIGNED_ACCESS_SPEED >= 1)
+#define UNALIGNED_ACCESS_IS_FAST	(UNALIGNED_ACCESS_SPEED >= 2)
+#define UNALIGNED_ACCESS_IS_VERY_FAST	(UNALIGNED_ACCESS_SPEED >= 3)
+
+#ifndef typeof
+#  error "missing required definition of typeof"
+#endif
+
+#if !defined(min) || !defined(max) || !defined(swap)
+#  error "missing required definitions of min(), max(), and swap() macros"
+#endif
 
 #ifdef __CHECKER__
 #  define _bitwise_attr	__attribute__((bitwise))
@@ -54,6 +82,10 @@
 #else
 #  define _bitwise_attr
 #  define _force_attr
+#endif
+
+#ifndef BUILD_BUG_ON
+#  define BUILD_BUG_ON(expr)	((void)sizeof(char[1 - 2*!!(expr)]))
 #endif
 
 #endif /* _WIMLIB_COMPILER_H */

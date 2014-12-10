@@ -32,6 +32,7 @@
 #include "wimlib/lz_mf.h"
 #include "wimlib/lz_repsearch.h"
 #include "wimlib/lzms.h"
+#include "wimlib/unaligned.h"
 #include "wimlib/util.h"
 
 #include <string.h>
@@ -338,7 +339,7 @@ lzms_output_bitstream_put_varbits(struct lzms_output_bitstream *os,
 
 		/* Write a coding unit, unless it would underflow the buffer. */
 		if (os->next != os->begin)
-			*--os->next = cpu_to_le16(os->bitbuf >> os->bitcount);
+			put_unaligned_u16_le(os->bitbuf >> os->bitcount, --os->next);
 
 		/* Optimization for call sites that never write more than 16
 		 * bits at once.  */
@@ -357,7 +358,7 @@ lzms_output_bitstream_flush(struct lzms_output_bitstream *os)
 		return false;
 
 	if (os->bitcount != 0)
-		*--os->next = cpu_to_le16(os->bitbuf << (16 - os->bitcount));
+		put_unaligned_u16_le(os->bitbuf << (16 - os->bitcount), --os->next);
 
 	return true;
 }
@@ -401,9 +402,11 @@ lzms_range_encoder_raw_shift_low(struct lzms_range_encoder_raw *rc)
 		 * ((rc->low >> 32) != 0, a.k.a. the carry bit is 1).  */
 		do {
 			if (likely(rc->next >= rc->begin)) {
-				if (rc->next != rc->end)
-					*rc->next++ = cpu_to_le16(rc->cache +
-								  (u16)(rc->low >> 32));
+				if (rc->next != rc->end) {
+					put_unaligned_u16_le(rc->cache +
+							     (u16)(rc->low >> 32),
+							     rc->next++);
+				}
 			} else {
 				rc->next++;
 			}

@@ -10,32 +10,45 @@
 #ifndef _WIMLIB_LZ_HASH3_H
 #define _WIMLIB_LZ_HASH3_H
 
-#include "wimlib/types.h"
+#include "wimlib/unaligned.h"
 
 /* Constant for the multiplicative hash function.  */
 #define LZ_HASH_MULTIPLIER 0x1E35A7BD
 
-/* Hash the next 3-byte sequence in the window, producing a hash of length
- * 'num_bits' bits.  4 bytes must be available, since 32-bit unaligned load is
- * faster on some architectures.  */
 static inline u32
-lz_hash(const u8 *p, unsigned int num_bits)
+loaded_u32_to_u24(u32 v)
 {
-	u32 str;
-	u32 hash;
+	if (CPU_IS_LITTLE_ENDIAN)
+		return v & 0xFFFFFF;
+	else
+		return v >> 8;
+}
 
-#if defined(__i386__) || defined(__x86_64__)
-	/* Unaligned access allowed, and little endian CPU.
-	 * Callers ensure that at least 4 (not 3) bytes are remaining.  */
-	str = *(const u32 *)p & 0xFFFFFF;
-#else
-	str = ((u32)p[0] << 0) | ((u32)p[1] << 8) | ((u32)p[2] << 16);
-#endif
+static inline u32
+load_u24_unaligned(const u8 *p)
+{
+	if (UNALIGNED_ACCESS_IS_FAST)
+		return loaded_u32_to_u24(load_u32_unaligned(p));
+	else
+		return ((u32)p[0] << 0) | ((u32)p[1] << 8) | ((u32)p[2] << 16);
+}
 
-	hash = str * LZ_HASH_MULTIPLIER;
+static inline u32
+lz_hash_u24(u32 str, unsigned num_bits)
+{
+	return (u32)(str * LZ_HASH_MULTIPLIER) >> (32 - num_bits);
+}
 
-	/* High bits are more random than the low bits.  */
-	return hash >> (32 - num_bits);
+/*
+ * Hash the next 3-byte sequence in the window, producing a hash of length
+ * 'num_bits' bits.  At least LZ_HASH_REQUIRED_NBYTES must be available at 'p';
+ * this might be 4 bytes rather than 3 because an unaligned load is faster on
+ * some architectures.
+ */
+static inline u32
+lz_hash(const u8 *p, unsigned num_bits)
+{
+	return lz_hash_u24(load_u24_unaligned(p), num_bits);
 }
 
 /* The number of bytes being hashed.  */
