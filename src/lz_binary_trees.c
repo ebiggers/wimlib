@@ -437,7 +437,7 @@ lz_bt_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 		/* Search the digram table for a length 2 match.  */
 
 		const u16 digram = mf->next_digram;
-		mf->next_digram = *(const u16 *)(&window[cur_pos + 1]);
+		mf->next_digram = load_u16_unaligned(&window[cur_pos + 1]);
 		prefetch(&mf->digram_tab[mf->next_digram]);
 		cur_match = mf->digram_tab[digram];
 		mf->digram_tab[digram] = cur_pos;
@@ -563,7 +563,7 @@ lz_bt_skip_positions(struct lz_mf *_mf, u32 n)
 	do {
 		if (mf->digram_tab) {
 			digram = next_digram;
-			next_digram = *(const u16 *)(&window[cur_pos + 1]);
+			next_digram = load_u16_unaligned(&window[cur_pos + 1]);
 			mf->digram_tab[digram] = cur_pos;
 		}
 
