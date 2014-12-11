@@ -21,7 +21,7 @@ lz_extend(const u8 * const strptr, const u8 * const matchptr,
 {
 	u32 len = start_len;
 
-	if (UNALIGNED_ACCESS_IS_FAST) {
+	if (UNALIGNED_ACCESS_IS_FAST && CPU_IS_LITTLE_ENDIAN) {
 
 		machine_word_t v_word;
 
