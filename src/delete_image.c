@@ -78,7 +78,7 @@ wimlib_delete_image(WIMStruct *wim, int image)
 		/* Remove the image from the XML information. */
 		xml_delete_image(&wim->wim_info, image);
 
-		wim->deletion_occurred = 1;
+		wim->image_deletion_occurred = 1;
 	}
 	return 0;
 }

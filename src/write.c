@@ -3248,7 +3248,7 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 	 * allow any file and metadata resources to appear without returning
 	 * WIMLIB_ERR_RESOURCE_ORDER (due to the fact that we would otherwise
 	 * overwrite these resources). */
-	if (!wim->deletion_occurred && !any_images_modified(wim)) {
+	if (!wim->image_deletion_occurred && !any_images_modified(wim)) {
 		/* If no images have been modified and no images have been
 		 * deleted, a new lookup table does not need to be written.  We
 		 * shall write the new XML data and optional integrity table
@@ -3405,8 +3405,9 @@ can_overwrite_wim_inplace(const WIMStruct *wim, int write_flags)
 	if (write_flags & WIMLIB_WRITE_FLAG_REBUILD)
 		return false;
 
-	/* Deletions cause full rebuild by default.  */
-	if (wim->deletion_occurred && !(write_flags & WIMLIB_WRITE_FLAG_SOFT_DELETE))
+	/* Image deletions cause full rebuild by default.  */
+	if (wim->image_deletion_occurred &&
+	    !(write_flags & WIMLIB_WRITE_FLAG_SOFT_DELETE))
 		return false;
 
 	/* Pipable WIMs cannot be updated in place, nor can a non-pipable WIM be

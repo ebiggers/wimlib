@@ -57,7 +57,7 @@ struct WIMStruct {
 	int current_image;
 
 	/* Have any images been deleted? */
-	u8 deletion_occurred : 1;
+	u8 image_deletion_occurred : 1;
 
 	/* Has the underlying WIM file been locked for appending?  */
 	u8 locked_for_append : 1;
