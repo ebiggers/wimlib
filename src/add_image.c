@@ -191,14 +191,8 @@ wimlib_add_image_multisource(WIMStruct *wim,
 	return 0;
 
 out_delete_image:
-	/* Unsuccessful; rollback the WIM to its original state.  */
-
-	/* wimlib_update_image() is now all-or-nothing, so no dentries remain
-	 * and there's no need to pass the lookup table here.  */
-	put_image_metadata(wim->image_metadata[wim->hdr.image_count - 1], NULL);
-
-	xml_delete_image(&wim->wim_info, wim->hdr.image_count);
-	wim->hdr.image_count--;
+	/* Unsuccessful; rollback by removing the new image.  */
+	delete_wim_image(wim, wim->hdr.image_count);
 	return ret;
 }
 
