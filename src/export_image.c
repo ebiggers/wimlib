@@ -143,9 +143,8 @@ wimlib_export_image(WIMStruct *src_wim,
 		    (!(export_flags & WIMLIB_EXPORT_FLAG_NO_DESCRIPTIONS) &&
 			dest_description))
 		{
-			ERROR("Image name or image description was "
-			      "specified, but we are exporting "
-			      "multiple images");
+			ERROR("Image name and description must be "
+			      "left NULL for multi-image export");
 			return WIMLIB_ERR_INVALID_PARAM;
 		}
 		start_src_image = 1;
