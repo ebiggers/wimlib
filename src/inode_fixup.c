@@ -27,7 +27,6 @@
 #include "wimlib/error.h"
 #include "wimlib/inode.h"
 #include "wimlib/inode_table.h"
-#include "wimlib/lookup_table.h"
 
 struct inode_fixup_params {
 	struct wim_inode_table inode_table;
