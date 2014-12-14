@@ -131,7 +131,6 @@ libwim_la_SOURCES =		\
 	include/wimlib/unaligned.h	\
 	include/wimlib/unix_data.h	\
 	include/wimlib/util.h		\
-	include/wimlib/version.h	\
 	include/wimlib/wildcard.h	\
 	include/wimlib/wim.h		\
 	include/wimlib/write.h		\

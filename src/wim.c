@@ -37,7 +37,6 @@
 #include "wimlib/security.h"
 #include "wimlib/wim.h"
 #include "wimlib/xml.h"
-#include "wimlib/version.h"
 
 #ifdef __WIN32__
 #  include "wimlib/win32.h" /* for realpath() replacement */
@@ -917,7 +916,9 @@ test_locale_ctype_utf8(void)
 WIMLIBAPI u32
 wimlib_get_version(void)
 {
-	return WIMLIB_VERSION_CODE;
+	return (WIMLIB_MAJOR_VERSION << 20) |
+	       (WIMLIB_MINOR_VERSION << 10) |
+		WIMLIB_PATCH_VERSION;
 }
 
 static bool lib_initialized = false;
