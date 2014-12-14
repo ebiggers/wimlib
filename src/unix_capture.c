@@ -388,13 +388,13 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 		goto out_progress;
 
 #ifdef HAVE_STAT_NANOSECOND_PRECISION
-	inode->i_creation_time = timespec_to_wim_timestamp(stbuf.st_mtim);
-	inode->i_last_write_time = timespec_to_wim_timestamp(stbuf.st_mtim);
-	inode->i_last_access_time = timespec_to_wim_timestamp(stbuf.st_atim);
+	inode->i_creation_time = timespec_to_wim_timestamp(&stbuf.st_mtim);
+	inode->i_last_write_time = timespec_to_wim_timestamp(&stbuf.st_mtim);
+	inode->i_last_access_time = timespec_to_wim_timestamp(&stbuf.st_atim);
 #else
-	inode->i_creation_time = unix_timestamp_to_wim(stbuf.st_mtime);
-	inode->i_last_write_time = unix_timestamp_to_wim(stbuf.st_mtime);
-	inode->i_last_access_time = unix_timestamp_to_wim(stbuf.st_atime);
+	inode->i_creation_time = time_t_to_wim_timestamp(stbuf.st_mtime);
+	inode->i_last_write_time = time_t_to_wim_timestamp(stbuf.st_mtime);
+	inode->i_last_access_time = time_t_to_wim_timestamp(stbuf.st_atime);
 #endif
 	inode->i_resolved = 1;
 	if (params->add_flags & WIMLIB_ADD_FLAG_UNIX_DATA) {

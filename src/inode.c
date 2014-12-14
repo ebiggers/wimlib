@@ -49,7 +49,7 @@ new_inode(void)
 {
 	struct wim_inode *inode = new_timeless_inode();
 	if (inode) {
-		u64 now = get_wim_timestamp();
+		u64 now = now_as_wim_timestamp();
 		inode->i_creation_time = now;
 		inode->i_last_access_time = now;
 		inode->i_last_write_time = now;

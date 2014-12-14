@@ -1261,7 +1261,7 @@ xml_update_image_info(WIMStruct *wim, int image)
 	for_dentry_in_tree(wim->image_metadata[image - 1]->root_dentry,
 			   calculate_dentry_statistics,
 			   image_info);
-	image_info->last_modification_time = get_wim_timestamp();
+	image_info->last_modification_time = now_as_wim_timestamp();
 }
 
 /* Adds an image to the XML information. */
@@ -1292,7 +1292,7 @@ xml_add_image(WIMStruct *wim, const tchar *name)
 
 	wim->wim_info = wim_info;
 	image_info->index = wim_info->num_images;
-	image_info->creation_time = get_wim_timestamp();
+	image_info->creation_time = now_as_wim_timestamp();
 	xml_update_image_info(wim, image_info->index);
 	return 0;
 

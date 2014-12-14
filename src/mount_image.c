@@ -590,8 +590,8 @@ inode_to_stbuf(const struct wim_inode *inode,
 	stbuf->st_mtim = wim_timestamp_to_timespec(inode->i_last_write_time);
 	stbuf->st_ctim = stbuf->st_mtim;
 #else
-	stbuf->st_atime = wim_timestamp_to_unix(inode->i_last_access_time);
-	stbuf->st_mtime = wim_timestamp_to_unix(inode->i_last_write_time);
+	stbuf->st_atime = wim_timestamp_to_time_t(inode->i_last_access_time);
+	stbuf->st_mtime = wim_timestamp_to_time_t(inode->i_last_write_time);
 	stbuf->st_ctime = stbuf->st_mtime;
 #endif
 	stbuf->st_blocks = DIV_ROUND_UP(stbuf->st_size, 512);
@@ -602,7 +602,7 @@ inode_to_stbuf(const struct wim_inode *inode,
 static void
 touch_inode(struct wim_inode *inode)
 {
-	u64 now = get_wim_timestamp();
+	u64 now = now_as_wim_timestamp();
 	inode->i_last_access_time = now;
 	inode->i_last_write_time = now;
 }
@@ -1982,15 +1982,15 @@ wimfs_utimens(const char *path, const struct timespec tv[2])
 
 	if (tv[0].tv_nsec != UTIME_OMIT) {
 		if (tv[0].tv_nsec == UTIME_NOW)
-			inode->i_last_access_time = get_wim_timestamp();
+			inode->i_last_access_time = now_as_wim_timestamp();
 		else
-			inode->i_last_access_time = timespec_to_wim_timestamp(tv[0]);
+			inode->i_last_access_time = timespec_to_wim_timestamp(&tv[0]);
 	}
 	if (tv[1].tv_nsec != UTIME_OMIT) {
 		if (tv[1].tv_nsec == UTIME_NOW)
-			inode->i_last_write_time = get_wim_timestamp();
+			inode->i_last_write_time = now_as_wim_timestamp();
 		else
-			inode->i_last_write_time = timespec_to_wim_timestamp(tv[1]);
+			inode->i_last_write_time = timespec_to_wim_timestamp(&tv[1]);
 	}
 	return 0;
 }
@@ -2005,8 +2005,8 @@ wimfs_utime(const char *path, struct utimbuf *times)
 	if (!inode)
 		return -errno;
 
-	inode->i_last_access_time = unix_timestamp_to_wim(times->actime);
-	inode->i_last_write_time = unix_timestamp_to_wim(times->modtime);
+	inode->i_last_access_time = time_t_to_wim_timestamp(times->actime);
+	inode->i_last_write_time = time_t_to_wim_timestamp(times->modtime);
 	return 0;
 }
 #endif /* !HAVE_UTIMENSAT */
