@@ -64,6 +64,7 @@
 #include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
 #include "wimlib/metadata.h"
+#include "wimlib/paths.h"
 
 #include <errno.h>
 

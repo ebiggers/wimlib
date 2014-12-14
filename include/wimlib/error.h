@@ -1,11 +1,11 @@
 #ifndef _WIMLIB_ERROR_H
 #define _WIMLIB_ERROR_H
 
+#include <stdio.h>
+
 #include "wimlib.h" /* Get error code definitions */
 #include "wimlib/compiler.h"
 #include "wimlib/types.h"
-
-#include <stdio.h>
 
 static inline int _format_attribute(printf, 1, 2)
 dummy_tprintf(const tchar *format, ...)
@@ -63,5 +63,8 @@ wimlib_debug(const tchar *file, int line, const char *func,
 #else
 #  define DEBUG(format, ...) dummy_tprintf(T(format), ## __VA_ARGS__)
 #endif /* !ENABLE_DEBUG */
+
+extern void
+print_byte_field(const u8 *field, size_t len, FILE *out);
 
 #endif /* _WIMLIB_ERROR_H */

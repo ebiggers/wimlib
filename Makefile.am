@@ -31,6 +31,7 @@ libwim_la_SOURCES =		\
 	src/dentry.c		\
 	src/divsufsort.c	\
 	src/encoding.c		\
+	src/error.c		\
 	src/export_image.c	\
 	src/extract.c		\
 	src/file_io.c		\

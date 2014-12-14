@@ -33,6 +33,7 @@
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
+#include "wimlib/paths.h"
 #include "wimlib/reparse.h"
 #include "wimlib/textfile.h"
 #include "wimlib/xml.h"

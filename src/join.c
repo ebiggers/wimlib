@@ -94,7 +94,7 @@ verify_swm_set(WIMStruct *wim, WIMStruct **additional_swms,
 		 * checked to be the same as wim->hdr.total_parts.  Otherwise, it
 		 * could be unexpectedly high and cause a stack overflow. */
 		WIMStruct *parts_to_swms[num_additional_swms];
-		ZERO_ARRAY(parts_to_swms);
+		memset(parts_to_swms, 0, sizeof(parts_to_swms));
 		for (unsigned i = 0; i < num_additional_swms; i++) {
 
 			WIMStruct *swm = additional_swms[i];
