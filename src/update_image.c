@@ -1,5 +1,5 @@
 /*
- * update_image.c - Update a WIM image.
+ * update_image.c - see description below
  */
 
 /*
@@ -17,6 +17,32 @@
  *
  * You should have received a copy of the GNU Lesser General Public License
  * along with this file; if not, see http://www.gnu.org/licenses/.
+ */
+
+/*
+ * This file contains the implementation of wimlib_update_image(), which is one
+ * of the two ways by which library users can make changes to a WIM image.  (The
+ * other way is by mounting an image read-write.)  wimlib_update_image() is also
+ * used in the implementation of wimlib_add_image(), since "create a WIM image
+ * from this directory tree" is equivalent to "create an empty WIM image, then
+ * update it to add this directory tree as the root".
+ *
+ * wimlib_update_image() processes a list of commands passed to it.  Currently,
+ * the following types of commands are supported:
+ *
+ * - Add a directory tree from an external source (filesystem or NTFS volume).
+ *   This can be used to add new files or to replace existing files.
+ * - Delete a file or directory tree.
+ * - Rename a file or directory tree.
+ *
+ * Not supported are creating links to existing files or changing metadata of
+ * existing files.
+ *
+ * wimlib_update_image() is atomic.  If it cannot complete successfully, then
+ * all changes are rolled back and the WIMStruct is left unchanged.  Rollback is
+ * implemented by breaking the commands into primitive operations such as "link
+ * this dentry tree here" which can be undone by doing the opposite operations
+ * in reverse order.
  */
 
 #ifdef HAVE_CONFIG_H
