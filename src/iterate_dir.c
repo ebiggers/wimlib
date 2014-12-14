@@ -99,7 +99,7 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry, struct wim_dentry *dentry,
 	}
 
 	for (unsigned i = 0; i < inode->i_num_ads; i++) {
-		if (!ads_entry_is_named_stream(&inode->i_ads_entries[i]))
+		if (!inode->i_ads_entries[i].stream_name_nbytes)
 			continue;
 		lte = inode_stream_lte(inode, i + 1, wim->lookup_table);
 		wdentry->num_named_streams++;

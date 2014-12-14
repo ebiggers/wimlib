@@ -27,7 +27,6 @@
 #endif
 
 #include "wimlib.h"
-#include "wimlib/assert.h"
 #include "wimlib/error.h"
 #include "wimlib/compressor_ops.h"
 #include "wimlib/util.h"

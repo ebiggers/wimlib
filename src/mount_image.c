@@ -39,6 +39,7 @@
 
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
+#include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
 #include "wimlib/paths.h"
 #include "wimlib/progress.h"
@@ -371,12 +372,12 @@ wim_pathname_to_stream(const struct wimfs_context *ctx, const char *path,
 		       int lookup_flags,
 		       struct wim_dentry **dentry_ret,
 		       struct wim_lookup_table_entry **lte_ret,
-		       u16 *stream_idx_ret)
+		       unsigned *stream_idx_ret)
 {
 	WIMStruct *wim = ctx->wim;
 	struct wim_dentry *dentry;
 	struct wim_lookup_table_entry *lte;
-	u16 stream_idx;
+	unsigned stream_idx;
 	const char *stream_name = NULL;
 	struct wim_inode *inode;
 	char *p = NULL;
@@ -679,7 +680,7 @@ retry:
  */
 static int
 extract_resource_to_staging_dir(struct wim_inode *inode,
-				u16 stream_idx,
+				unsigned stream_idx,
 				struct wim_lookup_table_entry **lte_ptr,
 				off_t size,
 				const struct wimfs_context *ctx)
@@ -1584,7 +1585,7 @@ wimfs_open(const char *path, struct fuse_file_info *fi)
 	struct wim_dentry *dentry;
 	struct wim_inode *inode;
 	struct wim_lookup_table_entry *lte;
-	u16 stream_idx;
+	unsigned stream_idx;
 	struct wimfs_fd *fd;
 	int ret;
 
@@ -1912,7 +1913,7 @@ wimfs_truncate(const char *path, off_t size)
 	const struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_dentry *dentry;
 	struct wim_lookup_table_entry *lte;
-	u16 stream_idx;
+	unsigned stream_idx;
 	int ret;
 	int fd;
 
@@ -1946,7 +1947,7 @@ wimfs_unlink(const char *path)
 {
 	const struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_dentry *dentry;
-	u16 stream_idx;
+	unsigned stream_idx;
 	int ret;
 
 	ret = wim_pathname_to_stream(ctx, path, 0, &dentry, NULL, &stream_idx);

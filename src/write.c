@@ -32,6 +32,7 @@
 #  include <sys/file.h>
 #endif
 
+#include "wimlib/assert.h"
 #include "wimlib/chunk_compressor.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"

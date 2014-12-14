@@ -42,6 +42,7 @@
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/error.h"
+#include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
 #include "wimlib/ntfs_3g.h"
 #include "wimlib/reparse.h"

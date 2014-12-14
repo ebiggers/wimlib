@@ -25,6 +25,7 @@
 #  include "config.h"
 #endif
 
+#include "wimlib/assert.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/error.h"

@@ -28,20 +28,17 @@
 #  include "config.h"
 #endif
 
+#include <errno.h>
+
 #include "wimlib/assert.h"
-#include "wimlib/dentry.h" /* Only for dentry_full_path().  Otherwise the code
-			      in this file doesn't care about file names/paths.
-			    */
+#include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/inode.h"
-#include "wimlib/inode_table.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/security.h"
 #include "wimlib/timestamp.h"
-
-#include <errno.h>
 
 /* Allocate a new inode.  Set the timestamps to the current time.  */
 struct wim_inode *
@@ -74,7 +71,7 @@ new_timeless_inode(void)
 	return inode;
 }
 
-/* Decrement link count on an inode.  */
+/* Decrement an inode's link count.  */
 void
 put_inode(struct wim_inode *inode)
 {
@@ -105,7 +102,7 @@ free_inode(struct wim_inode *inode)
 		return;
 
 	if (unlikely(inode->i_ads_entries)) {
-		for (u16 i = 0; i < inode->i_num_ads; i++)
+		for (unsigned i = 0; i < inode->i_num_ads; i++)
 			destroy_ads_entry(&inode->i_ads_entries[i]);
 		FREE(inode->i_ads_entries);
 	}
@@ -116,20 +113,6 @@ free_inode(struct wim_inode *inode)
 	if (!hlist_unhashed(&inode->i_hlist))
 		hlist_del(&inode->i_hlist);
 	FREE(inode);
-}
-
-/* Return %true iff the alternate data stream entry @entry has the UTF-16LE
- * stream name @name that has length @name_nbytes bytes.  */
-static inline bool
-ads_entry_has_name(const struct wim_ads_entry *entry,
-		   const utf16lechar *name, size_t name_nbytes,
-		   bool ignore_case)
-{
-	return 0 == cmp_utf16le_strings(name,
-					name_nbytes / 2,
-					entry->stream_name,
-					entry->stream_name_nbytes / 2,
-					ignore_case);
 }
 
 /*
@@ -148,7 +131,7 @@ inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name)
 	int ret;
 	const utf16lechar *stream_name_utf16le;
 	size_t stream_name_utf16le_nbytes;
-	u16 i;
+	unsigned i;
 	struct wim_ads_entry *result;
 
 	if (inode->i_num_ads == 0) {
@@ -169,10 +152,13 @@ inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name)
 	i = 0;
 	result = NULL;
 	do {
-		if (ads_entry_has_name(&inode->i_ads_entries[i],
-				       stream_name_utf16le,
-				       stream_name_utf16le_nbytes,
-				       default_ignore_case))
+		if (!cmp_utf16le_strings(inode->i_ads_entries[i].stream_name,
+					 inode->i_ads_entries[i].stream_name_nbytes /
+						sizeof(utf16lechar),
+					 stream_name_utf16le,
+					 stream_name_utf16le_nbytes /
+						sizeof(utf16lechar),
+					 default_ignore_case))
 		{
 			result = &inode->i_ads_entries[i];
 			break;
@@ -190,11 +176,11 @@ static struct wim_ads_entry *
 do_inode_add_ads(struct wim_inode *inode,
 		 utf16lechar *stream_name, size_t stream_name_nbytes)
 {
-	u16 num_ads;
+	unsigned num_ads;
 	struct wim_ads_entry *ads_entries;
 	struct wim_ads_entry *new_entry;
 
-	if (inode->i_num_ads >= 0xfffe) {
+	if (unlikely(inode->i_num_ads >= 0xfffe)) {
 		ERROR("File \"%"TS"\" has too many alternate data streams!",
 		      inode_first_full_path(inode));
 		errno = EFBIG;
@@ -288,42 +274,15 @@ inode_add_ads_with_data(struct wim_inode *inode, const tchar *name,
 	wimlib_assert(inode->i_resolved);
 
 	new_entry = inode_add_ads(inode, name);
-	if (!new_entry)
+	if (unlikely(!new_entry))
 		return NULL;
 
 	new_entry->lte = new_stream_from_data_buffer(value, size, lookup_table);
-	if (!new_entry->lte) {
+	if (unlikely(!new_entry->lte)) {
 		inode_remove_ads(inode, new_entry, NULL);
 		return NULL;
 	}
 	return new_entry;
-}
-
-/*
- * Does the inode have any named data streams?
- */
-bool
-inode_has_named_stream(const struct wim_inode *inode)
-{
-	for (u16 i = 0; i < inode->i_num_ads; i++)
-		if (ads_entry_is_named_stream(&inode->i_ads_entries[i]))
-			return true;
-	return false;
-}
-
-/* Set the unnamed stream of a WIM inode, given a data buffer containing the
- * stream contents.  The inode must be resolved and cannot have an unnamed
- * stream specified already.  */
-int
-inode_set_unnamed_stream(struct wim_inode *inode, const void *data, size_t len,
-			 struct wim_lookup_table *lookup_table)
-{
-	wimlib_assert(inode->i_resolved);
-	wimlib_assert(!inode->i_lte);
-	inode->i_lte = new_stream_from_data_buffer(data, len, lookup_table);
-	if (!inode->i_lte)
-		return WIMLIB_ERR_NOMEM;
-	return 0;
 }
 
 /* Remove an alternate data stream from a WIM inode.  */
@@ -347,6 +306,32 @@ inode_remove_ads(struct wim_inode *inode, struct wim_ads_entry *entry,
 		&inode->i_ads_entries[idx + 1],
 		(inode->i_num_ads - idx - 1) * sizeof(inode->i_ads_entries[0]));
 	inode->i_num_ads--;
+}
+
+/* Return true iff the specified inode has at least one named data stream.  */
+bool
+inode_has_named_stream(const struct wim_inode *inode)
+{
+	for (unsigned i = 0; i < inode->i_num_ads; i++)
+		if (inode->i_ads_entries[i].stream_name_nbytes)
+			return true;
+	return false;
+}
+
+/* Set the unnamed stream of a WIM inode, given a data buffer containing the
+ * stream contents.  The inode must be resolved and cannot already have an
+ * unnamed stream.  */
+int
+inode_set_unnamed_stream(struct wim_inode *inode, const void *data, size_t len,
+			 struct wim_lookup_table *lookup_table)
+{
+	wimlib_assert(inode->i_resolved);
+	wimlib_assert(!inode->i_lte);
+
+	inode->i_lte = new_stream_from_data_buffer(data, len, lookup_table);
+	if (!inode->i_lte)
+		return WIMLIB_ERR_NOMEM;
+	return 0;
 }
 
 /*
@@ -403,7 +388,7 @@ inode_resolve_streams(struct wim_inode *inode, struct wim_lookup_table *table,
 	}
 
 	/* Resolve the alternate data streams */
-	for (u16 i = 0; i < inode->i_num_ads; i++) {
+	for (unsigned i = 0; i < inode->i_num_ads; i++) {
 		struct wim_ads_entry *cur_entry;
 
 		ads_lte = NULL;
@@ -426,7 +411,7 @@ inode_resolve_streams(struct wim_inode *inode, struct wim_lookup_table *table,
 		ads_ltes[i] = ads_lte;
 	}
 	inode->i_lte = lte;
-	for (u16 i = 0; i < inode->i_num_ads; i++)
+	for (unsigned i = 0; i < inode->i_num_ads; i++)
 		inode->i_ads_entries[i].lte = ads_ltes[i];
 	inode->i_resolved = 1;
 	return 0;
@@ -451,7 +436,7 @@ inode_unresolve_streams(struct wim_inode *inode)
 	else
 		zero_out_hash(inode->i_hash);
 
-	for (u16 i = 0; i < inode->i_num_ads; i++) {
+	for (unsigned i = 0; i < inode->i_num_ads; i++) {
 		if (inode->i_ads_entries[i].lte)
 			copy_hash(inode->i_ads_entries[i].hash,
 				  inode->i_ads_entries[i].lte->hash);
@@ -478,11 +463,11 @@ stream_not_found_error(const struct wim_inode *inode, const u8 *hash)
 }
 
 /*
- * Return the lookup table entry for stream @stream_idx of the inode, where
- * stream_idx = 0 means the default un-named file stream, and stream_idx >= 1
- * corresponds to an alternate data stream.
+ * Return the lookup table entry for the specified stream of the inode, or NULL
+ * if the specified stream is empty or not available.
  *
- * This works for both resolved and un-resolved inodes.
+ * stream_idx = 0: default data stream
+ * stream_idx > 0: alternate data stream
  */
 struct wim_lookup_table_entry *
 inode_stream_lte(const struct wim_inode *inode, unsigned stream_idx,
@@ -490,56 +475,32 @@ inode_stream_lte(const struct wim_inode *inode, unsigned stream_idx,
 {
 	if (inode->i_resolved)
 		return inode_stream_lte_resolved(inode, stream_idx);
-	else
-		return inode_stream_lte_unresolved(inode, stream_idx, table);
+	if (stream_idx == 0)
+		return lookup_stream(table, inode->i_hash);
+	return lookup_stream(table, inode->i_ads_entries[stream_idx - 1].hash);
 }
 
 /*
  * Return the lookup table entry for the unnamed data stream of a *resolved*
- * inode, or NULL if there is none.  Also return the 0-based index of the
- * corresponding stream in *stream_idx_ret.
+ * inode, or NULL if the inode's unnamed data stream is empty.  Also return the
+ * 0-based index of the unnamed data stream in *stream_idx_ret.
  */
 struct wim_lookup_table_entry *
-inode_unnamed_stream_resolved(const struct wim_inode *inode, u16 *stream_idx_ret)
+inode_unnamed_stream_resolved(const struct wim_inode *inode,
+			      unsigned *stream_idx_ret)
 {
 	wimlib_assert(inode->i_resolved);
-	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-		if (inode_stream_name_nbytes(inode, i) == 0 &&
-		    !is_zero_hash(inode_stream_hash_resolved(inode, i)))
-		{
-			*stream_idx_ret = i;
-			return inode_stream_lte_resolved(inode, i);
-		}
-	}
+
 	*stream_idx_ret = 0;
-	return NULL;
-}
+	if (likely(inode->i_lte))
+		return inode->i_lte;
 
-/*
- * Return the lookup table entry for the unnamed data stream of a *resolved*
- * inode, or NULL if there is none.
- */
-struct wim_lookup_table_entry *
-inode_unnamed_lte_resolved(const struct wim_inode *inode)
-{
-	u16 stream_idx;
-	return inode_unnamed_stream_resolved(inode, &stream_idx);
-}
-
-/*
- * Return the lookup table entry for the unnamed data stream of an *unresolved*
- * inode, or NULL if there is none.
- */
-struct wim_lookup_table_entry *
-inode_unnamed_lte_unresolved(const struct wim_inode *inode,
-			     const struct wim_lookup_table *table)
-{
-	wimlib_assert(!inode->i_resolved);
-	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-		if (inode_stream_name_nbytes(inode, i) == 0 &&
-		    !is_zero_hash(inode_stream_hash_unresolved(inode, i)))
+	for (unsigned i = 0; i < inode->i_num_ads; i++) {
+		if (inode->i_ads_entries[i].stream_name_nbytes == 0 &&
+		    inode->i_ads_entries[i].lte)
 		{
-			return inode_stream_lte_unresolved(inode, i, table);
+			*stream_idx_ret = i + 1;
+			return inode->i_ads_entries[i].lte;
 		}
 	}
 	return NULL;
@@ -547,37 +508,54 @@ inode_unnamed_lte_unresolved(const struct wim_inode *inode,
 
 /*
  * Return the lookup table entry for the unnamed data stream of an inode, or
- * NULL if there is none.
+ * NULL if the inode's unnamed data stream is empty or not available.
  *
- * You'd think this would be easier than it actually is, since the unnamed data
- * stream should be the one referenced from the inode itself.  Alas, if there
- * are named data streams, Microsoft's "imagex.exe" program will put the unnamed
- * data stream in one of the alternate data streams instead of inside the WIM
- * dentry itself.  So we need to check the alternate data streams too.
- *
- * Also, note that a dentry may appear to have more than one unnamed stream, but
- * if the SHA-1 message digest is all 0's then the corresponding stream does not
- * really "count" (this is the case for the inode's own file stream when the
- * file stream that should be there is actually in one of the alternate stream
- * entries.).  This is despite the fact that we may need to extract such a
- * missing entry as an empty file or empty named data stream.
+ * Note: this is complicated by the fact that WIMGAPI may put the unnamed data
+ * stream in an alternate data stream entry rather than in the dentry itself.
  */
 struct wim_lookup_table_entry *
 inode_unnamed_lte(const struct wim_inode *inode,
 		  const struct wim_lookup_table *table)
 {
+	struct wim_lookup_table_entry *lte;
+
 	if (inode->i_resolved)
 		return inode_unnamed_lte_resolved(inode);
-	else
-		return inode_unnamed_lte_unresolved(inode, table);
+
+	lte = lookup_stream(table, inode->i_hash);
+	if (likely(lte))
+		return lte;
+
+	for (unsigned i = 0; i < inode->i_num_ads; i++) {
+		if (inode->i_ads_entries[i].stream_name_nbytes)
+			continue;
+		lte = lookup_stream(table, inode->i_ads_entries[i].hash);
+		if (lte)
+			return lte;
+	}
+	return NULL;
 }
 
-/*
- * Return the SHA-1 message digest of the unnamed data stream of a WIM inode.
- *
- * If inode does not have an unnamed data stream, this returns a void SHA-1
- * message digest containing all zero bytes.
- */
+/* Return the SHA-1 message digest of the specified stream of the inode, or a
+ * void SHA-1 of all zeroes if the specified stream is empty.   */
+const u8 *
+inode_stream_hash(const struct wim_inode *inode, unsigned stream_idx)
+{
+	if (inode->i_resolved) {
+		struct wim_lookup_table_entry *lte;
+
+		lte = inode_stream_lte_resolved(inode, stream_idx);
+		if (lte)
+			return lte->hash;
+		return zero_hash;
+	}
+	if (stream_idx == 0)
+		return inode->i_hash;
+	return inode->i_ads_entries[stream_idx - 1].hash;
+}
+
+/* Return the SHA-1 message digest of the unnamed data stream of the inode, or a
+ * void SHA-1 of all zeroes if the inode's unnamed data stream is empty.   */
 const u8 *
 inode_unnamed_stream_hash(const struct wim_inode *inode)
 {
@@ -593,29 +571,35 @@ inode_unnamed_stream_hash(const struct wim_inode *inode)
 	return zero_hash;
 }
 
-/*
- * Translate a single-instance stream entry into the pointer contained in the
- * inode (or ads entry of an inode) that references it.
+/* Acquire another reference to each single-instance stream referenced by this
+ * inode.  This is necessary when creating a hard link to this inode.
  *
- * This is only possible for "unhashed" streams, which are guaranteed to have
- * only one reference, and that reference is guaranteed to be in a resolved
- * inode.  (It can't be in an unresolved inode, since that would imply the hash
- * is known!)
- */
-struct wim_lookup_table_entry **
-retrieve_lte_pointer(struct wim_lookup_table_entry *lte)
+ * The inode must be resolved.  */
+void
+inode_ref_streams(struct wim_inode *inode)
 {
-	wimlib_assert(lte->unhashed);
-	struct wim_inode *inode = lte->back_inode;
-	u32 stream_id = lte->back_stream_id;
-	if (stream_id == 0)
-		return &inode->i_lte;
-	else
-		for (u16 i = 0; i < inode->i_num_ads; i++)
-			if (inode->i_ads_entries[i].stream_id == stream_id)
-				return &inode->i_ads_entries[i].lte;
-	wimlib_assert(0);
-	return NULL;
+	wimlib_assert(inode->i_resolved);
+
+	if (inode->i_lte)
+		inode->i_lte->refcnt++;
+	for (unsigned i = 0; i < inode->i_num_ads; i++)
+		if (inode->i_ads_entries[i].lte)
+			inode->i_ads_entries[i].lte->refcnt++;
+}
+
+/* Drop a reference to each single-instance stream referenced by this inode.
+ * This is necessary when deleting a hard link to this inode.  */
+void
+inode_unref_streams(struct wim_inode *inode,
+		    struct wim_lookup_table *lookup_table)
+{
+	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
+		struct wim_lookup_table_entry *lte;
+
+		lte = inode_stream_lte(inode, i, lookup_table);
+		if (lte)
+			lte_decrement_refcnt(lte, lookup_table);
+	}
 }
 
 /*
@@ -646,7 +630,7 @@ read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
 		 size_t *nbytes_remaining_p)
 {
 	size_t nbytes_remaining = *nbytes_remaining_p;
-	u16 num_ads;
+	unsigned num_ads;
 	struct wim_ads_entry *ads_entries;
 	int ret;
 
@@ -660,7 +644,7 @@ read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
 		goto out_of_memory;
 
 	/* Read the entries into our newly allocated buffer. */
-	for (u16 i = 0; i < num_ads; i++) {
+	for (unsigned i = 0; i < num_ads; i++) {
 		u64 length;
 		struct wim_ads_entry *cur_entry;
 		const struct wim_ads_entry_on_disk *disk_entry =
@@ -722,7 +706,7 @@ read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
 		/* It's expected that the size of every ADS entry is a multiple
 		 * of 8.  However, to be safe, I'm allowing the possibility of
 		 * an ADS entry at the very end of the metadata resource ending
-		 * un-aligned.  So although we still need to increment the input
+		 * unaligned.  So although we still need to increment the input
 		 * pointer by @length to reach the next ADS entry, it's possible
 		 * that less than @length is actually remaining in the metadata
 		 * resource. We should set the remaining bytes to 0 if this
@@ -747,7 +731,7 @@ out_invalid:
 	ret = WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 out_free_ads_entries:
 	if (ads_entries) {
-		for (u16 i = 0; i < num_ads; i++)
+		for (unsigned i = 0; i < num_ads; i++)
 			destroy_ads_entry(&ads_entries[i]);
 		FREE(ads_entries);
 	}
@@ -780,203 +764,33 @@ check_inode(struct wim_inode *inode, const struct wim_security_data *sd)
 			num_unnamed_streams++;
 	}
 	if (num_unnamed_streams > 1) {
-		WARNING("\"%"TS"\" has multiple (%u) un-named streams",
+		WARNING("\"%"TS"\" has multiple (%u) unnamed streams",
 			inode_first_full_path(inode), num_unnamed_streams);
 		/* We currently don't treat this as an error and will just end
 		 * up using the first unnamed data stream in the inode.  */
 	}
 }
 
-/* Acquire another reference to each single-instance stream referenced by this
- * inode.  This is necessary when creating a hard link to this inode.
- *
- * The inode must be resolved.  */
-void
-inode_ref_streams(struct wim_inode *inode)
-{
-	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-		struct wim_lookup_table_entry *lte;
-
-		lte = inode_stream_lte_resolved(inode, i);
-		if (lte)
-			lte->refcnt++;
-	}
-}
-
-/* Drop a reference to each single-instance stream referenced by this inode.
- * This is necessary when deleting a hard link to this inode.  */
-void
-inode_unref_streams(struct wim_inode *inode,
-		    struct wim_lookup_table *lookup_table)
-{
-	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-		struct wim_lookup_table_entry *lte;
-
-		lte = inode_stream_lte(inode, i, lookup_table);
-		if (lte)
-			lte_decrement_refcnt(lte, lookup_table);
-	}
-}
-
-/* Initialize a hash table for hard link detection.  */
-int
-init_inode_table(struct wim_inode_table *table, size_t capacity)
-{
-	table->array = CALLOC(capacity, sizeof(table->array[0]));
-	if (!table->array)
-		return WIMLIB_ERR_NOMEM;
-	table->num_entries  = 0;
-	table->capacity  = capacity;
-	INIT_LIST_HEAD(&table->extra_inodes);
-	return 0;
-}
-
-/* Free the memory allocated by init_inode_table().  */
-void
-destroy_inode_table(struct wim_inode_table *table)
-{
-	FREE(table->array);
-}
-
-static struct wim_inode *
-inode_table_get_inode(struct wim_inode_table *table, u64 ino, u64 devno)
-{
-	u64 hash = hash_u64(hash_u64(ino) + hash_u64(devno));
-	size_t pos = hash % table->capacity;
-	struct wim_inode *inode;
-	struct hlist_node *cur;
-
-	/* Search for an existing inode having the same inode number and device
-	 * number.  */
-	hlist_for_each_entry(inode, cur, &table->array[pos], i_hlist) {
-		if (inode->i_ino == ino && inode->i_devno == devno) {
-			/* Found; use the existing inode.  */
-			inode->i_nlink++;
-			return inode;
-		}
-	}
-
-	/* Create a new inode and insert it into the table.  */
-	inode = new_timeless_inode();
-	if (inode) {
-		inode->i_ino = ino;
-		inode->i_devno = devno;
-		hlist_add_head(&inode->i_hlist, &table->array[pos]);
-		table->num_entries++;
-	}
-	return inode;
-}
-
 /*
- * Allocate a new dentry, with hard link detection.
+ * Translate a single-instance stream entry into the pointer contained in the
+ * inode (or ads entry of an inode) that references it.
  *
- * @table
- *	The inode table being used for the current directory scan operation.  It
- *	will contain the mapping from (ino, devno) pairs to inodes.
- *
- * @name
- *	The name to give the new dentry.
- *
- * @ino
- *	The inode number of the file, read from the filesystem.
- *
- * @devno
- *	The device number of the file, read from the filesystem.  Proper setting
- *	of this parameter prevents cross-device hardlinks from being created.
- *	If this is not a problem (perhaps because the current directory scan
- *	operation is guaranteed to never traverse a filesystem boundary), then
- *	this parameter can just be a fixed value such as 0.
- *
- * @noshare
- *	If %true, the new dentry will not be hard linked to any existing inode,
- *	regardless of the values of @ino and @devno.  If %false, normal hard
- *	link detection will be done.
- *
- * @dentry_ret
- *	On success, a pointer to the new dentry will be returned in this
- *	location.  If i_nlink of the dentry's inode is greater than 1, then this
- *	function created a hard link to an existing inode rather than creating a
- *	new inode.
- *
- * On success, returns 0.  On failure, returns WIMLIB_ERR_NOMEM or an error code
- * resulting from a failed string conversion.
+ * This is only possible for "unhashed" streams, which are guaranteed to have
+ * only one reference, and that reference is guaranteed to be in a resolved
+ * inode.  (It can't be in an unresolved inode, since that would imply the hash
+ * is known!)
  */
-int
-inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
-		       u64 ino, u64 devno, bool noshare,
-		       struct wim_dentry **dentry_ret)
+struct wim_lookup_table_entry **
+retrieve_lte_pointer(struct wim_lookup_table_entry *lte)
 {
-	struct wim_dentry *dentry;
-	struct wim_inode *inode;
-	int ret;
-
-	if (noshare) {
-		/* File that cannot be hardlinked--- Return a new inode with its
-		 * inode and device numbers left at 0. */
-		ret = new_dentry_with_timeless_inode(name, &dentry);
-		if (ret)
-			return ret;
-		list_add_tail(&dentry->d_inode->i_list, &table->extra_inodes);
-	} else {
-		/* File that can be hardlinked--- search the table for an
-		 * existing inode matching the inode number and device;
-		 * otherwise create a new inode. */
-		ret = new_dentry(name, &dentry);
-		if (ret)
-			return ret;
-		inode = inode_table_get_inode(table, ino, devno);
-		if (!inode) {
-			free_dentry(dentry);
-			return WIMLIB_ERR_NOMEM;
-		}
-		/* If using an existing inode, we need to gain a reference to
-		 * each of its streams. */
-		if (inode->i_nlink > 1)
-			inode_ref_streams(inode);
-		dentry->d_inode = inode;
-		inode_add_dentry(dentry, inode);
-	}
-	*dentry_ret = dentry;
-	return 0;
-}
-
-
-
-/*
- * Following the allocation of dentries with hard link detection using
- * inode_table_new_dentry(), this function will assign consecutive inode numbers
- * to the new set of inodes.  It will also append the list of new inodes to the
- * list @head, which must contain any inodes already existing in the WIM image.
- */
-void
-inode_table_prepare_inode_list(struct wim_inode_table *table,
-			       struct list_head *head)
-{
-	struct wim_inode *inode, *tmp_inode;
-	struct hlist_node *cur, *tmp;
-	u64 cur_ino = 1;
-
-	/* Re-assign inode numbers in the existing list to avoid duplicates. */
-	list_for_each_entry(inode, head, i_list)
-		inode->i_ino = cur_ino++;
-
-	/* Assign inode numbers to the new inodes and move them to the image's
-	 * inode list. */
-	for (size_t i = 0; i < table->capacity; i++) {
-		hlist_for_each_entry_safe(inode, cur, tmp, &table->array[i], i_hlist)
-		{
-			inode->i_ino = cur_ino++;
-			inode->i_devno = 0;
-			list_add_tail(&inode->i_list, head);
-		}
-		INIT_HLIST_HEAD(&table->array[i]);
-	}
-	list_for_each_entry_safe(inode, tmp_inode, &table->extra_inodes, i_list)
-	{
-		inode->i_ino = cur_ino++;
-		inode->i_devno = 0;
-		list_add_tail(&inode->i_list, head);
-	}
-	INIT_LIST_HEAD(&table->extra_inodes);
-	table->num_entries = 0;
+	wimlib_assert(lte->unhashed);
+	struct wim_inode *inode = lte->back_inode;
+	u32 stream_id = lte->back_stream_id;
+	if (stream_id == 0)
+		return &inode->i_lte;
+	for (unsigned i = 0; i < inode->i_num_ads; i++)
+		if (inode->i_ads_entries[i].stream_id == stream_id)
+			return &inode->i_ads_entries[i].lte;
+	wimlib_assert(0);
+	return NULL;
 }

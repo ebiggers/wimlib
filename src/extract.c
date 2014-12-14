@@ -40,6 +40,7 @@
 #endif
 
 #include "wimlib/apply.h"
+#include "wimlib/assert.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
@@ -1008,7 +1009,7 @@ dentry_list_resolve_streams(struct list_head *dentry_list,
 }
 
 static int
-ref_stream(struct wim_lookup_table_entry *lte, u32 stream_idx,
+ref_stream(struct wim_lookup_table_entry *lte, unsigned stream_idx,
 	   struct wim_dentry *dentry, struct apply_ctx *ctx)
 {
 	struct wim_inode *inode = dentry->d_inode;
@@ -1083,7 +1084,7 @@ ref_unnamed_stream(struct wim_dentry *dentry, struct apply_ctx *ctx)
 {
 	struct wim_inode *inode = dentry->d_inode;
 	int ret;
-	u16 stream_idx;
+	unsigned stream_idx;
 	struct wim_lookup_table_entry *stream;
 
 	if (unlikely(inode_is_encrypted_directory(inode)))
@@ -1120,8 +1121,8 @@ dentry_ref_streams(struct wim_dentry *dentry, struct apply_ctx *ctx)
 	 * extraction mode and volume, and to avoid complications, if not doing
 	 * a linked extraction.  */
 	if (ctx->supported_features.named_data_streams) {
-		for (u16 i = 0; i < inode->i_num_ads; i++) {
-			if (!ads_entry_is_named_stream(&inode->i_ads_entries[i]))
+		for (unsigned i = 0; i < inode->i_num_ads; i++) {
+			if (!inode->i_ads_entries[i].stream_name_nbytes)
 				continue;
 			ret = ref_stream(inode->i_ads_entries[i].lte, i + 1,
 					 dentry, ctx);

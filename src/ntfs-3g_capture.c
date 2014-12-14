@@ -40,6 +40,7 @@
 #include <ntfs-3g/security.h>
 #include <ntfs-3g/volume.h>
 
+#include "wimlib/assert.h"
 #include "wimlib/capture.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"

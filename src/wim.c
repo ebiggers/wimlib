@@ -24,6 +24,7 @@
 #endif
 
 #include "wimlib.h"
+#include "wimlib/assert.h"
 #include "wimlib/bitops.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"

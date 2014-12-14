@@ -28,6 +28,7 @@
 #include "wimlib/win32_common.h"
 
 #include "wimlib/apply.h"
+#include "wimlib/assert.h"
 #include "wimlib/capture.h" /* for mangle_pat() and match_pattern_list()  */
 #include "wimlib/dentry.h"
 #include "wimlib/error.h"

@@ -38,6 +38,7 @@ libwim_la_SOURCES =		\
 	src/header.c		\
 	src/inode.c		\
 	src/inode_fixup.c	\
+	src/inode_table.c	\
 	src/integrity.c		\
 	src/iterate_dir.c	\
 	src/join.c		\
