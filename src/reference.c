@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2013 Eric Biggers
+ * Copyright (C) 2013, 2014 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -34,102 +34,106 @@
 #define WIMLIB_REF_MASK_PUBLIC (WIMLIB_REF_FLAG_GLOB_ENABLE | \
 				WIMLIB_REF_FLAG_GLOB_ERR_ON_NOMATCH)
 
-#define WIMLIB_REF_FLAG_GIFT 0x80000000
-
-struct lookup_tables {
+struct reference_info {
+	WIMStruct *dest_wim;
+	struct list_head new_streams;
+	struct list_head new_subwims;
+	int ref_flags;
 	struct wim_lookup_table *src_table;
-	struct wim_lookup_table *dest_table;
 };
 
-static int
-lte_gift(struct wim_lookup_table_entry *lte, void *_tables)
+static void
+init_reference_info(struct reference_info *info, WIMStruct *dest_wim,
+		    int ref_flags)
 {
-	struct lookup_tables *tables = _tables;
-	struct wim_lookup_table *src_table = tables->src_table;
-	struct wim_lookup_table *dest_table = tables->dest_table;
+	info->dest_wim = dest_wim;
+	INIT_LIST_HEAD(&info->new_streams);
+	INIT_LIST_HEAD(&info->new_subwims);
+	info->ref_flags = ref_flags;
+}
 
-	lookup_table_unlink(src_table, lte);
-	if (lookup_stream(dest_table, lte->hash)) {
-		free_lookup_table_entry(lte);
-	} else {
-		lte->out_refcnt = 1;
-		lookup_table_insert(dest_table, lte);
+static void
+commit_reference_info(struct reference_info *info)
+{
+	list_splice(&info->new_subwims, &info->dest_wim->subwims);
+}
+
+static void
+rollback_reference_info(struct reference_info *info)
+{
+	WIMStruct *subwim;
+	struct wim_lookup_table_entry *lte;
+
+	while (!list_empty(&info->new_subwims)) {
+		subwim = list_first_entry(&info->new_subwims,
+					  WIMStruct, subwim_node);
+		list_del(&subwim->subwim_node);
+		wimlib_free(subwim);
 	}
-	return 0;
-}
 
-static int
-lte_clone_if_new(struct wim_lookup_table_entry *lte, void *_lookup_table)
-{
-	struct wim_lookup_table *lookup_table = _lookup_table;
-
-	if (lookup_stream(lookup_table, lte->hash))
-		return 0;  /*  Resource already present.  */
-
-	lte = clone_lookup_table_entry(lte);
-	if (lte == NULL)
-		return WIMLIB_ERR_NOMEM;
-	lte->out_refcnt = 1;
-	lookup_table_insert(lookup_table, lte);
-	return 0;
-}
-
-static int
-lte_delete_if_new(struct wim_lookup_table_entry *lte, void *_lookup_table)
-{
-	struct wim_lookup_table *lookup_table = _lookup_table;
-
-	if (lte->out_refcnt) {
-		lookup_table_unlink(lookup_table, lte);
+	while (!list_empty(&info->new_streams)) {
+		lte = list_first_entry(&info->new_streams,
+				       struct wim_lookup_table_entry,
+				       lookup_table_list);
+		list_del(&lte->lookup_table_list);
+		lookup_table_unlink(info->dest_wim->lookup_table, lte);
 		free_lookup_table_entry(lte);
 	}
-	return 0;
 }
 
 static int
-do_wimlib_reference_resources(WIMStruct *wim, WIMStruct **resource_wims,
-			      unsigned num_resource_wims, int ref_flags)
+commit_or_rollback_reference_info(struct reference_info *info, int ret)
 {
-	unsigned i;
-	int ret;
-
-	if (ref_flags & WIMLIB_REF_FLAG_GIFT) {
-		struct lookup_tables tables;
-
-		tables.dest_table = wim->lookup_table;
-
-		for (i = 0; i < num_resource_wims; i++) {
-
-			tables.src_table = resource_wims[i]->lookup_table;
-
-			ret = for_lookup_table_entry(resource_wims[i]->lookup_table,
-						     lte_gift, &tables);
-			if (ret)
-				goto out_rollback;
-		}
-	} else {
-		for (i = 0; i < num_resource_wims; i++) {
-			ret = for_lookup_table_entry(resource_wims[i]->lookup_table,
-						     lte_clone_if_new, wim->lookup_table);
-			if (ret)
-				goto out_rollback;
-		}
-	}
-	return 0;
-
-out_rollback:
-	for_lookup_table_entry(wim->lookup_table, lte_delete_if_new,
-			       wim->lookup_table);
+	if (unlikely(ret))
+		rollback_reference_info(info);
+	else
+		commit_reference_info(info);
 	return ret;
+}
+
+static bool
+need_stream(const struct reference_info *info,
+	    const struct wim_lookup_table_entry *lte)
+{
+	return !lookup_stream(info->dest_wim->lookup_table, lte->hash);
+}
+
+static void
+reference_stream(struct reference_info *info,
+		 struct wim_lookup_table_entry *lte)
+{
+	lookup_table_insert(info->dest_wim->lookup_table, lte);
+	list_add(&lte->lookup_table_list, &info->new_streams);
+}
+
+static void
+reference_subwim(struct reference_info *info, WIMStruct *subwim)
+{
+	list_add(&subwim->subwim_node, &info->new_subwims);
+}
+
+static int
+lte_clone_if_new(struct wim_lookup_table_entry *lte, void *_info)
+{
+	struct reference_info *info = _info;
+
+	if (need_stream(info, lte)) {
+		lte = clone_lookup_table_entry(lte);
+		if (unlikely(!lte))
+			return WIMLIB_ERR_NOMEM;
+		reference_stream(info, lte);
+	}
+	return 0;
 }
 
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
-wimlib_reference_resources(WIMStruct *wim,
-			   WIMStruct **resource_wims, unsigned num_resource_wims,
-			   int ref_flags)
+wimlib_reference_resources(WIMStruct *wim, WIMStruct **resource_wims,
+			   unsigned num_resource_wims, int ref_flags)
 {
 	unsigned i;
+	struct reference_info info;
+	int ret = 0;
 
 	if (wim == NULL)
 		return WIMLIB_ERR_INVALID_PARAM;
@@ -144,122 +148,129 @@ wimlib_reference_resources(WIMStruct *wim,
 		if (resource_wims[i] == NULL)
 			return WIMLIB_ERR_INVALID_PARAM;
 
-	return do_wimlib_reference_resources(wim, resource_wims,
-					     num_resource_wims, ref_flags);
-}
+	init_reference_info(&info, wim, ref_flags);
 
-static int
-reference_resource_paths(WIMStruct *wim,
-			 const tchar * const *resource_wimfiles,
-			 unsigned num_resource_wimfiles,
-			 int ref_flags,
-			 int open_flags)
-{
-	WIMStruct **resource_wims;
-	unsigned i;
-	int ret;
-
-	resource_wims = CALLOC(num_resource_wimfiles, sizeof(resource_wims[0]));
-	if (!resource_wims)
-		return WIMLIB_ERR_NOMEM;
-
-	for (i = 0; i < num_resource_wimfiles; i++) {
-		DEBUG("Referencing resources from path \"%"TS"\"",
-		      resource_wimfiles[i]);
-		ret = wimlib_open_wim_with_progress(resource_wimfiles[i],
-						    open_flags,
-						    &resource_wims[i],
-						    wim->progfunc,
-						    wim->progctx);
+	for (i = 0; i < num_resource_wims; i++) {
+		ret = for_lookup_table_entry(resource_wims[i]->lookup_table,
+					     lte_clone_if_new, &info);
 		if (ret)
-			goto out_free_resource_wims;
+			break;
 	}
 
-	ret = do_wimlib_reference_resources(wim, resource_wims,
-					    num_resource_wimfiles,
-					    ref_flags | WIMLIB_REF_FLAG_GIFT);
-	if (ret)
-		goto out_free_resource_wims;
-
-	for (i = 0; i < num_resource_wimfiles; i++)
-		list_add_tail(&resource_wims[i]->subwim_node, &wim->subwims);
-
-	ret = 0;
-	goto out_free_array;
-
-out_free_resource_wims:
-	for (i = 0; i < num_resource_wimfiles; i++)
-		wimlib_free(resource_wims[i]);
-out_free_array:
-	FREE(resource_wims);
-	return ret;
+	return commit_or_rollback_reference_info(&info, ret);
 }
 
 static int
-reference_resource_glob(WIMStruct *wim, const tchar *refglob,
-			int ref_flags, int open_flags)
+lte_gift(struct wim_lookup_table_entry *lte, void *_info)
 {
-	glob_t globbuf;
+	struct reference_info *info = _info;
+
+	lookup_table_unlink(info->src_table, lte);
+	if (need_stream(info, lte))
+		reference_stream(info, lte);
+	else
+		free_lookup_table_entry(lte);
+	return 0;
+}
+
+static int
+reference_resource_path(struct reference_info *info, const tchar *path,
+			int open_flags)
+{
 	int ret;
+	WIMStruct *src_wim;
+
+	ret = wimlib_open_wim_with_progress(path, open_flags, &src_wim,
+					    info->dest_wim->progfunc,
+					    info->dest_wim->progctx);
+	if (ret)
+		return ret;
+
+	info->src_table = src_wim->lookup_table;
+	for_lookup_table_entry(src_wim->lookup_table, lte_gift, info);
+	reference_subwim(info, src_wim);
+	return 0;
+}
+
+static int
+reference_resource_paths(struct reference_info *info,
+			 const tchar * const *paths, unsigned num_paths,
+			 int open_flags)
+{
+	for (unsigned i = 0; i < num_paths; i++) {
+		int ret = reference_resource_path(info, paths[i], open_flags);
+		if (ret)
+			return ret;
+	}
+	return 0;
+}
+
+static int
+reference_resource_glob(struct reference_info *info,
+			const tchar *refglob, int open_flags)
+{
+	int ret;
+	glob_t globbuf;
 
 	/* Note: glob() is replaced in Windows native builds.  */
 	ret = tglob(refglob, GLOB_ERR | GLOB_NOSORT, NULL, &globbuf);
-	if (ret) {
+	if (unlikely(ret)) {
 		if (ret == GLOB_NOMATCH) {
-			if (ref_flags & WIMLIB_REF_FLAG_GLOB_ERR_ON_NOMATCH) {
+			if (info->ref_flags &
+			    WIMLIB_REF_FLAG_GLOB_ERR_ON_NOMATCH)
+			{
 				ERROR("Found no files for glob \"%"TS"\"", refglob);
 				return WIMLIB_ERR_GLOB_HAD_NO_MATCHES;
-			} else {
-				return reference_resource_paths(wim,
-								&refglob,
-								1,
-								ref_flags,
-								open_flags);
 			}
-		} else {
-			ERROR_WITH_ERRNO("Failed to process glob \"%"TS"\"", refglob);
-			if (ret == GLOB_NOSPACE)
-				return WIMLIB_ERR_NOMEM;
-			else
-				return WIMLIB_ERR_READ;
+			return reference_resource_path(info,
+						       refglob,
+						       open_flags);
 		}
+		ERROR_WITH_ERRNO("Failed to process glob \"%"TS"\"", refglob);
+		if (ret == GLOB_NOSPACE)
+			return WIMLIB_ERR_NOMEM;
+		return WIMLIB_ERR_READ;
 	}
 
-	ret = reference_resource_paths(wim,
+	ret = reference_resource_paths(info,
 				       (const tchar * const *)globbuf.gl_pathv,
 				       globbuf.gl_pathc,
-				       ref_flags,
 				       open_flags);
 	globfree(&globbuf);
 	return ret;
 }
 
+static int
+reference_resource_globs(struct reference_info *info,
+			 const tchar * const *globs, unsigned num_globs,
+			 int open_flags)
+{
+	for (unsigned i = 0; i < num_globs; i++) {
+		int ret = reference_resource_glob(info, globs[i], open_flags);
+		if (ret)
+			return ret;
+	}
+	return 0;
+}
+
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_reference_resource_files(WIMStruct *wim,
-				const tchar * const * resource_wimfiles_or_globs,
-				unsigned count,
-				int ref_flags,
-				int open_flags)
+				const tchar * const *paths_or_globs,
+				unsigned count, int ref_flags, int open_flags)
 {
-	unsigned i;
+	struct reference_info info;
 	int ret;
 
 	if (ref_flags & ~WIMLIB_REF_MASK_PUBLIC)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	if (ref_flags & WIMLIB_REF_FLAG_GLOB_ENABLE) {
-		for (i = 0; i < count; i++) {
-			ret = reference_resource_glob(wim,
-						      resource_wimfiles_or_globs[i],
-						      ref_flags,
-						      open_flags);
-			if (ret)
-				return ret;
-		}
-		return 0;
-	} else {
-		return reference_resource_paths(wim, resource_wimfiles_or_globs,
-						count, ref_flags, open_flags);
-	}
+	init_reference_info(&info, wim, ref_flags);
+
+	if (ref_flags & WIMLIB_REF_FLAG_GLOB_ENABLE)
+		ret = reference_resource_globs(&info, paths_or_globs, count, open_flags);
+	else
+		ret = reference_resource_paths(&info, paths_or_globs, count, open_flags);
+
+	return commit_or_rollback_reference_info(&info, ret);
 }
