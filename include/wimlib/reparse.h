@@ -1,10 +1,13 @@
 #ifndef _WIMLIB_REPARSE_H
 #define _WIMLIB_REPARSE_H
 
+#include <sys/types.h>
+
 #include "wimlib/types.h"
 
 struct wim_inode;
 struct wim_lookup_table;
+struct wim_lookup_table_entry;
 
 #define REPARSE_POINT_MAX_SIZE (16 * 1024)
 

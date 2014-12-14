@@ -47,7 +47,9 @@ unlock_wim_for_append(WIMStruct *wim)
 }
 #endif
 
+struct filedes;
 struct list_head;
+struct wim_reshdr;
 
 int
 write_wim_part(WIMStruct *wim,

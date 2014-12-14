@@ -2,11 +2,11 @@
 #define _WIMLIB_RESOURCE_H
 
 #include "wimlib/callback.h"
-#include "wimlib/file_io.h"
 #include "wimlib/list.h"
 #include "wimlib/sha1.h"
 #include "wimlib/types.h"
 
+struct filedes;
 struct wim_lookup_table_entry;
 struct wim_image_metadata;
 
