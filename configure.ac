@@ -1,32 +1,66 @@
+###############################################################################
+
 AC_INIT([wimlib], [1.7.4-BETA], [ebiggers3@gmail.com])
 AC_CONFIG_SRCDIR([src/wim.c])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR([build-aux])
 AM_INIT_AUTOMAKE([-Wall -Werror subdir-objects foreign])
-AC_C_BIGENDIAN
 m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
 LT_INIT
+
+AC_CONFIG_HEADERS([config.h])
+AC_CONFIG_FILES([Makefile] [doc/Doxyfile] [wimlib.pc])
+AC_CONFIG_FILES([programs/mkwinpeimg], [chmod +x programs/mkwinpeimg])
 
 PKGCONFIG_PRIVATE_REQUIRES=""
 PKGCONFIG_PRIVATE_LIBS=""
 
-AC_CONFIG_HEADERS([config.h])
-AC_CONFIG_FILES([Makefile]
-		[doc/Doxyfile]
-		[wimlib.pc])
-
-AC_CONFIG_FILES([programs/mkwinpeimg], [chmod +x programs/mkwinpeimg])
+###############################################################################
+#			  General platform features			      #
+###############################################################################
 
 AC_PROG_CC
 AM_PROG_CC_C_O
 AC_CANONICAL_HOST
 
-AC_CHECK_FUNCS([futimens utimensat utime flock mempcpy	\
+WINDOWS_NATIVE_BUILD="no"
+PLATFORM_CPPFLAGS=""
+PLATFORM_CFLAGS="-fvisibility=hidden"
+PLATFORM_LDFLAGS=""
+
+case "$host_os" in
+mingw*)
+	# Native Windows
+	WINDOWS_NATIVE_BUILD="yes"
+	PLATFORM_CPPFLAGS="-D_POSIX -DUNICODE -D_UNICODE -D_CRT_NON_CONFORMING_SWPRINTFS"
+	PLATFORM_CFLAGS="-municode -mno-ms-bitfields"
+	PLATFORM_LDFLAGS="-no-undefined"
+	WITH_NTFS_3G_DEFAULT="no"
+	WITH_FUSE_DEFAULT="no"
+	;;
+linux*)
+	# Linux
+	WITH_NTFS_3G_DEFAULT="yes"
+	WITH_FUSE_DEFAULT="yes"
+	;;
+*)
+	# Other UNIX
+	WITH_NTFS_3G_DEFAULT="yes"
+	WITH_FUSE_DEFAULT="no"
+	;;
+esac
+
+AC_SUBST([PLATFORM_CPPFLAGS], [$PLATFORM_CPPFLAGS])
+AC_SUBST([PLATFORM_CFLAGS], [$PLATFORM_CFLAGS])
+AC_SUBST([PLATFORM_LDFLAGS], [$PLATFORM_LDFLAGS])
+AM_CONDITIONAL([WINDOWS_NATIVE_BUILD], [test "$WINDOWS_NATIVE_BUILD" = "yes"])
+
+# Useful functions which we can do without.
+AC_CHECK_FUNCS([futimens utimensat flock mempcpy	\
 		openat fstatat readlinkat fdopendir])
 
-# Note: some of the following header checks are only to define the appropriate
-# HAVE_*_H macro so that the NTFS-3g headers don't get confused and try to skip
-# including certain headers.
+# Header checks, most of which are only here to satisfy conditional includes
+# made by the libntfs-3g headers.
 AC_CHECK_HEADERS([alloca.h		\
 		  byteswap.h		\
 		  endian.h		\
@@ -45,132 +79,40 @@ AC_CHECK_HEADERS([alloca.h		\
 		  time.h		\
 		  utime.h])
 
+# Does stat() support nanosecond-precision timestamps?  (This is relevant on
+# UNIX but not on Windows.)
 AC_CHECK_MEMBER([struct stat.st_mtim],
 		[AC_DEFINE([HAVE_STAT_NANOSECOND_PRECISION], [1],
-			  [Define to 1 if nanosecond precision timestamps are
-			   supported])],
+			   [Define to 1 if stat() supports nanosecond precision
+			    timestamps])],
 		[],
-		[[#include <sys/stat.h>]])
+		[#include <sys/stat.h>])
 
+###############################################################################
+#			     Required libraries				      #
+###############################################################################
 
-AC_ARG_WITH(pkgconfigdir,
-            [  --with-pkgconfigdir=DIR      pkgconfig file in DIR @<:@LIBDIR/pkgconfig@:>@],
-            [pkgconfigdir=$withval],
-            [pkgconfigdir='${libdir}/pkgconfig'])
-AC_SUBST(pkgconfigdir)
-
-AC_CHECK_LIB([xml2], [xmlParseFile], [have_libxml=true],
+# ------------------------------ libxml2 --------------------------------------
+AC_CHECK_LIB([xml2], [xmlParseFile], [],
 	     [AC_MSG_ERROR(["cannot find libxml2"])])
 PKG_CHECK_MODULES([LIBXML2], [libxml-2.0])
 PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES libxml-2.0"
 
-AC_MSG_CHECKING([whether to include debugging messages])
-AC_ARG_ENABLE([debug],
-	AS_HELP_STRING([--enable-debug], [include lots of debugging messages]),
-	[ENABLE_DEBUG=$enableval],
-	[ENABLE_DEBUG=no]
-	)
-AC_MSG_RESULT([$ENABLE_DEBUG])
-if test "x$ENABLE_DEBUG" = "xyes"; then
-	AC_DEFINE([ENABLE_DEBUG], [1],
-			[Define to 1 if including lots of debug messages.])
-fi
-
-AC_MSG_CHECKING([whether to include error messages])
-AC_ARG_ENABLE([error_messages],
-	AS_HELP_STRING([--disable-error-messages],
-			[do not compile in error messsages]),
-	[ENABLE_ERROR_MESSAGES=$enableval],
-	[ENABLE_ERROR_MESSAGES=yes]
-	)
-AC_MSG_RESULT([$ENABLE_ERROR_MESSAGES])
-if test "x$ENABLE_ERROR_MESSAGES" = "xyes"; then
-	AC_DEFINE([ENABLE_ERROR_MESSAGES], [1],
-			[Define to 1 if including error messages])
-fi
-
-AC_MSG_CHECKING([whether to include assertions])
-AC_ARG_ENABLE([assertions],
-	AS_HELP_STRING([--disable-assertions], [do not include assertions]),
-	[ENABLE_ASSERTIONS=$enableval],
-	[ENABLE_ASSERTIONS=yes]
-	)
-AC_MSG_RESULT([$ENABLE_ASSERTIONS])
-if test "x$ENABLE_ASSERTIONS" = "xyes"; then
-	AC_DEFINE([ENABLE_ASSERTIONS], [1], [Define to 1 if including assertions.])
-fi
-
-AC_MSG_CHECKING([whether to include automatic compression verification])
-AC_ARG_ENABLE([verify_compression],
-	      AS_HELP_STRING([--enable-verify-compression], [always
-				check if blocks we compress can be correctly
-				decompressed]),
-	[ENABLE_VERIFY_COMPRESSION=$enableval],
-	[ENABLE_VERIFY_COMPRESSION=no]
-	)
-AC_MSG_RESULT([$ENABLE_VERIFY_COMPRESSION])
-if test "x$ENABLE_VERIFY_COMPRESSION" = "xyes"; then
-	AC_DEFINE([ENABLE_VERIFY_COMPRESSION], [1], [Define to 1 to verify
-		   compressed data])
-fi
-
-AC_MSG_CHECKING([whether to include support for multi-threaded compression])
-AC_ARG_ENABLE([multithreaded-compression],
-	AS_HELP_STRING([--disable-multithreaded-compression],
-			[do not compile in the code for multi-threaded compression]),
-	[ENABLE_MULTITHREADED_COMPRESSION=$enableval],
-	[ENABLE_MULTITHREADED_COMPRESSION=yes]
-	)
-AC_MSG_RESULT([$ENABLE_MULTITHREADED_COMPRESSION])
-if test "x$ENABLE_MULTITHREADED_COMPRESSION" = "xyes"; then
-	AC_DEFINE([ENABLE_MULTITHREADED_COMPRESSION], [1],
-			[Define to 1 if including support for multithreaded
-			 compression])
-fi
-
-PTHREAD_LDADD="-lpthread"
-AC_SUBST([PTHREAD_LDADD], [$PTHREAD_LDADD])
-
-WITH_NTFS_3G_DEFAULT="no"
-WITH_FUSE_DEFAULT="no"
-WINDOWS_NATIVE_BUILD="no"
-PLATFORM_CPPFLAGS=""
-PLATFORM_CFLAGS="-fvisibility=hidden"
-PLATFORM_LDFLAGS=""
-
-case "$host_os" in
-	mingw*)
-		# Native Windows
-		WINDOWS_NATIVE_BUILD="yes"
-		PLATFORM_CPPFLAGS="-D_POSIX -DUNICODE -D_UNICODE -D_CRT_NON_CONFORMING_SWPRINTFS"
-		PLATFORM_CFLAGS="-municode -mno-ms-bitfields"
-		PLATFORM_LDFLAGS="-no-undefined"
-		;;
-	linux*)
-		# Linux
-		WITH_FUSE_DEFAULT="yes"
-		WITH_NTFS_3G_DEFAULT="yes"
-		;;
-	*)
-		# Other UNIX
-		WITH_NTFS_3G_DEFAULT="yes"
-		;;
-esac
-
-AC_SUBST([PLATFORM_CPPFLAGS], [$PLATFORM_CPPFLAGS])
-AC_SUBST([PLATFORM_CFLAGS], [$PLATFORM_CFLAGS])
-AC_SUBST([PLATFORM_LDFLAGS], [$PLATFORM_LDFLAGS])
-AM_CONDITIONAL([WINDOWS_NATIVE_BUILD], [test "x$WINDOWS_NATIVE_BUILD" = "xyes"])
-
-
+# ------------------------------ libiconv -------------------------------------
 AM_ICONV
-if test "x$am_cv_func_iconv" != "xyes"; then
+if test "$am_cv_func_iconv" != "yes"; then
 	AC_MSG_ERROR([Cannot find the iconv() function.  iconv() is used to
 		      convert between encodings of WIM filenames and XML data.
 		      wimlib cannot be compiled without it.  iconv() is
 		      available in the latest version of glibc and sometimes in
 		      other libraries.])
 fi
+
+###############################################################################
+#			  Configuration options				      #
+###############################################################################
+
+# ------------------------- ntfs-3g support -----------------------------------
 
 AC_MSG_CHECKING([whether to include support for ntfs-3g])
 AC_ARG_WITH([ntfs-3g],
@@ -180,48 +122,46 @@ AC_ARG_WITH([ntfs-3g],
 			     from/to an unmounted NTFS volume.])],
 	    [WITH_NTFS_3G=$withval],
 	    [WITH_NTFS_3G=$WITH_NTFS_3G_DEFAULT])
-
 AC_MSG_RESULT([$WITH_NTFS_3G])
-if test "x$WITH_NTFS_3G" = "xyes"; then
-	AC_DEFINE([WITH_NTFS_3G], [1], [Define to 1 to enable NTFS-3g support.])
 
-	dnl This effectively checks for NTFS-3g 2011.4.12 or later
+if test "$WITH_NTFS_3G" = "yes"; then
+	# This effectively checks for NTFS-3g 2011.4.12 or later
 	AC_CHECK_LIB([ntfs-3g], [ntfs_xattr_system_setxattr], [],
-			[AC_MSG_ERROR([Cannot find libntfs-3g version 2011-4-12
+		     [AC_MSG_ERROR([Cannot find libntfs-3g version 2011-4-12
 	or later!  Without libntfs-3g, wimlib cannot include support for
 	capturing or applying a WIM image directly from/to an unmounted NTFS
 	volume while preserving NTFS-specific data such as security descriptors
 	and named data streams.  Either install libntfs-3g, or configure
 	--without-ntfs-3g to disable this feature.])])
 
-	PKG_CHECK_MODULES([LIBNTFS_3G], [libntfs-3g])
-	PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES libntfs-3g"
-
-	dnl This checks for an NTFS-3g interface that was changed in the
-	dnl 2013.1.13 release
+	# This checks a definition that was changed in NTFS-3g 2013.1.13
 	AC_CHECK_DECL([NTFS_MNT_RDONLY],
-		      [AC_DEFINE([HAVE_NTFS_MNT_RDONLY],
-				 [1],
-				 [Define to 1 if ntfs_mount() takes the flag NTFS_MNT_RDONLY])],
+		      [AC_DEFINE([HAVE_NTFS_MNT_RDONLY], [1],
+				 [Define to 1 if ntfs_mount() takes the flag
+				  NTFS_MNT_RDONLY])],
 		      [],
 		      [#include <ntfs-3g/volume.h>])
+
+	AC_DEFINE([WITH_NTFS_3G], [1], [Define to 1 if using NTFS-3g support])
+	PKG_CHECK_MODULES([LIBNTFS_3G], [libntfs-3g])
+	PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES libntfs-3g"
 fi
-AM_CONDITIONAL([WITH_NTFS_3G], [test "x$WITH_NTFS_3G" = "xyes"])
+AM_CONDITIONAL([WITH_NTFS_3G], [test "$WITH_NTFS_3G" = "yes"])
+
+# ------------------------ FUSE mount support ---------------------------------
 
 AC_MSG_CHECKING([whether to include support for mounting WIMs])
 AC_ARG_WITH([fuse],
-	[AS_HELP_STRING([--without-fuse],
-			[build without libfuse.  This will disable the ability
-			 to mount WIM images.])],
-	[WITH_FUSE=$withval],
-	[WITH_FUSE=$WITH_FUSE_DEFAULT])
-
+	    [AS_HELP_STRING([--without-fuse],
+			    [build without libfuse.  This will disable the
+			     ability to mount WIM images.])],
+	    [WITH_FUSE=$withval],
+	    [WITH_FUSE=$WITH_FUSE_DEFAULT])
 AC_MSG_RESULT([$WITH_FUSE])
-if test "x$WITH_FUSE" = "xyes"; then
-	AC_DEFINE([WITH_FUSE], [1], [Define to 1 if using FUSE.])
 
+if test "$WITH_FUSE" = "yes"; then
 	AC_CHECK_LIB([fuse], [fuse_main_real], [],
-			[AC_MSG_ERROR([Cannot find libfuse!
+		     [AC_MSG_ERROR([Cannot find libfuse!
 	Without libfuse, wimlib cannot include support for mounting WIM images.
 	Either install libfuse, or configure --without-fuse to disable this
 	feature.])])
@@ -239,12 +179,15 @@ if test "x$WITH_FUSE" = "xyes"; then
 	in the code for mounting WIM images.  Either install this library, or
 	configure --without-fuse to disable support for mounting WIM images.])])
 
+	AC_DEFINE([WITH_FUSE], [1], [Define to 1 if using FUSE support])
 	PKG_CHECK_MODULES([LIBFUSE], [fuse])
 	PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES fuse"
 	PKGCONFIG_PRIVATE_LIBS="$PKGCONFIG_PRIVATE_LIBS -lrt"
 	AC_SUBST([LIBRT_LIBS], [-lrt])
 fi
-AM_CONDITIONAL([WITH_FUSE], [test "x$WITH_FUSE" = "xyes"])
+AM_CONDITIONAL([WITH_FUSE], [test "$WITH_FUSE" = "yes"])
+
+# ------------------------ SHA-1 implementation ---------------------------------
 
 AC_MSG_CHECKING([whether to use SSSE3-accelerated SHA-1])
 AC_ARG_ENABLE([ssse3-sha1],
@@ -253,56 +196,109 @@ AC_ARG_ENABLE([ssse3-sha1],
 			       Intel.  This implies --without-libcrypto.])],
 	      [ENABLE_SSSE3_SHA1=$enableval],
 	      [ENABLE_SSSE3_SHA1=no])
-
 AC_MSG_RESULT([$ENABLE_SSSE3_SHA1])
-if test "x$ENABLE_SSSE3_SHA1" = "xyes"; then
+
+if test "$ENABLE_SSSE3_SHA1" = "yes" ; then
 	AC_DEFINE([ENABLE_SSSE3_SHA1], [1],
 		  [Define to 1 if using SSSE3 implementation of SHA-1])
-	SSSE3_SHA1_OBJ=src/sha1-ssse3.lo
 	AC_PROG_NASM
 	NASM_SYMBOL_PREFIX=""
 	NASM_PLATFORM_FLAGS=""
-	if test "x$WINDOWS_NATIVE_BUILD" = "xyes"; then
+	if test "$WINDOWS_NATIVE_BUILD" = "yes"; then
 		NASM_PLATFORM_FLAGS="-DWIN_ABI"
 	fi
 	case "$host_os" in
-		darwin* | rhapsody* | nextstep* | openstep* | macos*)
-			NASM_SYMBOL_PREFIX="_"
-			;;
+	darwin* | rhapsody* | nextstep* | openstep* | macos*)
+		NASM_SYMBOL_PREFIX="_"
+		;;
 	esac
-	AC_SUBST([NASM_PLATFORM_FLAGS], $NASM_PLATFORM_FLAGS)
-	AC_SUBST([NASM_SYMBOL_PREFIX], $NASM_SYMBOL_PREFIX)
-else
-	SSSE3_SHA1_OBJ=
-fi
-AC_SUBST([SSSE3_SHA1_OBJ], [$SSSE3_SHA1_OBJ])
-
-if test "x$ENABLE_SSSE3_SHA1" = "xyes"; then
-	WITH_LIBCRYPTO=no
+	AC_SUBST([NASM_PLATFORM_FLAGS], [$NASM_PLATFORM_FLAGS])
+	AC_SUBST([NASM_SYMBOL_PREFIX], [$NASM_SYMBOL_PREFIX])
 else
 	AC_ARG_WITH([libcrypto],
 		    [AS_HELP_STRING([--without-libcrypto],
 				    [build in the SHA-1 algorithm, rather than
 				     use external libcrypto from OpenSSL
 				     (default is autodetect)])],
-	[WITH_LIBCRYPTO=$withval],
-	[AC_CHECK_LIB([crypto],
-		      [SHA1],
-		      [WITH_LIBCRYPTO=yes],
-		      [AC_MSG_WARN([Cannot find libcrypto: using stand-alone
-				    SHA-1 code instead of OpenSSL])
-		       WITH_LIBCRYPTO=no])])
+		    [WITH_LIBCRYPTO=$withval],
+		    [AC_CHECK_LIB([crypto], [SHA1], [WITH_LIBCRYPTO=yes],
+				  [AC_MSG_WARN([Cannot find libcrypto: using
+						stand-alone SHA-1 code instead of OpenSSL])
+					WITH_LIBCRYPTO=no])])
+	AC_MSG_CHECKING([whether to use SHA-1 implementation from system libcrypto])
+	AC_MSG_RESULT([$WITH_LIBCRYPTO])
+	if test "$WITH_LIBCRYPTO" = "yes"; then
+		AC_DEFINE([WITH_LIBCRYPTO], [1], [Define to 1 if using libcrypto SHA-1])
+		PKG_CHECK_MODULES([LIBCRYPTO], [libcrypto])
+		PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES libcrypto"
+	fi
 fi
-AC_MSG_CHECKING([whether to use SHA-1 implementation from system libcrypto])
-AC_MSG_RESULT([$WITH_LIBCRYPTO])
+AM_CONDITIONAL([ENABLE_SSSE3_SHA1], [test "$ENABLE_SSSE3_SHA1" = "yes"])
 
-if test "x$WITH_LIBCRYPTO" = "xyes" -a "x$ENABLE_SSSE3_SHA1" = "xno"; then
-	AC_DEFINE([WITH_LIBCRYPTO], [1], [Define to 1 if using libcrypto SHA-1])
-	PKG_CHECK_MODULES([LIBCRYPTO], [libcrypto])
-	PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES libcrypto"
+# ----------------------------- Other options ---------------------------------
+
+AC_MSG_CHECKING([whether to include debugging messages])
+AC_ARG_ENABLE([debug],
+	AS_HELP_STRING([--enable-debug], [include debugging messages]),
+	[ENABLE_DEBUG=$enableval],
+	[ENABLE_DEBUG=no])
+AC_MSG_RESULT([$ENABLE_DEBUG])
+if test "$ENABLE_DEBUG" = "yes"; then
+	AC_DEFINE([ENABLE_DEBUG], [1], [Define to 1 if including debug messages])
 fi
+
+AC_MSG_CHECKING([whether to include error messages])
+AC_ARG_ENABLE([error_messages],
+	AS_HELP_STRING([--disable-error-messages], [do not compile in error messsages]),
+	[ENABLE_ERROR_MESSAGES=$enableval],
+	[ENABLE_ERROR_MESSAGES=yes])
+AC_MSG_RESULT([$ENABLE_ERROR_MESSAGES])
+if test "$ENABLE_ERROR_MESSAGES" = "yes"; then
+	AC_DEFINE([ENABLE_ERROR_MESSAGES], [1], [Define to 1 if including error messages])
+fi
+
+AC_MSG_CHECKING([whether to include assertions])
+AC_ARG_ENABLE([assertions],
+	AS_HELP_STRING([--disable-assertions], [do not include assertions]),
+	[ENABLE_ASSERTIONS=$enableval],
+	[ENABLE_ASSERTIONS=yes])
+AC_MSG_RESULT([$ENABLE_ASSERTIONS])
+if test "$ENABLE_ASSERTIONS" = "yes"; then
+	AC_DEFINE([ENABLE_ASSERTIONS], [1], [Define to 1 if including assertions])
+fi
+
+AC_MSG_CHECKING([whether to include automatic compression verification])
+AC_ARG_ENABLE([verify_compression],
+	AS_HELP_STRING([--enable-verify-compression],
+		       [verify all compression results (makes compression
+			slower; intended for debugging only)]),
+	[ENABLE_VERIFY_COMPRESSION=$enableval],
+	[ENABLE_VERIFY_COMPRESSION=no])
+AC_MSG_RESULT([$ENABLE_VERIFY_COMPRESSION])
+if test "$ENABLE_VERIFY_COMPRESSION" = "yes"; then
+	AC_DEFINE([ENABLE_VERIFY_COMPRESSION], [1], [Define to 1 to verify compression results])
+fi
+
+AC_MSG_CHECKING([whether to include support for multi-threaded compression])
+AC_ARG_ENABLE([multithreaded-compression],
+	AS_HELP_STRING([--disable-multithreaded-compression],
+		       [disable support for multithreaded compression]),
+	[ENABLE_MULTITHREADED_COMPRESSION=$enableval],
+	[ENABLE_MULTITHREADED_COMPRESSION=yes])
+AC_MSG_RESULT([$ENABLE_MULTITHREADED_COMPRESSION])
+if test "$ENABLE_MULTITHREADED_COMPRESSION" = "yes"; then
+	AC_DEFINE([ENABLE_MULTITHREADED_COMPRESSION], [1],
+		  [Define to 1 to support multithreaded compression])
+fi
+
+AC_ARG_WITH(pkgconfigdir,
+            [  --with-pkgconfigdir=DIR      pkgconfig file in DIR @<:@LIBDIR/pkgconfig@:>@],
+            [pkgconfigdir=$withval],
+            [pkgconfigdir='${libdir}/pkgconfig'])
+AC_SUBST(pkgconfigdir)
+
+###############################################################################
 
 AC_SUBST([PKGCONFIG_PRIVATE_REQUIRES], [$PKGCONFIG_PRIVATE_REQUIRES])
 AC_SUBST([PKGCONFIG_PRIVATE_LIBS], [$PKGCONFIG_PRIVATE_LIBS])
-
 AC_OUTPUT

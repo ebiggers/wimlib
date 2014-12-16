@@ -173,9 +173,27 @@ libwim_la_SOURCES += src/unix_apply.c		\
 		     src/unix_capture.c
 endif
 
-EXTRA_libwim_la_SOURCES = src/sha1-ssse3.asm
-libwim_la_DEPENDENCIES = $(SSSE3_SHA1_OBJ)
-EXTRA_DIST += build-aux/nasm_lt.sh
+libwim_la_CFLAGS =		\
+	$(AM_CFLAGS)		\
+	$(LIBXML2_CFLAGS)	\
+	$(LIBNTFS_3G_CFLAGS)	\
+	$(LIBFUSE_CFLAGS)	\
+	$(LIBCRYPTO_CFLAGS)
+
+libwim_la_LDFLAGS = $(AM_LDFLAGS) -version-info 18:0:3
+
+libwim_la_LIBADD =		\
+	-lpthread		\
+	$(LIBXML2_LIBS)		\
+	$(LTLIBICONV)		\
+	$(LIBNTFS_3G_LIBS)	\
+	$(LIBFUSE_LIBS)		\
+	$(LIBRT_LIBS)		\
+	$(LIBCRYPTO_LIBS)
+
+if ENABLE_SSSE3_SHA1
+libwim_la_SOURCES += src/sha1-ssse3.asm
+libwim_la_LIBADD += src/sha1-ssse3.lo
 
 src/sha1-ssse3.lo:src/sha1-ssse3.asm
 	$(LIBTOOL) --mode=compile --tag NASM $(srcdir)/build-aux/nasm_lt.sh \
@@ -184,24 +202,8 @@ src/sha1-ssse3.lo:src/sha1-ssse3.asm
 	-DINTEL_SHA1_UPDATE_DEFAULT_DISPATCH=$(NASM_SYMBOL_PREFIX)sha1_transform_blocks_default  \
 	$< -o $@
 
-libwim_la_CFLAGS =		\
-	$(AM_CFLAGS)		\
-	$(LIBXML2_CFLAGS)	\
-	$(LIBFUSE_CFLAGS)	\
-	$(LIBNTFS_3G_CFLAGS)	\
-	$(LIBCRYPTO_CFLAGS)
-
-libwim_la_LDFLAGS = $(AM_LDFLAGS) -version-info 18:0:3
-
-libwim_la_LIBADD =		\
-	$(LIBXML2_LIBS)		\
-	$(LIBFUSE_LIBS)		\
-	$(LIBRT_LIBS)		\
-	$(LIBNTFS_3G_LIBS)	\
-	$(LTLIBICONV)		\
-	$(LIBCRYPTO_LIBS)	\
-	$(SSSE3_SHA1_OBJ)	\
-	$(PTHREAD_LDADD)
+EXTRA_DIST += build-aux/nasm_lt.sh
+endif
 
 ##############################################################################
 #				Programs				     #
