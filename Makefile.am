@@ -1,21 +1,34 @@
+##############################################################################
+#				General					     #
+##############################################################################
+
+
 ACLOCAL_AMFLAGS = -I m4
 
-AM_CPPFLAGS	= -I$(top_srcdir)/include $(WINDOWS_CPPFLAGS) \
+AM_CPPFLAGS	= -I$(top_srcdir)/include $(PLATFORM_CPPFLAGS)	\
 		  -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE
 
-AM_CFLAGS	= -std=c99 -Wmissing-prototypes -Wstrict-prototypes	\
-		  -Werror-implicit-function-declaration			\
-		  -fno-common -Wundef -Wno-pointer-sign
+AM_CFLAGS	= -std=c99 $(PLATFORM_CFLAGS) -fno-common	\
+		  -Wmissing-prototypes -Wstrict-prototypes	\
+		  -Wundef -Wno-pointer-sign
 
-if WINDOWS_NATIVE_BUILD
-# This option is needed to make packed structures work as expected
-# with gcc 4.7+ (mingw) on Windows.
-AM_CFLAGS += -mno-ms-bitfields
-endif
+AM_LDFLAGS	= $(PLATFORM_LDFLAGS)
+
+EXTRA_DIST	= README README.WINDOWS				\
+		  COPYING COPYING.GPLv3	COPYING.LGPLv3		\
+		  examples					\
+		  archlinux debian rpm
+
+##############################################################################
+#				Library					     #
+##############################################################################
 
 lib_LTLIBRARIES = libwim.la
+include_HEADERS = include/wimlib.h
 
-libwim_la_LDFLAGS = -version-info 18:0:3 $(WINDOWS_LDFLAGS)
+pkgconfigdir	= @pkgconfigdir@
+pkgconfig_DATA	= wimlib.pc
+wimlib.pc: config.status
 
 libwim_la_SOURCES =		\
 	src/add_image.c		\
@@ -160,17 +173,25 @@ libwim_la_SOURCES += src/unix_apply.c		\
 		     src/unix_capture.c
 endif
 
-
-
 EXTRA_libwim_la_SOURCES = src/sha1-ssse3.asm
 libwim_la_DEPENDENCIES = $(SSSE3_SHA1_OBJ)
+EXTRA_DIST += build-aux/nasm_lt.sh
 
 src/sha1-ssse3.lo:src/sha1-ssse3.asm
 	$(LIBTOOL) --mode=compile --tag NASM $(srcdir)/build-aux/nasm_lt.sh \
-	$(NASM) $(NAFLAGS) $(NASM_WINDOWS_FLAGS)			    \
+	$(NASM) $(NAFLAGS) $(NASM_PLATFORM_FLAGS)			    \
 	-DINTEL_SHA1_UPDATE_FUNCNAME=$(NASM_SYMBOL_PREFIX)sha1_transform_blocks_ssse3	    \
 	-DINTEL_SHA1_UPDATE_DEFAULT_DISPATCH=$(NASM_SYMBOL_PREFIX)sha1_transform_blocks_default  \
 	$< -o $@
+
+libwim_la_CFLAGS =		\
+	$(AM_CFLAGS)		\
+	$(LIBXML2_CFLAGS)	\
+	$(LIBFUSE_CFLAGS)	\
+	$(LIBNTFS_3G_CFLAGS)	\
+	$(LIBCRYPTO_CFLAGS)
+
+libwim_la_LDFLAGS = $(AM_LDFLAGS) -version-info 18:0:3
 
 libwim_la_LIBADD =		\
 	$(LIBXML2_LIBS)		\
@@ -182,22 +203,17 @@ libwim_la_LIBADD =		\
 	$(SSSE3_SHA1_OBJ)	\
 	$(PTHREAD_LDADD)
 
-libwim_la_CFLAGS =		\
-	$(AM_CFLAGS)		\
-	$(VISIBILITY_CFLAGS)	\
-	$(LIBXML2_CFLAGS)	\
-	$(LIBFUSE_CFLAGS)	\
-	$(LIBNTFS_3G_CFLAGS)	\
-	$(LIBCRYPTO_CFLAGS)
-
+##############################################################################
+#				Programs				     #
+##############################################################################
 
 bin_PROGRAMS = wimlib-imagex
+dist_bin_SCRIPTS = programs/mkwinpeimg
+
 wimlib_imagex_SOURCES =		\
 	programs/imagex.c	\
 	include/wimlib.h	\
 	include/wimlib_tchar.h
-wimlib_imagex_LDADD = $(top_builddir)/libwim.la
-wimlib_imagex_CFLAGS = $(AM_CFLAGS) $(WINDOWS_CFLAGS) -Wno-deprecated-declarations
 
 if WINDOWS_NATIVE_BUILD
 wimlib_imagex_SOURCES +=	\
@@ -206,6 +222,10 @@ wimlib_imagex_SOURCES +=	\
 	programs/wgetopt.c	\
 	programs/wgetopt.h
 endif
+
+wimlib_imagex_CFLAGS = $(AM_CFLAGS) -Wno-deprecated-declarations
+
+wimlib_imagex_LDADD = $(top_builddir)/libwim.la
 
 wimlib_imagex_cmds =	\
 	append		\
@@ -225,6 +245,10 @@ wimlib_imagex_cmds =	\
 	update		\
 	verify
 
+##############################################################################
+#				  Hooks					     #
+##############################################################################
+
 install-exec-hook:
 	for cmd in $(wimlib_imagex_cmds); do				\
 		cd $(DESTDIR)$(bindir) &&				\
@@ -240,36 +264,12 @@ install-data-hook:
 uninstall-hook:
 	for cmd in $(wimlib_imagex_cmds); do				\
 		rm -f $(DESTDIR)$(bindir)/wim$${cmd};			\
-		rm -f $(DESTDIR)$(mandir)/man1/wim$${cmd}.1; 		\
+		rm -f $(DESTDIR)$(mandir)/man1/wim$${cmd}.1;		\
 	done
 
-dist_bin_SCRIPTS = programs/mkwinpeimg
-
-include_HEADERS = include/wimlib.h
-
-EXTRA_DIST =					\
-	$(man1_MANS)				\
-	build-aux/nasm_lt.sh			\
-	archlinux				\
-	debian					\
-	rpm					\
-	examples				\
-	COPYING					\
-	COPYING.GPLv3				\
-	COPYING.LGPLv3				\
-	README					\
-	README.WINDOWS				\
-	tests/common_tests.sh			\
-	tests/tests-common.sh			\
-	tests/security_descriptor_1.base64	\
-	tests/security_descriptor_1.bin		\
-	tests/security_descriptor_2.base64	\
-	tests/security_descriptor_2.bin
-
-pkgconfigdir	= @pkgconfigdir@
-pkgconfig_DATA	= wimlib.pc
-
-$(pkgconfig_DATA): config.status
+##############################################################################
+#				Documentation				     #
+##############################################################################
 
 man1_MANS =					\
 	doc/man1/wimlib-imagex.1		\
@@ -291,6 +291,12 @@ man1_MANS =					\
 	doc/man1/wimlib-imagex-verify.1		\
 	doc/man1/mkwinpeimg.1
 
+EXTRA_DIST += $(man1_MANS)
+
+##############################################################################
+#				  Tests					     #
+##############################################################################
+
 check_PROGRAMS = tests/tree-cmp
 tests_tree_cmp_SOURCES = tests/tree-cmp.c
 
@@ -306,6 +312,14 @@ if WITH_NTFS_3G
 dist_check_SCRIPTS += tests/test-imagex-ntfs
 endif
 
+EXTRA_DIST +=					\
+	tests/common_tests.sh			\
+	tests/tests-common.sh			\
+	tests/security_descriptor_1.base64	\
+	tests/security_descriptor_1.bin		\
+	tests/security_descriptor_2.base64	\
+	tests/security_descriptor_2.bin
+
 if WINDOWS_NATIVE_BUILD
 # Tests are run manually for Windows builds.
 TESTS =
@@ -313,3 +327,4 @@ else
 TESTS = $(dist_check_SCRIPTS)
 endif
 
+##############################################################################
