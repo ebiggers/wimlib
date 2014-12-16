@@ -151,14 +151,6 @@ make_huffman_decode_table(u16 decode_table[const restrict],
 	const unsigned entries_per_xmm = sizeof(__m128i) / sizeof(decode_table[0]);
 #endif
 
-	/* Check parameters if assertions are enabled.  */
-	wimlib_assert2((uintptr_t)decode_table % DECODE_TABLE_ALIGNMENT == 0);
-	wimlib_assert2(num_syms <= DECODE_TABLE_MAX_SYMBOLS);
-	wimlib_assert2(table_bits <= DECODE_TABLE_MAX_TABLE_BITS);
-	wimlib_assert2(max_codeword_len <= DECODE_TABLE_MAX_CODEWORD_LEN);
-	for (unsigned sym = 0; sym < num_syms; sym++)
-		wimlib_assert2(lens[sym] <= max_codeword_len);
-
 	/* Count how many symbols have each possible codeword length.
 	 * Note that a length of 0 indicates the corresponding symbol is not
 	 * used in the code and therefore does not have a codeword.  */

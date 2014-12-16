@@ -60,7 +60,6 @@ static inline void
 bitstream_ensure_bits(struct input_bitstream *is, const unsigned num_bits)
 {
 	/* This currently works for at most 17 bits.  */
-	wimlib_assert2(num_bits <= 17);
 
 	if (is->bitsleft >= num_bits)
 		return;

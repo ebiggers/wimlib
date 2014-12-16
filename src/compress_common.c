@@ -581,12 +581,6 @@ make_canonical_huffman_code(unsigned num_syms, unsigned max_codeword_len,
 	u32 *A = codewords;
 	unsigned num_used_syms;
 
-	/* Assumptions  */
-	wimlib_assert2(num_syms >= 2);
-	wimlib_assert2(num_syms <= (1 << NUM_SYMBOL_BITS));
-	wimlib_assert2((1ULL << max_codeword_len) >= num_syms);
-	wimlib_assert2(max_codeword_len <= 32);
-
 	/* We begin by sorting the symbols primarily by frequency and
 	 * secondarily by symbol value.  As an optimization, the array
 	 * used for this purpose ('A') shares storage with the space in
