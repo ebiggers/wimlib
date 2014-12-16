@@ -92,6 +92,9 @@ AC_CHECK_MEMBER([struct stat.st_mtim],
 #			     Required libraries				      #
 ###############################################################################
 
+# ------------------------------ pthreads -------------------------------------
+AX_PTHREAD([], [AC_MSG_ERROR(["cannot find pthreads library"])])
+
 # ------------------------------ libxml2 --------------------------------------
 AC_CHECK_LIB([xml2], [xmlParseFile], [],
 	     [AC_MSG_ERROR(["cannot find libxml2"])])

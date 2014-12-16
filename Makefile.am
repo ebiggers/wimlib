@@ -175,6 +175,7 @@ endif
 
 libwim_la_CFLAGS =		\
 	$(AM_CFLAGS)		\
+	$(PTHREAD_CFLAGS)	\
 	$(LIBXML2_CFLAGS)	\
 	$(LIBNTFS_3G_CFLAGS)	\
 	$(LIBFUSE_CFLAGS)	\
@@ -183,7 +184,7 @@ libwim_la_CFLAGS =		\
 libwim_la_LDFLAGS = $(AM_LDFLAGS) -version-info 18:0:3
 
 libwim_la_LIBADD =		\
-	-lpthread		\
+	$(PTHREAD_LIBS)		\
 	$(LIBXML2_LIBS)		\
 	$(LTLIBICONV)		\
 	$(LIBNTFS_3G_LIBS)	\
