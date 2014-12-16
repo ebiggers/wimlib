@@ -248,6 +248,7 @@ dist_bin_SCRIPTS = programs/mkwinpeimg
 include_HEADERS = include/wimlib.h
 
 EXTRA_DIST =					\
+	$(man1_MANS)				\
 	build-aux/nasm_lt.sh			\
 	archlinux				\
 	debian					\
@@ -270,7 +271,7 @@ pkgconfig_DATA	= wimlib.pc
 
 $(pkgconfig_DATA): config.status
 
-wimlib_manpages =				\
+man1_MANS =					\
 	doc/man1/wimlib-imagex.1		\
 	doc/man1/wimlib-imagex-append.1		\
 	doc/man1/wimlib-imagex-apply.1		\
@@ -289,11 +290,6 @@ wimlib_manpages =				\
 	doc/man1/wimlib-imagex-update.1		\
 	doc/man1/wimlib-imagex-verify.1		\
 	doc/man1/mkwinpeimg.1
-
-man1_MANS = $(wimlib_manpages)
-DISTCLEANFILES = $(wimlib_manpages)
-
-$(man1_MANS): config.status
 
 check_PROGRAMS = tests/tree-cmp
 tests_tree_cmp_SOURCES = tests/tree-cmp.c

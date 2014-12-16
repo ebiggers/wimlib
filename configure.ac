@@ -13,25 +13,7 @@ PKGCONFIG_PRIVATE_LIBS=""
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_FILES([Makefile]
 		[doc/Doxyfile]
-		[wimlib.pc]
-		[doc/man1/wimlib-imagex.1:doc/man1/imagex.1.in]
-		[doc/man1/wimlib-imagex-append.1:doc/man1/imagex-append.1.in]
-		[doc/man1/wimlib-imagex-apply.1:doc/man1/imagex-apply.1.in]
-		[doc/man1/wimlib-imagex-capture.1:doc/man1/imagex-capture.1.in]
-		[doc/man1/wimlib-imagex-delete.1:doc/man1/imagex-delete.1.in]
-		[doc/man1/wimlib-imagex-dir.1:doc/man1/imagex-dir.1.in]
-		[doc/man1/wimlib-imagex-export.1:doc/man1/imagex-export.1.in]
-		[doc/man1/wimlib-imagex-extract.1:doc/man1/imagex-extract.1.in]
-		[doc/man1/wimlib-imagex-info.1:doc/man1/imagex-info.1.in]
-		[doc/man1/wimlib-imagex-join.1:doc/man1/imagex-join.1.in]
-		[doc/man1/wimlib-imagex-mount.1:doc/man1/imagex-mount.1.in]
-		[doc/man1/wimlib-imagex-mountrw.1:doc/man1/imagex-mountrw.1.in]
-		[doc/man1/wimlib-imagex-optimize.1:doc/man1/imagex-optimize.1.in]
-		[doc/man1/wimlib-imagex-split.1:doc/man1/imagex-split.1.in]
-		[doc/man1/wimlib-imagex-unmount.1:doc/man1/imagex-unmount.1.in]
-		[doc/man1/wimlib-imagex-update.1:doc/man1/imagex-update.1.in]
-		[doc/man1/wimlib-imagex-verify.1:doc/man1/imagex-verify.1.in]
-		[doc/man1/mkwinpeimg.1])
+		[wimlib.pc])
 
 AC_CONFIG_FILES([programs/mkwinpeimg], [chmod +x programs/mkwinpeimg])
 

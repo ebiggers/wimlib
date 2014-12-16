@@ -23,7 +23,8 @@ sed -i -e 's/\(#define WIMLIB_MAJOR_VERSION[[:space:]]\+\)[[:digit:]]\+/\1'$newm
        -e 's/\(the library interface of wimlib \)'$oldver'/\1'$newver'/' \
 	  include/wimlib.h
 
-sed -i -e "1s/$oldmonth $oldyear/$newmonth $newyear/" doc/man[1-9]/*.[1-9].in
+sed -i -e "1s/$oldmonth $oldyear/$newmonth $newyear/;s/wimlib $oldver/wimlib $newver/"	\
+	  doc/man[1-9]/*.[1-9]
 
 sed -i "s/pkgver=$oldver/pkgver=$newver/" archlinux/PKGBUILD
 
