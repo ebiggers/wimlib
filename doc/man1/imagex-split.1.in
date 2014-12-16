@@ -1,8 +1,8 @@
-.TH WIMLIB-IMAGEX "1" "November 2014" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH WIMLIB-IMAGEX "1" "November 2014" "wimlib-imagex @VERSION@" "User Commands"
 .SH NAME
-@IMAGEX_PROGNAME@-split \- Split a WIM into multiple parts
+wimlib-imagex-split \- Split a WIM into multiple parts
 .SH SYNOPSIS
-\fB@IMAGEX_PROGNAME@ split\fR \fIWIMFILE\fR \fISPLIT_WIM_PART_1\fR \fIPART_SIZE\fR [\fIOPTION...\fR]
+\fBwimlib-imagex split\fR \fIWIMFILE\fR \fISPLIT_WIM_PART_1\fR \fIPART_SIZE\fR [\fIOPTION...\fR]
 .SH DESCRIPTION
 Splits \fIWIMFILE\fR into parts with size at most \fIPART_SIZE\fR mebibytes,
 with the first part having the name \fISPLIT_WIM_PART_1\fR and the other parts
@@ -10,7 +10,7 @@ having names numbered in order of the parts.
 This command is also available as simply \fBwimsplit\fR if the appropriate
 hard link or batch file has been installed.
 .PP
-\fB@IMAGEX_PROGNAME@ split\fR can split both non-pipable and pipable WIMs.
+\fBwimlib-imagex split\fR can split both non-pipable and pipable WIMs.
 .SH OPTIONS
 .TP 6
 \fB--check\fR
@@ -23,7 +23,7 @@ Splits the WIM 'windows.wim' into 'windows.swm', 'windows2.swm', 'windows3.swm',
 etc. where each part is at most 100 MiB:
 .RS
 .PP
-@IMAGEX_PROGNAME@ split windows.wim windows.swm 100
+wimlib-imagex split windows.wim windows.swm 100
 .RE
 .SH LIMITATIONS
 It is possible for the size of the parts to exceed the \fIPART_SIZE\fR given.
@@ -34,4 +34,4 @@ inside the WIM that is 100 MiB, then an uncompressed split WIM will have at
 least one part that is 100 MiB in size to contain that file.  However, if the
 WIM resources are compressed then less space would be needed.
 .SH SEE ALSO
-.BR @IMAGEX_PROGNAME@ (1)
+.BR wimlib-imagex (1)

@@ -35,15 +35,15 @@ imagex()
 {
 	echo "imagex $@"
 	if [[ $1 == info || $1 == mountrw ]]; then
-		../../imagex "$@"
+		../../wimlib-imagex "$@"
 	else
-		../../imagex "$@" > /dev/null
+		../../wimlib-imagex "$@" > /dev/null
 	fi
 }
 
 imagex_raw()
 {
-	../../imagex "$@"
+	../../wimlib-imagex "$@"
 }
 
 wim_ctype()

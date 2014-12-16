@@ -38,8 +38,8 @@ as soon as it starts up.  Use the \fB--start-script\fR \fIFILE\fR option to
 specify such a file.  You may also add arbitrary files to \fIboot.wim\fR by
 putting them in a directory, then specifying the \fB--overlay\fR \fIDIR\fR
 option.  However, for more extensive modifications, consider modifying the
-\fIboot.wim\fR file separately using \fB@IMAGEX_PROGNAME@ mountrw\fR or
-\fB@IMAGEX_PROGNAME@ update\fR, then providing it to \fBmkwinpeimg\fR using the
+\fIboot.wim\fR file separately using \fBwimlib-imagex mountrw\fR or
+\fBwimlib-imagex update\fR, then providing it to \fBmkwinpeimg\fR using the
 \fB--wim\fR option.
 .PP
 \fBmkwinpeimg\fR can also make only a modified \fIboot.wim\fR, rather than a
@@ -124,4 +124,4 @@ they may limit your rights to redistribute customized versions of Windows PE.
 .SH REPORTING BUGS
 Report bugs to ebiggers3@gmail.com.
 .SH SEE ALSO
-.BR @IMAGEX_PROGNAME@ (1)
+.BR wimlib-imagex (1)

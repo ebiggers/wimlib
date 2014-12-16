@@ -1,23 +1,23 @@
-.TH WIMLIB-IMAGEX "1" "November 2014" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH WIMLIB-IMAGEX "1" "November 2014" "wimlib-imagex @VERSION@" "User Commands"
 .SH NAME
-@IMAGEX_PROGNAME@-apply \- Extract one image, or all images, from a WIM archive
+wimlib-imagex-apply \- Extract one image, or all images, from a WIM archive
 .SH SYNOPSIS
-\fB@IMAGEX_PROGNAME@ apply\fR \fIWIMFILE\fR [\fIIMAGE\fR] \fITARGET\fR [\fIOPTION\fR...]
+\fBwimlib-imagex apply\fR \fIWIMFILE\fR [\fIIMAGE\fR] \fITARGET\fR [\fIOPTION\fR...]
 .SH DESCRIPTION
-\fB@IMAGEX_PROGNAME@ apply\fR extracts an image, or all images, from the Windows
+\fBwimlib-imagex apply\fR extracts an image, or all images, from the Windows
 Imaging (WIM) file \fIWIMFILE\fR.  This command is also available as simply
 \fBwimapply\fR if the appropriate hard link or batch file has been installed.
 .PP
 This command is designed to extract, or "apply", one or more full WIM images.
 If you instead want to extract only certain files or directories contained in a
-WIM image, consider using \fB@IMAGEX_PROGNAME@ extract\fR or
-\fB@IMAGEX_PROGNAME@ mount\fR instead.  (\fB@IMAGEX_PROGNAME@ mount\fR is not
+WIM image, consider using \fBwimlib-imagex extract\fR or
+\fBwimlib-imagex mount\fR instead.  (\fBwimlib-imagex mount\fR is not
 supported on Windows.)
 .PP
 \fIIMAGE\fR specifies the WIM image in \fIWIMFILE\fR to extract.  It may be a
 1-based index of an image in \fIWIMFILE\fR, the name of an image in
 \fIWIMFILE\fR, or the keyword "all" to indicate that all images in \fIWIMFILE\fR
-are to be extracted.  Use the \fB@IMAGEX_PROGNAME@ info\fR (1) command to show
+are to be extracted.  Use the \fBwimlib-imagex info\fR (1) command to show
 what images a WIM file contains.  \fIIMAGE\fR may be omitted if \fIWIMFILE\fR
 contains only one image.
 .PP
@@ -41,12 +41,12 @@ volume (not a subdirectory thereof) is supported.
 \fIWIMFILE\fR may be "-" to read the WIM from standard input rather than from a
 file, but see \fBPIPABLE WIMS\fR for more information.
 .PP
-\fB@IMAGEX_PROGNAME@ apply\fR supports applying images from stand-alone WIMs as
+\fBwimlib-imagex apply\fR supports applying images from stand-alone WIMs as
 well as split WIMs.  See \fBSPLIT WIMS\fR.
 .SH DIRECTORY EXTRACTION (UNIX)
-This section documents how \fB@IMAGEX_PROGNAME@ apply\fR (and also
-\fB@IMAGEX_PROGNAME@ extract\fR) extract a WIM image (or a possibly a subset
-thereof, in the case of \fB@IMAGEX_PROGNAME@ extract\fR) to a directory on
+This section documents how \fBwimlib-imagex apply\fR (and also
+\fBwimlib-imagex extract\fR) extract a WIM image (or a possibly a subset
+thereof, in the case of \fBwimlib-imagex extract\fR) to a directory on
 UNIX-like systems.  See \fBDIRECTORY EXTRACTION (WINDOWS)\fR for the
 corresponding documentation for Windows.
 .PP
@@ -54,7 +54,7 @@ As mentioned, a WIM image can be applied to a directory on a UNIX-like system by
 providing a \fITARGET\fR directory.  However, it is important to keep in mind
 that the WIM format was designed for Windows, and as a result WIM files can
 contain data or metadata that cannot be represented on UNIX-like systems.  The
-main information that \fB@IMAGEX_PROGNAME@\fR will \fInot\fR be able to extract
+main information that \fBwimlib-imagex\fR will \fInot\fR be able to extract
 on UNIX-like systems is the following:
 .IP \[bu] 4
 Windows security descriptors (which include the file owner, group, and ACLs).
@@ -70,7 +70,7 @@ Short (DOS) names for files.
 File creation timestamps.
 .PP
 Notes: Unsupported data and metadata is simply not extracted, but
-\fB@IMAGEX_PROGNAME@\fR will attempt to warn you when the contents of the WIM
+\fBwimlib-imagex\fR will attempt to warn you when the contents of the WIM
 image can't be exactly represented when extracted.  Last access and last
 modification timestamps are specified to 100 nanosecond granularity in the WIM
 file, but will only be extracted to the highest precision supported by the
@@ -78,10 +78,10 @@ underlying operating system, C library, and filesystem.  Compressed files will
 be extracted as uncompressed, while encrypted files will not be extracted at
 all.
 .SH NTFS VOLUME EXTRACTION (UNIX)
-This section documents how \fB@IMAGEX_PROGNAME@ apply\fR extracts a WIM image
+This section documents how \fBwimlib-imagex apply\fR extracts a WIM image
 directly to an NTFS volume image on UNIX-like systems.
 .PP
-As mentioned, \fB@IMAGEX_PROGNAME@\fR running on a UNIX-like system can apply a
+As mentioned, \fBwimlib-imagex\fR running on a UNIX-like system can apply a
 WIM image directly to an NTFS volume by specifying \fITARGET\fR as a regular file
 or block device containing an NTFS filesystem.  The NTFS filesystem need not be
 empty, although it's expected that it be empty for the intended use cases.  A
@@ -131,8 +131,8 @@ file, so extracted "sparse" files may not actually contain any sparse regions.
 .PP
 Regardless, since almost all information from the WIM image is restored in this
 mode, it is possible to restore an image of an actual Windows installation using
-\fB@IMAGEX_PROGNAME@\fR on UNIX-like systems in addition to with
-\fB@IMAGEX_PROGNAME@\fR on Windows.  In the examples at the end of this manual
+\fBwimlib-imagex\fR on UNIX-like systems in addition to with
+\fBwimlib-imagex\fR on Windows.  In the examples at the end of this manual
 page, there is an example of applying an image from the "install.wim" file
 contained in the installation media for Windows Vista, Windows 7, and Windows 8
 in the "sources" directory.
@@ -157,7 +157,7 @@ is installed.
 .PP
 So let's say you applied an image from an existing "install.wim" as in the
 example, or you've applied a custom Windows image that you've created using the
-\fB@IMAGEX_PROGNAME@ capture\fR (1) command.  You've just applied the "Boot" partition, or
+\fBwimlib-imagex capture\fR (1) command.  You've just applied the "Boot" partition, or
 the main Windows partition, but there is no "System" partition yet (i.e.  no
 \\BOOTMGR and no \\Boot\\BCD).
 .PP
@@ -174,13 +174,13 @@ Besides setting up the files on the "System" partition, don't forget to set the
 bootable flag on it, and have a master boot record that loads the bootable
 partition (Windows' MBR does, and SYSLINUX provides an equivalent MBR).
 .SH DIRECTORY EXTRACTION (WINDOWS)
-On Windows, \fB@IMAGEX_PROGNAME@ apply\fR and \fB@IMAGEX_PROGNAME@ extract\fR
+On Windows, \fBwimlib-imagex apply\fR and \fBwimlib-imagex extract\fR
 natively support Windows-specific and NTFS-specific data.  For best results, the
-target directory should be located on an NTFS volume and \fB@IMAGEX_PROGNAME@\fR
+target directory should be located on an NTFS volume and \fBwimlib-imagex\fR
 should be run with Administrator privileges; however, non-NTFS filesystems and
 running without Administrator privileges are also supported.
 .PP
-On Windows, \fB@IMAGEX_PROGNAME@ apply\fR and \fB@IMAGEX_PROGNAME@ extract\fR
+On Windows, \fBwimlib-imagex apply\fR and \fBwimlib-imagex extract\fR
 try to extract as much data and metadata as possible, including:
 .IP \[bu] 4
 All data streams of all files.  This includes the default file contents, as well
@@ -191,7 +191,7 @@ points, if supported by the target volume.  (Note: see \fB--rpfix\fR and
 \fB--norpfix\fR for documentation on exactly how absolute symbolic links and
 junctions are extracted.)  However, as per the default security settings of
 Windows, it is impossible to create a symbolic link or junction point without
-Administrator privileges; therefore, you must run \fB@IMAGEX_PROGNAME@\fR as the
+Administrator privileges; therefore, you must run \fBwimlib-imagex\fR as the
 Administrator if you wish to fully restore an image containing symbolic links
 and/or junction points.  (Otherwise, merely a warning will be issued when a
 symbolic link or junction point cannot be extracted due to insufficient
@@ -204,7 +204,7 @@ Security descriptors, if supported by the filesystem and \fB--no-acls\fR is not
 specified.  Furthermore, unless \fB--strict-acls\fR is specified, the security
 descriptors for individual files or directories may be omitted or only partially
 set if the user does not have permission to set them, which can be a problem if
-\fB@IMAGEX_PROGNAME@\fR is run as a non-Administrator.
+\fBwimlib-imagex\fR is run as a non-Administrator.
 .IP \[bu]
 File attributes, including hidden, sparse, compressed, encrypted, etc, when
 supported by the filesystem.
@@ -216,12 +216,12 @@ Hard links, if supported by the filesystem.
 .PP
 Additional notes about extracting files on Windows:
 .IP \[bu] 4
-\fB@IMAGEX_PROGNAME@\fR will issue a warning when it is unable to extract the
+\fBwimlib-imagex\fR will issue a warning when it is unable to extract the
 exact metadata and data of the WIM image, for example due to features mentioned
 above not being supported by the target filesystem.
 .IP \[bu]
 Since encrypted files (with FILE_ATTRIBUTE_ENCRYPTED) are not stored in
-plaintext in the WIM image, \fB@IMAGEX_PROGNAME@\fR cannot restore encrypted
+plaintext in the WIM image, \fBwimlib-imagex\fR cannot restore encrypted
 files to filesystems not supporting encryption.  Therefore, on such filesystems,
 encrypted files will not be extracted.  Furthermore, even if encrypted
 files are restored to a filesystem that supports encryption, they will only be
@@ -252,7 +252,7 @@ Hidden, and System.  By design, on Windows wimlib will restore such file
 attributes; therefore, extracted files may have those attributes.  If this is
 not what you want, use the \fB--no-attributes\fR option.
 .SH SPLIT WIMS
-You may use \fB@IMAGEX_PROGNAME@ apply\fR to apply images from a split WIM.  The
+You may use \fBwimlib-imagex apply\fR to apply images from a split WIM.  The
 \fIWIMFILE\fR argument must specify the first part of the split WIM, while the
 additional parts of the split WIM must be specified in one or more
 \fB--ref\fR="\fIGLOB\fR" options.  Since globbing is built into the \fB--ref\fR
@@ -272,7 +272,7 @@ mywim5.swm
 To apply the first image of this split WIM to the directory "dir", run:
 .PP
 .RS
-@IMAGEX_PROGNAME@ apply mywim.swm 1 dir --ref="mywim*.swm"
+wimlib-imagex apply mywim.swm 1 dir --ref="mywim*.swm"
 .RE
 .PP
 As a special case, if you are applying an image from standard input from a split
@@ -281,9 +281,9 @@ option is unneeded; instead you must ensure that all the split WIM parts are
 concatenated together on standard input.  They can be provided in any order,
 with the exception of the first part, which must be first.
 .SH PIPABLE WIMS
-As of wimlib 1.5.0, \fB@IMAGEX_PROGNAME@ apply\fR supports applying a WIM from a
+As of wimlib 1.5.0, \fBwimlib-imagex apply\fR supports applying a WIM from a
 nonseekable file, such as a pipe, provided that the WIM was captured with
-\fB--pipable\fR (see \fB@IMAGEX_PROGNAME@ capture\fR(1)).  To use standard input
+\fB--pipable\fR (see \fBwimlib-imagex capture\fR(1)).  To use standard input
 as the WIM, specify "-" as \fIWIMFILE\fR.  A useful use of this ability is to
 apply an image from a WIM while streaming it from a server.  For example, to
 apply the first image from a WIM file available on a HTTP server to an NTFS
@@ -293,10 +293,10 @@ volume on /dev/sda1, run something like:
 wget -O - http://myserver/mywim.wim | wimapply - 1 /dev/sda1
 .RE
 .PP
-(The above also used the \fBwimapply\fR abbreviation for \fB@IMAGEX_PROGNAME@
+(The above also used the \fBwimapply\fR abbreviation for \fBwimlib-imagex
 apply\fR.) Note: WIM files are \fInot\fR pipable by default; you have to
 explicitly capture them with \fB--pipable\fR, and they are \fInot\fR compatible
-with Microsoft's software.  See \fB@IMAGEX_PROGNAME@ capture\fR(1) for more
+with Microsoft's software.  See \fBwimlib-imagex capture\fR(1) for more
 information.
 .PP
 It is possible to apply an image from a pipable WIM split into multiple parts;
@@ -311,14 +311,14 @@ present.
 File glob of additional WIMs or split WIM parts to reference resources from.
 See \fBSPLIT_WIMS\fR.  This option can be specified multiple times.  Note:
 \fIGLOB\fR is listed in quotes because it is interpreted by
-\fB@IMAGEX_PROGNAME@\fR and may need to be quoted to protect against shell
+\fBwimlib-imagex\fR and may need to be quoted to protect against shell
 expansion.
 .TP
 \fB--rpfix\fR, \fB--norpfix\fR
 Set whether to fix targets of absolute symbolic links (reparse points in Windows
 terminology) or not.  When enabled (\fB--rpfix\fR), extracted absolute symbolic
 links that are marked in the WIM image as being fixed are assumed to have
-absolute targets relative to the image root, and therefore \fB@IMAGEX_PROGNAME@
+absolute targets relative to the image root, and therefore \fBwimlib-imagex
 apply\fR prepends the absolute path to the extraction target directory to their
 targets.  The intention is that you can apply an image containing absolute
 symbolic links and still have them be valid after it has been applied to any
@@ -332,7 +332,7 @@ UNIX-like systems.
 .TP
 \fB--unix-data\fR
 (UNIX-like systems only)  Restore UNIX owners, groups, modes, and device IDs
-(major and minor numbers) that were captured by \fB@IMAGEX_PROGNAME@ capture\fR
+(major and minor numbers) that were captured by \fBwimlib-imagex capture\fR
 with the \fB--unix-data\fR option.  As of wimlib v1.7.0, you can backup and
 restore not only the standard UNIX file permission information, but also
 character device nodes, block device nodes, named pipes (FIFOs), and UNIX domain
@@ -344,12 +344,12 @@ Do not restore security descriptors on extracted files and directories.
 \fB--strict-acls\fR
 Fail immediately if the full security descriptor of any file or directory cannot
 be set exactly as specified in the WIM file.  If this option is not specified,
-when \fB@IMAGEX_PROGNAME@\fR on Windows does not have permission to set a
+when \fBwimlib-imagex\fR on Windows does not have permission to set a
 security descriptor on an extracted file, it falls back to setting it only
 partially (e.g. with SACL omitted), and in the worst case omits it entirely.
-However, this should only be a problem when running \fB@IMAGEX_PROGNAME@\fR
+However, this should only be a problem when running \fBwimlib-imagex\fR
 without Administrator rights.  Also, on UNIX-like systems, this flag can also be
-combined with \fB--unix-data\fR to cause \fB@IMAGEX_PROGNAME@\fR to fail
+combined with \fB--unix-data\fR to cause \fBwimlib-imagex\fR to fail
 immediately if the UNIX owner, group, or mode on an extracted file cannot be set
 for any reason.
 .TP
@@ -370,7 +370,7 @@ On Windows, filenames are case-insensitive, cannot include the characters '/',
 \'\\0', '\\', ':', '*', '?', '"', '<', '>', or '|', and cannot end with a space
 or period.  Ordinarily, files in WIM images should meet these conditions as
 well. However, it is not guaranteed, and in particular a WIM image captured with
-\fB@IMAGEX_PROGNAME@\fR on a POSIX-compliant system could contain such files.  By
+\fBwimlib-imagex\fR on a POSIX-compliant system could contain such files.  By
 default, invalid names will be ignored, and if there are multiple names
 differing only in case, one will be chosen to extract arbitrarily; however, with
 \fB--include-invalid-names\fR, all names will be sanitized and extracted in some
@@ -416,11 +416,11 @@ the image(s) in the WIM are really marked as WIMBoot-compatible.  Therefore, the
 intent only.  In addition, the Microsoft driver can externally back files from
 WIM files that use XPRESS chunks of size 8192, 16384, and 32768, or LZX chunks
 of size 32768, in addition to the default XPRESS chunks of size 4096 that are
-created when \fB@IMAGEX_PROGNAME@ capture\fR is run with the \fB--wimboot\fR
+created when \fBwimlib-imagex capture\fR is run with the \fB--wimboot\fR
 option.
 .SH NOTES
 \fIData integrity\fR:  WIM files include SHA1 message digests for file data.
-\fB@IMAGEX_PROGNAME@ apply\fR calculates the SHA1 message digest of every file
+\fBwimlib-imagex apply\fR calculates the SHA1 message digest of every file
 it extracts and issues an error if it is not equal to the SHA1 message digest
 provided in the WIM.  (This default behavior seems equivalent to the
 \fB/verify\fR option of ImageX.)  Note that this is separate from the integrity
@@ -444,7 +444,7 @@ Extract the first image from the Windows PE image on the Windows Vista/7/8
 installation media to the directory "boot":
 .RS
 .PP
-@IMAGEX_PROGNAME@ apply /mnt/windows/sources/boot.wim 1 boot
+wimlib-imagex apply /mnt/windows/sources/boot.wim 1 boot
 .RE
 .PP
 Same as above, but using the \fBwimapply\fR abbreviation:
@@ -457,14 +457,14 @@ On Windows, apply an image of an entire volume, for example from "install.wim"
 which can be found on the Windows Vista/7/8 installation media:
 .RS
 .PP
-@IMAGEX_PROGNAME@ apply install.wim 1 E:\\
+wimlib-imagex apply install.wim 1 E:\\
 .RE
 .PP
 Same as above, but running on a UNIX-like system where the corresponding
 partition is /dev/sda2:
 .RS
 .PP
-@IMAGEX_PROGNAME@ apply install.wim 1 /dev/sda2
+wimlib-imagex apply install.wim 1 /dev/sda2
 .RE
 .PP
 Note that before running either of the above commands, an NTFS filesystem may
@@ -483,7 +483,7 @@ An example of applying a pipable WIM from a pipe can be found in \fBPIPABLE
 WIMS\fR, and an example of applying a split WIM can be found in \fBSPLIT
 WIMS\fR.
 .SH SEE ALSO
-.BR @IMAGEX_PROGNAME@ (1)
-.BR @IMAGEX_PROGNAME@-capture (1)
-.BR @IMAGEX_PROGNAME@-extract (1)
-.BR @IMAGEX_PROGNAME@-info (1)
+.BR wimlib-imagex (1)
+.BR wimlib-imagex-capture (1)
+.BR wimlib-imagex-extract (1)
+.BR wimlib-imagex-info (1)

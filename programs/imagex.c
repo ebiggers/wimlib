@@ -4248,7 +4248,7 @@ static const tchar *get_cmd_string(int cmd, bool nospace)
 {
 	static tchar buf[50];
 	if (cmd == CMD_NONE) {
-		tsprintf(buf, T("%"TS), T(IMAGEX_PROGNAME));
+		return T("wimlib-imagex");
 	} else if (invocation_cmd != CMD_NONE) {
 		tsprintf(buf, T("wim%"TS), imagex_commands[cmd].name);
 	} else {
@@ -4268,7 +4268,7 @@ version(void)
 {
 	static const tchar *s =
 	T(
-IMAGEX_PROGNAME " (distributed with " PACKAGE " " PACKAGE_VERSION ")\n"
+"wimlib-imagex (distributed with " PACKAGE " " PACKAGE_VERSION ")\n"
 "Copyright (C) 2012, 2013, 2014 Eric Biggers\n"
 "License GPLv3+; GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>.\n"
 "This is free software: you are free to change and redistribute it.\n"
@@ -4419,7 +4419,7 @@ main(int argc, char **argv)
 	/* Allow being invoked as wimCOMMAND (e.g. wimapply).  */
 	cmd = CMD_NONE;
 	if (!tstrncmp(invocation_name, T("wim"), 3) &&
-	    tstrcmp(invocation_name, T(IMAGEX_PROGNAME))) {
+	    tstrcmp(invocation_name, T("wimlib-imagex"))) {
 		for (int i = 0; i < CMD_MAX; i++) {
 			if (!tstrcmp(invocation_name + 3,
 				     imagex_commands[i].name))

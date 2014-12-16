@@ -1,8 +1,8 @@
-.TH WIMLIB-IMAGEX "1" "November 2014" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH WIMLIB-IMAGEX "1" "November 2014" "wimlib-imagex @VERSION@" "User Commands"
 .SH NAME
-@IMAGEX_PROGNAME@-export \- Exports an image from a WIM archive to an existing or new WIM archive
+wimlib-imagex-export \- Exports an image from a WIM archive to an existing or new WIM archive
 .SH SYNOPSIS
-\fB@IMAGEX_PROGNAME@ export\fR \fISRC_WIMFILE\fR \fISRC_IMAGE\fR
+\fBwimlib-imagex export\fR \fISRC_WIMFILE\fR \fISRC_IMAGE\fR
 \fIDEST_WIMFILE\fR [\fIDEST_IMAGE_NAME\fR [\fIDEST_IMAGE_DESCRIPTION\fR]]
 [\fIOPTION\fR...]
 .SH DESCRIPTION
@@ -17,7 +17,7 @@ link or batch file has been installed.
 \fISRC_IMAGE\fR specifies the image in \fISRC_WIMFILE\fR to export.  It may be a
 1-based index of an image in \fISRC_WIMFILE\fR, the name of an image in
 \fISRC_WIMFILE\fR, or the keyword "all" to indicate that all images in
-\fISRC_WIMFILE\fR are to be exported.  Use the \fB@IMAGEX_PROGNAME@ info\fR (1)
+\fISRC_WIMFILE\fR are to be exported.  Use the \fBwimlib-imagex info\fR (1)
 command to list the images a WIM file contains.
 .PP
 If specified, \fIDEST_IMAGE_NAME\fR is the name to give the image being exported
@@ -28,11 +28,11 @@ If specified, \fIDEST_IMAGE_DESCRIPTION\fR is the description to give the image
 being exported to \fIDEST_WIMFILE\fR.  The default is its description in
 \fISRC_WIMFILE\fR.
 .PP
-\fB@IMAGEX_PROGNAME@ export\fR supports exporting images from stand-alone WIMs as well as
+\fBwimlib-imagex export\fR supports exporting images from stand-alone WIMs as well as
 from split WIMs.  However, you cannot export an image to a split WIM.  See
 \fBSPLIT WIMS\fR.
 .PP
-\fB@IMAGEX_PROGNAME@ export\fR also supports exporting images from a non-pipable
+\fBwimlib-imagex export\fR also supports exporting images from a non-pipable
 WIM into a (possibly new) pipable WIM, and vice versa.  Furthermore, it will
 export a pipable WIM directly to standard output if "-" is specified as
 \fIDEST_WIMFILE\fR (this implies \fB--pipable\fR).  See \fB--pipable\fR and
@@ -70,7 +70,7 @@ compression type, for \fIDEST_WIMFILE\fR.  Setting the compression type only has
 an effect if \fIDEST_WIMFILE\fR does not yet exist, since if \fIDEST_WIMFILE\fR
 exists, the compression type must be the same as that of \fIDEST_WIMFILE\fR.
 .IP ""
-See the documentation for this option to \fB@IMAGEX_PROGNAME@ capture\fR (1) for
+See the documentation for this option to \fBwimlib-imagex capture\fR (1) for
 more details.
 .TP
 \fB--recompress\fR
@@ -79,22 +79,22 @@ the same compression type as the source WIM.
 .TP
 \fB--chunk-size\fR=\fISIZE\fR
 Set the WIM compression chunk size to \fISIZE\fR.  See the documentation for
-this option to \fB@IMAGEX_PROGNAME@ capture\fR (1) for more details.
+this option to \fBwimlib-imagex capture\fR (1) for more details.
 .TP
 \fB--solid\fR
 Create a "solid" archive that compresses multiple files together.  This can
 result in a higher compression ratio, but has disadvantages such as reduced
-compatibility.  See the documentation for this option to \fB@IMAGEX_PROGNAME@
+compatibility.  See the documentation for this option to \fBwimlib-imagex
 capture\fR (1) for more details.
 .TP
 \fB--solid-chunk-size\fR=\fISIZE\fR
 Like \fB--chunk-size\fR, but set the chunk size used in solid blocks.  See the
-documentation for this option to \fB@IMAGEX_PROGNAME@ capture\fR (1) for more
+documentation for this option to \fBwimlib-imagex capture\fR (1) for more
 details.
 .TP
 \fB--solid-compress\fR=\fITYPE\fR[:\fILEVEL\fR]
 Like \fB--compress\fR, but set the compression type used in solid blocks.  See
-the documentation for this option to \fB@IMAGEX_PROGNAME@ capture\fR (1) for
+the documentation for this option to \fBwimlib-imagex capture\fR (1) for
 more details.
 .TP
 \fB--threads\fR=\fINUM_THREADS\fR
@@ -107,18 +107,18 @@ wimlib optimizes this case by re-using the raw compressed data.
 When exporting image(s) to an existing WIM: rebuild the entire WIM rather than
 appending data to the end of it.  Rebuilding the WIM is slower, but will save a
 little bit of space that would otherwise be left as a hole in the WIM.  Also see
-\fB@IMAGEX_PROGNAME@ optimize\fR.
+\fBwimlib-imagex optimize\fR.
 .TP
 \fB--ref\fR="\fIGLOB\fR"
 File glob of additional WIMs or split WIM parts to reference resources from.
 See \fBSPLIT_WIMS\fR.  This option can be specified multiple times.  Note:
 \fIGLOB\fR is listed in quotes because it is interpreted by
-\fB@IMAGEX_PROGNAME@\fR and may need to be quoted to protect against shell
+\fBwimlib-imagex\fR and may need to be quoted to protect against shell
 expansion.
 .TP
 \fB--pipable\fR
 Build, or rebuild, \fIDEST_WIMFILE\fR as a "pipable WIM" so that it can be
-applied fully sequentially, including from a pipe.  See \fB@IMAGEX_PROGNAME@
+applied fully sequentially, including from a pipe.  See \fBwimlib-imagex
 capture\fR(1) for more details about creating pipable WIMs.  The default without
 this option is to make \fIDEST_WIMFILE\fR pipable if and only if it already
 existed and was already pipable, or was "-" (standard output).
@@ -133,7 +133,7 @@ Mark the destination image as WIMBoot-compatible.  Also, if exporting to a new
 archive, set the compression type to that recommended for WIMBoot (currently,
 XPRESS with 4096 byte chunks).
 .SH SPLIT WIMS
-You may use \fB@IMAGEX_PROGNAME@ export\fR to export images from a split WIM.
+You may use \fBwimlib-imagex export\fR to export images from a split WIM.
 The \fISRC_WIMFILE\fR argument must specify the first part of the split WIM,
 while the additional parts of the split WIM must be specified in one or more
 \fB--ref\fR="\fIGLOB\fR" options.  Since globbing is built into the \fB--ref\fR
@@ -153,11 +153,11 @@ To export the first image of this split WIM to a new or existing WIM file
 "other.wim", run:
 .PP
 .RS
-@IMAGEX_PROGNAME@ export mywim.swm 1 other.wim --ref="mywim*.swm"
+wimlib-imagex export mywim.swm 1 other.wim --ref="mywim*.swm"
 .RE
 .SH NOTES
-\fIData integrity\fR:  It is safe to abort a \fB@IMAGEX_PROGNAME@ export\fR command partway through.
-However, after doing this, it is recommended to run \fB@IMAGEX_PROGNAME@
+\fIData integrity\fR:  It is safe to abort a \fBwimlib-imagex export\fR command partway through.
+However, after doing this, it is recommended to run \fBwimlib-imagex
 optimize\fR on the destination WIM to remove any data that was appended to the
 physical WIM file but not yet incorporated into the structure of the WIM, unless
 the WIM was being rebuilt (e.g. with \fB--rebuild\fR), in which case you should
@@ -181,7 +181,7 @@ format rather than in the newer format, specify \fB--compress\fR=\fILZX\fR (or
 Export the second image of 'boot.wim' to the new WIM file 'new.wim':
 .RS
 .PP
-@IMAGEX_PROGNAME@ export boot.wim 2 new.wim
+wimlib-imagex export boot.wim 2 new.wim
 .RE
 .PP
 The above example creates "new.wim" with the same compression type as
@@ -189,22 +189,22 @@ The above example creates "new.wim" with the same compression type as
 \fB--compress\fR=\fITYPE\fR; for example:
 .RS
 .PP
-@IMAGEX_PROGNAME@ export boot.wim 2 new.wim --compress=LZX
+wimlib-imagex export boot.wim 2 new.wim --compress=LZX
 .RE
 .PP
 Export "ESD to WIM" --- that is, solid WIM to non-solid WIM:
 .RS
 .PP
-@IMAGEX_PROGNAME@ export install.esd all install.wim --compress=LZX
+wimlib-imagex export install.esd all install.wim --compress=LZX
 .RE
 .PP
 Export "WIM to ESD" --- that is, non-solid WIM to solid WIM:
 .RS
 .PP
-@IMAGEX_PROGNAME@ export install.wim all install.esd --solid
+wimlib-imagex export install.wim all install.esd --solid
 .RE
 .PP
 .SH SEE ALSO
-.BR @IMAGEX_PROGNAME@ (1)
-.BR @IMAGEX_PROGNAME@-info (1)
-.BR @IMAGEX_PROGNAME@-optimize (1)
+.BR wimlib-imagex (1)
+.BR wimlib-imagex-info (1)
+.BR wimlib-imagex-optimize (1)

@@ -191,64 +191,57 @@ libwim_la_CFLAGS =		\
 	$(LIBCRYPTO_CFLAGS)
 
 
-bin_PROGRAMS	 = imagex
-imagex_SOURCES   = programs/imagex.c	\
-		   include/wimlib.h	\
-		   include/wimlib_tchar.h
-imagex_LDADD	 = $(top_builddir)/libwim.la
-imagex_CFLAGS    = $(AM_CFLAGS) $(WINDOWS_CFLAGS) -Wno-deprecated-declarations
+bin_PROGRAMS = wimlib-imagex
+wimlib_imagex_SOURCES =		\
+	programs/imagex.c	\
+	include/wimlib.h	\
+	include/wimlib_tchar.h
+wimlib_imagex_LDADD = $(top_builddir)/libwim.la
+wimlib_imagex_CFLAGS = $(AM_CFLAGS) $(WINDOWS_CFLAGS) -Wno-deprecated-declarations
 
 if WINDOWS_NATIVE_BUILD
-imagex_SOURCES += programs/imagex-win32.c	\
-		  programs/imagex-win32.h	\
-		  programs/wgetopt.c		\
-		  programs/wgetopt.h
+wimlib_imagex_SOURCES +=	\
+	programs/imagex-win32.c	\
+	programs/imagex-win32.h	\
+	programs/wgetopt.c	\
+	programs/wgetopt.h
 endif
 
-imagex_cmds =	append	\
-		apply	\
-		capture	\
-		delete	\
-		dir	\
-		export	\
-		extract	\
-		info	\
-		join	\
-		mount	\
-		mountrw	\
-		optimize\
-		split	\
-		unmount	\
-		update	\
-		verify
+wimlib_imagex_cmds =	\
+	append		\
+	apply		\
+	capture		\
+	delete		\
+	dir		\
+	export		\
+	extract		\
+	info		\
+	join		\
+	mount		\
+	mountrw		\
+	optimize	\
+	split		\
+	unmount		\
+	update		\
+	verify
 
 install-exec-hook:
-	if [ "@IMAGEX_PROGNAME@" != imagex ]; then			    \
-		cd $(DESTDIR)$(bindir) && mv -f imagex "@IMAGEX_PROGNAME@"; \
-	fi
-	for cmd in $(imagex_cmds); do				\
-		cd $(DESTDIR)$(bindir) &&			\
-			ln -f "@IMAGEX_PROGNAME@" wim$${cmd};	\
+	for cmd in $(wimlib_imagex_cmds); do				\
+		cd $(DESTDIR)$(bindir) &&				\
+			ln -f wimlib-imagex wim$${cmd};			\
 	done
 
 install-data-hook:
-	for cmd in $(imagex_cmds); do					    \
-		cd $(DESTDIR)$(mandir)/man1 &&				    \
-			ln -sf "@IMAGEX_PROGNAME@-$${cmd}.1" wim$${cmd}.1;  \
+	for cmd in $(wimlib_imagex_cmds); do				\
+		cd $(DESTDIR)$(mandir)/man1 &&				\
+			ln -sf wimlib-imagex-$${cmd}.1 wim$${cmd}.1;	\
 	done
 
 uninstall-hook:
-	if [ "@IMAGEX_PROGNAME@" != imagex ]; then		\
-		rm -f $(DESTDIR)$(bindir)/"@IMAGEX_PROGNAME@";	\
-		rm -f $(DESTDIR)$(bindir)/imagex;		\
-	fi
-	for cmd in $(imagex_cmds); do				\
-		rm -f $(DESTDIR)$(bindir)/wim$${cmd};		\
+	for cmd in $(wimlib_imagex_cmds); do				\
+		rm -f $(DESTDIR)$(bindir)/wim$${cmd};			\
+		rm -f $(DESTDIR)$(mandir)/man1/wim$${cmd}.1; 		\
 	done
-	for cmd in $(imagex_cmds); do				\
-		rm -f $(DESTDIR)$(mandir)/man1/wim$${cmd}.1; 	\
-	done
-
 
 dist_bin_SCRIPTS = programs/mkwinpeimg
 
@@ -278,23 +271,23 @@ pkgconfig_DATA	= wimlib.pc
 $(pkgconfig_DATA): config.status
 
 wimlib_manpages =				\
-	doc/man1/@IMAGEX_PROGNAME@.1			\
-	doc/man1/@IMAGEX_PROGNAME@-append.1		\
-	doc/man1/@IMAGEX_PROGNAME@-apply.1		\
-	doc/man1/@IMAGEX_PROGNAME@-capture.1		\
-	doc/man1/@IMAGEX_PROGNAME@-delete.1		\
-	doc/man1/@IMAGEX_PROGNAME@-dir.1		\
-	doc/man1/@IMAGEX_PROGNAME@-export.1		\
-	doc/man1/@IMAGEX_PROGNAME@-extract.1		\
-	doc/man1/@IMAGEX_PROGNAME@-info.1		\
-	doc/man1/@IMAGEX_PROGNAME@-join.1		\
-	doc/man1/@IMAGEX_PROGNAME@-mount.1		\
-	doc/man1/@IMAGEX_PROGNAME@-mountrw.1		\
-	doc/man1/@IMAGEX_PROGNAME@-optimize.1	\
-	doc/man1/@IMAGEX_PROGNAME@-split.1		\
-	doc/man1/@IMAGEX_PROGNAME@-unmount.1		\
-	doc/man1/@IMAGEX_PROGNAME@-update.1		\
-	doc/man1/@IMAGEX_PROGNAME@-verify.1		\
+	doc/man1/wimlib-imagex.1		\
+	doc/man1/wimlib-imagex-append.1		\
+	doc/man1/wimlib-imagex-apply.1		\
+	doc/man1/wimlib-imagex-capture.1	\
+	doc/man1/wimlib-imagex-delete.1		\
+	doc/man1/wimlib-imagex-dir.1		\
+	doc/man1/wimlib-imagex-export.1		\
+	doc/man1/wimlib-imagex-extract.1	\
+	doc/man1/wimlib-imagex-info.1		\
+	doc/man1/wimlib-imagex-join.1		\
+	doc/man1/wimlib-imagex-mount.1		\
+	doc/man1/wimlib-imagex-mountrw.1	\
+	doc/man1/wimlib-imagex-optimize.1	\
+	doc/man1/wimlib-imagex-split.1		\
+	doc/man1/wimlib-imagex-unmount.1	\
+	doc/man1/wimlib-imagex-update.1		\
+	doc/man1/wimlib-imagex-verify.1		\
 	doc/man1/mkwinpeimg.1
 
 man1_MANS = $(wimlib_manpages)

@@ -1,10 +1,10 @@
-.TH WIMLIB-IMAGEX "1" "November 2014" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH WIMLIB-IMAGEX "1" "November 2014" "wimlib-imagex @VERSION@" "User Commands"
 .SH NAME
-@IMAGEX_PROGNAME@-optimize \- Optimize a WIM archive
+wimlib-imagex-optimize \- Optimize a WIM archive
 .SH SYNOPSIS
-\fB@IMAGEX_PROGNAME@ optimize\fR \fIWIMFILE\fR [\fIOPTION\fR...]
+\fBwimlib-imagex optimize\fR \fIWIMFILE\fR [\fIOPTION\fR...]
 .SH DESCRIPTION
-\fB@IMAGEX_PROGNAME@ optimize\fR will rebuild the stand-alone WIM \fIWIMFILE\fR.  The new
+\fBwimlib-imagex optimize\fR will rebuild the stand-alone WIM \fIWIMFILE\fR.  The new
 WIM is written to a temporary file, and it is renamed to the original file when
 it's ready.  This action will remove any holes that have been left as a result
 of appending images, so the new WIM may be slightly smaller than the old WIM.
@@ -39,27 +39,27 @@ Recompress the WIM file using the specified compression type, and optionally the
 specified compression level for that compression type.  This implies
 \fB--recompress\fR.
 .IP ""
-See the documentation for this option to \fB@IMAGEX_PROGNAME@ capture\fR (1) for
+See the documentation for this option to \fBwimlib-imagex capture\fR (1) for
 more details.
 .TP
 \fB--chunk-size\fR=\fISIZE\fR
 Set the WIM compression chunk size to \fISIZE\fR.  See the documentation for
-this option to \fB@IMAGEX_PROGNAME@ capture\fR (1) for more details.
+this option to \fBwimlib-imagex capture\fR (1) for more details.
 .TP
 \fB--solid\fR
 Create a "solid" archive that compresses multiple files together.  This can
 result in a higher compression ratio, but has disadvantages such as reduced
-compatibility.  See the documentation for this option to \fB@IMAGEX_PROGNAME@
+compatibility.  See the documentation for this option to \fBwimlib-imagex
 capture\fR (1) for more details.
 .TP
 \fB--solid-chunk-size\fR=\fISIZE\fR
 Like \fB--chunk-size\fR, but set the chunk size used in solid blocks.  See the
-documentation for this option to \fB@IMAGEX_PROGNAME@ capture\fR (1) for more
+documentation for this option to \fBwimlib-imagex capture\fR (1) for more
 details.
 .TP
 \fB--solid-compress\fR=\fITYPE\fR[:\fILEVEL\fR]
 Like \fB--compress\fR, but set the compression type used in solid blocks.  See
-the documentation for this option to \fB@IMAGEX_PROGNAME@ capture\fR (1) for
+the documentation for this option to \fBwimlib-imagex capture\fR (1) for
 more details.
 .TP
 \fB--threads\fR=\fINUM_THREADS\fR
@@ -69,7 +69,7 @@ requested.
 .TP
 \fB--pipable\fR
 Rebuild the WIM so that it can be applied fully sequentially, including from a
-pipe.  See \fB@IMAGEX_PROGNAME@ capture\fR(1) for more details about creating
+pipe.  See \fBwimlib-imagex capture\fR(1) for more details about creating
 pipable WIMs.  By default, when neither \fB--pipable\fR or \fB--not-pipable\fR
 is specified, the rebuilt WIM will be pipable if and only if it was already
 pipable.
@@ -78,12 +78,12 @@ pipable.
 Rebuild the WIM in the non-pipable format.  (This is the default if
 \fIWIMFILE\fR is not pipable.)
 .SH NOTES
-\fB@IMAGEX_PROGNAME@ optimize\fR does not support split WIMs.
+\fBwimlib-imagex optimize\fR does not support split WIMs.
 .PP
-\fB@IMAGEX_PROGNAME@ optimize\fR is roughly equivalent to:
+\fBwimlib-imagex optimize\fR is roughly equivalent to:
 .RS
 .PP
-\fB@IMAGEX_PROGNAME@ export\fR \fIWIMFILE\fR all tmp.wim && mv tmp.wim \fIWIMFILE\fR
+\fBwimlib-imagex export\fR \fIWIMFILE\fR all tmp.wim && mv tmp.wim \fIWIMFILE\fR
 .RE
 .PP
 .SH EXAMPLES
@@ -110,6 +110,6 @@ wimoptimize install.wim --compress=maximum:100
 .RE
 .PP
 .SH SEE ALSO
-.BR @IMAGEX_PROGNAME@ (1)
-.BR @IMAGEX_PROGNAME@-export (1)
-.BR @IMAGEX_PROGNAME@-verify (1)
+.BR wimlib-imagex (1)
+.BR wimlib-imagex-export (1)
+.BR wimlib-imagex-verify (1)

@@ -7,6 +7,9 @@ Version 1.7.4-BETA:
 
 	Slight performance improvements in compression and decompression.
 
+	Removed the --with-imagex-progname and --enable-more-assertions
+	configure options.
+
 Version 1.7.3:
 	Fix for very slow export from solid WIM / ESD files.
 

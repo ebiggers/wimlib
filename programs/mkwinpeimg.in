@@ -21,7 +21,6 @@
 script_name="$(basename "$0")"
 PREFIX_REG="::"
 WIMLIB_VERSION=@VERSION@
-imagex=@IMAGEX_PROGNAME@
 
 calc_columns () {
 	STAT_COL=80
@@ -256,10 +255,10 @@ EOF
 
 check_needed_programs() {
 	if [ -z "$waik_dir" -o -n "$modify_wim" ]; then
-		if ! type -P "$imagex" &> /dev/null ; then
+		if ! type -P wimlib-imagex &> /dev/null ; then
 			cat 1>&2 << EOF
-ERROR: To make a customized image of Windows PE, we need the "$imagex" program
-from "wimlib" so that we can modify the boot.wim file.  However, "$imagex"
+ERROR: To make a customized image of Windows PE, we need the wimlib-imagex program
+from "wimlib" so that we can modify the boot.wim file.  However, wimlib-imagex
 doesn't seem to be installed.  Please install "wimlib" to continue.
 EOF
 			exit 1
@@ -378,7 +377,7 @@ get_boot_wim() {
 			remove_setup=yes
 			wim="$windows_dir/sources/boot.wim"
 			stat_busy "Exporting image from \"$wim\""
-			"$imagex" export "$windows_dir"/sources/boot.wim 2 \
+			wimlib-imagex export "$windows_dir"/sources/boot.wim 2 \
 						--boot "$boot_wim" || stat_fail
 			stat_done
 		fi
@@ -432,7 +431,7 @@ modify_boot_wim() {
 	exec 3>&-
 
 	stat_busy "Rebuilding WIM with changes made"
-	"$imagex" update "$boot_wim" --rebuild \
+	wimlib-imagex update "$boot_wim" --rebuild \
 		< "$tmp_dir/__mkwinpeimg.update.cmds" > /dev/null || stat_fail
 	stat_done
 }

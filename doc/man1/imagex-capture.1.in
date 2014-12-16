@@ -1,17 +1,17 @@
-.TH WIMLIB-IMAGEX "1" "November 2014" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH WIMLIB-IMAGEX "1" "November 2014" "wimlib-imagex @VERSION@" "User Commands"
 .SH NAME
-@IMAGEX_PROGNAME@-capture, @IMAGEX_PROGNAME@-append \- Create or append a WIM image
+wimlib-imagex-capture, wimlib-imagex-append \- Create or append a WIM image
 .SH SYNOPSIS
-\fB@IMAGEX_PROGNAME@ capture\fR \fISOURCE\fR \fIWIMFILE\fR [\fIIMAGE_NAME\fR \
+\fBwimlib-imagex capture\fR \fISOURCE\fR \fIWIMFILE\fR [\fIIMAGE_NAME\fR \
 [\fIIMAGE_DESCRIPTION\fR]] [\fIOPTION\fR...]
 .br
-\fB@IMAGEX_PROGNAME@ append\fR \fISOURCE\fR \fIWIMFILE\fR [\fIIMAGE_NAME\fR \
+\fBwimlib-imagex append\fR \fISOURCE\fR \fIWIMFILE\fR [\fIIMAGE_NAME\fR \
 [\fIIMAGE_DESCRIPTION\fR]] [\fIOPTION\fR...]
 .SH DESCRIPTION
-The \fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR commands
+The \fBwimlib-imagex capture\fR and \fBwimlib-imagex append\fR commands
 create a Windows Imaging (WIM) image from a directory tree.  The
-\fB@IMAGEX_PROGNAME@ capture\fR command creates a new WIM file containing the
-captured image, while the \fB@IMAGEX_PROGNAME@ append\fR command appends the
+\fBwimlib-imagex capture\fR command creates a new WIM file containing the
+captured image, while the \fBwimlib-imagex append\fR command appends the
 captured image to an existing WIM file.
 These commands are also available as simply \fBwimcapture\fR and \fBwimappend\fR
 if the appropriate hard links or batch files are installed.
@@ -45,7 +45,7 @@ As a special case, if \fIWIMFILE\fR is "-", the \fB--pipable\fR option is
 assumed and the WIM file is written to standard output in a special pipable
 format.   See the documentation for \fB--pipable\fR for more details.
 .SH DIRECTORY CAPTURE (UNIX)
-This section documents how \fB@IMAGEX_PROGNAME@\fR captures files from a
+This section documents how \fBwimlib-imagex\fR captures files from a
 directory tree on UNIX-like systems.  See \fBDIRECTORY CAPTURE (WINDOWS)\fR for
 the corresponding documentation for Windows.
 .PP
@@ -73,19 +73,19 @@ modification time (mtime) and last access time (atime), but not last status
 change time (ctime).  Hard links and symbolic links are supported by the WIM
 format and \fIare\fR stored.  Symbolic links are turned into "native" Windows
 symbolic links, or "reparse points"; this process is fully reversible, e.g.
-automatically by \fB@IMAGEX_PROGNAME@ apply\fR, unless the symbolic link target
+automatically by \fBwimlib-imagex apply\fR, unless the symbolic link target
 contains backslash characters.
 .PP
 Pedantic note: A limitation of the WIM format prevents the unusual case where a
 single symbolic link file itself has multiple names (hard links); in this
 unlikely case, each symbolic link is stored as an independent file.
 .SH NTFS VOLUME CAPTURE (UNIX)
-This section documents how \fB@IMAGEX_PROGNAME@\fR captures files directly from
+This section documents how \fBwimlib-imagex\fR captures files directly from
 an NTFS volume image on UNIX-like systems.
 .PP
 On UNIX-like systems, a special image capture mode is entered when \fISOURCE\fR
 is a regular file or block device.  In this mode, \fISOURCE\fR is assumed to be
-an NTFS volume or volume image, and \fB@IMAGEX_PROGNAME@\fR will capture a WIM
+an NTFS volume or volume image, and \fBwimlib-imagex\fR will capture a WIM
 image containing the full contents of the NTFS volume, including NTFS-specific
 data.  This is done using libntfs-3g.
 .PP
@@ -125,15 +125,15 @@ The sparse attribute on sparse files will be saved, but the data stored will be
 the full data of the file rather than the "sparse" data.  (The data is, however,
 subject to the WIM format's compression.)
 .SH DIRECTORY CAPTURE (WINDOWS)
-On Windows, \fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR
+On Windows, \fBwimlib-imagex capture\fR and \fBwimlib-imagex append\fR
 natively support Windows-specific and NTFS-specific data.  They therefore act
 similarly to the corresponding commands of Microsoft's ImageX or DISM.  For best
 results, the directory being captured should be on an NTFS volume and
-\fB@IMAGEX_PROGNAME@\fR should be run with Administrator privileges; however,
+\fBwimlib-imagex\fR should be run with Administrator privileges; however,
 non-NTFS filesystems and running without Administrator privileges are also
 supported.
 .PP
-On Windows, \fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR
+On Windows, \fBwimlib-imagex capture\fR and \fBwimlib-imagex append\fR
 try to archive as much data and metadata as possible, including:
 .IP \[bu] 4
 All data streams of all files.
@@ -150,7 +150,7 @@ Security descriptors, if supported by the source filesystem and \fB--no-acls\fR
 is not specified.  However, beware that unless \fB--strict-acls\fR is specified,
 the security descriptors for individual files or directories may be omitted or
 only partially captured if the user does not have permission to read them, which
-can be a problem if \fB@IMAGEX_PROGNAME@\fR is run as a non-Administrator.
+can be a problem if \fBwimlib-imagex\fR is run as a non-Administrator.
 .IP \[bu]
 File attributes, including hidden, sparse, compressed, encrypted, etc.
 Encrypted files will be stored in encrypted form rather than in plain text.
@@ -163,7 +163,7 @@ considered an error condition.
 .IP \[bu]
 Hard links, if supported by the source filesystem.
 .PP
-Note: the capture process is reversible, since when \fB@IMAGEX_PROGNAME@
+Note: the capture process is reversible, since when \fBwimlib-imagex
 apply\fR (on Windows) extracts the captured WIM image, it will extract all of
 the above information, at least to the extent supported by the destination
 filesystem.  One exception is that since encrypted files are stored as
@@ -183,13 +183,13 @@ problems archiving such files consider using the \fBNTFS VOLUME CAPTURE
 Specifies that the new image is to be made the bootable image of the WIM archive.
 .TP
 \fB--check\fR
-For \fB@IMAGEX_PROGNAME@ append\fR, before performing the append operation,
+For \fBwimlib-imagex append\fR, before performing the append operation,
 check the integrity of \fIWIMFILE\fR if an integrity table is present.
 Furthermore, include an integrity table in the new WIM file
-(\fB@IMAGEX_PROGNAME@ capture\fR) or the modified WIM file (\fB@IMAGEX_PROGNAME@
+(\fBwimlib-imagex capture\fR) or the modified WIM file (\fBwimlib-imagex
 append\fR).  If this option is not specified, no integrity table is included in
-a WIM file created with \fB@IMAGEX_PROGNAME@ capture\fR, while a WIM file
-updated with \fB@IMAGEX_PROGNAME@ append\fR will be written with an integrity
+a WIM file created with \fBwimlib-imagex capture\fR, while a WIM file
+updated with \fBwimlib-imagex append\fR will be written with an integrity
 table if and only if one was present before.
 .TP
 \fB--compress\fR=\fITYPE\fR[:\fILEVEL\fR]
@@ -230,7 +230,7 @@ Create a "solid" archive that compresses multiple unique streams ("files")
 together, rather than each unique stream ("file") independently.  This can
 result in a significantly better compression ratio, but this format greatly
 decreases the performance of random access to the data, as may occur on a WIM
-mounted with \fB@IMAGEX_PROGNAME@ mount\fR.  Also, WIMs created using this
+mounted with \fBwimlib-imagex mount\fR.  Also, WIMs created using this
 option use a different version number in their header and are only compatible
 with WIMGAPI Windows 8 and later, and DISM Windows 8.1 and later.
 .IP ""
@@ -255,9 +255,9 @@ Number of threads to use for compressing data.  Default: autodetect (number of
 available CPUs).
 .TP
 \fB--rebuild\fR
-For \fB@IMAGEX_PROGNAME@ append\fR: rebuild the entire WIM rather than appending the new
+For \fBwimlib-imagex append\fR: rebuild the entire WIM rather than appending the new
 data to the end of it.  Rebuilding the WIM is slower, but will save a little bit
-of space that would otherwise be left as a hole in the WIM.  Also see \fB@IMAGEX_PROGNAME@
+of space that would otherwise be left as a hole in the WIM.  Also see \fBwimlib-imagex
 optimize\fR(1).
 .TP
 \fB--flags\fR=\fIEDITIONID\fR
@@ -363,8 +363,8 @@ point inside the directory tree being captured will be adjusted to be absolute
 relative to the root of the directory tree being captured.  When disabled
 (\fB--norpfix\fR), absolute symbolic links will be captured exactly as is.
 .IP ""
-The default behavior for \fB@IMAGEX_PROGNAME@ capture\fR is equivalent to
-\fB--rpfix\fR.  The default behavior for \fB@IMAGEX_PROGNAME@ append\fR will be
+The default behavior for \fBwimlib-imagex capture\fR is equivalent to
+\fB--rpfix\fR.  The default behavior for \fBwimlib-imagex append\fR will be
 \fB--rpfix\fR if reparse point fixups have previously been done on
 \fIWIMFILE\fR, otherwise \fB--norpfix\fR.
 .IP ""
@@ -375,7 +375,7 @@ image, while capture sources destined for the WIM root will get the default
 behavior from the previous paragraph.
 .TP
 \fB--source-list\fR
-\fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR support
+\fBwimlib-imagex capture\fR and \fBwimlib-imagex append\fR support
 creating a WIM image from multiple separate files or directories.  When
 \fB--source-list\fR is specified, the \fISOURCE\fR argument specifies the name
 of a text file, each line of which is either 1 or 2 whitespace separated file
@@ -424,10 +424,10 @@ The NTFS volume capture mode on UNIX-like systems cannot be used with
 .TP
 \fB--pipable\fR
 Create a "pipable" WIM, which can be applied fully sequentially, including from
-a pipe.  An image in the resulting WIM can be applied with \fB@IMAGEX_PROGNAME@
+a pipe.  An image in the resulting WIM can be applied with \fBwimlib-imagex
 apply\fR, either normally by specifying the WIM file name, or with
-\fB@IMAGEX_PROGNAME@ apply -\fR to read the WIM from standard input.  See
-\fB@IMAGEX_PROGNAME@ apply\fR(1) for more details.
+\fBwimlib-imagex apply -\fR to read the WIM from standard input.  See
+\fBwimlib-imagex apply\fR(1) for more details.
 .IP ""
 For append operations, this option will result in a full rebuild of the WIM to
 make it pipable.  For capture operations, the captured WIM is simply created as
@@ -439,8 +439,8 @@ When wimlib creates a pipable WIM, it carefully re-arranges the components of
 the WIM so that they can be read sequentially and also makes several other
 modifications.  As a result, these "pipable" WIMs are \fInot compatible with
 Microsoft's software\fR, so keep this in mind if you're going to use them.  If
-desired, you can use \fB@IMAGEX_PROGNAME@ optimize --not-pipable\fR to re-write
-a pipable WIM as a regular WIM.  (\fB@IMAGEX_PROGNAME@ export\fR also provides
+desired, you can use \fBwimlib-imagex optimize --not-pipable\fR to re-write
+a pipable WIM as a regular WIM.  (\fBwimlib-imagex export\fR also provides
 the capability to export images from a pipable WIM into a non-pipable WIM, or
 vice versa.)
 .IP ""
@@ -450,14 +450,14 @@ WIMs.  The main disadvantages are that appending is (currently) less efficient
 (\fB--rebuild\fR is always implied), and also they aren't compatible with
 Microsoft's software.
 .IP ""
-\fB@IMAGEX_PROGNAME@ capture\fR and \fB@IMAGEX_PROGNAME@ append\fR can both
+\fBwimlib-imagex capture\fR and \fBwimlib-imagex append\fR can both
 write a pipable WIM directly to standard output; this is done automatically if
 \fIWIMFILE\fR is specified as "-".  (In that case, \fB--pipable\fR is assumed.)
 .TP
 \fB--not-pipable\fR
 Ensure the resulting WIM is in the normal, non-pipable WIM format.  This is the
-default for \fB@IMAGEX_PROGNAME@ capture\fR, except when writing to standard
-output (\fIWIMFILE\fR specified as "-"), and also for \fB@IMAGEX_PROGNAME@
+default for \fBwimlib-imagex capture\fR, except when writing to standard
+output (\fIWIMFILE\fR specified as "-"), and also for \fBwimlib-imagex
 append\fR, except when appending to a WIM that is already pipable.
 .TP
 \fB--update-of\fR=[\fIWIMFILE\fR:]\fIIMAGE\fR
@@ -483,7 +483,7 @@ which a delta is being taken (only if \fB--delta-from\fR is specified exactly
 once) for capture operations.
 .TP
 \fB--delta-from\fR=\fIWIMFILE\fR
-For \fB@IMAGEX_PROGNAME@ capture\fR only: capture the new WIM as a "delta" from
+For \fBwimlib-imagex capture\fR only: capture the new WIM as a "delta" from
 \fIWIMFILE\fR.  Any streams that would ordinarily need to be archived in the new
 WIM are omitted if they are already present in the \fIWIMFILE\fR on which the
 delta is being based.  The new WIM will still contain a full copy of the image
@@ -493,7 +493,7 @@ This option can be specified multiple times, in which case the resulting delta
 WIM will only contain streams not present in any of the specified base WIMs.
 .IP ""
 To operate on the resulting delta WIM using other commands such as
-\fB@IMAGEX_PROGNAME@ apply\fR, you must specify the delta WIM as the WIM file to
+\fBwimlib-imagex apply\fR, you must specify the delta WIM as the WIM file to
 operate on, but also reference the base WIM(s) using the \fB--ref\fR option.
 Beware: to retain the proper functioning of the delta WIM, you can only add, not
 delete, files and images to the base WIM(s) following the capture of a delta
@@ -524,7 +524,7 @@ $ wimapply bkup-2013-08-20.dwm --ref=bkup-base.wim 1 \\
 .IP ""
 However, note that as an alternative to the above sequence that used a delta
 WIM, the second backup could have simply been appended to the WIM as new image
-using \fB@IMAGEX_PROGNAME@ append\fR.  Delta WIMs should be used only if it's
+using \fBwimlib-imagex append\fR.  Delta WIMs should be used only if it's
 desired to base the backups or images on a separate, large file that is rarely
 modified.
 .IP ""
@@ -533,7 +533,7 @@ WIMs (created with the \fB--delta-from\fR option) are compatible with
 Microsoft's software.  For example, you can use the /ref option of ImageX to
 reference the base WIM(s), similar to above.
 .IP ""
-Additional note:  \fB@IMAGEX_PROGNAME@\fR is generalized enough that you can in
+Additional note:  \fBwimlib-imagex\fR is generalized enough that you can in
 fact combine \fB--pipable\fR and \fB--delta-from\fR to create pipable delta
 WIMs.  In such cases, the base WIM(s) must be captured as pipable as well as the
 delta WIM, and when applying an image, the base WIM(s) must be sent over the
@@ -549,24 +549,24 @@ default, set the configuration file to
 \fISOURCE\fR\\Windows\\System32\\WimBootCompress.ini if present and accessible;
 however, this may still be overridden through the \fB--config\fR parameter.
 .SH NOTES
-\fB@IMAGEX_PROGNAME@ append\fR does not support appending an image to a split WIM.
+\fBwimlib-imagex append\fR does not support appending an image to a split WIM.
 .PP
-It is safe to abort an \fB@IMAGEX_PROGNAME@ append\fR command partway through;
-however, after doing this, it is recommended to run \fB@IMAGEX_PROGNAME@
+It is safe to abort an \fBwimlib-imagex append\fR command partway through;
+however, after doing this, it is recommended to run \fBwimlib-imagex
 optimize\fR to remove any data that was appended to the physical WIM file but
 not yet incorporated into the structure of the WIM, unless the WIM was being
 fully rebuilt (e.g. with \fB--rebuild\fR), in which case you should delete the
 temporary file left over.
 .PP
-\fB@IMAGEX_PROGNAME@\fR creates WIMs compatible with Microsoft's software
+\fBwimlib-imagex\fR creates WIMs compatible with Microsoft's software
 (WIMGAPI, ImageX, DISM), with some caveats:
 .IP \[bu] 4
-With \fB@IMAGEX_PROGNAME@\fR on UNIX-like systems, it is possible to create a
+With \fBwimlib-imagex\fR on UNIX-like systems, it is possible to create a
 WIM image containing files with names differing only in case, or files with
 names containing the characters ':', '*', '?', '"', '<', '>', '|', or '\\',
 which are valid on POSIX-compliant filesystems but not Windows.  Be warned that
 such files will not be extracted by default by the Windows version of
-\fB@IMAGEX_PROGNAME@\fR, and (even worse) Microsoft's ImageX can be confused by
+\fBwimlib-imagex\fR, and (even worse) Microsoft's ImageX can be confused by
 such names and quit extracting the image partway through.  (It perhaps is worth
 pointing out that Windows' own default filesystem, NTFS, supports these
 characters, although Windows does not!)
@@ -586,7 +586,7 @@ that will contain a captured image of the directory tree 'somedir'.  Note that
 the image name need not be specified and will default to 'somedir':
 .RS
 .PP
-@IMAGEX_PROGNAME@ capture somedir mywim.wim
+wimlib-imagex capture somedir mywim.wim
 .RE
 .PP
 or, if the \fBwimcapture\fR hard link or batch file has been installed, the
@@ -600,7 +600,7 @@ The remaining examples will use the long form, however.  Next, append the image
 of a different directory tree to the WIM created above:
 .RS
 .PP
-@IMAGEX_PROGNAME@ append anotherdir mywim.wim
+wimlib-imagex append anotherdir mywim.wim
 .RE
 .PP
 Easy enough, and the above examples of imaging directory trees work on both
@@ -609,7 +609,7 @@ options, including XPRESS ("fast") compression, an integrity table, no messing
 with absolute symbolic links, and an image name and description:
 .RS
 .PP
-@IMAGEX_PROGNAME@ capture somedir mywim.wim --compress=fast \\
+wimlib-imagex capture somedir mywim.wim --compress=fast \\
 .RS
 --check --norpfix "Some Name" "Some Description"
 .RE
@@ -621,22 +621,22 @@ Capture an entire NTFS volume into a new WIM file and name the image "Windows
 containing an NTFS filesystem:
 .RS
 .PP
-@IMAGEX_PROGNAME@ capture /dev/sda2 windows7.wim "Windows 7"
+wimlib-imagex capture /dev/sda2 windows7.wim "Windows 7"
 .RE
 .PP
 or, on Windows, to capture a full NTFS volume you instead need to specify the
 root directory of the mounted volume, for example:
 .RS
 .PP
-@IMAGEX_PROGNAME@ capture E:\\ windows7.wim "Windows 7"
+wimlib-imagex capture E:\\ windows7.wim "Windows 7"
 .RE
 .PP
-Same as above example with capturing an NTFS volume from \fB@IMAGEX_PROGNAME@\fR
+Same as above example with capturing an NTFS volume from \fBwimlib-imagex\fR
 running on a UNIX-like system, but capture the WIM in the wimlib-specific
-"pipable" format that can be piped to \fB@IMAGEX_PROGNAME@ apply\fR:
+"pipable" format that can be piped to \fBwimlib-imagex apply\fR:
 .RS
 .PP
-@IMAGEX_PROGNAME@ capture /dev/sda2 windows7.wim "Windows 7" \\
+wimlib-imagex capture /dev/sda2 windows7.wim "Windows 7" \\
 .br
 .RS
 --pipable
@@ -650,8 +650,8 @@ streams the data to a server.  Note that \fB--pipable\fR need not be explicitly
 specified when using standard output as the WIM "file":
 .RS
 .PP
-@IMAGEX_PROGNAME@ capture /dev/sda2 - "Windows 7" | someprog
+wimlib-imagex capture /dev/sda2 - "Windows 7" | someprog
 .RE
 .SH SEE ALSO
-.BR @IMAGEX_PROGNAME@ (1),
-.BR @IMAGEX_PROGNAME@-apply (1)
+.BR wimlib-imagex (1),
+.BR wimlib-imagex-apply (1)

@@ -10,37 +10,27 @@ LT_INIT
 PKGCONFIG_PRIVATE_REQUIRES=""
 PKGCONFIG_PRIVATE_LIBS=""
 
-AC_ARG_WITH(imagex-progname,
-            [AS_HELP_STRING([--with-imagex-progname=NAME],
-			    [Set the name of installed ImageX program (default: wimlib-imagex)])],
-            [IMAGEX_PROGNAME=$withval],
-            [IMAGEX_PROGNAME="wimlib-imagex"])
-
-AC_SUBST([IMAGEX_PROGNAME], [$IMAGEX_PROGNAME])
-AC_DEFINE_UNQUOTED([IMAGEX_PROGNAME], ["$IMAGEX_PROGNAME"],
-		   [Binary name for the implementation of ImageX distributed with wimlib])
-
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_FILES([Makefile]
 		[doc/Doxyfile]
 		[wimlib.pc]
-		[doc/man1/"$IMAGEX_PROGNAME".1:doc/man1/imagex.1.in]
-		[doc/man1/"$IMAGEX_PROGNAME"-append.1:doc/man1/imagex-append.1.in]
-		[doc/man1/"$IMAGEX_PROGNAME"-apply.1:doc/man1/imagex-apply.1.in]
-		[doc/man1/"$IMAGEX_PROGNAME"-capture.1:doc/man1/imagex-capture.1.in]
-		[doc/man1/"$IMAGEX_PROGNAME"-delete.1:doc/man1/imagex-delete.1.in]
-		[doc/man1/"$IMAGEX_PROGNAME"-dir.1:doc/man1/imagex-dir.1.in]
-		[doc/man1/"$IMAGEX_PROGNAME"-export.1:doc/man1/imagex-export.1.in]
-		[doc/man1/"$IMAGEX_PROGNAME"-extract.1:doc/man1/imagex-extract.1.in]
-		[doc/man1/"$IMAGEX_PROGNAME"-info.1:doc/man1/imagex-info.1.in]
-		[doc/man1/"$IMAGEX_PROGNAME"-join.1:doc/man1/imagex-join.1.in]
-		[doc/man1/"$IMAGEX_PROGNAME"-mount.1:doc/man1/imagex-mount.1.in]
-		[doc/man1/"$IMAGEX_PROGNAME"-mountrw.1:doc/man1/imagex-mountrw.1.in]
-		[doc/man1/"$IMAGEX_PROGNAME"-optimize.1:doc/man1/imagex-optimize.1.in]
-		[doc/man1/"$IMAGEX_PROGNAME"-split.1:doc/man1/imagex-split.1.in]
-		[doc/man1/"$IMAGEX_PROGNAME"-unmount.1:doc/man1/imagex-unmount.1.in]
-		[doc/man1/"$IMAGEX_PROGNAME"-update.1:doc/man1/imagex-update.1.in]
-		[doc/man1/"$IMAGEX_PROGNAME"-verify.1:doc/man1/imagex-verify.1.in]
+		[doc/man1/wimlib-imagex.1:doc/man1/imagex.1.in]
+		[doc/man1/wimlib-imagex-append.1:doc/man1/imagex-append.1.in]
+		[doc/man1/wimlib-imagex-apply.1:doc/man1/imagex-apply.1.in]
+		[doc/man1/wimlib-imagex-capture.1:doc/man1/imagex-capture.1.in]
+		[doc/man1/wimlib-imagex-delete.1:doc/man1/imagex-delete.1.in]
+		[doc/man1/wimlib-imagex-dir.1:doc/man1/imagex-dir.1.in]
+		[doc/man1/wimlib-imagex-export.1:doc/man1/imagex-export.1.in]
+		[doc/man1/wimlib-imagex-extract.1:doc/man1/imagex-extract.1.in]
+		[doc/man1/wimlib-imagex-info.1:doc/man1/imagex-info.1.in]
+		[doc/man1/wimlib-imagex-join.1:doc/man1/imagex-join.1.in]
+		[doc/man1/wimlib-imagex-mount.1:doc/man1/imagex-mount.1.in]
+		[doc/man1/wimlib-imagex-mountrw.1:doc/man1/imagex-mountrw.1.in]
+		[doc/man1/wimlib-imagex-optimize.1:doc/man1/imagex-optimize.1.in]
+		[doc/man1/wimlib-imagex-split.1:doc/man1/imagex-split.1.in]
+		[doc/man1/wimlib-imagex-unmount.1:doc/man1/imagex-unmount.1.in]
+		[doc/man1/wimlib-imagex-update.1:doc/man1/imagex-update.1.in]
+		[doc/man1/wimlib-imagex-verify.1:doc/man1/imagex-verify.1.in]
 		[doc/man1/mkwinpeimg.1])
 
 AC_CONFIG_FILES([programs/mkwinpeimg], [chmod +x programs/mkwinpeimg])

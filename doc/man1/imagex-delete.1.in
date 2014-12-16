@@ -1,10 +1,10 @@
-.TH WIMLIB-IMAGEX "1" "November 2014" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH WIMLIB-IMAGEX "1" "November 2014" "wimlib-imagex @VERSION@" "User Commands"
 .SH NAME
-@IMAGEX_PROGNAME@-delete \- Delete an image from a WIM archive
+wimlib-imagex-delete \- Delete an image from a WIM archive
 .SH SYNOPSIS
-\fB@IMAGEX_PROGNAME@ delete\fR \fIWIMFILE\fR \fIIMAGE\fR [\fIOPTION\fR...]
+\fBwimlib-imagex delete\fR \fIWIMFILE\fR \fIIMAGE\fR [\fIOPTION\fR...]
 .SH DESCRIPTION
-\fB@IMAGEX_PROGNAME@ delete\fR deletes the specified image from the Windows Imaging (WIM)
+\fBwimlib-imagex delete\fR deletes the specified image from the Windows Imaging (WIM)
 file \fIWIMFILE\fR.
 This command is also available as simply \fBwimdelete\fR if the appropriate hard
 link or batch file has been installed.
@@ -12,7 +12,7 @@ link or batch file has been installed.
 \fIIMAGE\fR specifies the WIM image in \fIWIMFILE\fR to delete.  It may be a
 1-based index of an image in the WIM, the name of an image in the WIM, or the
 keyword "all" to indicate that all images are to be deleted.  Use the
-\fB@IMAGEX_PROGNAME@ info\fR (1) command to show what images a WIM file
+\fBwimlib-imagex info\fR (1) command to show what images a WIM file
 contains.
 .SH NOTES
 By default, the WIM file is rebuilt with all unnecessary file data removed.
@@ -23,7 +23,7 @@ option for the other kind of delete).
 Also wimlib allows you to delete all the images from a WIM and have a WIM with 0
 images, although such a file wouldn't be very useful.
 .PP
-\fB@IMAGEX_PROGNAME@ delete\fR does not support split WIMs.
+\fBwimlib-imagex delete\fR does not support split WIMs.
 .SH OPTIONS
 .TP 6
 \fB--check\fR
@@ -42,16 +42,16 @@ particular, all streams will be left alone, even if they are no longer
 referenced.  This is probably not what you want, because no space will be
 saved by deleting an image in this way.
 .IP ""
-You may use \fB@IMAGEX_PROGNAME@ optimize\fR to delete unreferenced streams from a WIM that
+You may use \fBwimlib-imagex optimize\fR to delete unreferenced streams from a WIM that
 has had images soft-deleted from it.
 .SH EXAMPLES
 Delete the first image from 'boot.wim':
 .RS
 .PP
-@IMAGEX_PROGNAME@ delete boot.wim 1
+wimlib-imagex delete boot.wim 1
 .RE
 .PP
 .SH SEE ALSO
-.BR @IMAGEX_PROGNAME@ (1)
-.BR @IMAGEX_PROGNAME@-info (1)
-.BR @IMAGEX_PROGNAME@-optimize (1)
+.BR wimlib-imagex (1)
+.BR wimlib-imagex-info (1)
+.BR wimlib-imagex-optimize (1)

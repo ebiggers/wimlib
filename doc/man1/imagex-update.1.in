@@ -1,10 +1,10 @@
-.TH WIMLIB-IMAGEX "1" "November 2014" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH WIMLIB-IMAGEX "1" "November 2014" "wimlib-imagex @VERSION@" "User Commands"
 .SH NAME
-@IMAGEX_PROGNAME@-update \- Update a WIM image
+wimlib-imagex-update \- Update a WIM image
 .SH SYNOPSIS
-\fB@IMAGEX_PROGNAME@ update\fR \fIWIMFILE\fR [\fIIMAGE\fR] [\fIOPTION\fR...] [< \fICMDFILE\fR]
+\fBwimlib-imagex update\fR \fIWIMFILE\fR [\fIIMAGE\fR] [\fIOPTION\fR...] [< \fICMDFILE\fR]
 .SH DESCRIPTION
-\fB@IMAGEX_PROGNAME@ update\fR modifies the specified \fIIMAGE\fR in the Windows
+\fBwimlib-imagex update\fR modifies the specified \fIIMAGE\fR in the Windows
 Imaging (WIM) file \fIWIMFILE\fR by adding, deleting, or renaming files or
 directories in it.
 This command is also available as simply \fBwimupdate\fR if the appropriate
@@ -12,7 +12,7 @@ hard link or batch file has been installed.
 .PP
 \fIIMAGE\fR specifies the image in \fIWIMFILE\fR to update.  It may be a 1-based
 index of an image in the WIM or the name of an image in the WIM.  Use the
-\fB@IMAGEX_PROGNAME@ info\fR (1) command to list the images a WIM file contains.
+\fBwimlib-imagex info\fR (1) command to list the images a WIM file contains.
 \fIIMAGE\fR may be omitted if \fIWIMFILE\fR contains only one image.
 .PP
 The modifications to perform on the WIM image are specified as a sequence of
@@ -41,9 +41,9 @@ If \fIDESTINATION\fR does not exist in the WIM image, then any prerequisite
 directories are created as needed to add the \fISOURCE\fR at that location.
 .PP
 The \fBadd\fR command supports a subset of the options accepted by
-\fB@IMAGEX_PROGNAME@ capture\fR; namely, \fB--dereference\fR,
+\fBwimlib-imagex capture\fR; namely, \fB--dereference\fR,
 \fB--unix-data\fR, \fB--no-acls\fR, and \fB--strict-acls\fR.  See
-\fB@IMAGEX_PROGNAME@-capture\fR (1) for explanations of these options.
+\fBwimlib-imagex-capture\fR (1) for explanations of these options.
 .PP
 In addition, the \fBadd\fR command supports the \fB--no-replace\fR option, which
 causes the \fBadd\fR command to refuse to overwrite existing nondirectory files
@@ -71,7 +71,7 @@ non-directory, which is not allowed.
 .PP
 There are no options available for the \fBrename\fR command.
 .SH OPTIONS
-The following options are accepted on the command line by \fB@IMAGEX_PROGNAME@
+The following options are accepted on the command line by \fBwimlib-imagex
 update\fR itself:
 .TP 6
 \fB--dereference\fR
@@ -91,7 +91,7 @@ Use \fB--no-replace\fR for all \fBadd\fR commands.
 .TP
 \fB--config\fR=\fIFILE\fR
 Set the capture configuration file for all \fBadd\fR commands.  See the
-description of this option in \fB@IMAGEX_PROGNAME@-capture\fR (1).
+description of this option in \fBwimlib-imagex-capture\fR (1).
 .TP
 \fB--force\fR
 Use \fB--force\fR for all \fBdelete\fR commands.
@@ -114,10 +114,10 @@ Rebuild the entire WIM rather than appending the updated data to the end of it.
 Rebuilding the WIM is slower, but will save a little bit of space that would
 otherwise be left as a hole in the WIM file.
 .IP
-See \fB@IMAGEX_PROGNAME@-optimize\fR (1) for a more customizable way of
+See \fBwimlib-imagex-optimize\fR (1) for a more customizable way of
 rebuilding (and optionally recompressing) a WIM file.  If running
-\fB@IMAGEX_PROGNAME@ optimize\fR after \fB@IMAGEX_PROGNAME@ update\fR, there is
-no need to specify \fB--rebuild\fR to \fB@IMAGEX_PROGNAME@ update\fR.
+\fBwimlib-imagex optimize\fR after \fBwimlib-imagex update\fR, there is
+no need to specify \fB--rebuild\fR to \fBwimlib-imagex update\fR.
 .TP
 \fB--command\fR=\fISTRING\fR
 Instead of reading update commands from standard input, read a single update
@@ -131,7 +131,7 @@ quotes and single quotes for the inner quotes.  Example:
 .RS
 .PP
 .nf
-@IMAGEX_PROGNAME@ update boot.wim 1 \\
+wimlib-imagex update boot.wim 1 \\
 .br
 .RS
 --command="add 'C:\\My Dir' '\\My Dir'"
@@ -141,10 +141,10 @@ quotes and single quotes for the inner quotes.  Example:
 .fi
 .IP
 This option is provided for convenience only.  Do not execute
-\fB@IMAGEX_PROGNAME@ update\fR multiple consecutive times, each time passing the
+\fBwimlib-imagex update\fR multiple consecutive times, each time passing the
 \fB--command\fR option!  This is inefficient.  Instead, generate an update
 command file and provide it (on standard input) to a single invocation of
-\fB@IMAGEX_PROGNAME@ update\fR, as explained in this document.
+\fBwimlib-imagex update\fR, as explained in this document.
 .TP
 \fB--wimboot-config\fR=\fIFILE\fR
 If this option is specified, no commands shall be read from standard input, and
@@ -162,13 +162,13 @@ This sets \fIFILE\fR as the WIMBoot configuration file for the image.  The
 [PrepopulateList] section of this file specifies path globs that shall not be
 extracted as WIMBoot pointer files (perhaps due to being needed early in the
 boot process).  See the documentation for the \fB--wimboot\fR option of
-\fB@IMAGEX_PROGNAME@ apply\fR (1) for more information.
+\fBwimlib-imagex apply\fR (1) for more information.
 .SH NOTES
-\fB@IMAGEX_PROGNAME@ update\fR is partly redundant with \fB@IMAGEX_PROGNAME@
+\fBwimlib-imagex update\fR is partly redundant with \fBwimlib-imagex
 mountrw\fR, since if a WIM image can be mounted read-write, then there
-theoretically is no need for \fB@IMAGEX_PROGNAME@ update\fR.  The main advantage
-of \fB@IMAGEX_PROGNAME@ update\fR is that it works on both UNIX-like systems and
-Windows, whereas \fB@IMAGEX_PROGNAME@ mountrw\fR is only available on UNIX-like
+theoretically is no need for \fBwimlib-imagex update\fR.  The main advantage
+of \fBwimlib-imagex update\fR is that it works on both UNIX-like systems and
+Windows, whereas \fBwimlib-imagex mountrw\fR is only available on UNIX-like
 systems, and even then it only works on those with a compatible FUSE
 implementation.
 .PP
@@ -186,23 +186,23 @@ paths are by default treated case-sensitively.  The default case sensitivity may
 be changed by setting the \fBWIMLIB_IMAGEX_IGNORE_CASE\fR environmental
 variable to 0 or 1.
 .PP
-The command file (\fICMDFILE\fR) is parsed by \fB@IMAGEX_PROGNAME@ update\fR
+The command file (\fICMDFILE\fR) is parsed by \fBwimlib-imagex update\fR
 itself and not by the system shell.  Therefore, its syntax is limited.  However,
 comment lines beginning with '#' are allowed, and it is also possible to quote
 arguments with whitespace inside them.
 .PP
-On UNIX-like systems, you cannot use \fB@IMAGEX_PROGNAME@ update\fR to add files
+On UNIX-like systems, you cannot use \fBwimlib-imagex update\fR to add files
 to an image directly from an NTFS volume using libntfs-3g, even though
-\fB@IMAGEX_PROGNAME@ capture\fR supports capturing a full image this way.
+\fBwimlib-imagex capture\fR supports capturing a full image this way.
 .PP
-It is safe to abort an \fB@IMAGEX_PROGNAME@ update\fR command partway through;
-however, after doing this, it is recommended to run \fB@IMAGEX_PROGNAME@
+It is safe to abort an \fBwimlib-imagex update\fR command partway through;
+however, after doing this, it is recommended to run \fBwimlib-imagex
 optimize\fR to remove any data that was appended to the physical WIM file but
 not yet incorporated into the structure of the WIM, unless \fB--rebuild\fR was
 specified, in which case you should delete the temporary file left over.
 .SH EXAMPLES
 All the examples below show the update command file to be created as well as the
-\fB@IMAGEX_PROGNAME@ update\fR command to run to perform the updates.
+\fBwimlib-imagex update\fR command to run to perform the updates.
 .PP
 Delete two files from a WIM image:
 .PP
@@ -218,7 +218,7 @@ delete /sources/setup.exe
 .RE
 .PP
 .RS
-$ @IMAGEX_PROGNAME@ update boot.wim 2 < update_commands.txt
+$ wimlib-imagex update boot.wim 2 < update_commands.txt
 .RE
 .PP
 Add some files and directories to a WIM image.  Note that the first path of each
@@ -238,7 +238,7 @@ add somefile    /dir/file
 .RE
 .PP
 .RS
-$ @IMAGEX_PROGNAME@ update boot.wim 2 < update_commands.txt
+$ wimlib-imagex update boot.wim 2 < update_commands.txt
 .RE
 .PP
 Rename a file inside a WIM image.
@@ -254,7 +254,7 @@ rename /dir_in_wim/oldfile.txt /dir_in_wim/newfile.txt
 .RE
 .PP
 .RS
-$ @IMAGEX_PROGNAME@ update boot.wim 2 < update_commands.txt
+$ wimlib-imagex update boot.wim 2 < update_commands.txt
 .RE
 .PP
 Using additional features, such as comments, options, and overlays, and
@@ -290,12 +290,12 @@ delete --recursive /Users/Me/Documents/Junk
 .RE
 .PP
 .RS
-$ @IMAGEX_PROGNAME@ update boot.wim 2 --check < update_commands.txt
+$ wimlib-imagex update boot.wim 2 --check < update_commands.txt
 .RE
 .PP
 .SH SEE ALSO
-.BR @IMAGEX_PROGNAME@ (1)
-.BR @IMAGEX_PROGNAME@-capture (1)
-.BR @IMAGEX_PROGNAME@-info (1)
-.BR @IMAGEX_PROGNAME@-mountrw (1)
-.BR @IMAGEX_PROGNAME@-optimize (1)
+.BR wimlib-imagex (1)
+.BR wimlib-imagex-capture (1)
+.BR wimlib-imagex-info (1)
+.BR wimlib-imagex-mountrw (1)
+.BR wimlib-imagex-optimize (1)

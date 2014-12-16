@@ -1,10 +1,10 @@
-.TH WIMLIB-IMAGEX "1" "November 2014" "@IMAGEX_PROGNAME@ @VERSION@" "User Commands"
+.TH WIMLIB-IMAGEX "1" "November 2014" "wimlib-imagex @VERSION@" "User Commands"
 .SH NAME
-@IMAGEX_PROGNAME@-verify \- Verify a WIM file
+wimlib-imagex-verify \- Verify a WIM file
 .SH SYNOPSIS
-\fB@IMAGEX_PROGNAME@ verify\fR \fIWIMFILE\fR [\fIOPTION\fR...]
+\fBwimlib-imagex verify\fR \fIWIMFILE\fR [\fIOPTION\fR...]
 .SH DESCRIPTION
-\fB@IMAGEX_PROGNAME@ verify\fR checks the validity of the specified WIM archive.
+\fBwimlib-imagex verify\fR checks the validity of the specified WIM archive.
 This command is also available as simply \fBwimverify\fR if the appropriate hard
 link or batch file has been installed.
 .PP
@@ -30,7 +30,7 @@ decompressed, with matching cryptographic checksums.
 \fB--ref\fR="\fIGLOB\fR"
 File glob of additional WIMs or split WIM parts to reference resources from.
 This option can be specified multiple times.  Note: \fIGLOB\fR is listed in
-quotes because it is interpreted by \fB@IMAGEX_PROGNAME@\fR and may need to be
+quotes because it is interpreted by \fBwimlib-imagex\fR and may need to be
 quoted to protect against shell expansion.
 .TP
 \fB--nocheck\fR
@@ -54,5 +54,5 @@ wimverify boot.swm --ref="boot*.swm"
 .RE
 .PP
 .SH SEE ALSO
-.BR @IMAGEX_PROGNAME@ (1)
-.BR @IMAGEX_PROGNAME@-optimize (1)
+.BR wimlib-imagex (1)
+.BR wimlib-imagex-optimize (1)

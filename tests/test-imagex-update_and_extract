@@ -145,7 +145,7 @@ imagex extract test.wim 1 /file --dest-dir=out.dir
 
 msg "Testing extracting file from WIM image to stdout"
 rm -rf out.dir && mkdir out.dir
-../../imagex extract test.wim 1 /file --to-stdout > out.dir/file
+imagex_raw extract test.wim 1 /file --to-stdout > out.dir/file
 ../tree-cmp file out.dir/file && [ ! -e out.dir/1 ]
 
 msg "Testing adding directories and files to WIM image"
