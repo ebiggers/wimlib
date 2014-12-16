@@ -44,10 +44,6 @@ extern FILE *wimlib_error_file;
 #  define WARNING_WITH_ERRNO(format, ...)	dummy_tprintf(T(format), ## __VA_ARGS__)
 #endif /* !ENABLE_ERROR_MESSAGES */
 
-#if defined(ENABLE_MORE_DEBUG) && !defined(ENABLE_DEBUG)
-#  define ENABLE_DEBUG 1
-#endif
-
 #if defined(ENABLE_MORE_ASSERTIONS) && !defined(ENABLE_ASSERTIONS)
 #  define ENABLE_ASSERTIONS 1
 #endif
