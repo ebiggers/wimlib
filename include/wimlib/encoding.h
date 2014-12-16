@@ -35,7 +35,7 @@ varname1##_to_##varname2##_buf(const chartype1 *in, size_t in_nbytes,	\
 			       chartype2 *out);
 
 extern utf16lechar *
-utf16le_dupz(const utf16lechar *ustr, size_t usize);
+utf16le_dupz(const void *ustr, size_t usize);
 
 #if !TCHAR_IS_UTF16LE
 DECLARE_CHAR_CONVERSION_FUNCTIONS(utf16le, tstr, utf16lechar, tchar);

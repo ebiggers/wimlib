@@ -393,7 +393,7 @@ set_dentry_dos_name(struct wim_dentry *dentry, const struct dos_name_map *map)
 	if (dentry->is_win32_name) {
 		node = lookup_dos_name(map, dentry->d_inode->i_ino);
 		if (node) {
-			dentry->short_name = utf16le_dupz((const utf16lechar *)node->dos_name,
+			dentry->short_name = utf16le_dupz(node->dos_name,
 							  node->name_nbytes);
 			if (!dentry->short_name)
 				return WIMLIB_ERR_NOMEM;

@@ -1342,8 +1342,7 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 	/* Read the filename if present.  Note: if the filename is empty, there
 	 * is no null terminator following it.  */
 	if (file_name_nbytes) {
-		dentry->file_name = utf16le_dupz((const utf16lechar *)p,
-						 file_name_nbytes);
+		dentry->file_name = utf16le_dupz(p, file_name_nbytes);
 		if (dentry->file_name == NULL) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto err_free_dentry;
@@ -1355,8 +1354,7 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 	/* Read the short filename if present.  Note: if there is no short
 	 * filename, there is no null terminator following it. */
 	if (short_name_nbytes) {
-		dentry->short_name = utf16le_dupz((const utf16lechar *)p,
-						  short_name_nbytes);
+		dentry->short_name = utf16le_dupz(p, short_name_nbytes);
 		if (dentry->short_name == NULL) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto err_free_dentry;
