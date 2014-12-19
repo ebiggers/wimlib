@@ -1,1 +1,0 @@
-scan-build --use-analyzer=/bin/clang clang src/*.c programs/imagex.c -o imagex -D_FILE_OFFSET_BITS=64 -std=gnu99 -lntfs-3g -lxml2 -lfuse -lpthread -lrt -Iinclude/ -I./ -I/usr/include/libxml2/ -D HAVE_CONFIG_H -Wno-pointer-sign -D_GNU_SOURCE -lcrypto

@@ -1,0 +1,8 @@
+#!/bin/sh
+
+exec scan-build --use-analyzer=/usr/bin/clang /usr/bin/clang 	\
+	src/*.c programs/imagex.c -o wimlib-imagex		\
+	-std=c99 -Wno-pointer-sign				\
+	-D_GNU_SOURCE -DHAVE_CONFIG_H -D_FILE_OFFSET_BITS=64	\
+	-Iinclude -I. -I/usr/include/libxml2			\
+	-lntfs-3g -lxml2 -lfuse -lpthread -lrt -lcrypto

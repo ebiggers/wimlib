@@ -96,7 +96,7 @@ AC_CHECK_MEMBER([struct stat.st_mtim],
 AX_PTHREAD([], [AC_MSG_ERROR(["cannot find pthreads library"])])
 
 # ------------------------------ libxml2 --------------------------------------
-AC_CHECK_LIB([xml2], [xmlParseFile], [],
+AC_CHECK_LIB([xml2], [xmlReadMemory], [],
 	     [AC_MSG_ERROR(["cannot find libxml2"])])
 PKG_CHECK_MODULES([LIBXML2], [libxml-2.0])
 PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES libxml-2.0"

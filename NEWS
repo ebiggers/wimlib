@@ -3,6 +3,9 @@ Version 1.7.4-BETA:
 	the target files do not yet exist.  (Broken since v1.7.0, but actually a
 	result of a Microsoft bug.)
 
+	The Windows binary distribution no longer contain third party DLLs.
+	These dependencies are instead compiled directly into libwim.dll.
+
 	More fixes for wimlib on non-x86 architectures such as ARM.
 
 	Slight performance improvements in compression and decompression.

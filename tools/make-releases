@@ -1,0 +1,18 @@
+#!/bin/bash
+
+set -e
+
+MAKE="make -j$(grep -c processor /proc/cpuinfo)"
+
+./configure && $MAKE distcheck
+
+# Recompress with 7-Zip
+gzfile=$(ls wimlib-*.tar.gz | tail -1)
+tarfile=${gzfile%.gz}
+gunzip $gzfile
+7z -mx9 a $gzfile $tarfile
+rm -f $tarfile
+
+for arch in i686 x86_64; do
+	./tools/make-windows-release $arch
+done

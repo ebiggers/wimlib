@@ -1,0 +1,123 @@
+#!/bin/bash
+#
+# This script prepares a Windows binary distribution of wimlib on Linux using
+# MinGW-w64.  The desired architecture must be passed as the first argument.
+
+set -e
+
+if [ ! -e src/wim.c ]; then
+	echo "This script must be run from the toplevel directory" 1>&2
+	exit 1
+fi
+
+if [ $# -ne 1 ]; then
+	echo "Usage: $0 i686|x86_64" 1>&2
+	exit 1
+fi
+
+ARCH="$1"
+shift
+
+case "$ARCH" in
+i686|x86_64)
+	;;
+*)
+	echo "ERROR: ARCH must be i686 or x86_64" 1>&2
+	exit 1
+	;;
+esac
+
+VERSION=$(grep 'This is wimlib version' README | \
+	  grep -o '\<[0-9]\+\.[0-9]\+\.[0-9]\+\(-BETA\)\?\>')
+DESTDIR=wimlib-${VERSION}-windows-${ARCH}-bin
+ZIPFILE=wimlib-${VERSION}-windows-${ARCH}-bin.zip
+MAKE="make -j $(grep -c processor /proc/cpuinfo)"
+WINDEPDIR=./tools/windeps
+SYSROOT=$WINDEPDIR/sysroot_${ARCH}
+
+# Prepare third party libraries
+
+if [ ! -e $SYSROOT ]; then
+	$MAKE -C $WINDEPDIR sysroot_${ARCH}
+fi
+
+# Compile wimlib
+
+if ! grep -q "./configure --host=${ARCH}-w64-mingw32" config.log || \
+	! grep -q "configure: exit 0" config.log
+then
+	# Note: putting -static-libgcc in CC is a workaround for libtool
+	# stripping it:
+	# http://www.gnu.org/software/libtool/manual/libtool.html#Stripped-link-flags
+	./configure --host=${ARCH}-w64-mingw32 --disable-static		\
+		CC="${ARCH}-w64-mingw32-gcc -static-libgcc"		\
+		CFLAGS="-O2 -Wall"					\
+		CPPFLAGS="-I$SYSROOT/include -I$SYSROOT/include/libxml2"\
+		LDFLAGS="-L$SYSROOT/lib"
+	$MAKE clean
+fi
+$MAKE
+
+# Create empty destination directory
+
+rm -rf $DESTDIR
+mkdir $DESTDIR
+
+# Install binaries
+
+cp .libs/*.{dll,exe} $DESTDIR
+${ARCH}-w64-mingw32-strip $DESTDIR/*.{dll,exe}
+
+# Install text files
+
+cp NEWS README* COPYING* $DESTDIR
+cp $WINDEPDIR/COPYING* $DESTDIR
+(
+	cd $DESTDIR
+	for fil in NEWS README* COPYING*; do
+		sed < $fil > ${fil}.txt -e 's/$/\r/g'
+		rm $fil
+	done
+)
+
+
+# Install man pages
+
+mkdir $DESTDIR/doc
+
+function gen_pdf_from_man_page() {
+	local manbase=$1
+	local pdf=${DESTDIR}/doc/${manbase}.pdf
+
+	echo "Generating $pdf"
+
+	MANPATH="./doc" man -t $manbase | ps2pdf - $pdf
+}
+
+for fil in ./doc/man1/wimlib-imagex-*.1; do
+	manbase=`basename $fil`
+	manbase=${manbase%%.1}
+	cmd=$(echo $manbase | sed s/wimlib-imagex-//)
+	if [ $cmd == mount -o $cmd == mountrw -o $cmd == unmount ]; then
+		continue
+	fi
+
+	gen_pdf_from_man_page $manbase
+
+	sed 's/$/\r/g' > ${DESTDIR}/wim${cmd}.cmd <<- EOF
+		@echo off
+		%~dp0\\wimlib-imagex $cmd %*
+	EOF
+	chmod +x ${DESTDIR}/wim${cmd}.cmd
+done
+
+gen_pdf_from_man_page wimlib-imagex
+
+# Generate ZIP file
+
+rm -f $ZIPFILE
+(
+	dir=$PWD
+	cd $DESTDIR
+	7z -mx9 a "$dir/$ZIPFILE" .
+)
