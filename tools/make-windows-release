@@ -27,8 +27,8 @@ i686|x86_64)
 	;;
 esac
 
-VERSION=$(grep 'This is wimlib version' README | \
-	  grep -o '\<[0-9]\+\.[0-9]\+\.[0-9]\+\(-BETA\)\?\>')
+VERSION=$(grep 'AC_INIT' configure.ac | \
+	  grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+[^]]*')
 DESTDIR=wimlib-${VERSION}-windows-${ARCH}-bin
 ZIPFILE=wimlib-${VERSION}-windows-${ARCH}-bin.zip
 MAKE="make -j $(grep -c processor /proc/cpuinfo)"
