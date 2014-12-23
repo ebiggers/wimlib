@@ -56,6 +56,6 @@ lz_hash(const u8 *p, unsigned num_bits)
 
 /* Number of bytes the hash function actually requires be available, due to the
  * possibility of an unaligned load.  */
-#define LZ_HASH_REQUIRED_NBYTES 4
+#define LZ_HASH_REQUIRED_NBYTES (UNALIGNED_ACCESS_IS_FAST ? 4 : 3)
 
 #endif /* _WIMLIB_LZ_HASH3_H */

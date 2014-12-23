@@ -1,8 +1,7 @@
 /*
  * xpress-compress.c
  *
- * A compressor that produces output compatible with the XPRESS (Huffman
- * version) compression format.
+ * A compressor for the XPRESS compression format (Huffman variant).
  */
 
 /*
@@ -26,123 +25,181 @@
 #  include "config.h"
 #endif
 
+/*
+ * The maximum buffer size, in bytes, that can be compressed.  An XPRESS
+ * compressor instance must be created with a 'max_bufsize' less than or equal
+ * to this value.
+ */
+#define XPRESS_MAX_BUFSIZE		65536
+
+/*
+ * Define to 1 to enable the near-optimal parsing algorithm at high compression
+ * levels.  The near-optimal parsing algorithm produces a compression ratio
+ * significantly better than the greedy and lazy algorithms.  However, it is
+ * much slower.
+ */
+#define SUPPORT_NEAR_OPTIMAL_PARSING	1
+
+/*
+ * The lowest compression level at which near-optimal parsing is enabled.
+ */
+#define MIN_LEVEL_FOR_NEAR_OPTIMAL	60
+
+/*
+ * The window order for the matchfinder.  This must be the base 2 logarithm of
+ * the maximum buffer size.
+ */
+#define MATCHFINDER_WINDOW_ORDER	16
+
+/*
+ * Although XPRESS can potentially use a sliding window, it isn't well suited
+ * for large buffers of data because there is no way to reset the Huffman code.
+ * Therefore, we only allow buffers in which there is no restriction on match
+ * offsets (no sliding window).  This simplifies the code and allows some
+ * optimizations.
+ */
+#define MATCHFINDER_IS_SLIDING		0
+
+#include <string.h>
+
 #include "wimlib/bitops.h"
 #include "wimlib/compress_common.h"
 #include "wimlib/compressor_ops.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
-#include "wimlib/lz_mf.h"
+#include "wimlib/hc_matchfinder.h"
 #include "wimlib/unaligned.h"
 #include "wimlib/util.h"
 #include "wimlib/xpress.h"
 
-#include <string.h>
-#include <limits.h>
+#if SUPPORT_NEAR_OPTIMAL_PARSING
 
-#define XPRESS_CACHE_PER_POS		8
-#define XPRESS_OPTIM_ARRAY_LENGTH	4096
+/*
+ * CACHE_RESERVE_PER_POS is the number of lz_match structures to reserve in the
+ * match cache for each byte position.  This value should be high enough so that
+ * virtually the time, all matches found in the input buffer can fit in the
+ * match cache.  However, fallback behavior on cache overflow is still required.
+ */
+#define CACHE_RESERVE_PER_POS	8
 
-struct xpress_compressor;
+/*
+ * We use a binary-tree based matchfinder for optimal parsing because it can
+ * find more matches in the same number of steps compared to hash-chain based
+ * matchfinders.  In addition, since we need to find matches at almost every
+ * position, there isn't much penalty for keeping the sequences sorted in the
+ * binary trees.
+ */
+#include "wimlib/bt_matchfinder.h"
+
+struct xpress_optimum_node;
+
+#endif /* SUPPORT_NEAR_OPTIMAL_PARSING */
+
 struct xpress_item;
-struct xpress_mc_pos_data;
 
-/* Internal compression parameters  */
-struct xpress_compressor_params {
-
-	/* See xpress_choose_items()  */
-	u32 (*choose_items_func)(struct xpress_compressor *);
-
-	/* For near-optimal parsing only  */
-	u32 num_optim_passes;
-
-	/* Match-finding algorithm and parameters  */
-	enum lz_mf_algo mf_algo;
-	u32 max_search_depth;
-	u32 nice_match_length;
-};
-
-/* State of the XPRESS compressor  */
+/* The main XPRESS compressor structure  */
 struct xpress_compressor {
 
-	/* Internal compression parameters  */
-	struct xpress_compressor_params params;
+	/* Pointer to the compress() implementation chosen at allocation time */
+	size_t (*impl)(struct xpress_compressor *,
+		       const void *, size_t, void *, size_t);
 
-	/* Data currently being compressed  */
-	const u8 *cur_window;
-	u32 cur_window_size;
-
-	/* Lempel-Ziv match-finder  */
-	struct lz_mf *mf;
-
-	/* Optimal parsing data  */
-	unsigned (*get_matches_func)(struct xpress_compressor *,
-				     const struct lz_match **);
-	void (*skip_bytes_func)(struct xpress_compressor *, unsigned n);
-	struct lz_match *cached_matches;
-	struct lz_match *cache_ptr;
-	struct lz_match *cache_limit;
-	struct xpress_mc_pos_data *optimum;
-	u8 costs[XPRESS_NUM_SYMBOLS];
-
-	/* The selected sequence of matches/literals  */
-	struct xpress_item *chosen_items;
-
-	/* Symbol frequency counters  */
+	/* Symbol frequency counters for the Huffman code  */
 	u32 freqs[XPRESS_NUM_SYMBOLS];
 
-	/* The current Huffman code  */
+	/* The Huffman codewords and their lengths  */
 	u32 codewords[XPRESS_NUM_SYMBOLS];
 	u8 lens[XPRESS_NUM_SYMBOLS];
+
+	/* The "nice" match length: if a match of this length is found, then
+	 * choose it immediately without further consideration.  */
+	unsigned nice_match_length;
+
+	/* The maximum search depth: consider at most this many potential
+	 * matches at each position.  */
+	unsigned max_search_depth;
+
+	union {
+		/* Data for greedy or lazy parsing  */
+		struct {
+			struct hc_matchfinder hc_mf;
+			struct xpress_item *chosen_items;
+			u8 nonoptimal_end[0];
+		};
+
+	#if SUPPORT_NEAR_OPTIMAL_PARSING
+		/* Data for near-optimal parsing  */
+		struct {
+			struct bt_matchfinder bt_mf;
+			struct xpress_optimum_node *optimum_nodes;
+			struct lz_match *match_cache;
+			struct lz_match *cache_overflow_mark;
+			unsigned num_optim_passes;
+			u32 costs[XPRESS_NUM_SYMBOLS];
+			u8 optimal_end[0];
+		};
+	#endif
+	};
 };
 
-/* Intermediate XPRESS match/literal format  */
-struct xpress_item {
+#if SUPPORT_NEAR_OPTIMAL_PARSING
 
-	/* Bits 0  -  8: Symbol
+/*
+ * This structure represents a byte position in the input buffer and a node in
+ * the graph of possible match/literal choices.
+ *
+ * Logically, each incoming edge to this node is labeled with a literal or a
+ * match that can be taken to reach this position from an earlier position; and
+ * each outgoing edge from this node is labeled with a literal or a match that
+ * can be taken to advance from this position to a later position.
+ *
+ * But these "edges" are actually stored elsewhere (in 'match_cache').  Here we
+ * associate with each node just two pieces of information:
+ *
+ *	'cost_to_end' is the minimum cost to reach the end of the buffer from
+ *	this position.
+ *
+ *	'item' represents the literal or match that must be chosen from here to
+ *	reach the end of the buffer with the minimum cost.  Equivalently, this
+ *	can be interpreted as the label of the outgoing edge on the minimum cost
+ *	path to the "end of buffer" node from this node.
+ */
+struct xpress_optimum_node {
+
+	u32 cost_to_end;
+
+	/*
+	 * Notes on the match/literal representation used here:
+	 *
+	 *	The low bits of 'item' are the length: 1 if the item is a
+	 *	literal, or the match length if the item is a match.
+	 *
+	 *	The high bits of 'item' are the actual literal byte if the item
+	 *	is a literal, or the match offset if the item is a match.
+	 */
+#define OPTIMUM_OFFSET_SHIFT	16
+#define OPTIMUM_LEN_MASK	(((u32)1 << OPTIMUM_OFFSET_SHIFT) - 1)
+	u32 item;
+};
+
+#endif /* SUPPORT_NEAR_OPTIMAL_PARSING */
+
+/* An intermediate representation of an XPRESS match or literal  */
+struct xpress_item {
+	/*
+	 * Bits 0  -  8: Symbol
 	 * Bits 9  - 24: Length - XPRESS_MIN_MATCH_LEN
 	 * Bits 25 - 28: Number of extra offset bits
-	 * Bits 29+    : Extra offset bits  */
-
+	 * Bits 29+    : Extra offset bits
+	 *
+	 * Unfortunately, gcc generates worse code if we use real bitfields here.
+	 */
 	u64 data;
 };
 
 /*
- * Match chooser position data:
- *
- * An array of these structures is used during the near-optimal match-choosing
- * algorithm.  They correspond to consecutive positions in the window and are
- * used to keep track of the cost to reach each position, and the match/literal
- * choices that need to be chosen to reach that position.
- */
-struct xpress_mc_pos_data {
-
-	/* The cost, in bits, of the lowest-cost path that has been found to
-	 * reach this position.  This can change as progressively lower cost
-	 * paths are found to reach this position.  */
-	u32 cost;
-#define MC_INFINITE_COST UINT32_MAX
-
-	/* The match or literal that was taken to reach this position.  This can
-	 * change as progressively lower cost paths are found to reach this
-	 * position.
-	 *
-	 * This variable is divided into two bitfields.
-	 *
-	 * Literals:
-	 *	Low bits are 1, high bits are the literal.
-	 *
-	 * Matches:
-	 *	Low bits are the match length, high bits are the offset.
-	 */
-	u32 mc_item_data;
-#define MC_OFFSET_SHIFT 16
-#define MC_LEN_MASK (((u32)1 << MC_OFFSET_SHIFT) - 1)
-};
-
-
-/*
- * Structure to keep track of the current state of sending data to the
- * compressed output buffer.
+ * Structure to keep track of the current state of sending compressed data to
+ * the output buffer.
  *
  * The XPRESS bitstream is encoded as a sequence of little endian 16-bit coding
  * units interwoven with literal bytes.
@@ -174,18 +231,38 @@ struct xpress_output_bitstream {
 	u8 *end;
 };
 
+/* Reset the symbol frequencies for the XPRESS Huffman code.  */
+static void
+xpress_reset_symbol_frequencies(struct xpress_compressor *c)
+{
+	memset(c->freqs, 0, sizeof(c->freqs));
+}
+
+/*
+ * Make the Huffman code for XPRESS.
+ *
+ * Input: c->freqs
+ * Output: c->lens and c->codewords
+ */
+static void
+xpress_make_huffman_code(struct xpress_compressor *c)
+{
+	make_canonical_huffman_code(XPRESS_NUM_SYMBOLS, XPRESS_MAX_CODEWORD_LEN,
+				    c->freqs, c->lens, c->codewords);
+}
+
 /*
  * Initialize the output bitstream.
  *
  * @os
  *	The output bitstream structure to initialize.
  * @buffer
- *	The buffer to write to.
+ *	The output buffer.
  * @size
  *	Size of @buffer, in bytes.  Must be at least 4.
  */
 static void
-xpress_init_output(struct xpress_output_bitstream *os, void *buffer, u32 size)
+xpress_init_output(struct xpress_output_bitstream *os, void *buffer, size_t size)
 {
 	os->bitbuf = 0;
 	os->bitcount = 0;
@@ -207,7 +284,7 @@ xpress_init_output(struct xpress_output_bitstream *os, void *buffer, u32 size)
  */
 static inline void
 xpress_write_bits(struct xpress_output_bitstream *os,
-		  const u32 bits, const unsigned int num_bits)
+		  const u32 bits, const unsigned num_bits)
 {
 	/* This code is optimized for XPRESS, which never needs to write more
 	 * than 16 bits at once.  */
@@ -237,13 +314,25 @@ xpress_write_byte(struct xpress_output_bitstream *os, u8 byte)
 }
 
 /*
+ * Interweave two literal bytes into the output bitstream.
+ */
+static inline void
+xpress_write_u16(struct xpress_output_bitstream *os, u16 v)
+{
+	if (os->end - os->next_byte >= 2) {
+		put_unaligned_u16_le(v, os->next_byte);
+		os->next_byte += 2;
+	}
+}
+
+/*
  * Flush the last coding unit to the output buffer if needed.  Return the total
  * number of bytes written to the output buffer, or 0 if an overflow occurred.
  */
-static u32
+static size_t
 xpress_flush_output(struct xpress_output_bitstream *os)
 {
-	if (unlikely(os->end - os->next_byte < 2))
+	if (os->end - os->next_byte < 2)
 		return 0;
 
 	put_unaligned_u16_le(os->bitbuf << (16 - os->bitcount), os->next_bits);
@@ -252,986 +341,794 @@ xpress_flush_output(struct xpress_output_bitstream *os)
 	return os->next_byte - os->start;
 }
 
+static inline void
+xpress_write_extra_length_bytes(struct xpress_output_bitstream *os,
+				unsigned adjusted_len)
+{
+	/* If length >= 18, output one extra length byte.
+	 * If length >= 273, output three (total) extra length bytes.  */
+	if (adjusted_len >= 0xF) {
+		u8 byte1 = min(adjusted_len - 0xF, 0xFF);
+		xpress_write_byte(os, byte1);
+		if (byte1 == 0xFF)
+			xpress_write_u16(os, adjusted_len);
+	}
+}
+
 /* Output a match or literal.  */
 static inline void
 xpress_write_item(struct xpress_item item, struct xpress_output_bitstream *os,
 		  const u32 codewords[], const u8 lens[])
 {
 	u64 data = item.data;
-	unsigned symbol;
-	unsigned adjusted_len;
-	unsigned num_extra_bits;
-	unsigned extra_bits;
-
-	symbol = data & 0x1FF;
+	unsigned symbol = data & 0x1FF;
 
 	xpress_write_bits(os, codewords[symbol], lens[symbol]);
 
-	if (symbol < XPRESS_NUM_CHARS)  /* Literal?  */
-		return;
-
-	adjusted_len = (data >> 9) & 0xFFFF;
-
-	/* If length >= 18, one extra length byte.
-	 * If length >= 273, three (total) extra length bytes.  */
-	if (adjusted_len >= 0xf) {
-		u8 byte1 = min(adjusted_len - 0xf, 0xff);
-		xpress_write_byte(os, byte1);
-		if (byte1 == 0xff) {
-			xpress_write_byte(os, adjusted_len & 0xff);
-			xpress_write_byte(os, adjusted_len >> 8);
-		}
+	if (symbol >= XPRESS_NUM_CHARS) {
+		/* Match, not a literal  */
+		xpress_write_extra_length_bytes(os, (data >> 9) & 0xFFFF);
+		xpress_write_bits(os, data >> 29, (data >> 25) & 0xF);
 	}
-
-	num_extra_bits = (data >> 25) & 0xF;
-	extra_bits = data >> 29;
-
-	xpress_write_bits(os, extra_bits, num_extra_bits);
 }
 
 /* Output a sequence of XPRESS matches and literals.  */
 static void
 xpress_write_items(struct xpress_output_bitstream *os,
-		   const struct xpress_item items[], u32 num_items,
+		   const struct xpress_item items[], size_t num_items,
 		   const u32 codewords[], const u8 lens[])
 {
-	for (u32 i = 0; i < num_items; i++)
+	for (size_t i = 0; i < num_items; i++)
 		xpress_write_item(items[i], os, codewords, lens);
-
-	/* End-of-data symbol (required for MS compatibility)  */
-	xpress_write_bits(os, codewords[XPRESS_END_OF_DATA], lens[XPRESS_END_OF_DATA]);
 }
 
-/* Make the Huffman code for XPRESS.
+#if SUPPORT_NEAR_OPTIMAL_PARSING
+
+/*
+ * Follow the minimum cost path in the graph of possible match/literal choices
+ * and write out the matches/literals using the specified Huffman code.
  *
- * Takes as input c->freqs and produces as output c->lens and c->codewords.  */
+ * Note: this is slightly duplicated with xpress_write_items().  However, we
+ * don't want to waste time translating between intermediate match/literal
+ * representations.
+ */
 static void
-xpress_make_huffman_code(struct xpress_compressor *c)
+xpress_write_item_list(struct xpress_output_bitstream *os,
+		       struct xpress_optimum_node *optimum_nodes,
+		       size_t count, const u32 codewords[], const u8 lens[])
 {
-	make_canonical_huffman_code(XPRESS_NUM_SYMBOLS, XPRESS_MAX_CODEWORD_LEN,
-				    c->freqs, c->lens, c->codewords);
+	struct xpress_optimum_node *cur_optimum_ptr = optimum_nodes;
+	struct xpress_optimum_node *end_optimum_ptr = optimum_nodes + count;
+	do {
+		unsigned length = cur_optimum_ptr->item & OPTIMUM_LEN_MASK;
+		unsigned offset = cur_optimum_ptr->item >> OPTIMUM_OFFSET_SHIFT;
+
+		if (length == 1) {
+			/* Literal  */
+			unsigned literal = offset;
+
+			xpress_write_bits(os, codewords[literal], lens[literal]);
+		} else {
+			/* Match  */
+			unsigned adjusted_len;
+			unsigned offset_high_bit;
+			unsigned len_hdr;
+			unsigned sym;
+
+			adjusted_len = length - XPRESS_MIN_MATCH_LEN;
+			offset_high_bit = fls32(offset);
+			len_hdr = min(0xF, adjusted_len);
+			sym = XPRESS_NUM_CHARS + ((offset_high_bit << 4) | len_hdr);
+
+			xpress_write_bits(os, codewords[sym], lens[sym]);
+			xpress_write_extra_length_bytes(os, adjusted_len);
+			xpress_write_bits(os, offset - (1U << offset_high_bit),
+					  offset_high_bit);
+		}
+		cur_optimum_ptr += length;
+	} while (cur_optimum_ptr != end_optimum_ptr);
+}
+#endif /* SUPPORT_NEAR_OPTIMAL_PARSING */
+
+/*
+ * Output the XPRESS-compressed data, given the sequence of match/literal
+ * "items" that was chosen to represent the input data.
+ *
+ * If @near_optimal is %false, then the items are taken from the array
+ * c->chosen_items[0...count].
+ *
+ * If @near_optimal is %true, then the items are taken from the minimum cost
+ * path stored in c->optimum_nodes[0...count].
+ */
+static size_t
+xpress_write(struct xpress_compressor *c, void *out, size_t out_nbytes_avail,
+	     size_t count, bool near_optimal)
+{
+	u8 *cptr;
+	struct xpress_output_bitstream os;
+	size_t out_size;
+
+	/* Account for the end-of-data symbol and make the Huffman code.  */
+	c->freqs[XPRESS_END_OF_DATA]++;
+	xpress_make_huffman_code(c);
+
+	/* Output the Huffman code as a series of 512 4-bit lengths.  */
+	cptr = out;
+	for (unsigned i = 0; i < XPRESS_NUM_SYMBOLS; i += 2)
+		*cptr++ = (c->lens[i + 1] << 4) | c->lens[i];
+
+	xpress_init_output(&os, cptr, out_nbytes_avail - XPRESS_NUM_SYMBOLS / 2);
+
+	/* Output the Huffman-encoded items.  */
+#if SUPPORT_NEAR_OPTIMAL_PARSING
+	if (near_optimal) {
+		xpress_write_item_list(&os, c->optimum_nodes, count,
+				       c->codewords, c->lens);
+
+	} else
+#endif
+	{
+		xpress_write_items(&os, c->chosen_items, count,
+				   c->codewords, c->lens);
+	}
+
+	/* Write the end-of-data symbol (needed for MS compatibility)  */
+	xpress_write_bits(&os, c->codewords[XPRESS_END_OF_DATA],
+			  c->lens[XPRESS_END_OF_DATA]);
+
+	/* Flush any pending data.  Then return the compressed size if the
+	 * compressed data fit in the output buffer, or 0 if it did not.  */
+	out_size = xpress_flush_output(&os);
+	if (out_size == 0)
+		return 0;
+
+	return out_size + XPRESS_NUM_SYMBOLS / 2;
 }
 
-/* Tally, and optionally record, the specified literal byte.  */
-static inline void
-xpress_declare_literal(struct xpress_compressor *c, unsigned literal,
-		       struct xpress_item **next_chosen_item)
+/* Tally the Huffman symbol for a literal and return the intermediate
+ * representation of that literal.  */
+static inline struct xpress_item
+xpress_record_literal(struct xpress_compressor *c, unsigned literal)
 {
 	c->freqs[literal]++;
 
-	if (next_chosen_item) {
-		*(*next_chosen_item)++ = (struct xpress_item) {
-			.data = literal,
-		};
-	}
+	return (struct xpress_item) {
+		.data = literal,
+	};
 }
 
-/* Tally, and optionally record, the specified match.  */
-static inline void
-xpress_declare_match(struct xpress_compressor *c,
-		     unsigned len, unsigned offset,
-		     struct xpress_item **next_chosen_item)
+/* Tally the Huffman symbol for a match and return the intermediate
+ * representation of that match.  */
+static inline struct xpress_item
+xpress_record_match(struct xpress_compressor *c, unsigned length, unsigned offset)
 {
-	unsigned adjusted_len = len - XPRESS_MIN_MATCH_LEN;
-	unsigned len_hdr = min(adjusted_len, 0xf);
+	unsigned adjusted_len = length - XPRESS_MIN_MATCH_LEN;
+	unsigned len_hdr = min(adjusted_len, 0xF);
 	unsigned offset_high_bit = fls32(offset);
 	unsigned sym = XPRESS_NUM_CHARS + ((offset_high_bit << 4) | len_hdr);
 
 	c->freqs[sym]++;
 
-	if (next_chosen_item) {
-		*(*next_chosen_item)++ = (struct xpress_item) {
-			.data = (u64)sym |
-				((u64)adjusted_len << 9) |
-				((u64)offset_high_bit << 25) |
-				((u64)(offset ^ (1U << offset_high_bit)) << 29),
-		};
-	}
+	return (struct xpress_item) {
+		.data = (u64)sym |
+			((u64)adjusted_len << 9) |
+			((u64)offset_high_bit << 25) |
+			((u64)(offset ^ (1U << offset_high_bit)) << 29),
+	};
 }
 
-/* Tally, and optionally record, the specified match or literal.  */
-static inline void
-xpress_declare_item(struct xpress_compressor *c, u32 mc_item_data,
-		    struct xpress_item **next_chosen_item)
+/*
+ * This is the "greedy" XPRESS compressor. It always chooses the longest match.
+ * (Exception: as a heuristic, we pass up length 3 matches that have large
+ * offsets.)
+ */
+static size_t
+xpress_compress_greedy(struct xpress_compressor * restrict c,
+		       const void * restrict in, size_t in_nbytes,
+		       void * restrict out, size_t out_nbytes_avail)
 {
-	unsigned len = mc_item_data & MC_LEN_MASK;
-	unsigned offset_data = mc_item_data >> MC_OFFSET_SHIFT;
+	const u8 * const in_base = in;
+	const u8 *	 in_next = in_base;
+	const u8 * const in_end = in_base + in_nbytes;
+	struct xpress_item *next_chosen_item = c->chosen_items;
+	unsigned len_3_too_far;
 
-	if (len == 1)
-		xpress_declare_literal(c, offset_data, next_chosen_item);
+	if (in_nbytes <= 8192)
+		len_3_too_far = 2048;
 	else
-		xpress_declare_match(c, len, offset_data, next_chosen_item);
+		len_3_too_far = 4096;
+
+	hc_matchfinder_init(&c->hc_mf);
+
+	do {
+		unsigned length;
+		unsigned offset;
+
+		length = hc_matchfinder_longest_match(&c->hc_mf,
+						      in_base,
+						      in_next,
+						      XPRESS_MIN_MATCH_LEN - 1,
+						      in_end - in_next,
+						      min(in_end - in_next, c->nice_match_length),
+						      c->max_search_depth,
+						      &offset);
+		if (length >= XPRESS_MIN_MATCH_LEN &&
+		    !(length == XPRESS_MIN_MATCH_LEN && offset >= len_3_too_far))
+		{
+			/* Match found  */
+			*next_chosen_item++ =
+				xpress_record_match(c, length, offset);
+			in_next += 1;
+			hc_matchfinder_skip_positions(&c->hc_mf,
+						      in_base,
+						      in_next,
+						      in_end,
+						      length - 1);
+			in_next += length - 1;
+		} else {
+			/* No match found  */
+			*next_chosen_item++ =
+				xpress_record_literal(c, *in_next);
+			in_next += 1;
+		}
+	} while (in_next != in_end);
+
+	return xpress_write(c, out, out_nbytes_avail,
+			    next_chosen_item - c->chosen_items, false);
 }
 
-static inline void
-xpress_record_item_list(struct xpress_compressor *c,
-			struct xpress_mc_pos_data *cur_optimum_ptr,
-			struct xpress_item **next_chosen_item)
+/*
+ * This is the "lazy" XPRESS compressor.  Before choosing a match, it checks to
+ * see if there's a longer match at the next position.  If yes, it outputs a
+ * literal and continues to the next position.  If no, it outputs the match.
+ */
+static size_t
+xpress_compress_lazy(struct xpress_compressor * restrict c,
+		     const void * restrict in, size_t in_nbytes,
+		     void * restrict out, size_t out_nbytes_avail)
 {
-	struct xpress_mc_pos_data *end_optimum_ptr;
-	u32 saved_item;
-	u32 item;
+	const u8 * const in_base = in;
+	const u8 *	 in_next = in_base;
+	const u8 * const in_end = in_base + in_nbytes;
+	struct xpress_item *next_chosen_item = c->chosen_items;
+	unsigned len_3_too_far;
 
-	/* The list is currently in reverse order (last item to first item).
-	 * Reverse it.  */
-	end_optimum_ptr = cur_optimum_ptr;
-	saved_item = cur_optimum_ptr->mc_item_data;
-	do {
-		item = saved_item;
-		cur_optimum_ptr -= item & MC_LEN_MASK;
-		saved_item = cur_optimum_ptr->mc_item_data;
-		cur_optimum_ptr->mc_item_data = item;
-	} while (cur_optimum_ptr != c->optimum);
+	if (in_nbytes <= 8192)
+		len_3_too_far = 2048;
+	else
+		len_3_too_far = 4096;
 
-	/* Walk the list of items from beginning to end, tallying and recording
-	 * each item.  */
+	hc_matchfinder_init(&c->hc_mf);
+
 	do {
-		xpress_declare_item(c, cur_optimum_ptr->mc_item_data, next_chosen_item);
-		cur_optimum_ptr += (cur_optimum_ptr->mc_item_data) & MC_LEN_MASK;
+		unsigned cur_len;
+		unsigned cur_offset;
+		unsigned next_len;
+		unsigned next_offset;
+
+		/* Find the longest match at the current position.  */
+		cur_len = hc_matchfinder_longest_match(&c->hc_mf,
+						       in_base,
+						       in_next,
+						       XPRESS_MIN_MATCH_LEN - 1,
+						       in_end - in_next,
+						       min(in_end - in_next, c->nice_match_length),
+						       c->max_search_depth,
+						       &cur_offset);
+		in_next += 1;
+
+		if (cur_len < XPRESS_MIN_MATCH_LEN ||
+		    (cur_len == XPRESS_MIN_MATCH_LEN &&
+		     cur_offset >= len_3_too_far))
+		{
+			/* No match found.  Choose a literal.  */
+			*next_chosen_item++ =
+				xpress_record_literal(c, *(in_next - 1));
+			continue;
+		}
+
+	have_cur_match:
+		/* We have a match at the current position.  */
+
+		/* If the current match is very long, choose it immediately.  */
+		if (cur_len >= c->nice_match_length) {
+
+			*next_chosen_item++ =
+				xpress_record_match(c, cur_len, cur_offset);
+
+			hc_matchfinder_skip_positions(&c->hc_mf,
+						      in_base,
+						      in_next,
+						      in_end,
+						      cur_len - 1);
+			in_next += cur_len - 1;
+			continue;
+		}
+
+		/*
+		 * Try to find a match at the next position.
+		 *
+		 * Note: since we already have a match at the *current*
+		 * position, we use only half the 'max_search_depth' when
+		 * checking the *next* position.  This is a useful trade-off
+		 * because it's more worthwhile to use a greater search depth on
+		 * the initial match than on the next match (since a lot of the
+		 * time, that next match won't even be used).
+		 *
+		 * Note: it's possible to structure the code such that there's
+		 * only one call to longest_match(), which handles both the
+		 * "find the initial match" and "try to find a longer match"
+		 * cases.  However, it is faster to have two call sites, with
+		 * longest_match() inlined at each.
+		 */
+		next_len = hc_matchfinder_longest_match(&c->hc_mf,
+							in_base,
+							in_next,
+							cur_len,
+						        in_end - in_next,
+						        min(in_end - in_next, c->nice_match_length),
+							c->max_search_depth / 2,
+							&next_offset);
+		in_next += 1;
+
+		if (next_len > cur_len) {
+			/* Found a longer match at the next position, so output
+			 * a literal.  */
+			*next_chosen_item++ =
+				xpress_record_literal(c, *(in_next - 2));
+			cur_len = next_len;
+			cur_offset = next_offset;
+			goto have_cur_match;
+		} else {
+			/* Didn't find a longer match at the next position, so
+			 * output the current match.  */
+			*next_chosen_item++ =
+				xpress_record_match(c, cur_len, cur_offset);
+			hc_matchfinder_skip_positions(&c->hc_mf,
+						      in_base,
+						      in_next,
+						      in_end,
+						      cur_len - 2);
+			in_next += cur_len - 2;
+			continue;
+		}
+	} while (in_next != in_end);
+
+	return xpress_write(c, out, out_nbytes_avail,
+			    next_chosen_item - c->chosen_items, false);
+}
+
+#if SUPPORT_NEAR_OPTIMAL_PARSING
+
+/*
+ * Set Huffman symbol costs for the first optimization pass.
+ *
+ * It works well to assume that each Huffman symbol is equally probable.  This
+ * results in each symbol being assigned a cost of -log2(1.0/num_syms) where
+ * 'num_syms' is the number of symbols in the alphabet.
+ */
+static void
+xpress_set_default_costs(struct xpress_compressor *c)
+{
+	for (unsigned i = 0; i < XPRESS_NUM_SYMBOLS; i++)
+		c->costs[i] = 9;
+}
+
+/* Update the cost model based on the codeword lengths @c->lens.  */
+static void
+xpress_update_costs(struct xpress_compressor *c)
+{
+	for (unsigned i = 0; i < XPRESS_NUM_SYMBOLS; i++)
+		c->costs[i] = c->lens[i] ? c->lens[i] : XPRESS_MAX_CODEWORD_LEN;
+}
+
+/*
+ * Follow the minimum cost path in the graph of possible match/literal choices
+ * and compute the frequencies of the Huffman symbols that are needed to output
+ * those matches and literals.
+ */
+static void
+xpress_tally_item_list(struct xpress_compressor *c,
+		       struct xpress_optimum_node *end_optimum_ptr)
+{
+	struct xpress_optimum_node *cur_optimum_ptr = c->optimum_nodes;
+
+	do {
+		unsigned length = cur_optimum_ptr->item & OPTIMUM_LEN_MASK;
+		unsigned offset = cur_optimum_ptr->item >> OPTIMUM_OFFSET_SHIFT;
+
+		if (length == 1) {
+			/* Literal  */
+			unsigned literal = offset;
+
+			c->freqs[literal]++;
+		} else {
+			/* Match  */
+			unsigned adjusted_len;
+			unsigned offset_high_bit;
+			unsigned len_hdr;
+			unsigned sym;
+
+			adjusted_len = length - XPRESS_MIN_MATCH_LEN;
+			offset_high_bit = fls32(offset);
+			len_hdr = min(0xF, adjusted_len);
+			sym = XPRESS_NUM_CHARS + ((offset_high_bit << 4) | len_hdr);
+
+			c->freqs[sym]++;
+		}
+		cur_optimum_ptr += length;
 	} while (cur_optimum_ptr != end_optimum_ptr);
 }
 
-static inline void
-xpress_tally_item_list(struct xpress_compressor *c,
-		       struct xpress_mc_pos_data *cur_optimum_ptr)
+/*
+ * Find a new minimum cost path through the graph of possible match/literal
+ * choices.  We find the minimum cost path from 'c->optimum_nodes[0]', which
+ * represents the node at the beginning of the input buffer, to
+ * 'c->optimum_nodes[in_nbytes]', which represents the node at the end of the
+ * input buffer.  Edge costs are evaluated using the cost model 'c->costs'.
+ *
+ * The algorithm works backward, starting at 'c->optimum_nodes[in_nbytes]' and
+ * proceeding backwards one position at a time.  At each position, the minimum
+ * cost to reach 'c->optimum_nodes[in_nbytes]' from that position is computed
+ * and the match/literal choice is saved.
+ */
+static void
+xpress_find_min_cost_path(struct xpress_compressor *c, size_t in_nbytes,
+			  struct lz_match *end_cache_ptr)
 {
-	/* Since we're just tallying the items, we don't need to reverse the
-	 * list.  Processing the items in reverse order is fine.  */
+	struct xpress_optimum_node *cur_optimum_ptr = c->optimum_nodes + in_nbytes;
+	struct lz_match *cache_ptr = end_cache_ptr;
+
+	cur_optimum_ptr->cost_to_end = 0;
 	do {
-		xpress_declare_item(c, cur_optimum_ptr->mc_item_data, NULL);
-		cur_optimum_ptr -= (cur_optimum_ptr->mc_item_data & MC_LEN_MASK);
-	} while (cur_optimum_ptr != c->optimum);
-}
+		unsigned literal;
+		u32 best_item;
+		u32 best_cost_to_end;
+		unsigned num_matches;
+		struct lz_match *match;
+		unsigned len;
 
-/* Tally, and optionally (if next_chosen_item != NULL) record, in order, all
- * items in the current list of items found by the match-chooser.  */
-static void
-xpress_declare_item_list(struct xpress_compressor *c,
-			 struct xpress_mc_pos_data *cur_optimum_ptr,
-			 struct xpress_item **next_chosen_item)
-{
-	if (next_chosen_item)
-		xpress_record_item_list(c, cur_optimum_ptr, next_chosen_item);
-	else
-		xpress_tally_item_list(c, cur_optimum_ptr);
-}
+		cur_optimum_ptr--;
+		cache_ptr--;
 
-static unsigned
-xpress_get_matches_fillcache(struct xpress_compressor *c,
-			     const struct lz_match **matches_ret)
-{
-	struct lz_match *cache_ptr;
-	struct lz_match *matches;
-	unsigned num_matches;
-
-	cache_ptr = c->cache_ptr;
-	matches = cache_ptr + 1;
-	if (likely(cache_ptr <= c->cache_limit)) {
-		num_matches = lz_mf_get_matches(c->mf, matches);
-		cache_ptr->len = num_matches;
-		c->cache_ptr = matches + num_matches;
-	} else {
-		num_matches = 0;
-	}
-	*matches_ret = matches;
-	return num_matches;
-}
-
-static unsigned
-xpress_get_matches_usecache(struct xpress_compressor *c,
-			    const struct lz_match **matches_ret)
-{
-	struct lz_match *cache_ptr;
-	struct lz_match *matches;
-	unsigned num_matches;
-
-	cache_ptr = c->cache_ptr;
-	matches = cache_ptr + 1;
-	if (cache_ptr <= c->cache_limit) {
-		num_matches = cache_ptr->len;
-		c->cache_ptr = matches + num_matches;
-	} else {
-		num_matches = 0;
-	}
-	*matches_ret = matches;
-	return num_matches;
-}
-
-static unsigned
-xpress_get_matches_usecache_nocheck(struct xpress_compressor *c,
-				    const struct lz_match **matches_ret)
-{
-	struct lz_match *cache_ptr;
-	struct lz_match *matches;
-	unsigned num_matches;
-
-	cache_ptr = c->cache_ptr;
-	matches = cache_ptr + 1;
-	num_matches = cache_ptr->len;
-	c->cache_ptr = matches + num_matches;
-	*matches_ret = matches;
-	return num_matches;
-}
-
-static unsigned
-xpress_get_matches_noncaching(struct xpress_compressor *c,
-			      const struct lz_match **matches_ret)
-{
-	*matches_ret = c->cached_matches;
-	return lz_mf_get_matches(c->mf, c->cached_matches);
-}
-
-/*
- * Find matches at the next position in the window.
- *
- * This uses a wrapper function around the underlying match-finder.
- *
- * Returns the number of matches found and sets *matches_ret to point to the
- * matches array.  The matches will be sorted by strictly increasing length and
- * offset.
- */
-static inline unsigned
-xpress_get_matches(struct xpress_compressor *c,
-		   const struct lz_match **matches_ret)
-{
-	return (*c->get_matches_func)(c, matches_ret);
-}
-
-static void
-xpress_skip_bytes_fillcache(struct xpress_compressor *c, unsigned n)
-{
-	struct lz_match *cache_ptr;
-
-	cache_ptr = c->cache_ptr;
-	lz_mf_skip_positions(c->mf, n);
-	if (cache_ptr <= c->cache_limit) {
-		do {
-			cache_ptr->len = 0;
-			cache_ptr += 1;
-		} while (--n && likely(cache_ptr <= c->cache_limit));
-	}
-	c->cache_ptr = cache_ptr;
-}
-
-static void
-xpress_skip_bytes_usecache(struct xpress_compressor *c, unsigned n)
-{
-	struct lz_match *cache_ptr;
-
-	cache_ptr = c->cache_ptr;
-	if (likely(cache_ptr <= c->cache_limit)) {
-		do {
-			cache_ptr += 1 + cache_ptr->len;
-		} while (--n && likely(cache_ptr <= c->cache_limit));
-	}
-	c->cache_ptr = cache_ptr;
-}
-
-static void
-xpress_skip_bytes_usecache_nocheck(struct xpress_compressor *c, unsigned n)
-{
-	struct lz_match *cache_ptr;
-
-	cache_ptr = c->cache_ptr;
-	do {
-		cache_ptr += 1 + cache_ptr->len;
-	} while (--n);
-	c->cache_ptr = cache_ptr;
-}
-
-static void
-xpress_skip_bytes_noncaching(struct xpress_compressor *c, unsigned n)
-{
-	lz_mf_skip_positions(c->mf, n);
-}
-
-/*
- * Skip the specified number of positions in the window (don't search for
- * matches at them).
- *
- * This uses a wrapper function around the underlying match-finder.
- */
-static inline void
-xpress_skip_bytes(struct xpress_compressor *c, unsigned n)
-{
-	return (*c->skip_bytes_func)(c, n);
-}
-
-/* Set default XPRESS Huffman symbol costs to bootstrap the iterative
- * optimization algorithm.  */
-static void
-xpress_set_default_costs(u8 costs[])
-{
-	unsigned i;
-
-	/* Literal symbols  */
-	for (i = 0; i < XPRESS_NUM_CHARS; i++)
-		costs[i] = 8;
-
-	/* Match symbols  */
-	for (; i < XPRESS_NUM_SYMBOLS; i++)
-		costs[i] = 10;
-}
-
-/* Copy the Huffman codeword lengths array @lens to the Huffman symbol costs
- * array @costs, but also assign a default cost to each 0-length (unused)
- * codeword.  */
-static void
-xpress_set_costs(u8 costs[], const u8 lens[])
-{
-	for (unsigned i = 0; i < XPRESS_NUM_SYMBOLS; i++)
-		costs[i] = lens[i] ? lens[i] : XPRESS_MAX_CODEWORD_LEN;
-}
-
-/*
- * Consider coding each match in @matches.
- *
- * @matches must be sorted by strictly increasing length and strictly
- * increasing offset.  This is guaranteed by the match-finder.
- *
- * We consider each length from the minimum (3) to the longest
- * (matches[num_matches - 1].len).  For each length, we consider only
- * the smallest offset for which that length is available.  Although
- * this is not guaranteed to be optimal due to the possibility of a
- * larger offset costing less than a smaller offset to code, this is a
- * very useful heuristic.
- */
-static inline void
-xpress_consider_matches(struct xpress_compressor *c,
-			struct xpress_mc_pos_data *cur_optimum_ptr,
-			const struct lz_match matches[],
-			unsigned num_matches)
-{
-	unsigned i = 0;
-	unsigned len = XPRESS_MIN_MATCH_LEN;
-	u32 cost;
-	u32 position_cost;
-	unsigned offset;
-	unsigned offset_high_bit;
-	unsigned adjusted_len;
-	unsigned len_hdr;
-	unsigned sym;
-
-	if (matches[num_matches - 1].len < 0xf + XPRESS_MIN_MATCH_LEN) {
-		/* All lengths are small.  Optimize accordingly.  */
-		do {
-			offset = matches[i].offset;
-			offset_high_bit = fls32(offset);
-			len_hdr = len - XPRESS_MIN_MATCH_LEN;
-			sym = XPRESS_NUM_CHARS + ((offset_high_bit << 4) | len_hdr);
-
-			position_cost = cur_optimum_ptr->cost + offset_high_bit;
-			do {
-				cost = position_cost + c->costs[sym];
-				if (cost < (cur_optimum_ptr + len)->cost) {
-					(cur_optimum_ptr + len)->cost = cost;
-					(cur_optimum_ptr + len)->mc_item_data =
-						(offset << MC_OFFSET_SHIFT) | len;
-				}
-				sym++;
-			} while (++len <= matches[i].len);
-		} while (++i != num_matches);
-	} else {
-		/* Some lengths are big.  */
-		do {
-			offset = matches[i].offset;
-			offset_high_bit = fls32(offset);
-			position_cost = cur_optimum_ptr->cost + offset_high_bit;
-			do {
-				adjusted_len = len - XPRESS_MIN_MATCH_LEN;
-				len_hdr = min(adjusted_len, 0xf);
-				sym = XPRESS_NUM_CHARS + ((offset_high_bit << 4) | len_hdr);
-
-				cost = position_cost + c->costs[sym];
-				if (adjusted_len >= 0xf) {
-					cost += 8;
-					if (adjusted_len - 0xf >= 0xff)
-						cost += 16;
-				}
-
-				if (cost < (cur_optimum_ptr + len)->cost) {
-					(cur_optimum_ptr + len)->cost = cost;
-					(cur_optimum_ptr + len)->mc_item_data =
-						(offset << MC_OFFSET_SHIFT) | len;
-				}
-			} while (++len <= matches[i].len);
-		} while (++i != num_matches);
-	}
-}
-
-/*
- * The main near-optimal parsing routine.
- *
- * Briefly, the algorithm does an approximate minimum-cost path search to find a
- * "near-optimal" sequence of matches and literals to output, based on the
- * current cost model.  The algorithm steps forward, position by position (byte
- * by byte), and updates the minimum cost path to reach each later position that
- * can be reached using a match or literal from the current position.  This is
- * essentially Dijkstra's algorithm in disguise: the graph nodes are positions,
- * the graph edges are possible matches/literals to code, and the cost of each
- * edge is the estimated number of bits that will be required to output the
- * corresponding match or literal.  But one difference is that we actually
- * compute the lowest-cost path in pieces, where each piece is terminated when
- * there are no choices to be made.
- *
- * If next_chosen_item != NULL, then all items chosen will be recorded (saved in
- * the chosen_items array).  Otherwise, all items chosen will only be tallied
- * (symbol frequencies tallied in c->freqs).
- */
-static void
-xpress_optim_pass(struct xpress_compressor *c,
-		  struct xpress_item **next_chosen_item)
-{
-	const u8 *window_end;
-	const u8 *window_ptr;
-	struct xpress_mc_pos_data *cur_optimum_ptr;
-	struct xpress_mc_pos_data *end_optimum_ptr;
-	const struct lz_match *matches;
-	unsigned num_matches;
-	unsigned longest_len;
-	unsigned literal;
-	u32 cost;
-
-	window_ptr = c->cur_window;
-	window_end = &c->cur_window[c->cur_window_size];
-
-begin:
-	/* Start building a new list of items, which will correspond to the next
-	 * piece of the overall minimum-cost path.  */
-
-	if (window_ptr == window_end)
-		return;
-
-	cur_optimum_ptr = c->optimum;
-	cur_optimum_ptr->cost = 0;
-	end_optimum_ptr = cur_optimum_ptr;
-
-	/* The following loop runs once for each per byte in the window, except
-	 * in a couple shortcut cases.  */
-	for (;;) {
-
-		/* Find matches with the current position.  */
-		num_matches = xpress_get_matches(c, &matches);
-
-		if (num_matches) {
-
-			longest_len = matches[num_matches - 1].len;
-
-			/* If there's a very long match, choose it immediately.
-			 */
-			if (longest_len >= c->params.nice_match_length) {
-
-				xpress_skip_bytes(c, longest_len - 1);
-				window_ptr += longest_len;
-
-				if (cur_optimum_ptr != c->optimum)
-					xpress_declare_item_list(c, cur_optimum_ptr,
-								 next_chosen_item);
-
-				xpress_declare_match(c, longest_len,
-						     matches[num_matches - 1].offset,
-						     next_chosen_item);
-				goto begin;
-			}
-
-			/* If reaching any positions for the first time,
-			 * initialize their costs to "infinity".  */
-			while (end_optimum_ptr < cur_optimum_ptr + longest_len)
-				(++end_optimum_ptr)->cost = MC_INFINITE_COST;
-
-			/* Consider coding a match.  */
-			xpress_consider_matches(c, cur_optimum_ptr,
-						matches, num_matches);
-		} else {
-			/* No matches found.  The only choice at this position
-			 * is to code a literal.  */
-
-			if (end_optimum_ptr == cur_optimum_ptr) {
-			#if 1
-				/* Optimization for single literals.  */
-				if (likely(cur_optimum_ptr == c->optimum)) {
-					xpress_declare_literal(c, *window_ptr++,
-							       next_chosen_item);
-					if (window_ptr == window_end)
-						return;
-					continue;
-				}
-			#endif
-				(++end_optimum_ptr)->cost = MC_INFINITE_COST;
-			}
-		}
+		literal = cache_ptr->offset;
 
 		/* Consider coding a literal.  */
-		literal = *window_ptr++;
-		cost = cur_optimum_ptr->cost + c->costs[literal];
-		if (cost < (cur_optimum_ptr + 1)->cost) {
-			(cur_optimum_ptr + 1)->cost = cost;
-			(cur_optimum_ptr + 1)->mc_item_data =
-				((u32)literal << MC_OFFSET_SHIFT) | 1;
-		}
+		best_item = ((u32)literal << OPTIMUM_OFFSET_SHIFT) | 1;
+		best_cost_to_end = c->costs[literal] +
+				   (cur_optimum_ptr + 1)->cost_to_end;
 
-		/* Advance to the next position.  */
-		cur_optimum_ptr++;
+		num_matches = cache_ptr->length;
+
+		if (num_matches == 0) {
+			/* No matches; the only choice is the literal.  */
+			cur_optimum_ptr->cost_to_end = best_cost_to_end;
+			cur_optimum_ptr->item = best_item;
+			continue;
+		}
 
 		/*
-		 * This loop will terminate when either of the following
-		 * conditions is true:
-		 *
-		 * (1) cur_optimum_ptr == end_optimum_ptr
-		 *
-		 *	There are no paths that extend beyond the current
-		 *	position.  In this case, any path to a later position
-		 *	must pass through the current position, so we can go
-		 *	ahead and choose the list of items that led to this
-		 *	position.
-		 *
-		 * (2) cur_optimum_ptr == &c->optimum[XPRESS_OPTIM_ARRAY_LENGTH]
-		 *
-		 *	This bounds the number of times the algorithm can step
-		 *	forward before it is guaranteed to start choosing items.
-		 *	This limits the memory usage.  But
-		 *	XPRESS_OPTIM_ARRAY_LENGTH is high enough that on most
-		 *	inputs this limit is never reached.
-		 *
-		 * Note: no check for end-of-window is needed because
-		 * end-of-window will trigger condition (1).
+		 * Consider each match length from the minimum
+		 * (XPRESS_MIN_MATCH_LEN) to the length of the longest match
+		 * found at this position.  For each length, consider only the
+		 * smallest offset for which that length is available.  Although
+		 * this is not guaranteed to be optimal due to the possibility
+		 * of a larger offset costing less than a smaller offset to
+		 * code, this is a very useful heuristic.
 		 */
-		if (cur_optimum_ptr == end_optimum_ptr ||
-		    cur_optimum_ptr == &c->optimum[XPRESS_OPTIM_ARRAY_LENGTH])
-			break;
-	}
+		match = cache_ptr - num_matches;
+		len = XPRESS_MIN_MATCH_LEN;
+		if (cache_ptr[-1].length < 0xF + XPRESS_MIN_MATCH_LEN) {
+			/* All lengths are small.  Optimize accordingly.  */
+			do {
+				unsigned offset;
+				unsigned offset_high_bit;
+				u32 offset_cost;
 
-	/* Choose the current list of items that constitute the minimum-cost
-	 * path to the current position.  */
-	xpress_declare_item_list(c, cur_optimum_ptr, next_chosen_item);
-	goto begin;
+				offset = match->offset;
+				offset_high_bit = fls32(offset);
+				offset_cost = offset_high_bit;
+				do {
+					unsigned len_hdr;
+					unsigned sym;
+					u32 cost_to_end;
+
+					len_hdr = len - XPRESS_MIN_MATCH_LEN;
+					sym = XPRESS_NUM_CHARS +
+					      ((offset_high_bit << 4) | len_hdr);
+					cost_to_end =
+						offset_cost + c->costs[sym] +
+						(cur_optimum_ptr + len)->cost_to_end;
+					if (cost_to_end < best_cost_to_end) {
+						best_cost_to_end = cost_to_end;
+						best_item =
+							((u32)offset <<
+							 OPTIMUM_OFFSET_SHIFT) | len;
+					}
+				} while (++len <= match->length);
+			} while (++match != cache_ptr);
+		} else {
+			/* Some lengths are big.  */
+			do {
+				unsigned offset;
+				unsigned offset_high_bit;
+				u32 offset_cost;
+
+				offset = match->offset;
+				offset_high_bit = fls32(offset);
+				offset_cost = offset_high_bit;
+				do {
+					unsigned adjusted_len;
+					unsigned len_hdr;
+					unsigned sym;
+					u32 cost_to_end;
+
+					adjusted_len = len - XPRESS_MIN_MATCH_LEN;
+					len_hdr = min(adjusted_len, 0xF);
+					sym = XPRESS_NUM_CHARS +
+					      ((offset_high_bit << 4) | len_hdr);
+					cost_to_end =
+						offset_cost + c->costs[sym] +
+						(cur_optimum_ptr + len)->cost_to_end;
+					if (adjusted_len >= 0xF) {
+						cost_to_end += 8;
+						if (adjusted_len - 0xF >= 0xFF)
+							cost_to_end += 16;
+					}
+					if (cost_to_end < best_cost_to_end) {
+						best_cost_to_end = cost_to_end;
+						best_item =
+							((u32)offset <<
+							 OPTIMUM_OFFSET_SHIFT) | len;
+					}
+				} while (++len <= match->length);
+			} while (++match != cache_ptr);
+		}
+		cache_ptr -= num_matches;
+		cur_optimum_ptr->cost_to_end = best_cost_to_end;
+		cur_optimum_ptr->item = best_item;
+	} while (cur_optimum_ptr != c->optimum_nodes);
 }
 
-/* Near-optimal parsing  */
-static u32
-xpress_choose_near_optimal_items(struct xpress_compressor *c)
+/*
+ * This routine finds matches at each position in the buffer in[0...in_nbytes].
+ * The matches are cached in the array c->match_cache, and the return value is a
+ * pointer past the last slot in this array that was filled.
+ */
+static struct lz_match *
+xpress_find_matches(struct xpress_compressor * restrict c,
+		    const void * restrict in, size_t in_nbytes)
 {
-	u32 num_passes_remaining = c->params.num_optim_passes;
-	struct xpress_item *next_chosen_item;
-	struct xpress_item **next_chosen_item_ptr;
+	const u8 * const in_base = in;
+	const u8 *in_next = in_base;
+	const u8 * const in_end = in_base + in_nbytes;
+	struct lz_match *cache_ptr = c->match_cache;
+	unsigned long prev_hash = 0;
 
-	/* Choose appropriate match-finder wrapper functions.  */
-	if (c->params.num_optim_passes > 1) {
-		c->get_matches_func = xpress_get_matches_fillcache;
-		c->skip_bytes_func = xpress_skip_bytes_fillcache;
-	} else {
-		c->get_matches_func = xpress_get_matches_noncaching;
-		c->skip_bytes_func = xpress_skip_bytes_noncaching;
-	}
+	bt_matchfinder_init(&c->bt_mf);
 
-	/* The first optimization pass will use a default cost model.  Each
-	 * additional optimization pass will use a cost model computed from the
-	 * previous pass.
-	 *
-	 * To improve performance, we only generate the array containing the
-	 * matches and literals in intermediate form on the final pass.  For
-	 * earlier passes, tallying symbol frequencies is sufficient.  */
-	xpress_set_default_costs(c->costs);
-
-	next_chosen_item_ptr = NULL;
 	do {
-		/* Reset the match-finder wrapper.  */
-		c->cache_ptr = c->cached_matches;
+		unsigned num_matches;
 
-		if (num_passes_remaining == 1) {
-			/* Last pass: actually generate the items.  */
-			next_chosen_item = c->chosen_items;
-			next_chosen_item_ptr = &next_chosen_item;
+		/* If we've found so many matches that the cache might overflow
+		 * if we keep finding more, then stop finding matches.  This
+		 * case is very unlikely.  */
+		if (unlikely(cache_ptr >= c->cache_overflow_mark)) {
+			do {
+				cache_ptr->length = 0;
+				cache_ptr->offset = *in_next++;
+				cache_ptr++;
+			} while (in_next != in_end);
+			return cache_ptr;
 		}
 
-		/* Choose the items.  */
-		xpress_optim_pass(c, next_chosen_item_ptr);
+		/* Find matches with the current position using the binary tree
+		 * matchfinder and save them in the next available slots in
+		 * the match cache.  */
+		num_matches =
+			bt_matchfinder_get_matches(&c->bt_mf,
+						   in_base,
+						   in_next,
+						   XPRESS_MIN_MATCH_LEN,
+						   in_end - in_next,
+						   min(in_end - in_next, c->nice_match_length),
+						   c->max_search_depth,
+						   &prev_hash,
+						   cache_ptr);
+		cache_ptr += num_matches;
+		cache_ptr->length = num_matches;
+		cache_ptr->offset = *in_next;
+		in_next++;
+		cache_ptr++;
 
+		if (num_matches) {
+			/*
+			 * If there was a very long match found, then don't
+			 * cache any matches for the bytes covered by that
+			 * match.  This avoids degenerate behavior when
+			 * compressing highly redundant data, where the number
+			 * of matches can be very large.
+			 *
+			 * This heuristic doesn't actually hurt the compression
+			 * ratio very much.  If there's a long match, then the
+			 * data must be highly compressible, so it doesn't
+			 * matter as much what we do.
+			 */
+			unsigned best_len = cache_ptr[-2].length;
+			if (best_len >= c->nice_match_length) {
+				--best_len;
+				do {
+					bt_matchfinder_skip_position(&c->bt_mf,
+								     in_base,
+								     in_next,
+								     in_end,
+								     min(in_end - in_next,
+									 c->nice_match_length),
+								     c->max_search_depth,
+								     &prev_hash);
+
+					cache_ptr->length = 0;
+					cache_ptr->offset = *in_next++;
+					cache_ptr++;
+				} while (--best_len);
+			}
+		}
+	} while (in_next != in_end);
+
+	return cache_ptr;
+}
+
+/*
+ * This is the "near-optimal" XPRESS compressor.  It computes a compressed
+ * representation of the input buffer by executing a minimum cost path search
+ * over the graph of possible match/literal choices, assuming a certain cost for
+ * each Huffman symbol.  The result is usually close to optimal, but it is *not*
+ * guaranteed to be optimal because of (a) heuristic restrictions in which
+ * matches are considered, and (b) symbol costs are unknown until those symbols
+ * have already been chosen --- so iterative optimization must be used, and the
+ * algorithm might converge on a local optimum rather than a global optimum.
+ */
+static size_t
+xpress_compress_near_optimal(struct xpress_compressor * restrict c,
+			     const void * restrict in, size_t in_nbytes,
+			     void * restrict out, size_t out_nbytes_avail)
+{
+	struct lz_match *end_cache_ptr;
+	unsigned num_passes_remaining = c->num_optim_passes;
+
+	/* Run the input buffer through the matchfinder and save the results. */
+	end_cache_ptr = xpress_find_matches(c, in, in_nbytes);
+
+	/* The first optimization pass uses a default cost model.  Each
+	 * additional optimization pass uses a cost model derived from the
+	 * Huffman code computed in the previous pass.  */
+	xpress_set_default_costs(c);
+	do {
+		xpress_find_min_cost_path(c, in_nbytes, end_cache_ptr);
+		xpress_tally_item_list(c, c->optimum_nodes + in_nbytes);
 		if (num_passes_remaining > 1) {
-			/* This isn't the last pass.  */
-
-			/* Make the Huffman code from the symbol frequencies.  */
 			c->freqs[XPRESS_END_OF_DATA]++;
 			xpress_make_huffman_code(c);
-
-			/* Reset symbol frequencies.  */
-			memset(c->freqs, 0, sizeof(c->freqs));
-
-			/* Update symbol costs.  */
-			xpress_set_costs(c->costs, c->lens);
-
-			/* Choose appopriate match-finder wrapper functions.  */
-			if (c->cache_ptr <= c->cache_limit) {
-				c->get_matches_func = xpress_get_matches_usecache_nocheck;
-				c->skip_bytes_func = xpress_skip_bytes_usecache_nocheck;
-			} else {
-				c->get_matches_func = xpress_get_matches_usecache;
-				c->skip_bytes_func = xpress_skip_bytes_usecache;
-			}
+			xpress_update_costs(c);
+			xpress_reset_symbol_frequencies(c);
 		}
 	} while (--num_passes_remaining);
 
-	/* Return the number of items chosen.  */
-	return next_chosen_item - c->chosen_items;
+	return xpress_write(c, out, out_nbytes_avail, in_nbytes, true);
 }
 
-/* Lazy parsing  */
-static u32
-xpress_choose_lazy_items(struct xpress_compressor *c)
-{
-	const u8 *window_ptr = c->cur_window;
-	const u8 *window_end = &c->cur_window[c->cur_window_size];
-	struct xpress_item *next_chosen_item = c->chosen_items;
-	u32 len_3_too_far;
-	struct lz_mf *mf = c->mf;
-	struct lz_match *matches = c->cached_matches;
-	unsigned num_matches;
-	struct lz_match prev_match;
-
-	if (c->cur_window_size <= 8192)
-		len_3_too_far = 2048;
-	else
-		len_3_too_far = 4096;
-
-	do {
-		/* Don't have match at previous position  */
-
-		num_matches = lz_mf_get_matches(mf, matches);
-		window_ptr++;
-
-		if (num_matches == 0 ||
-		    (matches[num_matches - 1].len == 3 &&
-		     matches[num_matches - 1].offset >= len_3_too_far))
-		{
-			/* No matches found => output literal  */
-			xpress_declare_literal(c, *(window_ptr - 1),
-					       &next_chosen_item);
-			continue;
-		}
-
-		prev_match = matches[num_matches - 1];
-
-	have_prev_match:
-		/* Have match at previous position  */
-
-		if (prev_match.len >= c->params.nice_match_length) {
-			/* Very long match found => output immediately  */
-			xpress_declare_match(c, prev_match.len,
-					     prev_match.offset,
-					     &next_chosen_item);
-			lz_mf_skip_positions(mf, prev_match.len - 1);
-			window_ptr += prev_match.len - 1;
-			continue;
-		}
-
-		num_matches = lz_mf_get_matches(mf, matches);
-		window_ptr++;
-
-		if (num_matches == 0 ||
-		    (matches[num_matches - 1].len <= prev_match.len))
-		{
-			/* Next match is not longer => output previous match  */
-			xpress_declare_match(c, prev_match.len,
-					     prev_match.offset,
-					     &next_chosen_item);
-			lz_mf_skip_positions(mf, prev_match.len - 2);
-			window_ptr += prev_match.len - 2;
-			continue;
-		}
-
-		/* Next match is longer => output literal  */
-
-		xpress_declare_literal(c, *(window_ptr - 2), &next_chosen_item);
-
-		prev_match = matches[num_matches - 1];
-
-		goto have_prev_match;
-
-	} while (window_ptr != window_end);
-
-	return next_chosen_item - c->chosen_items;
-}
-
-/* Greedy parsing  */
-static u32
-xpress_choose_greedy_items(struct xpress_compressor *c)
-{
-	const u8 *window_ptr = c->cur_window;
-	const u8 *window_end = &c->cur_window[c->cur_window_size];
-	struct xpress_item *next_chosen_item = c->chosen_items;
-	u32 len_3_too_far;
-	struct lz_mf *mf = c->mf;
-	struct lz_match *matches = c->cached_matches;
-	unsigned num_matches;
-
-	if (c->cur_window_size <= 8192)
-		len_3_too_far = 2048;
-	else
-		len_3_too_far = 4096;
-
-	do {
-		/* Get longest match at the current position.  */
-		num_matches = lz_mf_get_matches(mf, matches);
-
-		if (num_matches == 0 ||
-		    (matches[num_matches - 1].len == 3 &&
-		     matches[num_matches - 1].offset >= len_3_too_far))
-		{
-			/* No match, or length 3 match with large offset.
-			 * Choose a literal.  */
-			xpress_declare_literal(c, *window_ptr, &next_chosen_item);
-			window_ptr += 1;
-		} else {
-			/* Match found.  Choose it.  */
-			unsigned len = matches[num_matches - 1].len;
-			unsigned offset = matches[num_matches - 1].offset;
-
-			xpress_declare_match(c, len, offset, &next_chosen_item);
-			lz_mf_skip_positions(mf, len - 1);
-			window_ptr += len;
-		}
-	} while (window_ptr != window_end);
-
-	return next_chosen_item - c->chosen_items;
-}
-
-/* Literals-only parsing  */
-static u32
-xpress_choose_literals(struct xpress_compressor *c)
-{
-	const u8 *window_ptr = c->cur_window;
-	const u8 *window_end = &c->cur_window[c->cur_window_size];
-	struct xpress_item *next_chosen_item = c->chosen_items;
-
-	do {
-		xpress_declare_literal(c, *window_ptr++, &next_chosen_item);
-	} while (window_ptr != window_end);
-
-	return next_chosen_item - c->chosen_items;
-}
-
-/*
- * 'choose_items_func' is provided a data buffer c->cur_window of length
- * c->cur_window_size bytes.  This data buffer will have already been loaded
- * into the match-finder c->mf.  'choose_items_func' must choose the
- * match/literal sequence to output to represent this data buffer.  The
- * intermediate representation of this match/literal sequence must be recorded
- * in c->chosen_items, and the Huffman symbols used must be tallied in c->freqs.
- * The return value must be the number of items written to c->chosen_items.
- */
-static u32
-xpress_choose_items(struct xpress_compressor *c)
-{
-	return (*c->params.choose_items_func)(c);
-}
-
-/* Set internal compression parameters for the specified compression level and
- * maximum window size.  */
-static void
-xpress_build_params(unsigned int compression_level, u32 max_window_size,
-		    struct xpress_compressor_params *xpress_params)
-{
-	memset(xpress_params, 0, sizeof(*xpress_params));
-	xpress_params->num_optim_passes = 1;
-
-	if (compression_level == 1) {
-
-		/* Literal-only parsing  */
-		xpress_params->choose_items_func = xpress_choose_literals;
-		xpress_params->mf_algo = LZ_MF_NULL;
-
-	} else if (compression_level < 30) {
-
-		/* Greedy parsing  */
-		xpress_params->choose_items_func = xpress_choose_greedy_items;
-		xpress_params->mf_algo = LZ_MF_HASH_CHAINS;
-		xpress_params->nice_match_length = compression_level;
-		xpress_params->max_search_depth = compression_level / 2;
-
-	} else if (compression_level < 60) {
-
-		/* Lazy parsing  */
-		xpress_params->choose_items_func = xpress_choose_lazy_items;
-		xpress_params->mf_algo = LZ_MF_HASH_CHAINS;
-		xpress_params->nice_match_length = compression_level;
-		xpress_params->max_search_depth = compression_level / 2;
-
-	} else {
-
-		/* Near-optimal parsing  */
-		xpress_params->choose_items_func = xpress_choose_near_optimal_items;
-		if (max_window_size >= 16384)
-			xpress_params->mf_algo = LZ_MF_BINARY_TREES;
-		else
-			xpress_params->mf_algo = LZ_MF_HASH_CHAINS;
-		xpress_params->num_optim_passes = compression_level / 40;
-		xpress_params->nice_match_length = min(compression_level / 2,
-						       XPRESS_MAX_MATCH_LEN);
-		xpress_params->max_search_depth = min(compression_level,
-						      XPRESS_MAX_MATCH_LEN);
-	}
-}
-
-/* Given the internal compression parameters and maximum window size, build the
- * Lempel-Ziv match-finder parameters.  */
-static void
-xpress_build_mf_params(const struct xpress_compressor_params *xpress_params,
-		       u32 max_window_size, struct lz_mf_params *mf_params)
-{
-	memset(mf_params, 0, sizeof(*mf_params));
-
-	mf_params->algorithm = xpress_params->mf_algo;
-	mf_params->max_window_size = max_window_size;
-	mf_params->min_match_len = XPRESS_MIN_MATCH_LEN;
-	mf_params->max_match_len = XPRESS_MAX_MATCH_LEN;
-	mf_params->max_search_depth = xpress_params->max_search_depth;
-	mf_params->nice_match_len = xpress_params->nice_match_length;
-}
-
-static void
-xpress_free_compressor(void *_c);
+#endif /* SUPPORT_NEAR_OPTIMAL_PARSING */
 
 static u64
-xpress_get_needed_memory(size_t max_window_size, unsigned int compression_level)
+xpress_get_needed_memory(size_t max_bufsize, unsigned compression_level)
 {
-	u64 size = 0;
-	struct xpress_compressor_params params;
+	size_t size = 0;
 
-	if (max_window_size > XPRESS_MAX_OFFSET + 1)
+	if (max_bufsize > XPRESS_MAX_BUFSIZE)
 		return 0;
 
-	xpress_build_params(compression_level, max_window_size, &params);
-
-	size += sizeof(struct xpress_compressor);
-
-	/* mf */
-	size += lz_mf_get_needed_memory(params.mf_algo, max_window_size);
-
-	/* optimum */
-	if (params.choose_items_func == xpress_choose_near_optimal_items) {
-		size += (XPRESS_OPTIM_ARRAY_LENGTH + params.nice_match_length) *
-			sizeof(struct xpress_mc_pos_data);
+	if (compression_level < MIN_LEVEL_FOR_NEAR_OPTIMAL ||
+	    !SUPPORT_NEAR_OPTIMAL_PARSING) {
+		size += offsetof(struct xpress_compressor, nonoptimal_end);
+		size += max_bufsize * sizeof(struct xpress_item);
 	}
-
-	/* cached_matches */
-	if (params.num_optim_passes > 1) {
-		size_t cache_len = max(max_window_size * XPRESS_CACHE_PER_POS,
-				       params.max_search_depth + 1);
-		size += cache_len * sizeof(struct lz_match);
-	} else {
-		size += params.max_search_depth * sizeof(struct lz_match);
+#if SUPPORT_NEAR_OPTIMAL_PARSING
+	else {
+		size += offsetof(struct xpress_compressor, optimal_end);
+		size += (max_bufsize + 1) * sizeof(struct xpress_optimum_node);
+		size += ((max_bufsize * CACHE_RESERVE_PER_POS) +
+			 XPRESS_MAX_MATCH_LEN + max_bufsize) *
+				sizeof(struct lz_match);
 	}
-
-	/* chosen_items */
-	size += max_window_size * sizeof(struct xpress_item);
-
+#endif
 	return size;
 }
 
 static int
-xpress_create_compressor(size_t max_window_size, unsigned int compression_level,
+xpress_create_compressor(size_t max_bufsize, unsigned compression_level,
 			 void **c_ret)
 {
 	struct xpress_compressor *c;
-	struct xpress_compressor_params params;
-	struct lz_mf_params mf_params;
 
-	if (max_window_size > XPRESS_MAX_OFFSET + 1)
+	if (max_bufsize > XPRESS_MAX_BUFSIZE)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	xpress_build_params(compression_level, max_window_size, &params);
-	xpress_build_mf_params(&params, max_window_size, &mf_params);
+	if (compression_level < 30) {
+		c = ALIGNED_MALLOC(offsetof(struct xpress_compressor,
+					    nonoptimal_end),
+				   MATCHFINDER_ALIGNMENT);
+		if (!c)
+			return WIMLIB_ERR_NOMEM;
+		c->impl = xpress_compress_greedy;
+		c->max_search_depth = (compression_level * 24) / 16;
+		c->nice_match_length = (compression_level * 48) / 16;
+		c->chosen_items = MALLOC(max_bufsize * sizeof(struct xpress_item));
+		if (!c->chosen_items) {
+			ALIGNED_FREE(c);
+			return WIMLIB_ERR_NOMEM;
+		}
+	} else if (compression_level < MIN_LEVEL_FOR_NEAR_OPTIMAL ||
+		   !SUPPORT_NEAR_OPTIMAL_PARSING)
+	{
+		c = ALIGNED_MALLOC(offsetof(struct xpress_compressor,
+					    nonoptimal_end),
+				   MATCHFINDER_ALIGNMENT);
+		if (!c)
+			return WIMLIB_ERR_NOMEM;
 
-	c = CALLOC(1, sizeof(struct xpress_compressor));
-	if (!c)
-		goto oom;
-
-	c->params = params;
-
-	c->mf = lz_mf_alloc(&mf_params);
-	if (!c->mf)
-		goto oom;
-
-	if (params.choose_items_func == xpress_choose_near_optimal_items) {
-		c->optimum = MALLOC((XPRESS_OPTIM_ARRAY_LENGTH +
-				     params.nice_match_length) *
-				      sizeof(struct xpress_mc_pos_data));
-		if (!c->optimum)
-			goto oom;
+		c->impl = xpress_compress_lazy;
+		c->max_search_depth = (compression_level * 24) / 32;
+		c->nice_match_length = (compression_level * 48) / 32;
+		c->chosen_items = MALLOC(max_bufsize * sizeof(struct xpress_item));
+		if (!c->chosen_items) {
+			ALIGNED_FREE(c);
+			return WIMLIB_ERR_NOMEM;
+		}
 	}
+#if SUPPORT_NEAR_OPTIMAL_PARSING
+	else {
+		c = ALIGNED_MALLOC(offsetof(struct xpress_compressor,
+					    optimal_end),
+				   MATCHFINDER_ALIGNMENT);
+		if (!c)
+			return WIMLIB_ERR_NOMEM;
+		c->impl = xpress_compress_near_optimal;
+		c->max_search_depth = (compression_level * 32) / 100;
+		c->nice_match_length = (compression_level * 50) / 100;
+		c->num_optim_passes = compression_level / 40;
 
-	if (params.num_optim_passes > 1) {
-		size_t cache_len = max(max_window_size * XPRESS_CACHE_PER_POS,
-				       params.max_search_depth + 1);
-		c->cached_matches = MALLOC(cache_len * sizeof(struct lz_match));
-		if (!c->cached_matches)
-			goto oom;
-		c->cache_limit = c->cached_matches + cache_len -
-				   (params.max_search_depth + 1);
-	} else {
-		c->cached_matches = MALLOC(params.max_search_depth *
-					   sizeof(struct lz_match));
-		if (!c->cached_matches)
-			goto oom;
+		c->optimum_nodes = MALLOC((max_bufsize + 1) *
+					  sizeof(struct xpress_optimum_node));
+		c->match_cache = MALLOC(((max_bufsize * CACHE_RESERVE_PER_POS) +
+					 XPRESS_MAX_MATCH_LEN + max_bufsize) *
+					sizeof(struct lz_match));
+		if (!c->optimum_nodes || !c->match_cache) {
+			FREE(c->optimum_nodes);
+			FREE(c->match_cache);
+			ALIGNED_FREE(c);
+			return WIMLIB_ERR_NOMEM;
+		}
+		c->cache_overflow_mark =
+			&c->match_cache[max_bufsize * CACHE_RESERVE_PER_POS];
 	}
-
-	c->chosen_items = MALLOC(max_window_size * sizeof(struct xpress_item));
-	if (!c->chosen_items)
-		goto oom;
+#endif /* SUPPORT_NEAR_OPTIMAL_PARSING */
 
 	*c_ret = c;
 	return 0;
-
-oom:
-	xpress_free_compressor(c);
-	return WIMLIB_ERR_NOMEM;
 }
 
 static size_t
-xpress_compress(const void *uncompressed_data, size_t uncompressed_size,
-		void *compressed_data, size_t compressed_size_avail, void *_c)
+xpress_compress(const void *in, size_t in_nbytes,
+		void *out, size_t out_nbytes_avail, void *_c)
 {
 	struct xpress_compressor *c = _c;
-	u32 num_chosen_items;
-	u8 *cptr;
-	struct xpress_output_bitstream os;
-	u32 compressed_size;
 
-	/* XPRESS requires 256 bytes of overhead for the Huffman code, so it's
-	 * impossible to compress 256 bytes or less of data to less than the
-	 * input size.  */
-	if (compressed_size_avail < XPRESS_NUM_SYMBOLS / 2 + 50)
+	if (out_nbytes_avail <= XPRESS_NUM_SYMBOLS / 2 + 4)
 		return 0;
 
-	/* Determine match/literal sequence.  */
-	c->cur_window = uncompressed_data;
-	c->cur_window_size = uncompressed_size;
-	lz_mf_load_window(c->mf, c->cur_window, c->cur_window_size);
-	memset(c->freqs, 0, sizeof(c->freqs));
+	xpress_reset_symbol_frequencies(c);
 
-	num_chosen_items = xpress_choose_items(c);
-
-	c->freqs[XPRESS_END_OF_DATA]++;
-	xpress_make_huffman_code(c);
-
-	/* Output the Huffman code as a series of 512 4-bit lengths.  */
-	cptr = compressed_data;
-	for (unsigned i = 0; i < XPRESS_NUM_SYMBOLS; i += 2)
-		*cptr++ = (c->lens[i + 1] << 4) | c->lens[i];
-
-	/* Output the encoded matches/literals.  */
-	xpress_init_output(&os, cptr,
-			   compressed_size_avail - XPRESS_NUM_SYMBOLS / 2);
-	xpress_write_items(&os, c->chosen_items, num_chosen_items,
-			   c->codewords, c->lens);
-
-	/* Flush any pending data and get the length of the compressed data.  */
-	compressed_size = xpress_flush_output(&os);
-	if (compressed_size == 0)
-		return 0;
-
-	/* Return the length of the compressed data.  */
-	return compressed_size + XPRESS_NUM_SYMBOLS / 2;
+	return (*c->impl)(c, in, in_nbytes, out, out_nbytes_avail);
 }
 
 static void
@@ -1240,11 +1137,14 @@ xpress_free_compressor(void *_c)
 	struct xpress_compressor *c = _c;
 
 	if (c) {
-		lz_mf_free(c->mf);
-		FREE(c->optimum);
-		FREE(c->cached_matches);
-		FREE(c->chosen_items);
-		FREE(c);
+	#if SUPPORT_NEAR_OPTIMAL_PARSING
+		if (c->impl == xpress_compress_near_optimal) {
+			FREE(c->optimum_nodes);
+			FREE(c->match_cache);
+		} else
+	#endif
+			FREE(c->chosen_items);
+		ALIGNED_FREE(c);
 	}
 }
 

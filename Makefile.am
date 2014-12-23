@@ -98,6 +98,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/assert.h		\
 	include/wimlib/avl_tree.h	\
 	include/wimlib/bitops.h		\
+	include/wimlib/bt_matchfinder.h	\
 	include/wimlib/callback.h	\
 	include/wimlib/capture.h	\
 	include/wimlib/case.h		\
@@ -115,6 +116,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/error.h		\
 	include/wimlib/file_io.h	\
 	include/wimlib/glob.h		\
+	include/wimlib/hc_matchfinder.h	\
 	include/wimlib/header.h		\
 	include/wimlib/inode.h		\
 	include/wimlib/inode_table.h	\
@@ -131,6 +133,11 @@ libwim_la_SOURCES =		\
 	include/wimlib/lzms_constants.h	\
 	include/wimlib/lzx.h		\
 	include/wimlib/lzx_constants.h	\
+	include/wimlib/matchfinder_avx2.h	\
+	include/wimlib/matchfinder_common.h	\
+	include/wimlib/matchfinder_nonsliding.h	\
+	include/wimlib/matchfinder_sliding.h	\
+	include/wimlib/matchfinder_sse2.h	\
 	include/wimlib/metadata.h	\
 	include/wimlib/pathlist.h	\
 	include/wimlib/paths.h		\
