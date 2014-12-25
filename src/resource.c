@@ -137,7 +137,6 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 	int errno_save;
 
 	u64 *chunk_offsets = NULL;
-	u8 *_ubuf = NULL;
 	u8 *ubuf = NULL;
 	void *cbuf = NULL;
 	bool chunk_offsets_malloced = false;
@@ -368,14 +367,13 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 
 	/* Allocate buffer for holding the uncompressed data of each chunk.  */
 	if (chunk_size <= STACK_MAX) {
-		_ubuf = alloca(chunk_size + 15);
+		ubuf = alloca(chunk_size);
 	} else {
-		_ubuf = MALLOC(chunk_size + 15);
-		if (_ubuf == NULL)
+		ubuf = MALLOC(chunk_size);
+		if (ubuf == NULL)
 			goto oom;
 		ubuf_malloced = true;
 	}
-	ubuf = (u8 *)(((uintptr_t)_ubuf + 15) & ~15);
 
 	/* Allocate a temporary buffer for reading compressed chunks, each of
 	 * which can be at most @chunk_size - 1 bytes.  This excludes compressed
@@ -549,7 +547,7 @@ out_free_memory:
 	if (chunk_offsets_malloced)
 		FREE(chunk_offsets);
 	if (ubuf_malloced)
-		FREE(_ubuf);
+		FREE(ubuf);
 	if (cbuf_malloced)
 		FREE(cbuf);
 	errno = errno_save;
