@@ -1,8 +1,5 @@
 /*
- * lzms-common.c
- *
- * Code shared between the compressor and decompressor for the LZMS compression
- * format.
+ * lzms-common.c - Common code for LZMS compression and decompression
  */
 
 /*
@@ -147,103 +144,6 @@ lzms_init_slots(void)
 	pthread_once(&once, lzms_compute_slots);
 }
 
-static s32
-lzms_maybe_do_x86_translation(u8 data[restrict], s32 i, s32 num_op_bytes,
-			      s32 * restrict closest_target_usage_p,
-			      s32 last_target_usages[restrict],
-			      s32 max_trans_offset, bool undo)
-{
-	u16 pos;
-
-	if (undo) {
-		if (i - *closest_target_usage_p <= max_trans_offset) {
-			LZMS_DEBUG("Undid x86 translation at position %d "
-				   "(opcode 0x%02x)", i, data[i]);
-			void *p32 = &data[i + num_op_bytes];
-			u32 n = get_unaligned_u32_le(p32);
-			put_unaligned_u32_le(n - i, p32);
-		}
-		pos = i + get_unaligned_u16_le(&data[i + num_op_bytes]);
-	} else {
-		pos = i + get_unaligned_u16_le(&data[i + num_op_bytes]);
-
-		if (i - *closest_target_usage_p <= max_trans_offset) {
-			LZMS_DEBUG("Did x86 translation at position %d "
-				   "(opcode 0x%02x)", i, data[i]);
-			void *p32 = &data[i + num_op_bytes];
-			u32 n = get_unaligned_u32_le(p32);
-			put_unaligned_u32_le(n + i, p32);
-		}
-	}
-
-	i += num_op_bytes + sizeof(le32) - 1;
-
-	if (i - last_target_usages[pos] <= LZMS_X86_MAX_GOOD_TARGET_OFFSET)
-		*closest_target_usage_p = i;
-
-	last_target_usages[pos] = i;
-
-	return i + 1;
-}
-
-static inline s32
-lzms_may_x86_translate(const u8 p[restrict], s32 *restrict max_offset_ret)
-{
-	/* Switch on first byte of the opcode, assuming it is really an x86
-	 * instruction.  */
-	*max_offset_ret = LZMS_X86_MAX_TRANSLATION_OFFSET;
-	switch (p[0]) {
-	case 0x48:
-		if (p[1] == 0x8b) {
-			if (p[2] == 0x5 || p[2] == 0xd) {
-				/* Load relative (x86_64)  */
-				return 3;
-			}
-		} else if (p[1] == 0x8d) {
-			if ((p[2] & 0x7) == 0x5) {
-				/* Load effective address relative (x86_64)  */
-				return 3;
-			}
-		}
-		break;
-
-	case 0x4c:
-		if (p[1] == 0x8d) {
-			if ((p[2] & 0x7) == 0x5) {
-				/* Load effective address relative (x86_64)  */
-				return 3;
-			}
-		}
-		break;
-
-	case 0xe8:
-		/* Call relative  */
-		*max_offset_ret = LZMS_X86_MAX_TRANSLATION_OFFSET / 2;
-		return 1;
-
-	case 0xe9:
-		/* Jump relative  */
-		*max_offset_ret = 0;
-		return 5;
-
-	case 0xf0:
-		if (p[1] == 0x83 && p[2] == 0x05) {
-			/* Lock add relative  */
-			return 3;
-		}
-		break;
-
-	case 0xff:
-		if (p[1] == 0x15) {
-			/* Call indirect  */
-			return 2;
-		}
-		break;
-	}
-	*max_offset_ret = 0;
-	return 1;
-}
-
 /*
  * Translate relative addresses embedded in x86 instructions into absolute
  * addresses (@undo == %false), or undo this translation (@undo == %true).
@@ -260,58 +160,186 @@ lzms_x86_filter(u8 data[restrict], s32 size,
 	 * Note: this filter runs unconditionally and uses a custom algorithm to
 	 * detect data regions that probably contain x86 code.
 	 *
-	 * 'closest_target_usage' tracks the most recent position that has a
-	 * good chance of being an x86 instruction.  When the filter detects a
+	 * 'last_x86_pos' tracks the most recent position that has a good chance
+	 * of being the start of an x86 instruction.  When the filter detects a
 	 * likely x86 instruction, it updates this variable and considers the
-	 * next 1023 bytes of data as valid for x86 translations.
+	 * next LZMS_X86_MAX_TRANSLATION_OFFSET bytes of data as valid for x86
+	 * translations.
 	 *
 	 * If part of the data does not, in fact, contain x86 machine code, then
-	 * 'closest_target_usage' will, very likely, eventually fall more than
-	 * 1023 bytes behind the current position.  This results in x86
-	 * translations being disabled until the next likely x86 instruction is
-	 * detected.
-	 *
-	 * Translations on relative call (e8 opcode) instructions are slightly
-	 * more restricted.  They require that the most recent likely x86
-	 * instruction was in the last 511 bytes, rather than the last 1023
-	 * bytes.
+	 * 'last_x86_pos' will, very likely, eventually fall more than
+	 * LZMS_X86_MAX_TRANSLATION_OFFSET bytes behind the current position.
+	 * This results in x86 translations being disabled until the next likely
+	 * x86 instruction is detected.
 	 *
 	 * To identify "likely x86 instructions", the algorithm attempts to
 	 * track the position of the most recent potential relative-addressing
 	 * instruction that referenced each possible memory address.  If it
-	 * finds two references to the same memory address within a 65535 byte
-	 * window, the second reference is flagged as a likely x86 instruction.
-	 * Since the instructions considered for translation necessarily use
-	 * relative addressing, the algorithm does a tentative translation into
-	 * absolute addresses.  In addition, so that memory addresses can be
-	 * looked up in an array of reasonable size (in this code,
-	 * 'last_target_usages'), only the low-order 2 bytes of each address are
-	 * considered significant.
+	 * finds two references to the same memory address within an
+	 * LZMS_X86_ID_WINDOW_SIZE-byte sized window, then the second reference
+	 * is flagged as a likely x86 instruction.  Since the instructions
+	 * considered for translation necessarily use relative addressing, the
+	 * algorithm does a tentative translation into absolute addresses.  In
+	 * addition, so that memory addresses can be looked up in an array of
+	 * reasonable size (in this code, 'last_target_usages'), only the
+	 * low-order 2 bytes of each address are considered significant.
 	 */
 
-	s32 closest_target_usage = -LZMS_X86_MAX_TRANSLATION_OFFSET - 1;
+	s32 i;
+	s32 tail_idx;
+	u8 saved_byte;
+	s32 last_x86_pos;
 
-	for (s32 i = 0; i < 65536; i++)
-		last_target_usages[i] = -LZMS_X86_MAX_GOOD_TARGET_OFFSET - 1;
+	if (size <= 17)
+		return;
 
-	for (s32 i = 1; i < size - 16; ) {
+	for (i = 0; i < 65536; i++)
+		last_target_usages[i] = -(s32)LZMS_X86_ID_WINDOW_SIZE - 1;
+
+	/*
+	 * Optimization: only check for end-of-buffer when we already have a
+	 * byte that is a potential opcode for x86 translation.  To do this,
+	 * overwrite one of the bytes near the end of the buffer, and restore it
+	 * later.  The correctness of this optimization relies on two
+	 * characteristics of compressed format:
+	 *
+	 *  1. No translation can follow an opcode beginning in the last 16
+	 *     bytes.
+	 *  2. A translation following an opcode starting at the last possible
+	 *     position (17 bytes from the end) never extends more than 7 bytes.
+	 *     Consequently, we can overwrite any of the bytes starting at
+	 *     data[(size - 16) + 7] and have no effect on the result, as long
+	 *     as we restore those bytes later.
+	 */
+	tail_idx = size - 16;
+	saved_byte = data[tail_idx + 8];
+	data[tail_idx + 8] = 0xE8;
+	last_x86_pos = -LZMS_X86_MAX_TRANSLATION_OFFSET - 1;
+
+	/* Note: the very first byte must be ignored completely!  */
+	i = 0;
+	for (;;) {
 		s32 max_trans_offset;
-		s32 n;
+		s32 opcode_nbytes;
+		u16 target16;
 
-		n = lzms_may_x86_translate(data + i, &max_trans_offset);
+		/*
+		 * The following table is used to accelerate the common case
+		 * where the byte has nothing to do with x86 translation and
+		 * must simply be skipped.  This is the fastest (at least on
+		 * x86_64) of the implementations I tested.  The other
+		 * implementations I tested were:
+		 *	- Jump table with 256 entries
+		 *	- Switch statement with default
+		 */
+		static const u8 is_potential_opcode[256] = {
+			[0x48] = 1, [0x4C] = 1, [0xE8] = 1,
+			[0xE9] = 1, [0xF0] = 1, [0xFF] = 1,
+		};
 
-		if (max_trans_offset) {
-			/* Recognized opcode.  */
-			i = lzms_maybe_do_x86_translation(data, i, n,
-							  &closest_target_usage,
-							  last_target_usages,
-							  max_trans_offset,
-							  undo);
-		} else {
-			/* Not a recognized opcode.  */
-			i += n;
+		for (;;) {
+			if (is_potential_opcode[data[++i]])
+				break;
+			if (is_potential_opcode[data[++i]])
+				break;
+			if (is_potential_opcode[data[++i]])
+				break;
+			if (is_potential_opcode[data[++i]])
+				break;
 		}
+
+		if (i >= tail_idx)
+			break;
+
+		max_trans_offset = LZMS_X86_MAX_TRANSLATION_OFFSET;
+		switch (data[i]) {
+		case 0x48:
+			if (data[i + 1] == 0x8B) {
+				if (data[i + 2] == 0x5 || data[i + 2] == 0xD) {
+					/* Load relative (x86_64)  */
+					opcode_nbytes = 3;
+					goto have_opcode;
+				}
+			} else if (data[i + 1] == 0x8D) {
+				if ((data[i + 2] & 0x7) == 0x5) {
+					/* Load effective address relative (x86_64)  */
+					opcode_nbytes = 3;
+					goto have_opcode;
+				}
+			}
+			break;
+		case 0x4C:
+			if (data[i + 1] == 0x8D) {
+				if ((data[i + 2] & 0x7) == 0x5) {
+					/* Load effective address relative (x86_64)  */
+					opcode_nbytes = 3;
+					goto have_opcode;
+				}
+			}
+			break;
+		case 0xE8:
+			/* Call relative.  Note: 'max_trans_offset' must be
+			 * halved for this instruction.  This means that we must
+			 * be more confident that we are in a region of x86
+			 * machine code before we will do a translation for this
+			 * particular instruction.  */
+			opcode_nbytes = 1;
+			max_trans_offset /= 2;
+			goto have_opcode;
+		case 0xE9:
+			/* Jump relative  */
+			i += 4;
+			break;
+		case 0xF0:
+			if (data[i + 1] == 0x83 && data[i + 2] == 0x05) {
+				/* Lock add relative  */
+				opcode_nbytes = 3;
+				goto have_opcode;
+			}
+			break;
+		case 0xFF:
+			if (data[i + 1] == 0x15) {
+				/* Call indirect  */
+				opcode_nbytes = 2;
+				goto have_opcode;
+			}
+			break;
+		}
+
+		continue;
+
+	have_opcode:
+		if (undo) {
+			if (i - last_x86_pos <= max_trans_offset) {
+				LZMS_DEBUG("Undid x86 translation at position %d "
+					   "(opcode 0x%02x)", i, data[i]);
+				void *p32 = &data[i + opcode_nbytes];
+				u32 n = get_unaligned_u32_le(p32);
+				put_unaligned_u32_le(n - i, p32);
+			}
+			target16 = i + get_unaligned_u16_le(&data[i + opcode_nbytes]);
+		} else {
+			target16 = i + get_unaligned_u16_le(&data[i + opcode_nbytes]);
+			if (i - last_x86_pos <= max_trans_offset) {
+				LZMS_DEBUG("Did x86 translation at position %d "
+					   "(opcode 0x%02x)", i, data[i]);
+				void *p32 = &data[i + opcode_nbytes];
+				u32 n = get_unaligned_u32_le(p32);
+				put_unaligned_u32_le(n + i, p32);
+			}
+		}
+
+		i += opcode_nbytes + sizeof(le32) - 1;
+
+		if (i - last_target_usages[target16] <= LZMS_X86_ID_WINDOW_SIZE)
+			last_x86_pos = i;
+
+		last_target_usages[target16] = i;
+
+		continue;
 	}
+
+	data[tail_idx + 8] = saved_byte;
 }
 
 void
