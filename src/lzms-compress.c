@@ -206,6 +206,33 @@ struct lzms_compressor {
 	u8 offset_slot_fast[LZMS_NUM_FAST_OFFSETS];
 };
 
+struct lzms_lz_lru_queue {
+	u32 recent_offsets[LZMS_NUM_RECENT_OFFSETS + 1];
+	u32 prev_offset;
+	u32 upcoming_offset;
+};
+
+static void
+lzms_init_lz_lru_queue(struct lzms_lz_lru_queue *queue)
+{
+	for (int i = 0; i < LZMS_NUM_RECENT_OFFSETS + 1; i++)
+		queue->recent_offsets[i] = i + 1;
+
+	queue->prev_offset = 0;
+	queue->upcoming_offset = 0;
+}
+
+static void
+lzms_update_lz_lru_queue(struct lzms_lz_lru_queue *queue)
+{
+	if (queue->prev_offset != 0) {
+		for (int i = LZMS_NUM_RECENT_OFFSETS - 1; i >= 0; i--)
+			queue->recent_offsets[i + 1] = queue->recent_offsets[i];
+		queue->recent_offsets[0] = queue->prev_offset;
+	}
+	queue->prev_offset = queue->upcoming_offset;
+}
+
 /*
  * Match chooser position data:
  *
@@ -258,7 +285,7 @@ struct lzms_mc_pos_data {
 	 * entries or current Huffman codewords.  Those aren't maintained
 	 * per-position and are only updated occassionally.  */
 	struct lzms_adaptive_state {
-		struct lzms_lz_lru_queues lru;
+		struct lzms_lz_lru_queue lru;
 		u8 main_state;
 		u8 match_state;
 		u8 lz_match_state;
@@ -898,7 +925,7 @@ lzms_init_adaptive_state(struct lzms_adaptive_state *state)
 {
 	unsigned i;
 
-	lzms_init_lz_lru_queues(&state->lru);
+	lzms_init_lz_lru_queue(&state->lru);
 	state->main_state = 0;
 	state->match_state = 0;
 	state->lz_match_state = 0;
@@ -1234,10 +1261,7 @@ lzms_init_range_encoder(struct lzms_range_encoder *enc,
 	enc->state = 0;
 	LZMS_ASSERT(is_power_of_2(num_states));
 	enc->mask = num_states - 1;
-	for (u32 i = 0; i < num_states; i++) {
-		enc->prob_entries[i].num_recent_zero_bits = LZMS_INITIAL_PROBABILITY;
-		enc->prob_entries[i].recent_bits = LZMS_INITIAL_RECENT_BITS;
-	}
+	lzms_init_probability_entries(enc->prob_entries, num_states);
 }
 
 static void
@@ -1291,7 +1315,7 @@ lzms_prepare_compressor(struct lzms_compressor *c, const u8 *udata, u32 ulen,
 				  LZMS_LZ_OFFSET_CODE_REBUILD_FREQ);
 
 	lzms_init_huffman_encoder(&c->length_encoder, &c->os,
-				  LZMS_NUM_LEN_SYMS,
+				  LZMS_NUM_LENGTH_SYMS,
 				  LZMS_LENGTH_CODE_REBUILD_FREQ);
 
 	lzms_init_huffman_encoder(&c->delta_offset_encoder, &c->os,
@@ -1488,8 +1512,6 @@ lzms_create_compressor(size_t max_block_size, unsigned int compression_level,
 	if (!c->optimum)
 		goto oom;
 	c->optimum_end = &c->optimum[params.optim_array_length];
-
-	lzms_init_slots();
 
 	lzms_init_rc_costs();
 

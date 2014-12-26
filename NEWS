@@ -7,9 +7,7 @@ Version 1.7.4-BETA:
 	Extracting files to a Windows PE in-memory filesystem no longer fails if
 	the target files do not yet exist.
 
-	Made more improvements to compression and decompression.  Most notable
-	is about 10% faster XPRESS compression with a tiny improvement in
-	compression ratio.
+	Improved the performance of XPRESS compression and LZMS decompression.
 
 	Removed the --with-imagex-progname and --enable-more-assertions
 	configure options.

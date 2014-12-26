@@ -7,8 +7,9 @@
 #ifndef _WIMLIB_LZMS_H
 #define _WIMLIB_LZMS_H
 
+#include "wimlib/compiler.h"
 #include "wimlib/lzms_constants.h"
-#include "wimlib/util.h"
+#include "wimlib/types.h"
 
 //#define ENABLE_LZMS_DEBUG
 #ifdef ENABLE_LZMS_DEBUG
@@ -40,49 +41,13 @@ struct lzms_probability_entry {
 	u64 recent_bits;
 };
 
-/* LRU queues for LZ matches.  */
-struct lzms_lz_lru_queues {
-
-        /* Recent LZ match offsets  */
-	u32 recent_offsets[LZMS_NUM_RECENT_OFFSETS + 1];
-
-        /* These variables are used to delay updates to the LRU queues by one
-         * decoded item.  */
-	u32 prev_offset;
-	u32 upcoming_offset;
-};
-
-/* LRU queues for delta matches.  */
-struct lzms_delta_lru_queues {
-
-        /* Recent delta match powers and offsets  */
-	u32 recent_powers[LZMS_NUM_RECENT_OFFSETS + 1];
-	u32 recent_offsets[LZMS_NUM_RECENT_OFFSETS + 1];
-
-        /* These variables are used to delay updates to the LRU queues by one
-         * decoded item.  */
-	u32 prev_power;
-	u32 prev_offset;
-	u32 upcoming_power;
-	u32 upcoming_offset;
-};
-
-/* LRU (least-recently-used) queues for match information.  */
-struct lzms_lru_queues {
-        struct lzms_lz_lru_queues lz;
-        struct lzms_delta_lru_queues delta;
-};
-
 /* Offset slot tables  */
-extern u32 lzms_offset_slot_base[LZMS_MAX_NUM_OFFSET_SYMS + 1];
-extern u8 lzms_extra_offset_bits[LZMS_MAX_NUM_OFFSET_SYMS];
+extern const u32 lzms_offset_slot_base[LZMS_MAX_NUM_OFFSET_SYMS + 1];
+extern const u8 lzms_extra_offset_bits[LZMS_MAX_NUM_OFFSET_SYMS];
 
 /* Length slot tables  */
-extern u32 lzms_length_slot_base[LZMS_NUM_LEN_SYMS + 1];
-extern u8 lzms_extra_length_bits[LZMS_NUM_LEN_SYMS];
-
-extern void
-lzms_init_slots(void);
+extern const u32 lzms_length_slot_base[LZMS_NUM_LENGTH_SYMS + 1];
+extern const u8 lzms_extra_length_bits[LZMS_NUM_LENGTH_SYMS];
 
 extern unsigned
 lzms_get_slot(u32 value, const u32 slot_base_tab[], unsigned num_slots);
@@ -98,26 +63,17 @@ lzms_get_offset_slot(u32 offset)
 static inline unsigned
 lzms_get_length_slot(u32 length)
 {
-	return lzms_get_slot(length, lzms_length_slot_base, LZMS_NUM_LEN_SYMS);
+	return lzms_get_slot(length, lzms_length_slot_base, LZMS_NUM_LENGTH_SYMS);
 }
 
-extern void
-lzms_init_lz_lru_queues(struct lzms_lz_lru_queues *lz);
+extern unsigned
+lzms_get_num_offset_slots(size_t uncompressed_size);
 
 extern void
-lzms_init_delta_lru_queues(struct lzms_delta_lru_queues *delta);
+lzms_init_probability_entries(struct lzms_probability_entry *entries, size_t count);
 
 extern void
-lzms_init_lru_queues(struct lzms_lru_queues *lru);
-
-extern void
-lzms_update_lz_lru_queue(struct lzms_lz_lru_queues *lz);
-
-extern void
-lzms_update_delta_lru_queues(struct lzms_delta_lru_queues *delta);
-
-extern void
-lzms_update_lru_queues(struct lzms_lru_queues *lru);
+lzms_init_symbol_frequencies(u32 freqs[], size_t num_syms);
 
 /* Given a decoded bit, update the probability entry.  */
 static inline void

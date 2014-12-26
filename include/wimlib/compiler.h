@@ -54,6 +54,10 @@
 #  define _format_attribute(type, format_str, format_start)
 #endif
 
+#ifndef noinline
+#  define noinline
+#endif
+
 #ifndef CPU_IS_BIG_ENDIAN
 #  error "missing required definition of CPU_IS_BIG_ENDIAN"
 #endif

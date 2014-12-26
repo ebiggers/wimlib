@@ -25,6 +25,7 @@
 #endif
 #define _malloc_attribute	__attribute__((malloc))
 #define inline			inline __attribute__((always_inline))
+#define noinline		__attribute__((noinline))
 
 #define CPU_IS_BIG_ENDIAN	(__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
 

@@ -29,18 +29,18 @@
  * single LZMS-compressed block.  This behavior is the same as that of
  * Decompress() in the Windows 8 compression API when using a compression handle
  * created with CreateDecompressor() with the Algorithm parameter specified as
- * COMPRESS_ALGORITHM_LZMS | COMPRESS_RAW.  Presumably, non-raw LZMS data
- * is a container format from which the locations and sizes (both compressed and
+ * COMPRESS_ALGORITHM_LZMS | COMPRESS_RAW.  Presumably, non-raw LZMS data is a
+ * container format from which the locations and sizes (both compressed and
  * uncompressed) of the constituent blocks can be determined.
  *
  * An LZMS-compressed block must be read in 16-bit little endian units from both
  * directions.  One logical bitstream starts at the front of the block and
  * proceeds forwards.  Another logical bitstream starts at the end of the block
  * and proceeds backwards.  Bits read from the forwards bitstream constitute
- * range-encoded data, whereas bits read from the backwards bitstream constitute
- * Huffman-encoded symbols or verbatim bits.  For both bitstreams, the ordering
- * of the bits within the 16-bit coding units is such that the first bit is the
- * high-order bit and the last bit is the low-order bit.
+ * binary range-encoded data, whereas bits read from the backwards bitstream
+ * constitute Huffman-encoded symbols or verbatim bits.  For both bitstreams,
+ * the ordering of the bits within the 16-bit coding units is such that the
+ * first bit is the high-order bit and the last bit is the low-order bit.
  *
  * From these two logical bitstreams, an LZMS decompressor can reconstitute the
  * series of items that make up the LZMS data representation.  Each such item
@@ -51,14 +51,14 @@
  * A traditional LZ match consists of a length and offset; it asserts that the
  * sequence of bytes beginning at the current position and extending for the
  * length is exactly equal to the equal-length sequence of bytes at the offset
- * back in the window.  On the other hand, a delta match consists of a length,
- * raw offset, and power.  It asserts that the sequence of bytes beginning at
- * the current position and extending for the length is equal to the bytewise
- * sum of the two equal-length sequences of bytes (2**power) and (raw_offset *
- * 2**power) bytes before the current position, minus bytewise the sequence of
- * bytes beginning at (2**power + raw_offset * 2**power) bytes before the
- * current position.  Although not generally as useful as traditional LZ
- * matches, delta matches can be helpful on some types of data.  Both LZ and
+ * back in the data buffer.  On the other hand, a delta match consists of a
+ * length, raw offset, and power.  It asserts that the sequence of bytes
+ * beginning at the current position and extending for the length is equal to
+ * the bytewise sum of the two equal-length sequences of bytes (2**power) and
+ * (raw_offset * 2**power) bytes before the current position, minus bytewise the
+ * sequence of bytes beginning at (2**power + raw_offset * 2**power) bytes
+ * before the current position.  Although not generally as useful as traditional
+ * LZ matches, delta matches can be helpful on some types of data.  Both LZ and
  * delta matches may overlap with the current position; in fact, the minimum
  * offset is 1, regardless of match length.
  *
@@ -81,27 +81,27 @@
  * queue must be initialized to {0, 0, 0, 0}, and the raw offset queue must be
  * initialized to {1, 2, 3, 4}.
  *
- * Bits from the range decoder must be used to disambiguate item types.  The
- * range decoder must hold two state variables: the range, which must initially
- * be set to 0xffffffff, and the current code, which must initially be set to
- * the first 32 bits read from the forwards bitstream.  The range must be
+ * Bits from the binary range decoder must be used to disambiguate item types.
+ * The range decoder must hold two state variables: the range, which must
+ * initially be set to 0xffffffff, and the current code, which must initially be
+ * set to the first 32 bits read from the forwards bitstream.  The range must be
  * maintained above 0xffff; when it falls below 0xffff, both the range and code
  * must be left-shifted by 16 bits and the low 16 bits of the code must be
  * filled in with the next 16 bits from the forwards bitstream.
  *
- * To decode each bit, the range decoder requires a probability that is
+ * To decode each bit, the binary range decoder requires a probability that is
  * logically a real number between 0 and 1.  Multiplying this probability by the
- * current range and taking the floor gives the bound between the 0-bit region
- * of the range and the 1-bit region of the range.  However, in LZMS,
- * probabilities are restricted to values of n/64 where n is an integer is
- * between 1 and 63 inclusively, so the implementation may use integer
- * operations instead.  Following calculation of the bound, if the current code
- * is in the 0-bit region, the new range becomes the current code and the
- * decoded bit is 0; otherwise, the bound must be subtracted from both the range
- * and the code, and the decoded bit is 1.  More information about range coding
- * can be found at https://en.wikipedia.org/wiki/Range_encoding.  Furthermore,
- * note that the LZMA format also uses range coding and has public domain code
- * available for it.
+ * current range and taking the floor gives the bound between the 0-bit region of
+ * the range and the 1-bit region of the range.  However, in LZMS, probabilities
+ * are restricted to values of n/64 where n is an integer is between 1 and 63
+ * inclusively, so the implementation may use integer operations instead.
+ * Following calculation of the bound, if the current code is in the 0-bit
+ * region, the new range becomes the current code and the decoded bit is 0;
+ * otherwise, the bound must be subtracted from both the range and the code, and
+ * the decoded bit is 1.  More information about range coding can be found at
+ * https://en.wikipedia.org/wiki/Range_encoding.  Furthermore, note that the
+ * LZMA format also uses range coding and has public domain code available for
+ * it.
  *
  * The probability used to range-decode each bit must be taken from a table, of
  * which one instance must exist for each distinct context in which a
@@ -159,25 +159,24 @@
  *    of the 8 symbols corresponds to a power.  This code must be rebuilt
  *    whenever 512 symbols have been decoded with it.
  *
- * All the LZMS Huffman codes must be built adaptively based on symbol
- * frequencies.  Initially, each code must be built assuming that all symbols
- * have equal frequency.  Following that, each code must be rebuilt whenever a
- * certain number of symbols has been decoded with it.
+ * Initially, each Huffman code must be built assuming that each symbol in that
+ * code has frequency 1.  Following that, each code must be rebuilt each time a
+ * certain number of symbols, as noted above, has been decoded with it.  The
+ * symbol frequencies for a code must be halved after each rebuild of that code;
+ * this makes the codes adapt to the more recent data.
  *
  * Like other compression formats such as XPRESS, LZX, and DEFLATE, the LZMS
  * format requires that all Huffman codes be constructed in canonical form.
  * This form requires that same-length codewords be lexicographically ordered
  * the same way as the corresponding symbols and that all shorter codewords
  * lexicographically precede longer codewords.  Such a code can be constructed
- * directly from codeword lengths, although in LZMS this is not actually
- * necessary because the codes are built using adaptive symbol frequencies.
+ * directly from codeword lengths.
  *
  * Even with the canonical code restriction, the same frequencies can be used to
  * construct multiple valid Huffman codes.  Therefore, the decompressor needs to
  * construct the right one.  Specifically, the LZMS format requires that the
  * Huffman code be constructed as if the well-known priority queue algorithm is
- * used and frequency ties are always broken in favor of leaf nodes.  See
- * make_canonical_huffman_code() in compress_common.c for more information.
+ * used and frequency ties are always broken in favor of leaf nodes.
  *
  * Codewords in LZMS are guaranteed to not exceed 15 bits.  The format otherwise
  * places no restrictions on codeword length.  Therefore, the Huffman code
@@ -186,10 +185,6 @@
  * of being shared among multiple compression algorithms), the details of how it
  * does so are unimportant, provided that the maximum codeword length parameter
  * is set to at least 15 bits.
- *
- * An LZMS-compressed block seemingly cannot have a compressed size greater than
- * or equal to the uncompressed size.  In such cases the block must be stored
- * uncompressed.
  *
  * After all LZMS items have been decoded, the data must be postprocessed to
  * translate absolute address encoded in x86 instructions into their original
@@ -209,16 +204,17 @@
 #include "wimlib/decompress_common.h"
 #include "wimlib/error.h"
 #include "wimlib/lzms.h"
-#include "wimlib/unaligned.h"
 #include "wimlib/util.h"
 
-#include <limits.h>
+/* The TABLEBITS values can be changed; they only affect decoding speed.  */
+#define LZMS_LITERAL_TABLEBITS		10
+#define LZMS_LENGTH_TABLEBITS		10
+#define LZMS_LZ_OFFSET_TABLEBITS	10
+#define LZMS_DELTA_OFFSET_TABLEBITS	10
+#define LZMS_DELTA_POWER_TABLEBITS	8
 
-#define LZMS_DECODE_TABLE_BITS	10
+struct lzms_range_decoder {
 
-/* Structure used for range decoding, reading bits forwards.  This is the first
- * logical bitstream mentioned above.  */
-struct lzms_range_decoder_raw {
 	/* The relevant part of the current range.  Although the logical range
 	 * for range decoding is a very large integer, only a small portion
 	 * matters at any given time, and it can be normalized (shifted left)
@@ -231,258 +227,222 @@ struct lzms_range_decoder_raw {
 
 	/* Pointer to the next little-endian 16-bit integer in the compressed
 	 * input data (reading forwards).  */
-	const le16 *in;
+	const le16 *next;
 
-	/* Number of 16-bit integers remaining in the compressed input data
-	 * (reading forwards).  */
-	size_t num_le16_remaining;
+	/* Pointer to the end of the compressed input data.  */
+	const le16 *end;
 };
 
-/* Structure used for reading raw bits backwards.  This is the second logical
- * bitstream mentioned above.  */
-struct lzms_input_bitstream {
-	/* Holding variable for bits that have been read from the compressed
-	 * data.  The bits are ordered from high-order to low-order.  */
-	/* XXX:  Without special-case code to handle reading more than 17 bits
-	 * at a time, this needs to be 64 bits rather than 32 bits.  */
-	u64 bitbuf;
+typedef u64 bitbuf_t;
 
-	/* Number of bits in @bitbuf that are used.  */
-	unsigned num_filled_bits;
+struct lzms_input_bitstream {
+
+	/* Holding variable for bits that have been read from the compressed
+	 * data.  The bit ordering is high to low.  */
+	bitbuf_t bitbuf;
+
+	/* Number of bits currently held in @bitbuf.  */
+	unsigned bitsleft;
 
 	/* Pointer to the one past the next little-endian 16-bit integer in the
 	 * compressed input data (reading backwards).  */
-	const le16 *in;
+	const le16 *next;
 
-	/* Number of 16-bit integers remaining in the compressed input data
-	 * (reading backwards).  */
-	size_t num_le16_remaining;
+	/* Pointer to the beginning of the compressed input data.  */
+	const le16 *begin;
 };
 
-/* Structure used for range decoding.  This wraps around `struct
- * lzms_range_decoder_raw' to use and maintain probability entries.  */
-struct lzms_range_decoder {
-	/* Pointer to the raw range decoder, which has no persistent knowledge
-	 * of probabilities.  Multiple lzms_range_decoder's share the same
-	 * lzms_range_decoder_raw.  */
-	struct lzms_range_decoder_raw *rd;
-
-	/* Bits recently decoded by this range decoder.  This are used as in
-	 * index into @prob_entries.  */
-	u32 state;
-
-	/* Bitmask for @state to prevent its value from exceeding the number of
-	 * probability entries.  */
-	u32 mask;
-
-	/* Probability entries being used for this range decoder.  */
-	struct lzms_probability_entry prob_entries[LZMS_MAX_NUM_STATES];
-};
-
-/* Structure used for Huffman decoding, optionally using the decoded symbols as
- * slots into a base table to determine how many extra bits need to be read to
- * reconstitute the full value.  */
-struct lzms_huffman_decoder {
-
-	/* Bitstream to read Huffman-encoded symbols and verbatim bits from.
-	 * Multiple lzms_huffman_decoder's share the same lzms_input_bitstream.
-	 */
-	struct lzms_input_bitstream *is;
-
-	/* Pointer to the slot base table to use.  It is indexed by the decoded
-	 * Huffman symbol that specifies the slot.  The entry specifies the base
-	 * value to use, and the position of its high bit is the number of
-	 * additional bits that must be read to reconstitute the full value.
-	 *
-	 * This member need not be set if only raw Huffman symbols are being
-	 * read using this decoder.  */
-	const u32 *slot_base_tab;
-
-	const u8 *extra_bits_tab;
-
-	/* Number of symbols that have been read using this code far.  Reset to
-	 * 0 whenever the code is rebuilt.  */
-	u32 num_syms_read;
-
-	/* When @num_syms_read reaches this number, the Huffman code must be
-	 * rebuilt.  */
-	u32 rebuild_freq;
-
-	/* Number of symbols in the represented Huffman code.  */
+/* Bookkeeping information for an adaptive Huffman code  */
+struct lzms_huffman_rebuild_info {
+	unsigned num_syms_until_rebuild;
+	unsigned rebuild_freq;
+	u16 *decode_table;
+	unsigned table_bits;
+	u32 *freqs;
+	u32 *codewords;
+	u8 *lens;
 	unsigned num_syms;
-
-	/* Running totals of symbol frequencies.  These are diluted slightly
-	 * whenever the code is rebuilt.  */
-	u32 sym_freqs[LZMS_MAX_NUM_SYMS];
-
-	/* The length, in bits, of each symbol in the Huffman code.  */
-	u8 lens[LZMS_MAX_NUM_SYMS];
-
-	/* The codeword of each symbol in the Huffman code.  */
-	u32 codewords[LZMS_MAX_NUM_SYMS];
-
-	/* A table for quickly decoding symbols encoded using the Huffman code.
-	 */
-	u16 decode_table[(1U << LZMS_DECODE_TABLE_BITS) + 2 * LZMS_MAX_NUM_SYMS]
-				_aligned_attribute(DECODE_TABLE_ALIGNMENT);
 };
 
-/* State of the LZMS decompressor.  */
 struct lzms_decompressor {
 
-	/* Pointer to the beginning of the uncompressed data buffer.  */
-	u8 *out_begin;
+	/* 'last_target_usages' is in union with everything else because it is
+	 * only used for postprocessing.  */
+	union {
+	struct {
 
-	/* Pointer to the next position in the uncompressed data buffer.  */
-	u8 *out_next;
-
-	/* Pointer to one past the end of the uncompressed data buffer.  */
-	u8 *out_end;
-
-	/* Range decoder, which reads bits from the beginning of the compressed
-	 * block, going forwards.  */
-	struct lzms_range_decoder_raw rd;
-
-	/* Input bitstream, which reads from the end of the compressed block,
-	 * going backwards.  */
+	struct lzms_range_decoder rd;
 	struct lzms_input_bitstream is;
 
-	/* Range decoders.  */
-	struct lzms_range_decoder main_range_decoder;
-	struct lzms_range_decoder match_range_decoder;
-	struct lzms_range_decoder lz_match_range_decoder;
-	struct lzms_range_decoder lz_repeat_match_range_decoders[LZMS_NUM_RECENT_OFFSETS - 1];
-	struct lzms_range_decoder delta_match_range_decoder;
-	struct lzms_range_decoder delta_repeat_match_range_decoders[LZMS_NUM_RECENT_OFFSETS - 1];
+	/* Match offset LRU queues  */
+	u32 recent_lz_offsets[LZMS_NUM_RECENT_OFFSETS + 1];
+	u64 recent_delta_offsets[LZMS_NUM_RECENT_OFFSETS + 1];
+	u32 pending_lz_offset;
+	u64 pending_delta_offset;
+	const u8 *lz_offset_still_pending;
+	const u8 *delta_offset_still_pending;
 
-	/* Huffman decoders.  */
-	struct lzms_huffman_decoder literal_decoder;
-	struct lzms_huffman_decoder lz_offset_decoder;
-	struct lzms_huffman_decoder length_decoder;
-	struct lzms_huffman_decoder delta_power_decoder;
-	struct lzms_huffman_decoder delta_offset_decoder;
+	/* States and probabilities for range decoding  */
 
-	/* LRU (least-recently-used) queues for match information.  */
-	struct lzms_lru_queues lru;
+	u32 main_state;
+	struct lzms_probability_entry main_prob_entries[
+			LZMS_NUM_MAIN_STATES];
 
-	/* Used for postprocessing.  */
+	u32 match_state;
+	struct lzms_probability_entry match_prob_entries[
+			LZMS_NUM_MATCH_STATES];
+
+	u32 lz_match_state;
+	struct lzms_probability_entry lz_match_prob_entries[
+			LZMS_NUM_LZ_MATCH_STATES];
+
+	u32 delta_match_state;
+	struct lzms_probability_entry delta_match_prob_entries[
+			LZMS_NUM_DELTA_MATCH_STATES];
+
+	u32 lz_repeat_match_states[LZMS_NUM_RECENT_OFFSETS - 1];
+	struct lzms_probability_entry lz_repeat_match_prob_entries[
+			LZMS_NUM_RECENT_OFFSETS - 1][LZMS_NUM_LZ_REPEAT_MATCH_STATES];
+
+	u32 delta_repeat_match_states[LZMS_NUM_RECENT_OFFSETS - 1];
+	struct lzms_probability_entry delta_repeat_match_prob_entries[
+			LZMS_NUM_RECENT_OFFSETS - 1][LZMS_NUM_DELTA_REPEAT_MATCH_STATES];
+
+	/* Huffman decoding  */
+
+	u16 literal_decode_table[(1 << LZMS_LITERAL_TABLEBITS) +
+				 (2 * LZMS_NUM_LITERAL_SYMS)]
+		_aligned_attribute(DECODE_TABLE_ALIGNMENT);
+	u32 literal_freqs[LZMS_NUM_LITERAL_SYMS];
+	struct lzms_huffman_rebuild_info literal_rebuild_info;
+
+	u16 length_decode_table[(1 << LZMS_LENGTH_TABLEBITS) +
+				(2 * LZMS_NUM_LENGTH_SYMS)]
+		_aligned_attribute(DECODE_TABLE_ALIGNMENT);
+	u32 length_freqs[LZMS_NUM_LENGTH_SYMS];
+	struct lzms_huffman_rebuild_info length_rebuild_info;
+
+	u16 lz_offset_decode_table[(1 << LZMS_LZ_OFFSET_TABLEBITS) +
+				   ( 2 * LZMS_MAX_NUM_OFFSET_SYMS)]
+		_aligned_attribute(DECODE_TABLE_ALIGNMENT);
+	u32 lz_offset_freqs[LZMS_MAX_NUM_OFFSET_SYMS];
+	struct lzms_huffman_rebuild_info lz_offset_rebuild_info;
+
+	u16 delta_offset_decode_table[(1 << LZMS_DELTA_OFFSET_TABLEBITS) +
+				      (2 * LZMS_MAX_NUM_OFFSET_SYMS)]
+		_aligned_attribute(DECODE_TABLE_ALIGNMENT);
+	u32 delta_offset_freqs[LZMS_MAX_NUM_OFFSET_SYMS];
+	struct lzms_huffman_rebuild_info delta_offset_rebuild_info;
+
+	u16 delta_power_decode_table[(1 << LZMS_DELTA_POWER_TABLEBITS) +
+				     (2 * LZMS_NUM_DELTA_POWER_SYMS)]
+		_aligned_attribute(DECODE_TABLE_ALIGNMENT);
+	u32 delta_power_freqs[LZMS_NUM_DELTA_POWER_SYMS];
+	struct lzms_huffman_rebuild_info delta_power_rebuild_info;
+
+	u32 codewords[LZMS_MAX_NUM_SYMS];
+	u8 lens[LZMS_MAX_NUM_SYMS];
+
+	}; // struct
+
 	s32 last_target_usages[65536];
+
+	}; // union
 };
 
-/* Initialize the input bitstream @is to read forwards from the specified
- * compressed data buffer @in that is @in_limit 16-bit integers long.  */
+/* Initialize the input bitstream @is to read backwards from the compressed data
+ * buffer @in that is @count 16-bit integers long.  */
 static void
 lzms_input_bitstream_init(struct lzms_input_bitstream *is,
-			  const le16 *in, size_t in_limit)
+			  const le16 *in, size_t count)
 {
 	is->bitbuf = 0;
-	is->num_filled_bits = 0;
-	is->in = in + in_limit;
-	is->num_le16_remaining = in_limit;
+	is->bitsleft = 0;
+	is->next = in + count;
+	is->begin = in;
 }
 
-/* Ensures that @num_bits bits are buffered in the input bitstream.  */
-static int
-lzms_input_bitstream_ensure_bits(struct lzms_input_bitstream *is,
-				 unsigned num_bits)
+/* Ensure that at least @num_bits bits are in the bitbuffer variable.
+ * @num_bits cannot be more than 32.  */
+static inline void
+lzms_ensure_bits(struct lzms_input_bitstream *is, unsigned num_bits)
 {
-	while (is->num_filled_bits < num_bits) {
-		u64 next;
+	if (is->bitsleft >= num_bits)
+		return;
 
-		LZMS_ASSERT(is->num_filled_bits + 16 <= sizeof(is->bitbuf) * 8);
+	if (likely(is->next != is->begin))
+		is->bitbuf |= (bitbuf_t)le16_to_cpu(*--is->next)
+				<< (sizeof(is->bitbuf) * 8 - is->bitsleft - 16);
+	is->bitsleft += 16;
 
-		if (unlikely(is->num_le16_remaining == 0))
-			return -1;
-
-		next = get_unaligned_u16_le(--is->in);
-		is->num_le16_remaining--;
-
-		is->bitbuf |= next << (sizeof(is->bitbuf) * 8 - is->num_filled_bits - 16);
-		is->num_filled_bits += 16;
-	}
-	return 0;
-
+	if (likely(is->next != is->begin))
+		is->bitbuf |= (bitbuf_t)le16_to_cpu(*--is->next)
+				<< (sizeof(is->bitbuf) * 8 - is->bitsleft - 16);
+	is->bitsleft += 16;
 }
 
-/* Returns the next @num_bits bits that are buffered in the input bitstream.  */
-static u32
-lzms_input_bitstream_peek_bits(struct lzms_input_bitstream *is,
-			       unsigned num_bits)
+/* Get @num_bits bits from the bitbuffer variable.  */
+static inline bitbuf_t
+lzms_peek_bits(struct lzms_input_bitstream *is, unsigned num_bits)
 {
-	LZMS_ASSERT(is->num_filled_bits >= num_bits);
+	if (unlikely(num_bits == 0))
+		return 0;
 	return is->bitbuf >> (sizeof(is->bitbuf) * 8 - num_bits);
 }
 
-/* Removes the next @num_bits bits that are buffered in the input bitstream.  */
-static void
-lzms_input_bitstream_remove_bits(struct lzms_input_bitstream *is,
-				 unsigned num_bits)
+/* Remove @num_bits bits from the bitbuffer variable.  */
+static inline void
+lzms_remove_bits(struct lzms_input_bitstream *is, unsigned num_bits)
 {
-	LZMS_ASSERT(is->num_filled_bits >= num_bits);
 	is->bitbuf <<= num_bits;
-	is->num_filled_bits -= num_bits;
+	is->bitsleft -= num_bits;
 }
 
-/* Removes and returns the next @num_bits bits that are buffered in the input
- * bitstream.  */
-static u32
-lzms_input_bitstream_pop_bits(struct lzms_input_bitstream *is,
-			      unsigned num_bits)
+/* Remove and return @num_bits bits from the bitbuffer variable.  */
+static inline bitbuf_t
+lzms_pop_bits(struct lzms_input_bitstream *is, unsigned num_bits)
 {
-	u32 bits = lzms_input_bitstream_peek_bits(is, num_bits);
-	lzms_input_bitstream_remove_bits(is, num_bits);
+	bitbuf_t bits = lzms_peek_bits(is, num_bits);
+	lzms_remove_bits(is, num_bits);
 	return bits;
 }
 
-/* Reads the next @num_bits from the input bitstream.  */
-static u32
-lzms_input_bitstream_read_bits(struct lzms_input_bitstream *is,
-			       unsigned num_bits)
+/* Read @num_bits bits from the input bitstream.  */
+static inline bitbuf_t
+lzms_read_bits(struct lzms_input_bitstream *is, unsigned num_bits)
 {
-	if (unlikely(lzms_input_bitstream_ensure_bits(is, num_bits)))
-		return 0;
-	return lzms_input_bitstream_pop_bits(is, num_bits);
+	lzms_ensure_bits(is, num_bits);
+	return lzms_pop_bits(is, num_bits);
 }
 
-/* Initialize the range decoder @rd to read forwards from the specified
- * compressed data buffer @in that is @in_limit 16-bit integers long.  */
+/* Initialize the range decoder @rd to read forwards from the compressed data
+ * buffer @in that is @count 16-bit integers long.  */
 static void
-lzms_range_decoder_raw_init(struct lzms_range_decoder_raw *rd,
-			    const le16 *in, size_t in_limit)
+lzms_range_decoder_init(struct lzms_range_decoder *rd,
+			const le16 *in, size_t count)
 {
 	rd->range = 0xffffffff;
-	rd->code = ((u32)get_unaligned_u16_le(&in[0]) << 16) |
-		   ((u32)get_unaligned_u16_le(&in[1]) <<  0);
-	rd->in = in + 2;
-	rd->num_le16_remaining = in_limit - 2;
+	rd->code = ((u32)le16_to_cpu(in[0]) << 16) | le16_to_cpu(in[1]);
+	rd->next = in + 2;
+	rd->end = in + count;
 }
 
-/* Ensures the current range of the range decoder has at least 16 bits of
- * precision.  */
-static int
-lzms_range_decoder_raw_normalize(struct lzms_range_decoder_raw *rd)
-{
-	if (rd->range <= 0xffff) {
-		rd->range <<= 16;
-		if (unlikely(rd->num_le16_remaining == 0))
-			return -1;
-		rd->code = (rd->code << 16) | get_unaligned_u16_le(rd->in++);
-		rd->num_le16_remaining--;
-	}
-	return 0;
-}
-
-/* Decode and return the next bit from the range decoder (raw version).
+/* Decode and return the next bit from the range decoder.
  *
  * @prob is the chance out of LZMS_PROBABILITY_MAX that the next bit is 0.
  */
-static int
-lzms_range_decoder_raw_decode_bit(struct lzms_range_decoder_raw *rd, u32 prob)
+static inline int
+lzms_range_decoder_decode_bit(struct lzms_range_decoder *rd, u32 prob)
 {
 	u32 bound;
 
-	/* Ensure the range has at least 16 bits of precision.  */
-	lzms_range_decoder_raw_normalize(rd);
+	/* Normalize if needed.  */
+	if (rd->range <= 0xffff) {
+		rd->range <<= 16;
+		rd->code <<= 16;
+		if (likely(rd->next != rd->end))
+			rd->code |= le16_to_cpu(*rd->next++);
+	}
 
 	/* Based on the probability, calculate the bound between the 0-bit
 	 * region and the 1-bit region of the range.  */
@@ -501,100 +461,135 @@ lzms_range_decoder_raw_decode_bit(struct lzms_range_decoder_raw *rd, u32 prob)
 }
 
 /* Decode and return the next bit from the range decoder.  This wraps around
- * lzms_range_decoder_raw_decode_bit() to handle using and updating the
- * appropriate probability table.  */
-static int
-lzms_range_decode_bit(struct lzms_range_decoder *dec)
+ * lzms_range_decoder_decode_bit() to handle using and updating the appropriate
+ * state and probability entry.  */
+static inline int
+lzms_range_decode_bit(struct lzms_range_decoder *rd,
+		      u32 *state_p, u32 num_states,
+		      struct lzms_probability_entry prob_entries[])
 {
 	struct lzms_probability_entry *prob_entry;
 	u32 prob;
 	int bit;
 
 	/* Load the probability entry corresponding to the current state.  */
-	prob_entry = &dec->prob_entries[dec->state];
+	prob_entry = &prob_entries[*state_p];
 
 	/* Get the probability that the next bit is 0.  */
 	prob = lzms_get_probability(prob_entry);
 
 	/* Decode the next bit.  */
-	bit = lzms_range_decoder_raw_decode_bit(dec->rd, prob);
+	bit = lzms_range_decoder_decode_bit(rd, prob);
 
 	/* Update the state and probability entry based on the decoded bit.  */
-	dec->state = (((dec->state << 1) | bit) & dec->mask);
+	*state_p = ((*state_p << 1) | bit) & (num_states - 1);
 	lzms_update_probability_entry(prob_entry, bit);
 
 	/* Return the decoded bit.  */
 	return bit;
 }
 
-
-/* Build the decoding table for a new adaptive Huffman code using the alphabet
- * used in the specified Huffman decoder, with the symbol frequencies
- * dec->sym_freqs.  */
-static void
-lzms_rebuild_adaptive_huffman_code(struct lzms_huffman_decoder *dec)
+static int
+lzms_decode_main_bit(struct lzms_decompressor *d)
 {
-
-	/* XXX:  This implementation makes use of code already implemented for
-	 * the XPRESS and LZX compression formats.  However, since for the
-	 * adaptive codes used in LZMS we don't actually need the explicit codes
-	 * themselves, only the decode tables, it may be possible to optimize
-	 * this by somehow directly building or updating the Huffman decode
-	 * table.  This may be a worthwhile optimization because the adaptive
-	 * codes change many times throughout a decompression run.  */
-	LZMS_DEBUG("Rebuilding adaptive Huffman code (num_syms=%u)",
-		   dec->num_syms);
-	make_canonical_huffman_code(dec->num_syms, LZMS_MAX_CODEWORD_LEN,
-				    dec->sym_freqs, dec->lens, dec->codewords);
-#if defined(ENABLE_LZMS_DEBUG)
-	int ret =
-#endif
-	make_huffman_decode_table(dec->decode_table, dec->num_syms,
-				  LZMS_DECODE_TABLE_BITS, dec->lens,
-				  LZMS_MAX_CODEWORD_LEN);
-	LZMS_ASSERT(ret == 0);
+	return lzms_range_decode_bit(&d->rd, &d->main_state,
+				     LZMS_NUM_MAIN_STATES,
+				     d->main_prob_entries);
 }
 
-/* Decode and return the next Huffman-encoded symbol from the LZMS-compressed
- * block using the specified Huffman decoder.  */
-static u32
-lzms_huffman_decode_symbol(struct lzms_huffman_decoder *dec)
+static int
+lzms_decode_match_bit(struct lzms_decompressor *d)
 {
-	const u16 *decode_table = dec->decode_table;
-	struct lzms_input_bitstream *is = dec->is;
-	u16 entry;
-	u16 key_bits;
-	u16 sym;
+	return lzms_range_decode_bit(&d->rd, &d->match_state,
+				     LZMS_NUM_MATCH_STATES,
+				     d->match_prob_entries);
+}
 
-	/* The Huffman codes used in LZMS are adaptive and must be rebuilt
-	 * whenever a certain number of symbols have been read.  Each such
-	 * rebuild uses the current symbol frequencies, but the format also
-	 * requires that the symbol frequencies be halved after each code
-	 * rebuild.  This diminishes the effect of old symbols on the current
-	 * Huffman codes, thereby causing the Huffman codes to be more locally
-	 * adaptable.  */
-	if (dec->num_syms_read == dec->rebuild_freq) {
-		lzms_rebuild_adaptive_huffman_code(dec);
-		for (unsigned i = 0; i < dec->num_syms; i++) {
-			dec->sym_freqs[i] >>= 1;
-			dec->sym_freqs[i] += 1;
-		}
-		dec->num_syms_read = 0;
-	}
+static int
+lzms_decode_lz_match_bit(struct lzms_decompressor *d)
+{
+	return lzms_range_decode_bit(&d->rd, &d->lz_match_state,
+				     LZMS_NUM_LZ_MATCH_STATES,
+				     d->lz_match_prob_entries);
+}
 
-	/* XXX: Copied from read_huffsym() (decompress_common.h), since this
-	 * uses a different input bitstream type.  Should unify the
-	 * implementations.  */
-	lzms_input_bitstream_ensure_bits(is, LZMS_MAX_CODEWORD_LEN);
+static int
+lzms_decode_delta_match_bit(struct lzms_decompressor *d)
+{
+	return lzms_range_decode_bit(&d->rd, &d->delta_match_state,
+				     LZMS_NUM_DELTA_MATCH_STATES,
+				     d->delta_match_prob_entries);
+}
+
+static noinline int
+lzms_decode_lz_repeat_match_bit(struct lzms_decompressor *d, int idx)
+{
+	return lzms_range_decode_bit(&d->rd, &d->lz_repeat_match_states[idx],
+				     LZMS_NUM_LZ_REPEAT_MATCH_STATES,
+				     d->lz_repeat_match_prob_entries[idx]);
+}
+
+static noinline int
+lzms_decode_delta_repeat_match_bit(struct lzms_decompressor *d, int idx)
+{
+	return lzms_range_decode_bit(&d->rd, &d->delta_repeat_match_states[idx],
+				     LZMS_NUM_DELTA_REPEAT_MATCH_STATES,
+				     d->delta_repeat_match_prob_entries[idx]);
+}
+
+static void
+lzms_init_huffman_rebuild_info(struct lzms_huffman_rebuild_info *info,
+			       unsigned rebuild_freq,
+			       u16 *decode_table, unsigned table_bits,
+			       u32 *freqs, u32 *codewords, u8 *lens,
+			       unsigned num_syms)
+{
+	info->num_syms_until_rebuild = 1;
+	info->rebuild_freq = rebuild_freq;
+	info->decode_table = decode_table;
+	info->table_bits = table_bits;
+	info->freqs = freqs;
+	info->codewords = codewords;
+	info->lens = lens;
+	info->num_syms = num_syms;
+	lzms_init_symbol_frequencies(freqs, num_syms);
+}
+
+static noinline void
+lzms_rebuild_huffman_code(struct lzms_huffman_rebuild_info *info)
+{
+	make_canonical_huffman_code(info->num_syms, LZMS_MAX_CODEWORD_LEN,
+				    info->freqs, info->lens, info->codewords);
+	make_huffman_decode_table(info->decode_table, info->num_syms,
+				  info->table_bits, info->lens,
+				  LZMS_MAX_CODEWORD_LEN);
+	for (unsigned i = 0; i < info->num_syms; i++)
+		info->freqs[i] = (info->freqs[i] >> 1) + 1;
+	info->num_syms_until_rebuild = info->rebuild_freq;
+}
+
+static inline unsigned
+lzms_decode_huffman_symbol(struct lzms_input_bitstream *is,
+			   u16 decode_table[], unsigned table_bits,
+			   struct lzms_huffman_rebuild_info *rebuild_info)
+{
+	unsigned key_bits;
+	unsigned entry;
+	unsigned sym;
+
+	if (unlikely(--rebuild_info->num_syms_until_rebuild == 0))
+		lzms_rebuild_huffman_code(rebuild_info);
+
+	lzms_ensure_bits(is, LZMS_MAX_CODEWORD_LEN);
 
 	/* Index the decode table by the next table_bits bits of the input.  */
-	key_bits = lzms_input_bitstream_peek_bits(is, LZMS_DECODE_TABLE_BITS);
+	key_bits = lzms_peek_bits(is, table_bits);
 	entry = decode_table[key_bits];
 	if (likely(entry < 0xC000)) {
 		/* Fast case: The decode table directly provided the symbol and
 		 * codeword length.  The low 11 bits are the symbol, and the
 		 * high 5 bits are the codeword length.  */
-		lzms_input_bitstream_remove_bits(is, entry >> 11);
+		lzms_remove_bits(is, entry >> 11);
 		sym = entry & 0x7FF;
 	} else {
 		/* Slow case: The codeword for the symbol is longer than
@@ -602,440 +597,381 @@ lzms_huffman_decode_symbol(struct lzms_huffman_decoder *dec)
 		 * the first (1 << table_bits) entries of the decode table.
 		 * Traverse the appropriate binary tree bit-by-bit in order to
 		 * decode the symbol.  */
-		lzms_input_bitstream_remove_bits(is, LZMS_DECODE_TABLE_BITS);
+		lzms_remove_bits(is, table_bits);
 		do {
-			key_bits = (entry & 0x3FFF) + lzms_input_bitstream_pop_bits(is, 1);
+			key_bits = (entry & 0x3FFF) + lzms_pop_bits(is, 1);
 		} while ((entry = decode_table[key_bits]) >= 0xC000);
 		sym = entry;
 	}
 
 	/* Tally and return the decoded symbol.  */
-	++dec->sym_freqs[sym];
-	++dec->num_syms_read;
+	rebuild_info->freqs[sym]++;
 	return sym;
 }
 
-/* Decode a number from the LZMS bitstream, encoded as a Huffman-encoded symbol
- * specifying a "slot" (whose corresponding value is looked up in a static
- * table) plus the number specified by a number of extra bits depending on the
- * slot.  */
+static unsigned
+lzms_decode_literal(struct lzms_decompressor *d)
+{
+	return lzms_decode_huffman_symbol(&d->is,
+					  d->literal_decode_table,
+					  LZMS_LITERAL_TABLEBITS,
+					  &d->literal_rebuild_info);
+}
+
 static u32
-lzms_decode_value(struct lzms_huffman_decoder *dec)
+lzms_decode_length(struct lzms_decompressor *d)
 {
-	unsigned slot;
-	unsigned num_extra_bits;
-	u32 extra_bits;
-
-	LZMS_ASSERT(dec->slot_base_tab != NULL);
-	LZMS_ASSERT(dec->extra_bits_tab != NULL);
-
-	/* Read the slot (offset slot, length slot, etc.), which is encoded as a
-	 * Huffman symbol.  */
-	slot = lzms_huffman_decode_symbol(dec);
-
-	/* Get the number of extra bits needed to represent the range of values
-	 * that share the slot.  */
-	num_extra_bits = dec->extra_bits_tab[slot];
-
-	/* Read the number of extra bits and add them to the slot base to form
-	 * the final decoded value.  */
-	extra_bits = lzms_input_bitstream_read_bits(dec->is, num_extra_bits);
-	return dec->slot_base_tab[slot] + extra_bits;
+	unsigned slot = lzms_decode_huffman_symbol(&d->is,
+						   d->length_decode_table,
+						   LZMS_LENGTH_TABLEBITS,
+						   &d->length_rebuild_info);
+	u32 length = lzms_length_slot_base[slot];
+	unsigned num_extra_bits = lzms_extra_length_bits[slot];
+	/* Usually most lengths are short and have no extra bits.  */
+	if (num_extra_bits)
+		length += lzms_read_bits(&d->is, num_extra_bits);
+	return length;
 }
 
-/* Copy a literal to the output buffer.  */
-static int
-lzms_copy_literal(struct lzms_decompressor *ctx, u8 literal)
+static u32
+lzms_decode_lz_offset(struct lzms_decompressor *d)
 {
-	*ctx->out_next++ = literal;
-	return 0;
+	unsigned slot = lzms_decode_huffman_symbol(&d->is,
+						   d->lz_offset_decode_table,
+						   LZMS_LZ_OFFSET_TABLEBITS,
+						   &d->lz_offset_rebuild_info);
+	return lzms_offset_slot_base[slot] +
+	       lzms_read_bits(&d->is, lzms_extra_offset_bits[slot]);
 }
 
-/* Validate an LZ match and copy it to the output buffer.  */
-static int
-lzms_copy_lz_match(struct lzms_decompressor *ctx, u32 length, u32 offset)
+static u32
+lzms_decode_delta_offset(struct lzms_decompressor *d)
 {
-	u8 *out_next;
-
-	if (length > ctx->out_end - ctx->out_next) {
-		LZMS_DEBUG("Match overrun!");
-		return -1;
-	}
-	if (offset > ctx->out_next - ctx->out_begin) {
-		LZMS_DEBUG("Match underrun!");
-		return -1;
-	}
-
-	out_next = ctx->out_next;
-
-	lz_copy(out_next, length, offset, ctx->out_end, 1);
-	ctx->out_next = out_next + length;
-
-	return 0;
+	unsigned slot = lzms_decode_huffman_symbol(&d->is,
+						   d->delta_offset_decode_table,
+						   LZMS_DELTA_OFFSET_TABLEBITS,
+						   &d->delta_offset_rebuild_info);
+	return lzms_offset_slot_base[slot] +
+	       lzms_read_bits(&d->is, lzms_extra_offset_bits[slot]);
 }
 
-/* Validate a delta match and copy it to the output buffer.  */
-static int
-lzms_copy_delta_match(struct lzms_decompressor *ctx, u32 length,
-		      u32 power, u32 raw_offset)
+static unsigned
+lzms_decode_delta_power(struct lzms_decompressor *d)
 {
-	u32 offset1 = 1U << power;
-	u32 offset2 = raw_offset << power;
-	u32 offset = offset1 + offset2;
-	u8 *out_next;
-	u8 *matchptr1;
-	u8 *matchptr2;
-	u8 *matchptr;
-
-	if (length > ctx->out_end - ctx->out_next) {
-		LZMS_DEBUG("Match overrun!");
-		return -1;
-	}
-	if (offset > ctx->out_next - ctx->out_begin) {
-		LZMS_DEBUG("Match underrun!");
-		return -1;
-	}
-
-	out_next = ctx->out_next;
-	matchptr1 = out_next - offset1;
-	matchptr2 = out_next - offset2;
-	matchptr = out_next - offset;
-
-	while (length--)
-		*out_next++ = *matchptr1++ + *matchptr2++ - *matchptr++;
-
-	ctx->out_next = out_next;
-	return 0;
-}
-
-/* Decode a (length, offset) pair from the input.  */
-static int
-lzms_decode_lz_match(struct lzms_decompressor *ctx)
-{
-	int bit;
-	u32 length, offset;
-
-	/* Decode the match offset.  The next range-encoded bit indicates
-	 * whether it's a repeat offset or an explicit offset.  */
-
-	bit = lzms_range_decode_bit(&ctx->lz_match_range_decoder);
-	if (bit == 0) {
-		/* Explicit offset.  */
-		offset = lzms_decode_value(&ctx->lz_offset_decoder);
-	} else {
-		/* Repeat offset.  */
-		int i;
-
-		for (i = 0; i < LZMS_NUM_RECENT_OFFSETS - 1; i++)
-			if (!lzms_range_decode_bit(&ctx->lz_repeat_match_range_decoders[i]))
-				break;
-
-		offset = ctx->lru.lz.recent_offsets[i];
-
-		for (; i < LZMS_NUM_RECENT_OFFSETS; i++)
-			ctx->lru.lz.recent_offsets[i] = ctx->lru.lz.recent_offsets[i + 1];
-	}
-
-	/* Decode match length, which is always given explicitly (there is no
-	 * LRU queue for repeat lengths).  */
-	length = lzms_decode_value(&ctx->length_decoder);
-
-	ctx->lru.lz.upcoming_offset = offset;
-
-	LZMS_DEBUG("Decoded %s LZ match: length=%u, offset=%u",
-		   (bit ? "repeat" : "explicit"), length, offset);
-
-	/* Validate the match and copy it to the output.  */
-	return lzms_copy_lz_match(ctx, length, offset);
-}
-
-/* Decodes a "delta" match from the input.  */
-static int
-lzms_decode_delta_match(struct lzms_decompressor *ctx)
-{
-	int bit;
-	u32 length, power, raw_offset;
-
-	/* Decode the match power and raw offset.  The next range-encoded bit
-	 * indicates whether these data are a repeat, or given explicitly.  */
-
-	bit = lzms_range_decode_bit(&ctx->delta_match_range_decoder);
-	if (bit == 0) {
-		power = lzms_huffman_decode_symbol(&ctx->delta_power_decoder);
-		raw_offset = lzms_decode_value(&ctx->delta_offset_decoder);
-	} else {
-		int i;
-
-		for (i = 0; i < LZMS_NUM_RECENT_OFFSETS - 1; i++)
-			if (!lzms_range_decode_bit(&ctx->delta_repeat_match_range_decoders[i]))
-				break;
-
-		power = ctx->lru.delta.recent_powers[i];
-		raw_offset = ctx->lru.delta.recent_offsets[i];
-
-		for (; i < LZMS_NUM_RECENT_OFFSETS; i++) {
-			ctx->lru.delta.recent_powers[i] = ctx->lru.delta.recent_powers[i + 1];
-			ctx->lru.delta.recent_offsets[i] = ctx->lru.delta.recent_offsets[i + 1];
-		}
-	}
-
-	length = lzms_decode_value(&ctx->length_decoder);
-
-	ctx->lru.delta.upcoming_power = power;
-	ctx->lru.delta.upcoming_offset = raw_offset;
-
-	LZMS_DEBUG("Decoded %s delta match: length=%u, power=%u, raw_offset=%u",
-		   (bit ? "repeat" : "explicit"), length, power, raw_offset);
-
-	/* Validate the match and copy it to the output.  */
-	return lzms_copy_delta_match(ctx, length, power, raw_offset);
-}
-
-/* Decode an LZ or delta match.  */
-static int
-lzms_decode_match(struct lzms_decompressor *ctx)
-{
-	if (!lzms_range_decode_bit(&ctx->match_range_decoder))
-		return lzms_decode_lz_match(ctx);
-	else
-		return lzms_decode_delta_match(ctx);
-}
-
-/* Decode a literal byte encoded using the literal Huffman code.  */
-static int
-lzms_decode_literal(struct lzms_decompressor *ctx)
-{
-	u8 literal = lzms_huffman_decode_symbol(&ctx->literal_decoder);
-	LZMS_DEBUG("Decoded literal: 0x%02x", literal);
-	return lzms_copy_literal(ctx, literal);
-}
-
-/* Decode the next LZMS match or literal.  */
-static int
-lzms_decode_item(struct lzms_decompressor *ctx)
-{
-	int ret;
-
-	ctx->lru.lz.upcoming_offset = 0;
-	ctx->lru.delta.upcoming_power = 0;
-	ctx->lru.delta.upcoming_offset = 0;
-
-	if (lzms_range_decode_bit(&ctx->main_range_decoder))
-		ret = lzms_decode_match(ctx);
-	else
-		ret = lzms_decode_literal(ctx);
-
-	if (ret)
-		return ret;
-
-	lzms_update_lru_queues(&ctx->lru);
-	return 0;
-}
-
-static void
-lzms_init_range_decoder(struct lzms_range_decoder *dec,
-			struct lzms_range_decoder_raw *rd, u32 num_states)
-{
-	dec->rd = rd;
-	dec->state = 0;
-	dec->mask = num_states - 1;
-	for (u32 i = 0; i < num_states; i++) {
-		dec->prob_entries[i].num_recent_zero_bits = LZMS_INITIAL_PROBABILITY;
-		dec->prob_entries[i].recent_bits = LZMS_INITIAL_RECENT_BITS;
-	}
-}
-
-static void
-lzms_init_huffman_decoder(struct lzms_huffman_decoder *dec,
-			  struct lzms_input_bitstream *is,
-			  const u32 *slot_base_tab,
-			  const u8 *extra_bits_tab,
-			  unsigned num_syms,
-			  unsigned rebuild_freq)
-{
-	dec->is = is;
-	dec->slot_base_tab = slot_base_tab;
-	dec->extra_bits_tab = extra_bits_tab;
-	dec->num_syms = num_syms;
-	dec->num_syms_read = rebuild_freq;
-	dec->rebuild_freq = rebuild_freq;
-	for (unsigned i = 0; i < num_syms; i++)
-		dec->sym_freqs[i] = 1;
-}
-
-/* Prepare to decode items from an LZMS-compressed block.  */
-static void
-lzms_init_decompressor(struct lzms_decompressor *ctx,
-		       const void *cdata, unsigned clen,
-		       void *ubuf, unsigned ulen)
-{
-	unsigned num_offset_slots;
-
-	LZMS_DEBUG("Initializing decompressor (clen=%u, ulen=%u)", clen, ulen);
-
-	/* Initialize output pointers.  */
-	ctx->out_begin = ubuf;
-	ctx->out_next = ubuf;
-	ctx->out_end = (u8*)ubuf + ulen;
-
-	/* Initialize the raw range decoder (reading forwards).  */
-	lzms_range_decoder_raw_init(&ctx->rd, cdata, clen / 2);
-
-	/* Initialize the input bitstream for Huffman symbols (reading
-	 * backwards)  */
-	lzms_input_bitstream_init(&ctx->is, cdata, clen / 2);
-
-	/* Calculate the number of offset slots needed for this compressed
-	 * block.  */
-	num_offset_slots = lzms_get_offset_slot(ulen - 1) + 1;
-
-	LZMS_DEBUG("Using %u offset slots", num_offset_slots);
-
-	/* Initialize Huffman decoders for each alphabet used in the compressed
-	 * representation.  */
-	lzms_init_huffman_decoder(&ctx->literal_decoder, &ctx->is,
-				  NULL, NULL, LZMS_NUM_LITERAL_SYMS,
-				  LZMS_LITERAL_CODE_REBUILD_FREQ);
-
-	lzms_init_huffman_decoder(&ctx->lz_offset_decoder, &ctx->is,
-				  lzms_offset_slot_base,
-				  lzms_extra_offset_bits,
-				  num_offset_slots,
-				  LZMS_LZ_OFFSET_CODE_REBUILD_FREQ);
-
-	lzms_init_huffman_decoder(&ctx->length_decoder, &ctx->is,
-				  lzms_length_slot_base,
-				  lzms_extra_length_bits,
-				  LZMS_NUM_LEN_SYMS,
-				  LZMS_LENGTH_CODE_REBUILD_FREQ);
-
-	lzms_init_huffman_decoder(&ctx->delta_offset_decoder, &ctx->is,
-				  lzms_offset_slot_base,
-				  lzms_extra_offset_bits,
-				  num_offset_slots,
-				  LZMS_DELTA_OFFSET_CODE_REBUILD_FREQ);
-
-	lzms_init_huffman_decoder(&ctx->delta_power_decoder, &ctx->is,
-				  NULL, NULL, LZMS_NUM_DELTA_POWER_SYMS,
-				  LZMS_DELTA_POWER_CODE_REBUILD_FREQ);
-
-
-	/* Initialize range decoders, all of which wrap around the same
-	 * lzms_range_decoder_raw.  */
-	lzms_init_range_decoder(&ctx->main_range_decoder,
-				&ctx->rd, LZMS_NUM_MAIN_STATES);
-
-	lzms_init_range_decoder(&ctx->match_range_decoder,
-				&ctx->rd, LZMS_NUM_MATCH_STATES);
-
-	lzms_init_range_decoder(&ctx->lz_match_range_decoder,
-				&ctx->rd, LZMS_NUM_LZ_MATCH_STATES);
-
-	for (size_t i = 0; i < ARRAY_LEN(ctx->lz_repeat_match_range_decoders); i++)
-		lzms_init_range_decoder(&ctx->lz_repeat_match_range_decoders[i],
-					&ctx->rd, LZMS_NUM_LZ_REPEAT_MATCH_STATES);
-
-	lzms_init_range_decoder(&ctx->delta_match_range_decoder,
-				&ctx->rd, LZMS_NUM_DELTA_MATCH_STATES);
-
-	for (size_t i = 0; i < ARRAY_LEN(ctx->delta_repeat_match_range_decoders); i++)
-		lzms_init_range_decoder(&ctx->delta_repeat_match_range_decoders[i],
-					&ctx->rd, LZMS_NUM_DELTA_REPEAT_MATCH_STATES);
-
-	/* Initialize LRU match information.  */
-	lzms_init_lru_queues(&ctx->lru);
-
-	LZMS_DEBUG("Decompressor successfully initialized");
+	return lzms_decode_huffman_symbol(&d->is,
+					  d->delta_power_decode_table,
+					  LZMS_DELTA_POWER_TABLEBITS,
+					  &d->delta_power_rebuild_info);
 }
 
 /* Decode the series of literals and matches from the LZMS-compressed data.
- * Returns 0 on success; nonzero if the compressed data is invalid.  */
+ * Return 0 if successful or -1 if the compressed data is invalid.  */
 static int
-lzms_decode_items(const u8 *cdata, size_t clen, u8 *ubuf, size_t ulen,
-		  struct lzms_decompressor *ctx)
+lzms_decode_items(struct lzms_decompressor * const restrict d,
+		  u8 * const restrict out, const size_t out_nbytes)
 {
-	/* Initialize the LZMS decompressor.  */
-	lzms_init_decompressor(ctx, cdata, clen, ubuf, ulen);
+	u8 *out_next = out;
+	u8 * const out_end = out + out_nbytes;
 
-	/* Decode the sequence of items.  */
-	while (ctx->out_next != ctx->out_end) {
-		LZMS_DEBUG("Position %u", ctx->out_next - ctx->out_begin);
-		if (lzms_decode_item(ctx))
-			return -1;
+	while (out_next != out_end) {
+
+		if (!lzms_decode_main_bit(d)) {
+
+			/* Literal  */
+			*out_next++ = lzms_decode_literal(d);
+
+		} else if (!lzms_decode_match_bit(d)) {
+
+			/* LZ match  */
+
+			u32 offset;
+			u32 length;
+
+			if (d->pending_lz_offset != 0 &&
+			    out_next != d->lz_offset_still_pending)
+			{
+				BUILD_BUG_ON(LZMS_NUM_RECENT_OFFSETS != 3);
+				d->recent_lz_offsets[3] = d->recent_lz_offsets[2];
+				d->recent_lz_offsets[2] = d->recent_lz_offsets[1];
+				d->recent_lz_offsets[1] = d->recent_lz_offsets[0];
+				d->recent_lz_offsets[0] = d->pending_lz_offset;
+				d->pending_lz_offset = 0;
+			}
+
+			if (!lzms_decode_lz_match_bit(d)) {
+				/* Explicit offset  */
+				offset = lzms_decode_lz_offset(d);
+			} else {
+				/* Repeat offset  */
+
+				BUILD_BUG_ON(LZMS_NUM_RECENT_OFFSETS != 3);
+				if (!lzms_decode_lz_repeat_match_bit(d, 0)) {
+					offset = d->recent_lz_offsets[0];
+					d->recent_lz_offsets[0] = d->recent_lz_offsets[1];
+					d->recent_lz_offsets[1] = d->recent_lz_offsets[2];
+					d->recent_lz_offsets[2] = d->recent_lz_offsets[3];
+				} else if (!lzms_decode_lz_repeat_match_bit(d, 1)) {
+					offset = d->recent_lz_offsets[1];
+					d->recent_lz_offsets[1] = d->recent_lz_offsets[2];
+					d->recent_lz_offsets[2] = d->recent_lz_offsets[3];
+				} else {
+					offset = d->recent_lz_offsets[2];
+					d->recent_lz_offsets[2] = d->recent_lz_offsets[3];
+				}
+			}
+
+			if (d->pending_lz_offset != 0) {
+				BUILD_BUG_ON(LZMS_NUM_RECENT_OFFSETS != 3);
+				d->recent_lz_offsets[3] = d->recent_lz_offsets[2];
+				d->recent_lz_offsets[2] = d->recent_lz_offsets[1];
+				d->recent_lz_offsets[1] = d->recent_lz_offsets[0];
+				d->recent_lz_offsets[0] = d->pending_lz_offset;
+			}
+			d->pending_lz_offset = offset;
+
+			length = lzms_decode_length(d);
+
+			if (unlikely(length > out_end - out_next))
+				return -1;
+			if (unlikely(offset > out_next - out))
+				return -1;
+
+			lz_copy(out_next, length, offset, out_end, LZMS_MIN_MATCH_LEN);
+			out_next += length;
+
+			d->lz_offset_still_pending = out_next;
+		} else {
+			/* Delta match  */
+
+			u32 power;
+			u32 raw_offset, offset1, offset2, offset;
+			const u8 *matchptr1, *matchptr2, *matchptr;
+			u32 length;
+
+			if (d->pending_delta_offset != 0 &&
+			    out_next != d->delta_offset_still_pending)
+			{
+				BUILD_BUG_ON(LZMS_NUM_RECENT_OFFSETS != 3);
+				d->recent_delta_offsets[3] = d->recent_delta_offsets[2];
+				d->recent_delta_offsets[2] = d->recent_delta_offsets[1];
+				d->recent_delta_offsets[1] = d->recent_delta_offsets[0];
+				d->recent_delta_offsets[0] = d->pending_delta_offset;
+				d->pending_delta_offset = 0;
+			}
+
+			if (!lzms_decode_delta_match_bit(d)) {
+				/* Explicit offset  */
+				power = lzms_decode_delta_power(d);
+				raw_offset = lzms_decode_delta_offset(d);
+			} else {
+				/* Repeat offset  */
+				u64 val;
+
+				BUILD_BUG_ON(LZMS_NUM_RECENT_OFFSETS != 3);
+				if (!lzms_decode_delta_repeat_match_bit(d, 0)) {
+					val = d->recent_delta_offsets[0];
+					d->recent_delta_offsets[0] = d->recent_delta_offsets[1];
+					d->recent_delta_offsets[1] = d->recent_delta_offsets[2];
+					d->recent_delta_offsets[2] = d->recent_delta_offsets[3];
+				} else if (!lzms_decode_delta_repeat_match_bit(d, 1)) {
+					val = d->recent_delta_offsets[1];
+					d->recent_delta_offsets[1] = d->recent_delta_offsets[2];
+					d->recent_delta_offsets[2] = d->recent_delta_offsets[3];
+				} else {
+					val = d->recent_delta_offsets[2];
+					d->recent_delta_offsets[2] = d->recent_delta_offsets[3];
+				}
+				power = val >> 32;
+				raw_offset = (u32)val;
+			}
+
+			if (d->pending_delta_offset != 0) {
+				BUILD_BUG_ON(LZMS_NUM_RECENT_OFFSETS != 3);
+				d->recent_delta_offsets[3] = d->recent_delta_offsets[2];
+				d->recent_delta_offsets[2] = d->recent_delta_offsets[1];
+				d->recent_delta_offsets[1] = d->recent_delta_offsets[0];
+				d->recent_delta_offsets[0] = d->pending_delta_offset;
+				d->pending_delta_offset = 0;
+			}
+			d->pending_delta_offset = raw_offset | ((u64)power << 32);
+
+			length = lzms_decode_length(d);
+
+			offset1 = (u32)1 << power;
+			offset2 = raw_offset << power;
+			offset = offset1 + offset2;
+
+			/* raw_offset<<power overflowed?  */
+			if (unlikely((offset2 >> power) != raw_offset))
+				return -1;
+
+			/* offset1+offset2 overflowed?  */
+			if (unlikely(offset < offset2))
+				return -1;
+
+			if (unlikely(length > out_end - out_next))
+				return -1;
+
+			if (unlikely(offset > out_next - out))
+				return -1;
+
+			matchptr1 = out_next - offset1;
+			matchptr2 = out_next - offset2;
+			matchptr = out_next - offset;
+
+			do {
+				*out_next++ = *matchptr1++ + *matchptr2++ - *matchptr++;
+			} while (--length);
+
+			d->delta_offset_still_pending = out_next;
+		}
 	}
-	return 0;
-}
-
-static int
-lzms_decompress(const void *compressed_data, size_t compressed_size,
-		void *uncompressed_data, size_t uncompressed_size, void *_ctx)
-{
-	struct lzms_decompressor *ctx = _ctx;
-
-	/* The range decoder requires that a minimum of 4 bytes of compressed
-	 * data be initially available.  */
-	if (compressed_size < 4) {
-		LZMS_DEBUG("Compressed size too small (got %zu, expected >= 4)",
-			   compressed_size);
-		return -1;
-	}
-
-	/* An LZMS-compressed data block should be evenly divisible into 16-bit
-	 * integers.  */
-	if (compressed_size % 2 != 0) {
-		LZMS_DEBUG("Compressed size not divisible by 2 (got %zu)",
-			   compressed_size);
-		return -1;
-	}
-
-	/* Handle the trivial case where nothing needs to be decompressed.
-	 * (Necessary because a window of size 0 does not have a valid offset
-	 * slot.)  */
-	if (uncompressed_size == 0)
-		return 0;
-
-	/* Decode the literals and matches.  */
-	if (lzms_decode_items(compressed_data, compressed_size,
-			      uncompressed_data, uncompressed_size, ctx))
-		return -1;
-
-	/* Postprocess the data.  */
-	lzms_x86_filter(uncompressed_data, uncompressed_size,
-			ctx->last_target_usages, true);
-
-	LZMS_DEBUG("Decompression successful.");
 	return 0;
 }
 
 static void
-lzms_free_decompressor(void *_ctx)
+lzms_init_decompressor(struct lzms_decompressor *d, const void *in,
+		       size_t in_nbytes, unsigned num_offset_slots)
 {
-	struct lzms_decompressor *ctx = _ctx;
+	/* Match offset LRU queues  */
+	for (int i = 0; i < LZMS_NUM_RECENT_OFFSETS + 1; i++) {
+		d->recent_lz_offsets[i] = i + 1;
+		d->recent_delta_offsets[i] = i + 1;
+	}
+	d->pending_lz_offset = 0;
+	d->pending_delta_offset = 0;
 
-	ALIGNED_FREE(ctx);
+	/* Range decoding  */
+
+	lzms_range_decoder_init(&d->rd, in, in_nbytes / sizeof(le16));
+
+	d->main_state = 0;
+	lzms_init_probability_entries(d->main_prob_entries, LZMS_NUM_MAIN_STATES);
+
+	d->match_state = 0;
+	lzms_init_probability_entries(d->match_prob_entries, LZMS_NUM_MATCH_STATES);
+
+	d->lz_match_state = 0;
+	lzms_init_probability_entries(d->lz_match_prob_entries, LZMS_NUM_LZ_MATCH_STATES);
+
+	d->delta_match_state = 0;
+	lzms_init_probability_entries(d->delta_match_prob_entries, LZMS_NUM_DELTA_MATCH_STATES);
+
+	for (int i = 0; i < LZMS_NUM_RECENT_OFFSETS - 1; i++) {
+		d->lz_repeat_match_states[i] = 0;
+		lzms_init_probability_entries(d->lz_repeat_match_prob_entries[i],
+					      LZMS_NUM_LZ_REPEAT_MATCH_STATES);
+
+		d->delta_repeat_match_states[i] = 0;
+		lzms_init_probability_entries(d->delta_repeat_match_prob_entries[i],
+					      LZMS_NUM_DELTA_REPEAT_MATCH_STATES);
+	}
+
+	/* Huffman decoding  */
+
+	lzms_input_bitstream_init(&d->is, in, in_nbytes / sizeof(le16));
+
+	lzms_init_huffman_rebuild_info(&d->literal_rebuild_info,
+				       LZMS_LITERAL_CODE_REBUILD_FREQ,
+				       d->literal_decode_table,
+				       LZMS_LITERAL_TABLEBITS,
+				       d->literal_freqs,
+				       d->codewords,
+				       d->lens,
+				       LZMS_NUM_LITERAL_SYMS);
+
+	lzms_init_huffman_rebuild_info(&d->length_rebuild_info,
+				       LZMS_LENGTH_CODE_REBUILD_FREQ,
+				       d->length_decode_table,
+				       LZMS_LENGTH_TABLEBITS,
+				       d->length_freqs,
+				       d->codewords,
+				       d->lens,
+				       LZMS_NUM_LENGTH_SYMS);
+
+	lzms_init_huffman_rebuild_info(&d->lz_offset_rebuild_info,
+				       LZMS_LZ_OFFSET_CODE_REBUILD_FREQ,
+				       d->lz_offset_decode_table,
+				       LZMS_LZ_OFFSET_TABLEBITS,
+				       d->lz_offset_freqs,
+				       d->codewords,
+				       d->lens,
+				       num_offset_slots);
+
+	lzms_init_huffman_rebuild_info(&d->delta_offset_rebuild_info,
+				       LZMS_DELTA_OFFSET_CODE_REBUILD_FREQ,
+				       d->delta_offset_decode_table,
+				       LZMS_DELTA_OFFSET_TABLEBITS,
+				       d->delta_offset_freqs,
+				       d->codewords,
+				       d->lens,
+				       num_offset_slots);
+
+	lzms_init_huffman_rebuild_info(&d->delta_power_rebuild_info,
+				       LZMS_DELTA_POWER_CODE_REBUILD_FREQ,
+				       d->delta_power_decode_table,
+				       LZMS_DELTA_POWER_TABLEBITS,
+				       d->delta_power_freqs,
+				       d->codewords,
+				       d->lens,
+				       LZMS_NUM_DELTA_POWER_SYMS);
 }
 
 static int
-lzms_create_decompressor(size_t max_block_size, void **ctx_ret)
+lzms_create_decompressor(size_t max_bufsize, void **d_ret)
 {
-	struct lzms_decompressor *ctx;
+	struct lzms_decompressor *d;
 
-	/* The x86 post-processor requires that the uncompressed length fit into
-	 * a signed 32-bit integer.  Also, the offset slot table cannot be
-	 * searched for an offset of INT32_MAX or greater.  */
-	if (max_block_size >= INT32_MAX)
+	if (max_bufsize > LZMS_MAX_BUFFER_SIZE)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	ctx = ALIGNED_MALLOC(sizeof(struct lzms_decompressor),
-			     DECODE_TABLE_ALIGNMENT);
-	if (ctx == NULL)
+	d = ALIGNED_MALLOC(sizeof(struct lzms_decompressor),
+			   DECODE_TABLE_ALIGNMENT);
+	if (!d)
 		return WIMLIB_ERR_NOMEM;
 
-	/* Initialize offset and length slot data if not done already.  */
-	lzms_init_slots();
-
-	*ctx_ret = ctx;
+	*d_ret = d;
 	return 0;
+}
+
+/* Decompress @in_nbytes bytes of LZMS-compressed data at @in and write the
+ * uncompressed data, which had original size @out_nbytes, to @out.  Return 0 if
+ * successful or -1 if the compressed data is invalid.  */
+static int
+lzms_decompress(const void *in, size_t in_nbytes, void *out, size_t out_nbytes,
+		void *_d)
+{
+	struct lzms_decompressor *d = _d;
+
+	/*
+	 * Requirements on the compressed data:
+	 *
+	 * 1. LZMS-compressed data is a series of 16-bit integers, so the
+	 *    compressed data buffer cannot take up an odd number of bytes.
+	 * 2. To prevent poor performance on some architectures, we require that
+	 *    the compressed data buffer is 2-byte aligned.
+	 * 3. There must be at least 4 bytes of compressed data, since otherwise
+	 *    we cannot even initialize the range decoder.
+	 */
+	if ((in_nbytes & 1) || ((uintptr_t)in & 1) || (in_nbytes < 4))
+		return -1;
+
+	lzms_init_decompressor(d, in, in_nbytes,
+			       lzms_get_num_offset_slots(out_nbytes));
+
+	if (lzms_decode_items(d, out, out_nbytes))
+		return -1;
+
+	lzms_x86_filter(out, out_nbytes, d->last_target_usages, true);
+	return 0;
+}
+
+static void
+lzms_free_decompressor(void *_d)
+{
+	struct lzms_decompressor *d = _d;
+
+	ALIGNED_FREE(d);
 }
 
 const struct decompressor_ops lzms_decompressor_ops = {
