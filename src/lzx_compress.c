@@ -1,7 +1,7 @@
 /*
- * lzx-compress.c
+ * lzx_compress.c
  *
- * A compressor that produces output compatible with the LZX compression format.
+ * A compressor for the LZX compression format, as used in WIM files.
  */
 
 /*
@@ -71,7 +71,7 @@
 #include "wimlib/error.h"
 #include "wimlib/lz_mf.h"
 #include "wimlib/lz_repsearch.h"
-#include "wimlib/lzx.h"
+#include "wimlib/lzx_common.h"
 #include "wimlib/util.h"
 
 #include <string.h>

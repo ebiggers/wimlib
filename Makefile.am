@@ -64,12 +64,12 @@ libwim_la_SOURCES =		\
 	src/lz_null.c		\
 	src/lz_repsearch.c	\
 	src/lz_suffix_array_utils.c	\
-	src/lzms-common.c	\
-	src/lzms-compress.c	\
-	src/lzms-decompress.c	\
-	src/lzx-common.c	\
-	src/lzx-compress.c	\
-	src/lzx-decompress.c	\
+	src/lzms_common.c	\
+	src/lzms_compress.c	\
+	src/lzms_decompress.c	\
+	src/lzx_common.c	\
+	src/lzx_compress.c	\
+	src/lzx_decompress.c	\
 	src/metadata_resource.c	\
 	src/mount_image.c	\
 	src/pathlist.c		\
@@ -92,8 +92,8 @@ libwim_la_SOURCES =		\
 	src/wim.c		\
 	src/write.c		\
 	src/xml.c		\
-	src/xpress-compress.c	\
-	src/xpress-decompress.c \
+	src/xpress_compress.c	\
+	src/xpress_decompress.c \
 	include/wimlib/apply.h		\
 	include/wimlib/assert.h		\
 	include/wimlib/avl_tree.h	\
@@ -129,9 +129,9 @@ libwim_la_SOURCES =		\
 	include/wimlib/lz_mf_ops.h	\
 	include/wimlib/lz_repsearch.h	\
 	include/wimlib/lz_suffix_array_utils.h	\
-	include/wimlib/lzms.h		\
+	include/wimlib/lzms_common.h	\
 	include/wimlib/lzms_constants.h	\
-	include/wimlib/lzx.h		\
+	include/wimlib/lzx_common.h	\
 	include/wimlib/lzx_constants.h	\
 	include/wimlib/matchfinder_avx2.h	\
 	include/wimlib/matchfinder_common.h	\
@@ -157,7 +157,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/wim.h		\
 	include/wimlib/write.h		\
 	include/wimlib/xml.h		\
-	include/wimlib/xpress.h
+	include/wimlib/xpress_constants.h
 
 if WITH_NTFS_3G
 libwim_la_SOURCES += src/ntfs-3g_apply.c	\

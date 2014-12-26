@@ -214,8 +214,8 @@ bitstream_align(struct input_bitstream *is)
  * input data is exhausted, the Huffman symbol is decoded as if the missing bits
  * are all zeroes.
  *
- * XXX: This is mostly duplicated in lzms_huffman_decode_symbol() in
- * lzms-decompress.c.  */
+ * XXX: This is mostly duplicated in lzms_decode_huffman_symbol() in
+ * lzms_decompress.c.  */
 static inline u16
 read_huffsym(struct input_bitstream *istream, const u16 decode_table[],
 	     unsigned table_bits, unsigned max_codeword_len)

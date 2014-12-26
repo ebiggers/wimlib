@@ -1,5 +1,5 @@
 /*
- * xpress-compress.c
+ * xpress_compress.c
  *
  * A compressor for the XPRESS compression format (Huffman variant).
  */
@@ -70,7 +70,7 @@
 #include "wimlib/hc_matchfinder.h"
 #include "wimlib/unaligned.h"
 #include "wimlib/util.h"
-#include "wimlib/xpress.h"
+#include "wimlib/xpress_constants.h"
 
 #if SUPPORT_NEAR_OPTIMAL_PARSING
 

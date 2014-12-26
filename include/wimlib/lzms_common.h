@@ -1,11 +1,11 @@
 /*
- * lzms.h
+ * lzms_common.h
  *
  * Declarations shared between LZMS compression and decompression.
  */
 
-#ifndef _WIMLIB_LZMS_H
-#define _WIMLIB_LZMS_H
+#ifndef _LZMS_COMMON_H
+#define _LZMS_COMMON_H
 
 #include "wimlib/compiler.h"
 #include "wimlib/lzms_constants.h"
@@ -107,4 +107,4 @@ lzms_get_probability(const struct lzms_probability_entry *prob_entry)
 	return prob;
 }
 
-#endif /* _WIMLIB_LZMS_H  */
+#endif /* _LZMS_COMMON_H */

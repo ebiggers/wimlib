@@ -1,5 +1,7 @@
 /*
- * lzms-decompress.c
+ * lzms_decompress.c
+ *
+ * A decompressor for the LZMS compression format.
  */
 
 /*
@@ -203,7 +205,7 @@
 #include "wimlib/decompressor_ops.h"
 #include "wimlib/decompress_common.h"
 #include "wimlib/error.h"
-#include "wimlib/lzms.h"
+#include "wimlib/lzms_common.h"
 #include "wimlib/util.h"
 
 /* The TABLEBITS values can be changed; they only affect decoding speed.  */

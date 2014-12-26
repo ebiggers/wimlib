@@ -27,7 +27,7 @@
 
 #include "wimlib/bitops.h"
 #include "wimlib/endianness.h"
-#include "wimlib/lzx.h"
+#include "wimlib/lzx_common.h"
 #include "wimlib/unaligned.h"
 #include "wimlib/util.h"
 

@@ -1,7 +1,7 @@
 /*
- * lzms-compress.c
+ * lzms_compress.c
  *
- * A compressor that produces output compatible with the LZMS compression format.
+ * A compressor for the LZMS compression format.
  */
 
 /*
@@ -31,7 +31,7 @@
 #include "wimlib/error.h"
 #include "wimlib/lz_mf.h"
 #include "wimlib/lz_repsearch.h"
-#include "wimlib/lzms.h"
+#include "wimlib/lzms_common.h"
 #include "wimlib/unaligned.h"
 #include "wimlib/util.h"
 

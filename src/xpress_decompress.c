@@ -1,7 +1,7 @@
 /*
- * xpress-decompress.c
+ * xpress_decompress.c
  *
- * A very fast decompressor for XPRESS (Huffman version).
+ * A decompressor for the XPRESS compression format (Huffman variant).
  */
 
 /*
@@ -70,7 +70,7 @@
 #include "wimlib/decompressor_ops.h"
 #include "wimlib/decompress_common.h"
 #include "wimlib/error.h"
-#include "wimlib/xpress.h"
+#include "wimlib/xpress_constants.h"
 
 /* This value is chosen for fast decompression.  */
 #define XPRESS_TABLEBITS 12

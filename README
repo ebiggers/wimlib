@@ -336,7 +336,7 @@ With regards to the supported compression formats:
   neither of which is completely applicable to its use in the WIM format, and
   the first of which contains multiple errors.
 - There does not seem to be any official documentation for LZMS, so my comments
-  and code in src/lzms-decompress.c may in fact be the best documentation
+  and code in src/lzms_decompress.c may in fact be the best documentation
   available for this particular compression format.
 
 The algorithms used by wimlib's compression and decompression codecs are

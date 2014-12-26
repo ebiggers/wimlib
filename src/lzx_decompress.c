@@ -1,7 +1,7 @@
 /*
- * lzx-decompress.c
+ * lzx_decompress.c
  *
- * A very fast decompressor for LZX, as used in WIM files.
+ * A decompressor for the LZX compression format, as used in WIM files.
  */
 
 /*
@@ -24,7 +24,7 @@
 /*
  * LZX is an LZ77 and Huffman-code based compression format that has many
  * similarities to DEFLATE (the format used by zlib/gzip).  The compression
- * ratio is as good or better than DEFLATE.  See lzx-compress.c for a format
+ * ratio is as good or better than DEFLATE.  See lzx_compress.c for a format
  * overview, and see https://en.wikipedia.org/wiki/LZX_(algorithm) for a
  * historical overview.  Here I make some pragmatic notes.
  *
@@ -57,7 +57,7 @@
 #include "wimlib/decompressor_ops.h"
 #include "wimlib/decompress_common.h"
 #include "wimlib/error.h"
-#include "wimlib/lzx.h"
+#include "wimlib/lzx_common.h"
 #include "wimlib/util.h"
 
 #include <string.h>
@@ -270,7 +270,7 @@ lzx_read_block_header(struct input_bitstream *istream,
 	block_type = bitstream_pop_bits(istream, 3);
 
 	/* Read the block size.  This mirrors the behavior of
-	 * lzx_write_compressed_block() in lzx-compress.c; see that for more
+	 * lzx_write_compressed_block() in lzx_compress.c; see that for more
 	 * details.  */
 	if (bitstream_pop_bits(istream, 1)) {
 		block_size = LZX_DEFAULT_BLOCK_SIZE;
