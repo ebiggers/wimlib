@@ -793,7 +793,6 @@ lzms_decode_items(struct lzms_decompressor * const restrict d,
 				d->recent_delta_offsets[2] = d->recent_delta_offsets[1];
 				d->recent_delta_offsets[1] = d->recent_delta_offsets[0];
 				d->recent_delta_offsets[0] = d->pending_delta_offset;
-				d->pending_delta_offset = 0;
 			}
 			d->pending_delta_offset = raw_offset | ((u64)power << 32);
 

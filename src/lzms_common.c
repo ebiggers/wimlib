@@ -1,5 +1,5 @@
 /*
- * lzms-common.c - Common code for LZMS compression and decompression
+ * lzms_common.c - Common code for LZMS compression and decompression
  */
 
 /*

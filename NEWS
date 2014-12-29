@@ -1,6 +1,6 @@
 Version 1.7.4-BETA:
-	The Windows binary distribution no longer contain third party DLLs.
-	These dependencies are instead compiled directly into libwim.dll.
+	The Windows binary distribution no longer contains third party DLLs.
+	These dependencies are instead compiled directly into the libwim DLL.
 
 	Added more fixes for wimlib on non-x86 architectures such as ARM.
 

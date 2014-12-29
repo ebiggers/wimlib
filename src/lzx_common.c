@@ -1,5 +1,5 @@
 /*
- * lzx-common.c - Common code for LZX compression and decompression.
+ * lzx_common.c - Common code for LZX compression and decompression.
  */
 
 /*
@@ -33,6 +33,10 @@
 
 #ifdef __SSE2__
 #  include <emmintrin.h>
+#endif
+
+#ifdef __AVX2__
+#  include <immintrin.h>
 #endif
 
 /* Mapping: offset slot => first match offset that uses that offset slot.
@@ -266,7 +270,17 @@ lzx_e8_filter(u8 *data, u32 size, void (*process_target)(void *, s32))
 		for (;;) {
 			u32 e8_mask;
 			u8 *orig_p = p;
-		#ifdef __SSE2__
+		#ifdef __AVX2__
+			const __m256i e8_bytes = _mm256_set1_epi8(0xE8);
+			for (;;) {
+				__m256i bytes = *(const __m256i *)p;
+				__m256i cmpresult = _mm256_cmpeq_epi8(bytes, e8_bytes);
+				e8_mask = _mm256_movemask_epi8(cmpresult);
+				if (e8_mask)
+					break;
+				p += 32;
+			}
+		#else
 			const __m128i e8_bytes = _mm_set1_epi8(0xE8);
 			for (;;) {
 				/* Read the next 32 bytes of data and test them
@@ -284,17 +298,6 @@ lzx_e8_filter(u8 *data, u32 size, void (*process_target)(void *, s32))
 					e8_mask = mask1 | (mask2 << 16);
 					break;
 				}
-				p += 32;
-			}
-		#else
-			/* AVX-2  */
-			const __m256i e8_bytes = _mm256_set1_epi8(0xE8);
-			for (;;) {
-				__m256i bytes = *(const __m256i *)p;
-				__m256i cmpresult = _mm256_cmpeq_epi8(bytes, e8_bytes);
-				e8_mask = _mm256_movemask_epi8(cmpresult);
-				if (e8_mask)
-					break;
 				p += 32;
 			}
 		#endif
