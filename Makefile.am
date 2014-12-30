@@ -8,7 +8,10 @@ ACLOCAL_AMFLAGS = -I m4
 AM_CPPFLAGS	= -I$(top_srcdir)/include $(PLATFORM_CPPFLAGS)	\
 		  -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE
 
-AM_CFLAGS	= -std=c99 $(PLATFORM_CFLAGS) -fno-common	\
+# Note: -std=gnu99 instead of -std=c99 is needed for unnamed structs and unions,
+# which are in C11 but not C99.  But we can't yet actually use -std=c11 because
+# we want to support older versions of gcc.
+AM_CFLAGS	= -std=gnu99 $(PLATFORM_CFLAGS) -fno-common	\
 		  -Wmissing-prototypes -Wstrict-prototypes	\
 		  -Wundef -Wno-pointer-sign
 
