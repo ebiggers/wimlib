@@ -9,6 +9,9 @@ Version 1.7.4-BETA:
 
 	Improved the performance of XPRESS compression and LZMS decompression.
 
+	Enabled SSSE3 accelerated SHA-1 computation in x86_64 Windows builds.
+	It will automatically be faster on newer Intel and AMD processors.
+
 	Removed the --with-imagex-progname and --enable-more-assertions
 	configure options.
 
