@@ -27,7 +27,17 @@
 #define inline			inline __attribute__((always_inline))
 #define noinline		__attribute__((noinline))
 
-#define CPU_IS_BIG_ENDIAN	(__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+/* Newer gcc supports __BYTE_ORDER__.  Older gcc doesn't.  */
+#ifdef __BYTE_ORDER__
+#  define CPU_IS_BIG_ENDIAN	(__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+#elif defined(HAVE_CONFIG_H)
+#  include "config.h"
+#  ifdef WORDS_BIGENDIAN
+#    define CPU_IS_BIG_ENDIAN 1
+#  else
+#    define CPU_IS_BIG_ENDIAN 0
+#  endif
+#endif
 
 #if defined(__x86_64__) || defined(__i386__)
 #  define UNALIGNED_ACCESS_SPEED 3

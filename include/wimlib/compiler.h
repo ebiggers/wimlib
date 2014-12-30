@@ -59,7 +59,7 @@
 #endif
 
 #ifndef CPU_IS_BIG_ENDIAN
-#  error "missing required definition of CPU_IS_BIG_ENDIAN"
+#  error "missing required endianness definition"
 #endif
 
 #define CPU_IS_LITTLE_ENDIAN (!CPU_IS_BIG_ENDIAN)
