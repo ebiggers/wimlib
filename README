@@ -78,18 +78,18 @@ create the file.  When applicable, the results with the equivalent Microsoft
 implementation in WIMGAPI is included.
 
   =============================================================================
-  | Compression            ||  wimlib (v1.7.2)       |  WIMGAPI (Windows 8.1) |
+  | Compression            ||  wimlib (v1.7.4)       |  WIMGAPI (Windows 8.1) |
   =============================================================================
-  | None             [1]   ||  361,314,224 in 3.4s   |  361,315,338 in 4.5s   |
-  | XPRESS           [2]   ||  138,380,918 in 4.2s   |  140,457,487 in 6.3s   |
-  | XPRESS (slow)    [3]   ||  135,269,627 in 11.1s  |  N/A                   |
-  | LZX (quick)      [4]   ||  130,332,081 in 4.7s   |  N/A                   |
-  | LZX (normal)     [5]   ||  126,714,941 in 12.9s  |  127,293,240 in 19.2s  |
-  | LZX (slow)       [6]   ||  126,150,725 in 23.4s  |  N/A                   |
-  | LZMS (non-solid) [7]   ||  121,909,750 in 13.3s  |  N/A                   |
-  | LZMS (solid)     [8]   ||  93,650,894  in 44.4s  |  88,771,192 in 109.2   |
-  | "WIMBoot"        [9]   ||  167,095,369 in 6.4s   |  169,109,650 in 10.7s  |
-  | "WIMBoot" (slow) [10]  ||  165,195,668 in 9.5s   |  N/A                   |
+  | None             [1]   ||  361,314,224 in 2.4s   |  361,315,338 in 4.5s   |
+  | XPRESS           [2]   ||  138,218,750 in 3.0s   |  140,457,436 in 6.0s   |
+  | XPRESS (slow)    [3]   ||  135,173,511 in 8.9s   |  N/A                   |
+  | LZX (quick)      [4]   ||  130,332,007 in 4.1s   |  N/A                   |
+  | LZX (normal)     [5]   ||  126,714,807 in 12.5s  |  127,293,240 in 19.2s  |
+  | LZX (slow)       [6]   ||  126,150,743 in 20.5s  |  N/A                   |
+  | LZMS (non-solid) [7]   ||  121,909,792 in 11.9s  |  N/A                   |
+  | LZMS (solid)     [8]   ||  93,650,936  in 45.0s  |  88,771,192 in 109.2   |
+  | "WIMBoot"        [9]   ||  167,023,719 in 3.5s   |  169,109,211 in 10.4s  |
+  | "WIMBoot" (slow) [10]  ||  165,027,583 in 7.9s   |  N/A                   |
   =============================================================================
 
 Notes:
