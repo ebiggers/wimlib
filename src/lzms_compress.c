@@ -1445,7 +1445,7 @@ lzms_get_needed_memory(size_t max_block_size, unsigned int compression_level)
 	struct lz_mf_params mf_params;
 	u64 size = 0;
 
-	if (max_block_size >= INT32_MAX)
+	if (max_block_size > LZMS_MAX_BUFFER_SIZE)
 		return 0;
 
 	lzms_build_params(compression_level, &params);
@@ -1478,7 +1478,7 @@ lzms_create_compressor(size_t max_block_size, unsigned int compression_level,
 	struct lzms_compressor_params params;
 	struct lz_mf_params mf_params;
 
-	if (max_block_size >= INT32_MAX)
+	if (max_block_size > LZMS_MAX_BUFFER_SIZE)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	lzms_build_params(compression_level, &params);
