@@ -10,7 +10,6 @@
 #ifndef _WIMLIB_DECOMPRESS_COMMON_H
 #define _WIMLIB_DECOMPRESS_COMMON_H
 
-#include "wimlib/assert.h"
 #include "wimlib/compiler.h"
 #include "wimlib/endianness.h"
 #include "wimlib/types.h"
@@ -253,6 +252,25 @@ make_huffman_decode_table(u16 decode_table[], unsigned num_syms,
 			  unsigned num_bits, const u8 lens[],
 			  unsigned max_codeword_len);
 
+static inline void
+copy_word_unaligned(const void *src, void *dst)
+{
+	store_word_unaligned(load_word_unaligned(src), dst);
+}
+
+static inline machine_word_t
+repeat_byte(u8 b)
+{
+	machine_word_t v;
+
+	BUILD_BUG_ON(WORDSIZE != 4 && WORDSIZE != 8);
+
+	v = b;
+	v |= v << 8;
+	v |= v << 16;
+	v |= v << ((WORDSIZE == 8) ? 32 : 0);
+	return v;
+}
 
 /*
  * Copy an LZ77 match at (dst - offset) to dst.

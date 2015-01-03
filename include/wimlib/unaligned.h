@@ -46,26 +46,6 @@ DEFINE_UNALIGNED_TYPE(machine_word_t);
 #define load_word_unaligned	load_machine_word_t_unaligned
 #define store_word_unaligned	store_machine_word_t_unaligned
 
-static inline void
-copy_word_unaligned(const void *src, void *dst)
-{
-	store_word_unaligned(load_word_unaligned(src), dst);
-}
-
-static inline machine_word_t
-repeat_byte(u8 b)
-{
-	machine_word_t v;
-
-	BUILD_BUG_ON(WORDSIZE != 4 && WORDSIZE != 8);
-
-	v = b;
-	v |= v << 8;
-	v |= v << 16;
-	v |= v << ((WORDSIZE == 8) ? 32 : 0);
-	return v;
-}
-
 static inline u16
 get_unaligned_u16_le(const void *p)
 {

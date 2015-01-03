@@ -14,7 +14,6 @@
 #  include "config.h"
 #endif
 
-#include "wimlib/assert.h"
 #include "wimlib/decompress_common.h"
 
 #include <string.h>

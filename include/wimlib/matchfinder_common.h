@@ -29,7 +29,8 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#pragma once
+#ifndef _MATCHFINDER_COMMON_H
+#define _MATCHFINDER_COMMON_H
 
 #include "wimlib/types.h"
 
@@ -186,3 +187,5 @@ matchfinder_rebase(pos_t *data, size_t num_entries)
 	}
 }
 #endif /* MATCHFINDER_IS_SLIDING */
+
+#endif /* _MATCHFINDER_COMMON_H */

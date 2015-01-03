@@ -27,7 +27,8 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#pragma once
+#ifndef _HC_MATCHFINDER_H
+#define _HC_MATCHFINDER_H
 
 #include "wimlib/lz_extend.h"
 #include "wimlib/lz_hash3.h"
@@ -52,7 +53,7 @@ struct hc_matchfinder {
 		pos_t mf_data[HC_MATCHFINDER_TOTAL_LENGTH];
 		struct {
 			pos_t hash_tab[HC_MATCHFINDER_HASH_LENGTH];
-			pos_t child_tab[MATCHFINDER_WINDOW_SIZE];
+			pos_t next_tab[MATCHFINDER_WINDOW_SIZE];
 		};
 	};
 } _aligned_attribute(MATCHFINDER_ALIGNMENT);
@@ -123,7 +124,7 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 	first_3_bytes = load_u24_unaligned(in_next);
 	hash = lz_hash_u24(first_3_bytes, HC_MATCHFINDER_HASH_ORDER);
 	cur_match = mf->hash_tab[hash];
-	mf->child_tab[in_next - in_base] = cur_match;
+	mf->next_tab[in_next - in_base] = cur_match;
 	mf->hash_tab[hash] = in_next - in_base;
 
 	if (unlikely(best_len >= max_len))
@@ -144,7 +145,7 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 				break;
 
 			/* Not a match; keep trying.  */
-			cur_match = mf->child_tab[
+			cur_match = mf->next_tab[
 					matchfinder_slot_for_match(cur_match)];
 			if (!matchfinder_match_in_window(cur_match,
 							 in_base, in_next))
@@ -158,7 +159,7 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 		best_len = lz_extend(in_next, best_matchptr, 3, max_len);
 		if (best_len >= nice_len)
 			goto out;
-		cur_match = mf->child_tab[matchfinder_slot_for_match(cur_match)];
+		cur_match = mf->next_tab[matchfinder_slot_for_match(cur_match)];
 		if (!matchfinder_match_in_window(cur_match, in_base, in_next))
 			goto out;
 		if (!--depth_remaining)
@@ -181,18 +182,17 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 		#endif
 				break;
 
-			cur_match = mf->child_tab[matchfinder_slot_for_match(cur_match)];
+			cur_match = mf->next_tab[matchfinder_slot_for_match(cur_match)];
 			if (!matchfinder_match_in_window(cur_match, in_base, in_next))
 				goto out;
 			if (!--depth_remaining)
 				goto out;
 		}
 
-	#if UNALIGNED_ACCESS_IS_FAST
-		len = 4;
-	#else
-		len = 0;
-	#endif
+		if (UNALIGNED_ACCESS_IS_FAST)
+			len = 4;
+		else
+			len = 0;
 		len = lz_extend(in_next, matchptr, len, max_len);
 		if (len > best_len) {
 			best_len = len;
@@ -200,7 +200,7 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 			if (best_len >= nice_len)
 				goto out;
 		}
-		cur_match = mf->child_tab[matchfinder_slot_for_match(cur_match)];
+		cur_match = mf->next_tab[matchfinder_slot_for_match(cur_match)];
 		if (!matchfinder_match_in_window(cur_match, in_base, in_next))
 			goto out;
 		if (!--depth_remaining)
@@ -240,8 +240,10 @@ hc_matchfinder_skip_positions(struct hc_matchfinder * restrict mf,
 
 	do {
 		hash = lz_hash(in_next, HC_MATCHFINDER_HASH_ORDER);
-		mf->child_tab[in_next - in_base] = mf->hash_tab[hash];
+		mf->next_tab[in_next - in_base] = mf->hash_tab[hash];
 		mf->hash_tab[hash] = in_next - in_base;
 		in_next++;
 	} while (--count);
 }
+
+#endif /* _HC_MATCHFINDER_H */

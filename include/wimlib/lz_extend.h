@@ -20,10 +20,9 @@ lz_extend(const u8 * const strptr, const u8 * const matchptr,
 	  const u32 start_len, const u32 max_len)
 {
 	u32 len = start_len;
+	machine_word_t v_word;
 
-	if (UNALIGNED_ACCESS_IS_FAST && CPU_IS_LITTLE_ENDIAN) {
-
-		machine_word_t v_word;
+	if (UNALIGNED_ACCESS_IS_FAST) {
 
 		if (likely(max_len - len >= 4 * WORDSIZE)) {
 
@@ -48,18 +47,18 @@ lz_extend(const u8 * const strptr, const u8 * const matchptr,
 				goto word_differs;
 			len += WORDSIZE;
 		}
-
-		while (len < max_len && matchptr[len] == strptr[len])
-			len++;
-		return len;
-
-	word_differs:
-		return len + (ffsw(v_word) >> 3);
-	} else {
-		while (len < max_len && matchptr[len] == strptr[len])
-			len++;
-		return len;
 	}
+
+	while (len < max_len && matchptr[len] == strptr[len])
+		len++;
+	return len;
+
+word_differs:
+	if (CPU_IS_LITTLE_ENDIAN)
+		len += (ffsw(v_word) >> 3);
+	else
+		len += (flsw(v_word) >> 3);
+	return len;
 }
 
 #endif /* _WIMLIB_LZ_EXTEND_H */

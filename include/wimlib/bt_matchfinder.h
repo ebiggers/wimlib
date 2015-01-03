@@ -27,7 +27,8 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#pragma once
+#ifndef _BT_MATCHFINDER_H
+#define _BT_MATCHFINDER_H
 
 #include "wimlib/lz_extend.h"
 #include "wimlib/lz_hash3.h"
@@ -226,3 +227,5 @@ bt_matchfinder_skip_position(struct bt_matchfinder * const restrict mf,
 		}
 	}
 }
+
+#endif /* _BT_MATCHFINDER_H */

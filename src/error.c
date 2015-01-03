@@ -55,36 +55,34 @@ static bool wimlib_owns_error_file = false;
 
 #if defined(ENABLE_ERROR_MESSAGES) || defined(ENABLE_DEBUG)
 static void
-wimlib_vmsg(const tchar *tag, const tchar *format,
-	    va_list va, bool perror)
+wimlib_vmsg(const tchar *tag, const tchar *format, va_list va, bool perror)
 {
-#if !defined(ENABLE_DEBUG)
-	if (wimlib_print_errors)
+#ifndef ENABLE_DEBUG
+	if (!wimlib_print_errors)
+		return;
 #endif
-	{
-		int errno_save = errno;
-		fflush(stdout);
-		tfputs(tag, wimlib_error_file);
-		tvfprintf(wimlib_error_file, format, va);
-		if (perror && errno_save != 0) {
-			tchar buf[64];
-			int res;
-			res = tstrerror_r(errno_save, buf, ARRAY_LEN(buf));
-			if (res) {
-				tsprintf(buf,
-					 T("unknown error (errno=%d)"),
-					 errno_save);
-			}
-		#ifdef WIN32
-			if (errno_save == EBUSY)
-				tstrcpy(buf, T("Resource busy"));
-		#endif
-			tfprintf(wimlib_error_file, T(": %"TS), buf);
+	int errno_save = errno;
+	fflush(stdout);
+	tfputs(tag, wimlib_error_file);
+	tvfprintf(wimlib_error_file, format, va);
+	if (perror && errno_save != 0) {
+		tchar buf[64];
+		int res;
+		res = tstrerror_r(errno_save, buf, ARRAY_LEN(buf));
+		if (res) {
+			tsprintf(buf,
+				 T("unknown error (errno=%d)"),
+				 errno_save);
 		}
-		tputc(T('\n'), wimlib_error_file);
-		fflush(wimlib_error_file);
-		errno = errno_save;
+	#ifdef WIN32
+		if (errno_save == EBUSY)
+			tstrcpy(buf, T("Resource busy"));
+	#endif
+		tfprintf(wimlib_error_file, T(": %"TS), buf);
 	}
+	tputc(T('\n'), wimlib_error_file);
+	fflush(wimlib_error_file);
+	errno = errno_save;
 }
 #endif
 
