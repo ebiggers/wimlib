@@ -1,4 +1,4 @@
-Version 1.7.4-BETA:
+Version 1.7.4:
 	The Windows binary distribution no longer contains third party DLLs.
 	These dependencies are instead compiled directly into the libwim DLL.
 
