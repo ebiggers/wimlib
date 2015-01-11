@@ -1,3 +1,7 @@
+Version 1.7.5-BETA:
+	The performance of LZX compression has been improved by 15-20%.  This is
+	the default compression mode of wimlib-imagex.
+
 Version 1.7.4:
 	The Windows binary distribution no longer contains third party DLLs.
 	These dependencies are instead compiled directly into the libwim DLL.
