@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014 Eric Biggers
+ * Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -90,6 +90,18 @@ struct lzx_tables {
 					_aligned_attribute(DECODE_TABLE_ALIGNMENT);
 	u8 alignedcode_lens[LZX_ALIGNEDCODE_NUM_SYMBOLS];
 } _aligned_attribute(DECODE_TABLE_ALIGNMENT);
+
+/* Least-recently used queue for match offsets.  */
+struct lzx_lru_queue {
+	u32 R[LZX_NUM_RECENT_OFFSETS];
+};
+
+static inline void
+lzx_lru_queue_init(struct lzx_lru_queue *queue)
+{
+	for (unsigned i = 0; i < LZX_NUM_RECENT_OFFSETS; i++)
+		queue->R[i] = 1;
+}
 
 /* The main LZX decompressor structure.
  *
@@ -443,15 +455,15 @@ lzx_decompress_block(int block_type, u32 block_size,
 
 		/* Decode the length header and offset slot.  */
 		mainsym -= LZX_NUM_CHARS;
-		match_len = mainsym & 0x7;
-		offset_slot = mainsym >> 3;
+		match_len = mainsym % LZX_NUM_LEN_HEADERS;
+		offset_slot = mainsym / LZX_NUM_LEN_HEADERS;
 
 		/* If needed, read a length symbol to decode the full length. */
-		if (match_len == 0x7)
+		if (match_len == LZX_NUM_PRIMARY_LENS)
 			match_len += read_huffsym_using_lencode(istream, tables);
 		match_len += LZX_MIN_MATCH_LEN;
 
-		if (offset_slot <= 2) {
+		if (offset_slot < LZX_NUM_RECENT_OFFSETS) {
 			/* Repeat offset  */
 
 			/* Note: This isn't a real LRU queue, since using the R2
@@ -475,18 +487,22 @@ lzx_decompress_block(int block_type, u32 block_size,
 			 * each offset are encoded using the aligned offset
 			 * code.  Otherwise, all the extra bits are literal.  */
 
-			/*if (block_type == LZX_BLOCKTYPE_ALIGNED && num_extra_bits >= 3) {*/
-			if ((num_extra_bits & ones_if_aligned) >= 3) {
-				match_offset += bitstream_read_bits(istream, num_extra_bits - 3) << 3;
+			if ((num_extra_bits & ones_if_aligned) >= LZX_NUM_ALIGNED_OFFSET_BITS) {
+				match_offset +=
+					bitstream_read_bits(istream,
+							    num_extra_bits -
+								LZX_NUM_ALIGNED_OFFSET_BITS)
+							<< LZX_NUM_ALIGNED_OFFSET_BITS;
 				match_offset += read_huffsym_using_alignedcode(istream, tables);
 			} else {
 				match_offset += bitstream_read_bits(istream, num_extra_bits);
 			}
 
 			/* Adjust the offset.  */
-			match_offset -= LZX_OFFSET_OFFSET;
+			match_offset -= LZX_OFFSET_ADJUSTMENT;
 
 			/* Update the match offset LRU queue.  */
+			BUILD_BUG_ON(LZX_NUM_RECENT_OFFSETS != 3);
 			queue->R[2] = queue->R[1];
 			queue->R[1] = queue->R[0];
 			queue->R[0] = match_offset;

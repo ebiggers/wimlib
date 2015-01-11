@@ -78,14 +78,14 @@ create the file.  When applicable, the results with the equivalent Microsoft
 implementation in WIMGAPI is included.
 
   =============================================================================
-  | Compression            ||  wimlib (v1.7.4)       |  WIMGAPI (Windows 8.1) |
+  | Compression            ||  wimlib (v1.7.5-BETA)  |  WIMGAPI (Windows 8.1) |
   =============================================================================
   | None             [1]   ||  361,314,224 in 2.4s   |  361,315,338 in 4.5s   |
   | XPRESS           [2]   ||  138,218,750 in 3.0s   |  140,457,436 in 6.0s   |
   | XPRESS (slow)    [3]   ||  135,173,511 in 8.9s   |  N/A                   |
-  | LZX (quick)      [4]   ||  130,332,007 in 4.1s   |  N/A                   |
-  | LZX (normal)     [5]   ||  126,714,807 in 12.5s  |  127,293,240 in 19.2s  |
-  | LZX (slow)       [6]   ||  126,150,743 in 20.5s  |  N/A                   |
+  | LZX (quick)      [4]   ||  130,207,195 in 3.8s   |  N/A                   |
+  | LZX (normal)     [5]   ||  126,522,539 in 10.4s  |  127,293,240 in 19.2s  |
+  | LZX (slow)       [6]   ||  126,042,313 in 17.3s  |  N/A                   |
   | LZMS (non-solid) [7]   ||  121,909,792 in 11.9s  |  N/A                   |
   | LZMS (solid)     [8]   ||  93,650,936  in 45.0s  |  88,771,192 in 109.2   |
   | "WIMBoot"        [9]   ||  167,023,719 in 3.5s   |  169,109,211 in 10.4s  |
@@ -149,24 +149,24 @@ formats/programs:
      | WIM (WIMGAPI, None)                | 2,814,254    |
      | WIM (wimlib, None)                 | 2,814,216    |
      | WIM (WIMGAPI, XPRESS)              | 825,536      |
-     | WIM (wimlib, XPRESS)               | 790,016      |
+     | WIM (wimlib, XPRESS)               | 789,296      |
      | tar.gz (gzip, default)             | 738,796      |
      | ZIP (Info-ZIP, default)            | 735,334      |
      | tar.gz (gzip, -9)                  | 733,971      |
      | ZIP (Info-ZIP, -9)                 | 732,297      |
-     | WIM (wimlib, LZX quick)            | 704,006      |
+     | WIM (wimlib, LZX quick)            | 690,110      |
      | WIM (WIMGAPI, LZX)                 | 651,866      |
-     | WIM (wimlib, LZX normal)           | 632,614      |
-     | WIM (wimlib, LZX slow)             | 625,050      |
+     | WIM (wimlib, LZX normal)           | 624,634      |
+     | WIM (wimlib, LZX slow)             | 620,728      |
      | WIM (wimlib, LZMS non-solid)       | 581,960      |
      | tar.bz2 (bzip, default)            | 565,008      |
      | tar.bz2 (bzip, -9)                 | 565,008      |
-     | WIM (wimlib, LZX solid)            | 532,700      |
+     | WIM (wimlib, LZX solid)            | 527,688      |
      | WIM (wimlib, LZMS solid)           | 525,990      |
-     | WIM (wimlib, LZX solid, slow)      | 525,140      |
      | WIM (wimlib, LZMS solid, slow)     | 523,728      |
+     | WIM (wimlib, LZX solid, slow)      | 522,042      |
      | WIM (WIMGAPI, LZMS solid)          | 521,366      |
-     | WIM (wimlib, LZX solid, very slow) | 520,832      |
+     | WIM (wimlib, LZX solid, very slow) | 519,546      |
      | tar.xz (xz, default)               | 486,916      |
      | tar.xz (xz, -9)                    | 486,904      |
      | 7z  (7-zip, default)               | 484,700      |

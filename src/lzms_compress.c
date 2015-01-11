@@ -1422,9 +1422,7 @@ lzms_build_mf_params(const struct lzms_compressor_params *lzms_params,
 	memset(mf_params, 0, sizeof(*mf_params));
 
 	/* Choose an appropriate match-finding algorithm.  */
-	if (max_window_size <= 2097152)
-		mf_params->algorithm = LZ_MF_BINARY_TREES;
-	else if (max_window_size <= 33554432)
+	if (max_window_size <= 33554432)
 		mf_params->algorithm = LZ_MF_LCP_INTERVAL_TREE;
 	else
 		mf_params->algorithm = LZ_MF_LINKED_SUFFIX_ARRAY;

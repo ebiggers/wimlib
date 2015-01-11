@@ -39,33 +39,16 @@
 
 /* Available match-finding algorithms.  */
 static const struct lz_mf_ops *mf_ops[] = {
-	[LZ_MF_NULL]			= &lz_null_ops,
-	[LZ_MF_HASH_CHAINS]		= &lz_hash_chains_ops,
-	[LZ_MF_BINARY_TREES]		= &lz_binary_trees_ops,
 	[LZ_MF_LCP_INTERVAL_TREE]	= &lz_lcp_interval_tree_ops,
 	[LZ_MF_LINKED_SUFFIX_ARRAY]	= &lz_linked_suffix_array_ops,
 };
 
-/*
- * Automatically select a match-finding algorithm to use, in the case that the
- * user did not specify one.
- */
 static const struct lz_mf_ops *
-select_mf_ops(enum lz_mf_algo algorithm, u32 max_window_size)
+get_mf_ops(enum lz_mf_algo algorithm)
 {
-	if (algorithm == LZ_MF_DEFAULT) {
-		if (max_window_size <= 32768)
-			algorithm = LZ_MF_HASH_CHAINS;
-		else if (max_window_size <= 2097152)
-			algorithm = LZ_MF_BINARY_TREES;
-		else if (max_window_size <= 33554432)
-			algorithm = LZ_MF_LCP_INTERVAL_TREE;
-		else
-			algorithm = LZ_MF_LINKED_SUFFIX_ARRAY;
-	}
-	if ((int)algorithm < 0 || (int)algorithm >= ARRAY_LEN(mf_ops))
+	if ((unsigned int)algorithm >= ARRAY_LEN(mf_ops))
 		return NULL;
-	return mf_ops[(int)algorithm];
+	return mf_ops[(unsigned int)algorithm];
 }
 
 /*
@@ -83,7 +66,7 @@ lz_mf_get_needed_memory(enum lz_mf_algo algorithm, u32 max_window_size)
 {
 	const struct lz_mf_ops *ops;
 
-	ops = select_mf_ops(algorithm, max_window_size);
+	ops = get_mf_ops(algorithm);
 	if (!ops)
 		return 0;
 	return ops->struct_size + ops->get_needed_memory(max_window_size);
@@ -97,8 +80,8 @@ lz_mf_params_valid(const struct lz_mf_params *params)
 {
 	const struct lz_mf_ops *ops;
 
-	/* Require that a valid algorithm, or LZ_MF_DEFAULT, be specified.  */
-	ops = select_mf_ops(params->algorithm, params->max_window_size);
+	/* Require that a valid algorithm be specified.  */
+	ops = get_mf_ops(params->algorithm);
 	if (!ops)
 		return false;
 
@@ -165,7 +148,7 @@ lz_mf_alloc(const struct lz_mf_params *params)
 
 	/* Get the match-finder operations structure.  Since we just validated
 	 * the parameters, this is guaranteed to return a valid structure.  */
-	ops = select_mf_ops(params->algorithm, params->max_window_size);
+	ops = get_mf_ops(params->algorithm);
 	LZ_ASSERT(ops != NULL);
 
 	/* Allocate memory for the match-finder structure.  */

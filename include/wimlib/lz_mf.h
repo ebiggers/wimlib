@@ -61,6 +61,11 @@
  * works best for your parsing strategy, and your typical data and block sizes.
  */
 
+/*
+ * TODO: this API is going to go away eventually.  It has too much indirection
+ * and is not flexible enough.
+ */
+
 #ifndef _WIMLIB_LZ_MF_H
 #define _WIMLIB_LZ_MF_H
 
@@ -95,52 +100,6 @@ struct lz_match {
  * Specifies a match-finding algorithm.
  */
 enum lz_mf_algo {
-
-	/*
-	 * Use the default algorithm for the specified maximum window size.
-	 */
-	LZ_MF_DEFAULT = 0,
-
-	/*
-	 * "Null" algorithm that never reports any matches.
-	 *
-	 * This algorithm exists for comparison, benchmarking, and testing
-	 * purposes only.  It is not intended to be used in real compressors.
-	 */
-	LZ_MF_NULL = 1,
-
-	/*
-	 * Hash Chain match-finding algorithm.
-	 *
-	 * This works well on small windows.
-	 *
-	 * The memory usage is 4 bytes per position, plus 131072 bytes for a
-	 * hash table.
-	 *
-	 * lz_mf_skip_positions() with this algorithm is very fast, so it's good
-	 * if you're doing "greedy" rather than "optimal" parsing.  However, if
-	 * using large windows you might be better off with binary trees or
-	 * suffix arrays, even if doing greedy parsing.
-	 */
-	LZ_MF_HASH_CHAINS = 3,
-
-	/*
-	 * Binary Tree match-finding algorithm.
-	 *
-	 * This works well on small to medium-sized windows.
-	 *
-	 * The memory usage is 8 bytes per position, plus 262144 bytes for a
-	 * hash table.
-	 *
-	 * lz_mf_skip_positions() with this algorithm takes a significant amount
-	 * of time, almost as much as a call to lz_mf_get_matches().  This makes
-	 * this algorithm better suited for optimal parsing than for greedy
-	 * parsing.  However, if the window size becomes sufficiently large,
-	 * this algorithm can outperform hash chains, even when using greedy
-	 * parsing.
-	 */
-	LZ_MF_BINARY_TREES = 4,
-
 	/*
 	 * Longest Common Prefix Interval Tree match-finding algorithm.
 	 *
@@ -149,15 +108,8 @@ enum lz_mf_algo {
 	 * currently limited to a maximum window size of 33554432 bytes.
 	 *
 	 * The memory usage is 12 bytes per position.
-	 *
-	 * Unlike the hash chain and binary tree algorithms, the LCP interval
-	 * tree algorithm performs most of its work in lz_mf_load_window().  The
-	 * calls to lz_mf_get_matches() and lz_mf_skip_positions() take
-	 * relatively little time, and lz_mf_skip_positions() is not much faster
-	 * than lz_mf_get_matches().  Therefore, if you're using this algorithm
-	 * you might as well be doing "optimal" rather than "greedy" parsing.
 	 */
-	LZ_MF_LCP_INTERVAL_TREE = 5,
+	LZ_MF_LCP_INTERVAL_TREE,
 
 	/*
 	 * Linked Suffix Array match-finding algorithm.
@@ -170,7 +122,7 @@ enum lz_mf_algo {
 	 * interval tree algorithm.  However, it can be used on windows
 	 * exceeding the 33554432 byte limit of the LCP interval tree algorithm.
 	 */
-	LZ_MF_LINKED_SUFFIX_ARRAY = 6,
+	LZ_MF_LINKED_SUFFIX_ARRAY,
 };
 
 /* Parameters for Lempel-Ziv match-finding.  */
@@ -179,9 +131,6 @@ struct lz_mf_params {
 	/*
 	 * The match-finding algorithm to use.  This must be one of the 'enum
 	 * lz_mf_algo' constants defined above.
-	 *
-	 * If this is LZ_MF_DEFAULT, the default algorithm for the specified
-	 * @max_window_size is used.
 	 */
 	u32 algorithm;
 
@@ -237,15 +186,10 @@ struct lz_mf_params {
 	u32 max_match_len;
 
 	/*
-	 * When using the hash chains or binary trees match-finding algorithm,
-	 * this parameter defines the maximum number of search steps at each
-	 * position.  A typical value to use is 32.  Higher values result in
-	 * better matches and slower performance.
-	 *
-	 * The suffix array-based match-finding algorithms treat this parameter
-	 * slightly differently because they find the longest matches first.
-	 * They still honor the intent of the parameter but may scale it down to
-	 * an appropriate value.
+	 * This value describes the maximum amount of work that the
+	 * match-finding algorithm will do at each position.  A typical value to
+	 * use is 32.  Higher values result in better matches and slower
+	 * performance.
 	 *
 	 * If this parameter is 0, the match-finding algorithm sets it to a
 	 * default value.
@@ -253,11 +197,10 @@ struct lz_mf_params {
 	u32 max_search_depth;
 
 	/*
-	 * When using the hash chains, binary trees, or LCP interval tree
-	 * match-finding algorithm, this parameter defines the maximum match
-	 * length to which the full algorithm will be applied.  This can also be
-	 * thought of as the length above which the algorithm will not try to
-	 * search for additional matches.
+	 * This parameter defines the maximum match length to which the full
+	 * algorithm will be applied.  This can also be thought of as the length
+	 * above which the algorithm will not try to search for additional
+	 * matches.
 	 *
 	 * Usually, setting this parameter to a reasonable value (such as 24,
 	 * 32, or 48) will speed up match-finding but will not hurt the

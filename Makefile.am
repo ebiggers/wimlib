@@ -59,12 +59,9 @@ libwim_la_SOURCES =		\
 	src/iterate_dir.c	\
 	src/join.c		\
 	src/lookup_table.c	\
-	src/lz_binary_trees.c	\
-	src/lz_hash_chains.c	\
 	src/lz_lcp_interval_tree.c	\
 	src/lz_linked_suffix_array.c	\
 	src/lz_mf.c		\
-	src/lz_null.c		\
 	src/lz_repsearch.c	\
 	src/lz_suffix_array_utils.c	\
 	src/lzms_common.c	\
@@ -127,7 +124,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/list.h		\
 	include/wimlib/lookup_table.h	\
 	include/wimlib/lz_extend.h	\
-	include/wimlib/lz_hash3.h	\
+	include/wimlib/lz_hash.h	\
 	include/wimlib/lz_mf.h		\
 	include/wimlib/lz_mf_ops.h	\
 	include/wimlib/lz_repsearch.h	\
@@ -138,8 +135,6 @@ libwim_la_SOURCES =		\
 	include/wimlib/lzx_constants.h	\
 	include/wimlib/matchfinder_avx2.h	\
 	include/wimlib/matchfinder_common.h	\
-	include/wimlib/matchfinder_nonsliding.h	\
-	include/wimlib/matchfinder_sliding.h	\
 	include/wimlib/matchfinder_sse2.h	\
 	include/wimlib/metadata.h	\
 	include/wimlib/pathlist.h	\

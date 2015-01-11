@@ -46,19 +46,18 @@
 #define MIN_LEVEL_FOR_NEAR_OPTIMAL	60
 
 /*
- * The window order for the matchfinder.  This must be the base 2 logarithm of
- * the maximum buffer size.
+ * The maximum window order for the matchfinder.  This must be the base 2
+ * logarithm of the maximum buffer size.
  */
-#define MATCHFINDER_WINDOW_ORDER	16
+#define MATCHFINDER_MAX_WINDOW_ORDER	16
 
 /*
- * Although XPRESS can potentially use a sliding window, it isn't well suited
- * for large buffers of data because there is no way to reset the Huffman code.
- * Therefore, we only allow buffers in which there is no restriction on match
- * offsets (no sliding window).  This simplifies the code and allows some
+ * Note: although XPRESS can potentially use a sliding window, it isn't well
+ * suited for large buffers of data because there is no way to reset the Huffman
+ * code.  Therefore, we only allow buffers in which there is no restriction on
+ * match offsets (no sliding window).  This simplifies the code and allows some
  * optimizations.
  */
-#define MATCHFINDER_IS_SLIDING		0
 
 #include <string.h>
 
@@ -122,21 +121,21 @@ struct xpress_compressor {
 	union {
 		/* Data for greedy or lazy parsing  */
 		struct {
-			struct hc_matchfinder hc_mf;
 			struct xpress_item *chosen_items;
-			u8 nonoptimal_end[0];
+			struct hc_matchfinder hc_mf;
+			/* hc_mf must be last!  */
 		};
 
 	#if SUPPORT_NEAR_OPTIMAL_PARSING
 		/* Data for near-optimal parsing  */
 		struct {
-			struct bt_matchfinder bt_mf;
 			struct xpress_optimum_node *optimum_nodes;
 			struct lz_match *match_cache;
 			struct lz_match *cache_overflow_mark;
 			unsigned num_optim_passes;
 			u32 costs[XPRESS_NUM_SYMBOLS];
-			u8 optimal_end[0];
+			struct bt_matchfinder bt_mf;
+			/* bt_mf must be last!  */
 		};
 	#endif
 	};
@@ -527,9 +526,9 @@ xpress_compress_greedy(struct xpress_compressor * restrict c,
 		       const void * restrict in, size_t in_nbytes,
 		       void * restrict out, size_t out_nbytes_avail)
 {
-	const u8 * const in_base = in;
-	const u8 *	 in_next = in_base;
-	const u8 * const in_end = in_base + in_nbytes;
+	const u8 * const in_begin = in;
+	const u8 *	 in_next = in_begin;
+	const u8 * const in_end = in_begin + in_nbytes;
 	struct xpress_item *next_chosen_item = c->chosen_items;
 	unsigned len_3_too_far;
 
@@ -545,7 +544,7 @@ xpress_compress_greedy(struct xpress_compressor * restrict c,
 		unsigned offset;
 
 		length = hc_matchfinder_longest_match(&c->hc_mf,
-						      in_base,
+						      in_begin,
 						      in_next,
 						      XPRESS_MIN_MATCH_LEN - 1,
 						      in_end - in_next,
@@ -560,7 +559,7 @@ xpress_compress_greedy(struct xpress_compressor * restrict c,
 				xpress_record_match(c, length, offset);
 			in_next += 1;
 			hc_matchfinder_skip_positions(&c->hc_mf,
-						      in_base,
+						      in_begin,
 						      in_next,
 						      in_end,
 						      length - 1);
@@ -587,9 +586,9 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 		     const void * restrict in, size_t in_nbytes,
 		     void * restrict out, size_t out_nbytes_avail)
 {
-	const u8 * const in_base = in;
-	const u8 *	 in_next = in_base;
-	const u8 * const in_end = in_base + in_nbytes;
+	const u8 * const in_begin = in;
+	const u8 *	 in_next = in_begin;
+	const u8 * const in_end = in_begin + in_nbytes;
 	struct xpress_item *next_chosen_item = c->chosen_items;
 	unsigned len_3_too_far;
 
@@ -608,7 +607,7 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 
 		/* Find the longest match at the current position.  */
 		cur_len = hc_matchfinder_longest_match(&c->hc_mf,
-						       in_base,
+						       in_begin,
 						       in_next,
 						       XPRESS_MIN_MATCH_LEN - 1,
 						       in_end - in_next,
@@ -637,7 +636,7 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 				xpress_record_match(c, cur_len, cur_offset);
 
 			hc_matchfinder_skip_positions(&c->hc_mf,
-						      in_base,
+						      in_begin,
 						      in_next,
 						      in_end,
 						      cur_len - 1);
@@ -662,7 +661,7 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 		 * longest_match() inlined at each.
 		 */
 		next_len = hc_matchfinder_longest_match(&c->hc_mf,
-							in_base,
+							in_begin,
 							in_next,
 							cur_len,
 						        in_end - in_next,
@@ -685,7 +684,7 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 			*next_chosen_item++ =
 				xpress_record_match(c, cur_len, cur_offset);
 			hc_matchfinder_skip_positions(&c->hc_mf,
-						      in_base,
+						      in_begin,
 						      in_next,
 						      in_end,
 						      cur_len - 2);
@@ -899,16 +898,18 @@ static struct lz_match *
 xpress_find_matches(struct xpress_compressor * restrict c,
 		    const void * restrict in, size_t in_nbytes)
 {
-	const u8 * const in_base = in;
-	const u8 *in_next = in_base;
-	const u8 * const in_end = in_base + in_nbytes;
+	const u8 * const in_begin = in;
+	const u8 *in_next = in_begin;
+	const u8 * const in_end = in_begin + in_nbytes;
 	struct lz_match *cache_ptr = c->match_cache;
-	unsigned long prev_hash = 0;
+	u32 next_hash;
 
 	bt_matchfinder_init(&c->bt_mf);
+	next_hash = bt_matchfinder_hash_3_bytes(in_next);
 
 	do {
-		unsigned num_matches;
+		struct lz_match *matches;
+		unsigned best_len;
 
 		/* If we've found so many matches that the cache might overflow
 		 * if we keep finding more, then stop finding matches.  This
@@ -922,56 +923,53 @@ xpress_find_matches(struct xpress_compressor * restrict c,
 			return cache_ptr;
 		}
 
+		matches = cache_ptr;
+
 		/* Find matches with the current position using the binary tree
 		 * matchfinder and save them in the next available slots in
 		 * the match cache.  */
-		num_matches =
+		cache_ptr =
 			bt_matchfinder_get_matches(&c->bt_mf,
-						   in_base,
+						   in_begin,
 						   in_next,
 						   XPRESS_MIN_MATCH_LEN,
 						   in_end - in_next,
 						   min(in_end - in_next, c->nice_match_length),
 						   c->max_search_depth,
-						   &prev_hash,
+						   &next_hash,
+						   &best_len,
 						   cache_ptr);
-		cache_ptr += num_matches;
-		cache_ptr->length = num_matches;
+		cache_ptr->length = cache_ptr - matches;
 		cache_ptr->offset = *in_next;
 		in_next++;
 		cache_ptr++;
 
-		if (num_matches) {
-			/*
-			 * If there was a very long match found, then don't
-			 * cache any matches for the bytes covered by that
-			 * match.  This avoids degenerate behavior when
-			 * compressing highly redundant data, where the number
-			 * of matches can be very large.
-			 *
-			 * This heuristic doesn't actually hurt the compression
-			 * ratio very much.  If there's a long match, then the
-			 * data must be highly compressible, so it doesn't
-			 * matter as much what we do.
-			 */
-			unsigned best_len = cache_ptr[-2].length;
-			if (best_len >= c->nice_match_length) {
-				--best_len;
-				do {
-					bt_matchfinder_skip_position(&c->bt_mf,
-								     in_base,
-								     in_next,
-								     in_end,
-								     min(in_end - in_next,
-									 c->nice_match_length),
-								     c->max_search_depth,
-								     &prev_hash);
+		/*
+		 * If there was a very long match found, then don't cache any
+		 * matches for the bytes covered by that match.  This avoids
+		 * degenerate behavior when compressing highly redundant data,
+		 * where the number of matches can be very large.
+		 *
+		 * This heuristic doesn't actually hurt the compression ratio
+		 * very much.  If there's a long match, then the data must be
+		 * highly compressible, so it doesn't matter as much what we do.
+		 */
+		if (best_len >= c->nice_match_length) {
+			--best_len;
+			do {
+				bt_matchfinder_skip_position(&c->bt_mf,
+							     in_begin,
+							     in_next,
+							     in_end,
+							     min(in_end - in_next,
+								 c->nice_match_length),
+							     c->max_search_depth,
+							     &next_hash);
 
-					cache_ptr->length = 0;
-					cache_ptr->offset = *in_next++;
-					cache_ptr++;
-				} while (--best_len);
-			}
+				cache_ptr->length = 0;
+				cache_ptr->offset = *in_next++;
+				cache_ptr++;
+			} while (--best_len);
 		}
 	} while (in_next != in_end);
 
@@ -1019,23 +1017,39 @@ xpress_compress_near_optimal(struct xpress_compressor * restrict c,
 
 #endif /* SUPPORT_NEAR_OPTIMAL_PARSING */
 
+static size_t
+xpress_get_compressor_size(size_t max_bufsize, unsigned compression_level)
+{
+#if SUPPORT_NEAR_OPTIMAL_PARSING
+	if (compression_level >= MIN_LEVEL_FOR_NEAR_OPTIMAL)
+		return offsetof(struct xpress_compressor, bt_mf) +
+			bt_matchfinder_size(max_bufsize);
+#endif
+
+	return offsetof(struct xpress_compressor, hc_mf) +
+		hc_matchfinder_size(max_bufsize);
+}
+
 static u64
 xpress_get_needed_memory(size_t max_bufsize, unsigned compression_level)
 {
-	size_t size = 0;
+	u64 size = 0;
 
 	if (max_bufsize > XPRESS_MAX_BUFSIZE)
 		return 0;
 
+	size += xpress_get_compressor_size(max_bufsize, compression_level);
+
 	if (compression_level < MIN_LEVEL_FOR_NEAR_OPTIMAL ||
 	    !SUPPORT_NEAR_OPTIMAL_PARSING) {
-		size += offsetof(struct xpress_compressor, nonoptimal_end);
+		/* chosen_items  */
 		size += max_bufsize * sizeof(struct xpress_item);
 	}
 #if SUPPORT_NEAR_OPTIMAL_PARSING
 	else {
-		size += offsetof(struct xpress_compressor, optimal_end);
+		/* optimum_nodes  */
 		size += (max_bufsize + 1) * sizeof(struct xpress_optimum_node);
+		/* match_cache */
 		size += ((max_bufsize * CACHE_RESERVE_PER_POS) +
 			 XPRESS_MAX_MATCH_LEN + max_bufsize) *
 				sizeof(struct lz_match);
@@ -1053,49 +1067,31 @@ xpress_create_compressor(size_t max_bufsize, unsigned compression_level,
 	if (max_bufsize > XPRESS_MAX_BUFSIZE)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	if (compression_level < 30) {
-		c = ALIGNED_MALLOC(offsetof(struct xpress_compressor,
-					    nonoptimal_end),
-				   MATCHFINDER_ALIGNMENT);
-		if (!c)
-			return WIMLIB_ERR_NOMEM;
-		c->impl = xpress_compress_greedy;
-		c->max_search_depth = (compression_level * 24) / 16;
-		c->nice_match_length = (compression_level * 48) / 16;
-		c->chosen_items = MALLOC(max_bufsize * sizeof(struct xpress_item));
-		if (!c->chosen_items) {
-			ALIGNED_FREE(c);
-			return WIMLIB_ERR_NOMEM;
-		}
-	} else if (compression_level < MIN_LEVEL_FOR_NEAR_OPTIMAL ||
-		   !SUPPORT_NEAR_OPTIMAL_PARSING)
-	{
-		c = ALIGNED_MALLOC(offsetof(struct xpress_compressor,
-					    nonoptimal_end),
-				   MATCHFINDER_ALIGNMENT);
-		if (!c)
-			return WIMLIB_ERR_NOMEM;
+	c = ALIGNED_MALLOC(xpress_get_compressor_size(max_bufsize, compression_level),
+			   MATCHFINDER_ALIGNMENT);
+	if (!c)
+		goto oom0;
 
-		c->impl = xpress_compress_lazy;
-		c->max_search_depth = (compression_level * 24) / 32;
-		c->nice_match_length = (compression_level * 48) / 32;
+	if (compression_level < MIN_LEVEL_FOR_NEAR_OPTIMAL ||
+	    !SUPPORT_NEAR_OPTIMAL_PARSING)
+	{
+
 		c->chosen_items = MALLOC(max_bufsize * sizeof(struct xpress_item));
-		if (!c->chosen_items) {
-			ALIGNED_FREE(c);
-			return WIMLIB_ERR_NOMEM;
+		if (!c->chosen_items)
+			goto oom1;
+
+		if (compression_level < 30) {
+			c->impl = xpress_compress_greedy;
+			c->max_search_depth = (compression_level * 24) / 16;
+			c->nice_match_length = (compression_level * 48) / 16;
+		} else {
+			c->impl = xpress_compress_lazy;
+			c->max_search_depth = (compression_level * 24) / 32;
+			c->nice_match_length = (compression_level * 48) / 32;
 		}
 	}
 #if SUPPORT_NEAR_OPTIMAL_PARSING
 	else {
-		c = ALIGNED_MALLOC(offsetof(struct xpress_compressor,
-					    optimal_end),
-				   MATCHFINDER_ALIGNMENT);
-		if (!c)
-			return WIMLIB_ERR_NOMEM;
-		c->impl = xpress_compress_near_optimal;
-		c->max_search_depth = (compression_level * 32) / 100;
-		c->nice_match_length = (compression_level * 50) / 100;
-		c->num_optim_passes = compression_level / 40;
 
 		c->optimum_nodes = MALLOC((max_bufsize + 1) *
 					  sizeof(struct xpress_optimum_node));
@@ -1105,16 +1101,25 @@ xpress_create_compressor(size_t max_bufsize, unsigned compression_level,
 		if (!c->optimum_nodes || !c->match_cache) {
 			FREE(c->optimum_nodes);
 			FREE(c->match_cache);
-			ALIGNED_FREE(c);
-			return WIMLIB_ERR_NOMEM;
+			goto oom1;
 		}
 		c->cache_overflow_mark =
 			&c->match_cache[max_bufsize * CACHE_RESERVE_PER_POS];
+
+		c->impl = xpress_compress_near_optimal;
+		c->max_search_depth = (compression_level * 32) / 100;
+		c->nice_match_length = (compression_level * 50) / 100;
+		c->num_optim_passes = compression_level / 40;
 	}
 #endif /* SUPPORT_NEAR_OPTIMAL_PARSING */
 
 	*c_ret = c;
 	return 0;
+
+oom1:
+	ALIGNED_FREE(c);
+oom0:
+	return WIMLIB_ERR_NOMEM;
 }
 
 static size_t
@@ -1122,6 +1127,10 @@ xpress_compress(const void *in, size_t in_nbytes,
 		void *out, size_t out_nbytes_avail, void *_c)
 {
 	struct xpress_compressor *c = _c;
+
+	/* Don't bother trying to compress very small inputs.  */
+	if (in_nbytes < 25)
+		return 0;
 
 	if (out_nbytes_avail <= XPRESS_NUM_SYMBOLS / 2 + 4)
 		return 0;
@@ -1136,16 +1145,14 @@ xpress_free_compressor(void *_c)
 {
 	struct xpress_compressor *c = _c;
 
-	if (c) {
-	#if SUPPORT_NEAR_OPTIMAL_PARSING
-		if (c->impl == xpress_compress_near_optimal) {
-			FREE(c->optimum_nodes);
-			FREE(c->match_cache);
-		} else
-	#endif
-			FREE(c->chosen_items);
-		ALIGNED_FREE(c);
-	}
+#if SUPPORT_NEAR_OPTIMAL_PARSING
+	if (c->impl == xpress_compress_near_optimal) {
+		FREE(c->optimum_nodes);
+		FREE(c->match_cache);
+	} else
+#endif
+		FREE(c->chosen_items);
+	ALIGNED_FREE(c);
 }
 
 const struct compressor_ops xpress_compressor_ops = {

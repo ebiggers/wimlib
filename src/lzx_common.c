@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014 Eric Biggers
+ * Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -41,7 +41,7 @@
 
 /* Mapping: offset slot => first match offset that uses that offset slot.
  */
-const u32 lzx_offset_slot_base[LZX_MAX_OFFSET_SLOTS] = {
+const u32 lzx_offset_slot_base[LZX_MAX_OFFSET_SLOTS + 1] = {
 	0      , 1      , 2      , 3      , 4      ,	/* 0  --- 4  */
 	6      , 8      , 12     , 16     , 24     ,	/* 5  --- 9  */
 	32     , 48     , 64     , 96     , 128    ,    /* 10 --- 14 */
@@ -52,12 +52,12 @@ const u32 lzx_offset_slot_base[LZX_MAX_OFFSET_SLOTS] = {
 	196608 , 262144 , 393216 , 524288 , 655360 ,    /* 35 --- 39 */
 	786432 , 917504 , 1048576, 1179648, 1310720,    /* 40 --- 44 */
 	1441792, 1572864, 1703936, 1835008, 1966080,    /* 45 --- 49 */
-	2097152						/* 50	     */
+	2097152						/* extra     */
 };
 
 /* Mapping: offset slot => how many extra bits must be read and added to the
  * corresponding offset slot base to decode the match offset.  */
-const u8 lzx_extra_offset_bits[LZX_MAX_OFFSET_SLOTS] = {
+const u8 lzx_extra_offset_bits[LZX_MAX_OFFSET_SLOTS + 1] = {
 	0 , 0 , 0 , 0 , 1 ,
 	1 , 2 , 2 , 3 , 3 ,
 	4 , 4 , 5 , 5 , 6 ,
@@ -71,23 +71,36 @@ const u8 lzx_extra_offset_bits[LZX_MAX_OFFSET_SLOTS] = {
 	17
 };
 
-/* Round the specified compression block size (not LZX block size) up to the
- * next valid LZX window size, and return its order (log2).  Or, if the block
- * size is 0 or greater than the largest valid LZX window size, return 0.  */
+/* Round the specified buffer size up to the next valid LZX window size, and
+ * return its order (log2).  Or, if the buffer size is 0 or greater than the
+ * largest valid LZX window size, return 0.  */
 unsigned
-lzx_get_window_order(size_t max_block_size)
+lzx_get_window_order(size_t max_bufsize)
 {
 	unsigned order;
 
-	if (max_block_size == 0 || max_block_size > LZX_MAX_WINDOW_SIZE)
+	if (max_bufsize == 0 || max_bufsize > LZX_MAX_WINDOW_SIZE)
 		return 0;
 
-	order = fls32(max_block_size);
+	order = fls32(max_bufsize);
 
-	if (((u32)1 << order) != max_block_size)
+	if (((u32)1 << order) != max_bufsize)
 		order++;
 
 	return max(order, LZX_MIN_WINDOW_ORDER);
+}
+
+unsigned
+lzx_get_num_offset_slots(unsigned window_order)
+{
+	/* Note: one would expect that the maximum match offset would be
+	 * 'window_size - LZX_MIN_MATCH_LEN', which would occur if the first two
+	 * bytes were to match the last two bytes.  However, the format
+	 * disallows this case.  This reduces the number of needed offset slots
+	 * by 1.  */
+	u32 window_size = (u32)1 << window_order;
+	u32 max_offset = window_size - LZX_MIN_MATCH_LEN - 1;
+	return 1 + lzx_get_offset_slot(max_offset);
 }
 
 /* Given a valid LZX window order, return the number of symbols that will exist
@@ -95,36 +108,8 @@ lzx_get_window_order(size_t max_block_size)
 unsigned
 lzx_get_num_main_syms(unsigned window_order)
 {
-	u32 window_size = (u32)1 << window_order;
-
-	/* NOTE: the calculation *should* be as follows:
-	 *
-	 * u32 max_offset = window_size - LZX_MIN_MATCH_LEN;
-	 * u32 max_adjusted_offset = max_offset + LZX_OFFSET_OFFSET;
-	 * u32 num_offset_slots = 1 + lzx_get_offset_slot_raw(max_adjusted_offset);
-	 *
-	 * However since LZX_MIN_MATCH_LEN == LZX_OFFSET_OFFSET, we would get
-	 * max_adjusted_offset == window_size, which would bump the number of
-	 * offset slots up by 1 since every valid LZX window size is equal to a
-	 * offset slot base value.  The format doesn't do this, and instead
-	 * disallows matches with minimum length and maximum offset.  This sets
-	 * max_adjusted_offset = window_size - 1, so instead we must calculate:
-	 *
-	 * num_offset_slots = 1 + lzx_get_offset_slot_raw(window_size - 1);
-	 *
-	 * ... which is the same as
-	 *
-	 * num_offset_slots = lzx_get_offset_slot_raw(window_size);
-	 *
-	 * ... since every valid window size is equal to an offset base value.
-	 */
-	unsigned num_offset_slots = lzx_get_offset_slot_raw(window_size);
-
-	/* Now calculate the number of main symbols as LZX_NUM_CHARS literal
-	 * symbols, plus 8 symbols per offset slot (since there are 8 possible
-	 * length headers, and we need all (offset slot, length header)
-	 * combinations).  */
-	return LZX_NUM_CHARS + (num_offset_slots << 3);
+	return LZX_NUM_CHARS + (lzx_get_num_offset_slots(window_order) *
+				LZX_NUM_LEN_HEADERS);
 }
 
 static void

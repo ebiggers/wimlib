@@ -3,6 +3,9 @@
  *
  * Fast searching for repeat offset matches.
  *
+ * Author:	Eric Biggers
+ * Year:	2014, 2015
+ *
  * The author dedicates this file to the public domain.
  * You can do whatever you want with this file.
  */

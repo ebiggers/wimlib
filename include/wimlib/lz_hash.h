@@ -1,14 +1,17 @@
 /*
- * lz_hash3.h
+ * lz_hash.h
  *
- * 3-byte hashing for Lempel-Ziv matchfinding.
+ * Hashing for Lempel-Ziv matchfinding.
+ *
+ * Author:	Eric Biggers
+ * Year:	2014, 2015
  *
  * The author dedicates this file to the public domain.
  * You can do whatever you want with this file.
  */
 
-#ifndef _WIMLIB_LZ_HASH3_H
-#define _WIMLIB_LZ_HASH3_H
+#ifndef _WIMLIB_LZ_HASH_H
+#define _WIMLIB_LZ_HASH_H
 
 #include "wimlib/unaligned.h"
 
@@ -34,7 +37,7 @@ load_u24_unaligned(const u8 *p)
 }
 
 static inline u32
-lz_hash_u24(u32 str, unsigned num_bits)
+lz_hash(u32 str, unsigned num_bits)
 {
 	return (u32)(str * LZ_HASH_MULTIPLIER) >> (32 - num_bits);
 }
@@ -46,16 +49,13 @@ lz_hash_u24(u32 str, unsigned num_bits)
  * some architectures.
  */
 static inline u32
-lz_hash(const u8 *p, unsigned num_bits)
+lz_hash_3_bytes(const u8 *p, unsigned num_bits)
 {
-	return lz_hash_u24(load_u24_unaligned(p), num_bits);
+	return lz_hash(load_u24_unaligned(p), num_bits);
 }
-
-/* The number of bytes being hashed.  */
-#define LZ_HASH_NBYTES 3
 
 /* Number of bytes the hash function actually requires be available, due to the
  * possibility of an unaligned load.  */
 #define LZ_HASH_REQUIRED_NBYTES (UNALIGNED_ACCESS_IS_FAST ? 4 : 3)
 
-#endif /* _WIMLIB_LZ_HASH3_H */
+#endif /* _WIMLIB_LZ_HASH_H */
