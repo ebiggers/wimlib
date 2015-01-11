@@ -79,12 +79,28 @@
  * LZX_CACHE_PER_POS is the number of lz_match structures to reserve in the
  * match cache for each byte position.  This value should be high enough so that
  * nearly the time, all matches found in a given block can fit in the match
- * cache.  However, fallback behavior on cache overflow is still required.
+ * cache.  However, fallback behavior (immediately terminating the block) on
+ * cache overflow is still required.
  */
 #define LZX_CACHE_PER_POS	6
 
-#define LZX_CACHE_LEN		(LZX_DIV_BLOCK_SIZE * (LZX_CACHE_PER_POS + 1))
+/*
+ * LZX_CACHE_LENGTH is the number of lz_match structures in the match cache,
+ * excluding the extra "overflow" entries.  The per-position multiplier is '1 +
+ * LZX_CACHE_PER_POS' instead of 'LZX_CACHE_PER_POS' because there is an
+ * overhead of one lz_match per position, used to hold the match count at that
+ * position.
+ */
+#define LZX_CACHE_LENGTH	(LZX_DIV_BLOCK_SIZE * (1 + LZX_CACHE_PER_POS))
 
+/*
+ * LZX_MAX_MATCHES_PER_POS is an upper bound on the number of matches that can
+ * ever be saved in the match cache for a single position.  Since each match we
+ * save for a single position has a distinct length, we can use the number of
+ * possible match lengths in LZX as this bound.  This bound is guaranteed to be
+ * valid in all cases, although if 'nice_match_length < LZX_MAX_MATCH_LEN', then
+ * it will never actually be reached.
+ */
 #define LZX_MAX_MATCHES_PER_POS	LZX_NUM_LENS
 
 /*
@@ -361,9 +377,26 @@ struct lzx_compressor {
 	struct lzx_codes codes[2];
 	unsigned codes_index;
 
-	/* The match/literal sequence the algorithm chose for the current block.
+	/*
+	 * The match/literal sequence the algorithm chose for the current block.
+	 *
+	 * Notes on how large this array actually needs to be:
+	 *
+	 * - In lzx_compress_near_optimal(), the maximum block size is
+	 *   'LZX_DIV_BLOCK_SIZE + LZX_MAX_MATCH_LEN - 1' bytes.  This occurs if
+	 *   a match of the maximum length is found on the last byte.  Although
+	 *   it is impossible for this particular case to actually result in a
+	 *   parse of all literals, we reserve this many spaces anyway.
+	 *
+	 * - The worst case for lzx_compress_lazy() is a block of almost all
+	 *   literals that ends with a series of matches of increasing scores,
+	 *   causing a sequence of literals to be chosen before the last match
+	 *   is finally chosen.  The number of items actually chosen in this
+	 *   scenario is limited by the number of distinct match scores that
+	 *   exist for matches shorter than 'nice_match_length'.  Having
+	 *   'LZX_MAX_MATCH_LEN - 1' extra spaces is plenty for now.
 	 */
-	struct lzx_item chosen_items[LZX_DIV_BLOCK_SIZE + LZX_MAX_MATCH_LEN + 1];
+	struct lzx_item chosen_items[LZX_DIV_BLOCK_SIZE + LZX_MAX_MATCH_LEN - 1];
 
 	/* Table mapping match offset => offset slot for small offsets  */
 #define LZX_NUM_FAST_OFFSETS 32768
@@ -378,17 +411,55 @@ struct lzx_compressor {
 
 		/* Data for near-optimal parsing  */
 		struct {
-			/* The graph nodes for the current block  */
+			/*
+			 * The graph nodes for the current block.
+			 *
+			 * We need at least 'LZX_DIV_BLOCK_SIZE +
+			 * LZX_MAX_MATCH_LEN - 1' nodes because that is the
+			 * maximum block size that may be used.  Add 1 because
+			 * we need a node to represent end-of-block.
+			 *
+			 * It is possible that nodes past end-of-block are
+			 * accessed during match consideration, but this can
+			 * only occur if the block was truncated at
+			 * LZX_DIV_BLOCK_SIZE.  So the same bound still applies.
+			 * Note that since nodes past the end of the block will
+			 * never actually have an effect on the items that are
+			 * chosen for the block, it makes no difference what
+			 * their costs are initialized to (if anything).
+			 */
 			struct lzx_optimum_node optimum_nodes[LZX_DIV_BLOCK_SIZE +
-							      LZX_MAX_MATCH_LEN + 1];
+							      LZX_MAX_MATCH_LEN - 1 + 1];
 
 			/* The cost model for the current block  */
 			struct lzx_costs costs;
 
-			/* Cached matches for the current block  */
-			struct lz_match match_cache[LZX_CACHE_LEN + 1 +
-						    LZX_MAX_MATCHES_PER_POS];
-			struct lz_match *cache_overflow_mark;
+			/*
+			 * Cached matches for the current block.  This array
+			 * contains the matches that were found at each position
+			 * in the block.  Specifically, for each position, there
+			 * is a special 'struct lz_match' whose 'length' field
+			 * contains the number of matches that were found at
+			 * that position; this is followed by the matches
+			 * themselves, if any, sorted by strictly increasing
+			 * length and strictly increasing offset.
+			 *
+			 * Note: in rare cases, there will be a very high number
+			 * of matches in the block and this array will overflow.
+			 * If this happens, we force the end of the current
+			 * block.  LZX_CACHE_LENGTH is the length at which we
+			 * actually check for overflow.  The extra slots beyond
+			 * this are enough to absorb the worst case overflow,
+			 * which occurs if starting at
+			 * &match_cache[LZX_CACHE_LENGTH - 1], we write the
+			 * match count header, then write
+			 * LZX_MAX_MATCHES_PER_POS matches, then skip searching
+			 * for matches at 'LZX_MAX_MATCH_LEN - 1' positions and
+			 * write the match count header for each.
+			 */
+			struct lz_match match_cache[LZX_CACHE_LENGTH +
+						    LZX_MAX_MATCHES_PER_POS +
+						    LZX_MAX_MATCH_LEN - 1];
 
 			/* Hash table for finding length 2 matches  */
 			pos_t hash2_tab[LZX_HASH2_LENGTH]
@@ -1645,7 +1716,7 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 				} while (--best_len);
 			}
 		} while (in_next < in_block_end &&
-			 likely(cache_ptr < c->cache_overflow_mark));
+			 likely(cache_ptr < &c->match_cache[LZX_CACHE_LENGTH]));
 
 		/* We've finished running the block through the matchfinder.
 		 * Now choose a match/literal sequence and write the block.  */
@@ -2028,8 +2099,6 @@ lzx_create_compressor(size_t max_bufsize, unsigned compression_level,
 			if (compression_level >= 300)
 				c->num_optim_passes++;
 		}
-
-		c->cache_overflow_mark = &c->match_cache[LZX_CACHE_LEN];
 	}
 
 	lzx_init_offset_slot_fast(c);
