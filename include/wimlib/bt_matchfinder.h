@@ -127,8 +127,9 @@ bt_right_child(struct bt_matchfinder *mf, pos_t node)
  *	The maximum permissible match length at this position.
  * @nice_len
  *	Stop searching if a match of at least this length is found.
+ *	Must be <= @max_len.
  * @max_search_depth
- *	Limit on the number of potential matches to consider.
+ *	Limit on the number of potential matches to consider.  Must be >= 1.
  * @next_hash
  *	Pointer to the hash code for the current sequence, which was computed
  *	one position in advance so that the binary tree root could be

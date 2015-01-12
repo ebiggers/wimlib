@@ -2062,9 +2062,13 @@ lzx_create_compressor(size_t max_bufsize, unsigned compression_level,
 
 		c->impl = lzx_compress_lazy;
 		c->max_search_depth = (36 * compression_level) / 20;
-		c->nice_match_length = min((72 * compression_level) / 20,
-					   LZX_MAX_MATCH_LEN);
+		c->nice_match_length = (72 * compression_level) / 20;
 
+		/* lzx_compress_lazy() needs max_search_depth >= 2 because it
+		 * halves the max_search_depth when attempting a lazy match, and
+		 * max_search_depth cannot be 0.  */
+		if (c->max_search_depth < 2)
+			c->max_search_depth = 2;
 	} else {
 
 		/* Normal / high compression: Use near-optimal parsing.  */
@@ -2074,8 +2078,7 @@ lzx_create_compressor(size_t max_bufsize, unsigned compression_level,
 		/* Scale nice_match_length and max_search_depth with the
 		 * compression level.  */
 		c->max_search_depth = (24 * compression_level) / 50;
-		c->nice_match_length = min((32 * compression_level) / 50,
-					   LZX_MAX_MATCH_LEN);
+		c->nice_match_length = (32 * compression_level) / 50;
 
 		/* Set a number of optimization passes appropriate for the
 		 * compression level.  */
@@ -2100,6 +2103,13 @@ lzx_create_compressor(size_t max_bufsize, unsigned compression_level,
 				c->num_optim_passes++;
 		}
 	}
+
+	/* max_search_depth == 0 is invalid.  */
+	if (c->max_search_depth < 1)
+		c->max_search_depth = 1;
+
+	if (c->nice_match_length > LZX_MAX_MATCH_LEN)
+		c->nice_match_length = LZX_MAX_MATCH_LEN;
 
 	lzx_init_offset_slot_fast(c);
 	*c_ret = c;

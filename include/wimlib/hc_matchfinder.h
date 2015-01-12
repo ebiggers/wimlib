@@ -145,8 +145,9 @@ hc_matchfinder_init(struct hc_matchfinder *mf)
  *	The maximum permissible match length at this position.
  * @nice_len
  *	Stop searching if a match of at least this length is found.
+ *	Must be <= @max_len.
  * @max_search_depth
- *	Limit on the number of potential matches to consider.
+ *	Limit on the number of potential matches to consider.  Must be >= 1.
  * @offset_ret
  *	If a match is found, its offset is returned in this location.
  *
