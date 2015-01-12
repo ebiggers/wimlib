@@ -474,7 +474,7 @@ enum wimlib_compression_type {
 	 *
 	 * If using wimlib_create_compressor() to create an XPRESS compressor
 	 * directly, the @p max_block_size parameter may be any positive value
-	 * up to <c>2^16</c>.
+	 * up to and including <c>2^16</c>.
 	 */
 	WIMLIB_COMPRESSION_TYPE_XPRESS = 1,
 
@@ -496,7 +496,7 @@ enum wimlib_compression_type {
 	 *
 	 * If using wimlib_create_compressor() to create an LZX compressor
 	 * directly, the @p max_block_size parameter may be any positive value
-	 * up to <c>2^21</c>.
+	 * up to and including <c>2^21</c>.
 	 */
 	WIMLIB_COMPRESSION_TYPE_LZX = 2,
 
@@ -517,7 +517,7 @@ enum wimlib_compression_type {
 	 *
 	 * If using wimlib_create_compressor() to create an LZMS compressor
 	 * directly, the @p max_block_size parameter may be any positive value
-	 * up to <c>2^31 - 2</c>.
+	 * up to and including <c>1180427429</c>.
 	 */
 	WIMLIB_COMPRESSION_TYPE_LZMS = 3,
 };
