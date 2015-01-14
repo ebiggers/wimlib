@@ -10,52 +10,51 @@
  * You can do whatever you want with this file.
  */
 
-#ifndef _WIMLIB_LZ_HASH_H
-#define _WIMLIB_LZ_HASH_H
+#ifndef _LZ_HASH_H
+#define _LZ_HASH_H
 
 #include "wimlib/unaligned.h"
 
-/* Constant for the multiplicative hash function.  */
-#define LZ_HASH_MULTIPLIER 0x1E35A7BD
-
+/*
+ * The hash function: given a sequence prefix held in the low-order bits of a
+ * 32-bit value, multiply by a carefully-chosen large constant.  Discard any
+ * bits of the product that don't fit in a 32-bit value, but take the
+ * next-highest @num_bits bits of the product as the hash value, as those have
+ * the most randomness.
+ */
 static inline u32
-loaded_u32_to_u24(u32 v)
+lz_hash(u32 seq, unsigned num_bits)
 {
-	if (CPU_IS_LITTLE_ENDIAN)
-		return v & 0xFFFFFF;
-	else
-		return v >> 8;
-}
-
-static inline u32
-load_u24_unaligned(const u8 *p)
-{
-	if (UNALIGNED_ACCESS_IS_FAST)
-		return loaded_u32_to_u24(load_u32_unaligned(p));
-	else
-		return ((u32)p[0] << 0) | ((u32)p[1] << 8) | ((u32)p[2] << 16);
-}
-
-static inline u32
-lz_hash(u32 str, unsigned num_bits)
-{
-	return (u32)(str * LZ_HASH_MULTIPLIER) >> (32 - num_bits);
+	return (u32)(seq * 0x1E35A7BD) >> (32 - num_bits);
 }
 
 /*
- * Hash the next 3-byte sequence in the window, producing a hash of length
- * 'num_bits' bits.  At least LZ_HASH_REQUIRED_NBYTES must be available at 'p';
- * this might be 4 bytes rather than 3 because an unaligned load is faster on
- * some architectures.
+ * Hash the 2-byte sequence beginning at @p, producing a hash of length
+ * @num_bits bits.  At least 2 bytes of data must be available at @p.
+ */
+static inline u32
+lz_hash_2_bytes(const u8 *p, unsigned num_bits)
+{
+	u32 seq = load_u16_unaligned(p);
+	if (num_bits >= 16)
+		return seq;
+	return lz_hash(seq, num_bits);
+}
+
+/*
+ * Hash the 3-byte sequence beginning at @p, producing a hash of length
+ * @num_bits bits.  At least LZ_HASH3_REQUIRED_NBYTES bytes of data must be
+ * available at @p; note that this may be more than 3.
  */
 static inline u32
 lz_hash_3_bytes(const u8 *p, unsigned num_bits)
 {
-	return lz_hash(load_u24_unaligned(p), num_bits);
+	u32 seq = load_u24_unaligned(p);
+	if (num_bits >= 24)
+		return seq;
+	return lz_hash(seq, num_bits);
 }
 
-/* Number of bytes the hash function actually requires be available, due to the
- * possibility of an unaligned load.  */
-#define LZ_HASH_REQUIRED_NBYTES (UNALIGNED_ACCESS_IS_FAST ? 4 : 3)
+#define LZ_HASH3_REQUIRED_NBYTES LOAD_U24_REQUIRED_NBYTES
 
-#endif /* _WIMLIB_LZ_HASH_H */
+#endif /* _LZ_HASH_H */

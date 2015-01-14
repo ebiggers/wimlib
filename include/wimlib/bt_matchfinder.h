@@ -169,7 +169,7 @@ bt_matchfinder_get_matches(struct bt_matchfinder * const restrict mf,
 	unsigned len;
 	unsigned best_len = min_len - 1;
 
-	if (unlikely(max_len < LZ_HASH_REQUIRED_NBYTES + 1)) {
+	if (unlikely(max_len < LZ_HASH3_REQUIRED_NBYTES + 1)) {
 		*best_len_ret = best_len;
 		return lz_matchptr;
 	}
@@ -278,7 +278,7 @@ bt_matchfinder_skip_position(struct bt_matchfinder * const restrict mf,
 	unsigned best_lt_len, best_gt_len;
 	unsigned len;
 
-	if (unlikely(in_end - in_next < LZ_HASH_REQUIRED_NBYTES + 1))
+	if (unlikely(in_end - in_next < LZ_HASH3_REQUIRED_NBYTES + 1))
 		return;
 
 	hash = *next_hash;

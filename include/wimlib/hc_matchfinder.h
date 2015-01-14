@@ -173,7 +173,7 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 	pos_t cur_node;
 
 	/* Insert the current sequence into the appropriate linked list.  */
-	if (unlikely(max_len < LZ_HASH_REQUIRED_NBYTES))
+	if (unlikely(max_len < LOAD_U24_REQUIRED_NBYTES))
 		goto out;
 	first_3_bytes = load_u24_unaligned(in_next);
 	hash = lz_hash(first_3_bytes, HC_MATCHFINDER_HASH_ORDER);
@@ -279,7 +279,7 @@ hc_matchfinder_skip_positions(struct hc_matchfinder * restrict mf,
 {
 	u32 hash;
 
-	if (unlikely(in_next + count >= in_end - LZ_HASH_REQUIRED_NBYTES))
+	if (unlikely(in_next + count >= in_end - LZ_HASH3_REQUIRED_NBYTES))
 		return;
 
 	do {

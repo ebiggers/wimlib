@@ -471,17 +471,6 @@ struct lzx_compressor {
 	};
 };
 
-/* Compute a hash value for the next 2 bytes of uncompressed data.  */
-static inline u32
-lz_hash_2_bytes(const u8 *in_next)
-{
-	u16 next_2_bytes = load_u16_unaligned(in_next);
-	if (LZX_HASH2_ORDER == 16)
-		return next_2_bytes;
-	else
-		return lz_hash(next_2_bytes, LZX_HASH2_ORDER);
-}
-
 /*
  * Structure to keep track of the current state of sending bits to the
  * compressed output buffer.
@@ -1632,9 +1621,7 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 				 * match of the very last two bytes with the
 				 * very first two bytes, since such a match has
 				 * an offset too large to be represented.  */
-				if (unlikely(max_len <
-					     max(LZ_HASH_REQUIRED_NBYTES, 3)))
-				{
+				if (unlikely(max_len < 3)) {
 					in_next++;
 					cache_ptr->length = 0;
 					cache_ptr++;
@@ -1645,7 +1632,7 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 			lz_matchptr = cache_ptr + 1;
 
 			/* Check for a length 2 match.  */
-			hash2 = lz_hash_2_bytes(in_next);
+			hash2 = lz_hash_2_bytes(in_next, LZX_HASH2_ORDER);
 			cur_match = c->hash2_tab[hash2];
 			c->hash2_tab[hash2] = in_next - in_begin;
 			if (matchfinder_node_valid(cur_match) &&
@@ -1692,16 +1679,14 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 					if (unlikely(max_len > in_end - in_next)) {
 						max_len = in_end - in_next;
 						nice_len = min(max_len, nice_len);
-						if (unlikely(max_len <
-							     max(LZ_HASH_REQUIRED_NBYTES, 3)))
-						{
+						if (unlikely(max_len < 3)) {
 							in_next++;
 							cache_ptr->length = 0;
 							cache_ptr++;
 							continue;
 						}
 					}
-					c->hash2_tab[lz_hash_2_bytes(in_next)] =
+					c->hash2_tab[lz_hash_2_bytes(in_next, LZX_HASH2_ORDER)] =
 						in_next - in_begin;
 					bt_matchfinder_skip_position(&c->bt_mf,
 								     in_begin,
