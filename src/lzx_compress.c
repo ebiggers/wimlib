@@ -120,7 +120,8 @@
 #define LZX_CONSIDER_ALIGNED_COSTS	0
 
 /*
- * The maximum compression level at which we use the faster algorithm.
+ * LZX_MAX_FAST_LEVEL is the maximum compression level at which we use the
+ * faster algorithm.
  */
 #define LZX_MAX_FAST_LEVEL	34
 
@@ -145,7 +146,6 @@
 #include "wimlib/bt_matchfinder.h"
 #include "wimlib/compress_common.h"
 #include "wimlib/compressor_ops.h"
-#include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/hc_matchfinder.h"
 #include "wimlib/lz_extend.h"
@@ -486,14 +486,15 @@ struct lzx_output_bitstream {
 	u32 bitcount;
 
 	/* Pointer to the start of the output buffer.  */
-	le16 *start;
+	u8 *start;
 
 	/* Pointer to the position in the output buffer at which the next coding
 	 * unit should be written.  */
-	le16 *next;
+	u8 *next;
 
-	/* Pointer past the end of the output buffer.  */
-	le16 *end;
+	/* Pointer just past the end of the output buffer, rounded down to a
+	 * 2-byte boundary.  */
+	u8 *end;
 };
 
 /*
@@ -513,7 +514,7 @@ lzx_init_output(struct lzx_output_bitstream *os, void *buffer, size_t size)
 	os->bitcount = 0;
 	os->start = buffer;
 	os->next = os->start;
-	os->end = os->start + size / sizeof(le16);
+	os->end = os->start + (size & ~1);
 }
 
 /*
@@ -523,9 +524,9 @@ lzx_init_output(struct lzx_output_bitstream *os, void *buffer, size_t size)
  * bits in @bits cannot be set.  At most 17 bits can be written at once.
  *
  * @max_num_bits is a compile-time constant that specifies the maximum number of
- * bits that can ever be written at the call site.  Currently, it is used to
- * optimize away the conditional code for writing a second 16-bit coding unit
- * when writing fewer than 17 bits.
+ * bits that can ever be written at the call site.  It is used to optimize away
+ * the conditional code for writing a second 16-bit coding unit when writing
+ * fewer than 17 bits.
  *
  * If the output buffer space is exhausted, then the bits will be ignored, and
  * lzx_flush_output() will return 0 when it gets called.
@@ -553,16 +554,20 @@ lzx_write_varbits(struct lzx_output_bitstream *os,
 		os->bitcount -= 16;
 
 		/* Write a coding unit, unless it would overflow the buffer.  */
-		if (os->next != os->end)
-			put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next++);
+		if (os->next != os->end) {
+			put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next);
+			os->next += 2;
+		}
 
 		/* If writing 17 bits, a second coding unit might need to be
 		 * written.  But because 'max_num_bits' is a compile-time
 		 * constant, the compiler will optimize away this code at most
 		 * call sites.  */
 		if (max_num_bits == 17 && os->bitcount == 16) {
-			if (os->next != os->end)
-				put_unaligned_u16_le(os->bitbuf, os->next++);
+			if (os->next != os->end) {
+				put_unaligned_u16_le(os->bitbuf, os->next);
+				os->next += 2;
+			}
 			os->bitcount = 0;
 		}
 	}
@@ -571,8 +576,7 @@ lzx_write_varbits(struct lzx_output_bitstream *os,
 /* Use when @num_bits is a compile-time constant.  Otherwise use
  * lzx_write_varbits().  */
 static inline void
-lzx_write_bits(struct lzx_output_bitstream *os,
-	       const u32 bits, const unsigned num_bits)
+lzx_write_bits(struct lzx_output_bitstream *os, u32 bits, unsigned num_bits)
 {
 	lzx_write_varbits(os, bits, num_bits, num_bits);
 }
@@ -587,10 +591,12 @@ lzx_flush_output(struct lzx_output_bitstream *os)
 	if (os->next == os->end)
 		return 0;
 
-	if (os->bitcount != 0)
-		put_unaligned_u16_le(os->bitbuf << (16 - os->bitcount), os->next++);
+	if (os->bitcount != 0) {
+		put_unaligned_u16_le(os->bitbuf << (16 - os->bitcount), os->next);
+		os->next += 2;
+	}
 
-	return (const u8 *)os->next - (const u8 *)os->start;
+	return os->next - os->start;
 }
 
 /* Build the main, length, and aligned offset Huffman codes used in LZX.
@@ -1204,7 +1210,7 @@ lzx_tally_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_node)
  * Also, note that because of the presence of the recent offsets queue (which is
  * a type of adaptive state), the algorithm cannot work backwards and compute
  * "cost to end" instead of "cost to beginning".  Furthermore, the way the
- * algorithm handles this adaptive state in the "minimum-cost" parse is actually
+ * algorithm handles this adaptive state in the "minimum cost" parse is actually
  * only an approximation.  It's possible for the globally optimal, minimum cost
  * path to contain a prefix, ending at a position, where that path prefix is
  * *not* the minimum cost path to that position.  This can happen if such a path
@@ -1425,7 +1431,7 @@ lzx_find_min_cost_path(struct lzx_compressor * const restrict c,
 		}
 	} while (cur_node != end_node);
 
-	/* Return the match offset queue at the end of the minimum-cost path. */
+	/* Return the match offset queue at the end of the minimum cost path. */
 	return QUEUE(block_end);
 }
 
