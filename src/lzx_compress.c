@@ -82,7 +82,7 @@
  * cache.  However, fallback behavior (immediately terminating the block) on
  * cache overflow is still required.
  */
-#define LZX_CACHE_PER_POS	6
+#define LZX_CACHE_PER_POS	7
 
 /*
  * LZX_CACHE_LENGTH is the number of lz_match structures in the match cache,
@@ -442,7 +442,7 @@ struct lzx_compressor {
 			 * contains the number of matches that were found at
 			 * that position; this is followed by the matches
 			 * themselves, if any, sorted by strictly increasing
-			 * length and strictly increasing offset.
+			 * length.
 			 *
 			 * Note: in rare cases, there will be a very high number
 			 * of matches in the block and this array will overflow.
@@ -1644,8 +1644,7 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 			if (matchfinder_node_valid(cur_match) &&
 			    (LZX_HASH2_ORDER == 16 ||
 			     load_u16_unaligned(&in_begin[cur_match]) ==
-			     load_u16_unaligned(in_next)) &&
-			    in_begin[cur_match + 2] != in_next[2])
+			     load_u16_unaligned(in_next)))
 			{
 				lz_matchptr->length = 2;
 				lz_matchptr->offset = in_next - &in_begin[cur_match];
