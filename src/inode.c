@@ -61,7 +61,7 @@ new_timeless_inode(void)
 	struct wim_inode *inode = CALLOC(1, sizeof(struct wim_inode));
 	if (inode) {
 		inode->i_security_id = -1;
-		inode->i_nlink = 1;
+		/*inode->i_nlink = 0;*/
 		inode->i_next_stream_id = 1;
 		inode->i_not_rpfixed = 1;
 		inode->i_canonical_streams = 1;
@@ -71,21 +71,6 @@ new_timeless_inode(void)
 	return inode;
 }
 
-/* Decrement an inode's link count.  */
-void
-put_inode(struct wim_inode *inode)
-{
-	wimlib_assert(inode->i_nlink != 0);
-	if (--inode->i_nlink == 0) {
-		/* If FUSE mounts are enabled, we must keep a unlinked inode
-		 * around until all file descriptors to it have been closed.  */
-	#ifdef WITH_FUSE
-		if (inode->i_num_opened_fds == 0)
-	#endif
-			free_inode(inode);
-	}
-}
-
 /* Free memory allocated within an alternate data stream entry.  */
 static void
 destroy_ads_entry(struct wim_ads_entry *ads_entry)
@@ -93,14 +78,9 @@ destroy_ads_entry(struct wim_ads_entry *ads_entry)
 	FREE(ads_entry->stream_name);
 }
 
-/* Free an inode.  Only use this if there can't be other links to the inode or
- * if it doesn't matter if there are.  */
-void
+static void
 free_inode(struct wim_inode *inode)
 {
-	if (unlikely(!inode))
-		return;
-
 	if (unlikely(inode->i_ads_entries)) {
 		for (unsigned i = 0; i < inode->i_num_ads; i++)
 			destroy_ads_entry(&inode->i_ads_entries[i]);
@@ -114,6 +94,65 @@ free_inode(struct wim_inode *inode)
 		hlist_del(&inode->i_hlist);
 	FREE(inode);
 }
+
+static inline void
+free_inode_if_unneeded(struct wim_inode *inode)
+{
+	if (inode->i_nlink)
+		return;
+#ifdef WITH_FUSE
+	if (inode->i_num_opened_fds)
+		return;
+#endif
+	free_inode(inode);
+}
+
+/* Associate a dentry with the specified inode.  */
+void
+d_associate(struct wim_dentry *dentry, struct wim_inode *inode)
+{
+	wimlib_assert(!dentry->d_inode);
+
+	list_add_tail(&dentry->d_alias, &inode->i_dentry);
+	dentry->d_inode = inode;
+	inode->i_nlink++;
+}
+
+/* Disassociate a dentry from its inode, if any.  Following this, free the inode
+ * if it is no longer in use.  */
+void
+d_disassociate(struct wim_dentry *dentry)
+{
+	struct wim_inode *inode = dentry->d_inode;
+
+	if (unlikely(!inode))
+		return;
+
+	wimlib_assert(inode->i_nlink > 0);
+
+	list_del(&dentry->d_alias);
+	dentry->d_inode = NULL;
+	inode->i_nlink--;
+
+	free_inode_if_unneeded(inode);
+}
+
+#ifdef WITH_FUSE
+void
+inode_dec_num_opened_fds(struct wim_inode *inode)
+{
+	wimlib_assert(inode->i_num_opened_fds > 0);
+
+	if (--inode->i_num_opened_fds == 0) {
+		/* The last file descriptor to this inode was closed.  */
+		FREE(inode->i_fds);
+		inode->i_fds = NULL;
+		inode->i_num_allocated_fds = 0;
+
+		free_inode_if_unneeded(inode);
+	}
+}
+#endif
 
 /*
  * Returns the alternate data stream entry belonging to @inode that has the

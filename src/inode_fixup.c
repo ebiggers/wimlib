@@ -102,10 +102,8 @@ inode_table_insert(struct wim_dentry *dentry, void *_params)
 			continue;
 		}
 		/* Transfer this dentry to the existing inode.  */
-		free_inode(d_inode);
-		dentry->d_inode = inode;
-		inode->i_nlink++;
-		inode_add_dentry(dentry, inode);
+		d_disassociate(dentry);
+		d_associate(dentry, inode);
 		return 0;
 	}
 

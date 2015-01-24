@@ -304,20 +304,9 @@ new_inode(void) _malloc_attribute;
 extern struct wim_inode *
 new_timeless_inode(void) _malloc_attribute;
 
-extern void
-put_inode(struct wim_inode *inode);
-
-extern void
-free_inode(struct wim_inode *inode);
-
 /* Iterate through each alias of the specified inode.  */
 #define inode_for_each_dentry(dentry, inode) \
 	list_for_each_entry((dentry), &(inode)->i_dentry, d_alias)
-
-/* Add a new alias for the specified inode.  Does not increment i_nlink; that
- * must be done separately if needed.  */
-#define inode_add_dentry(dentry, inode) \
-	list_add_tail(&(dentry)->d_alias, &(inode)->i_dentry)
 
 /* Return an alias of the specified inode.  */
 #define inode_first_dentry(inode) \
@@ -327,6 +316,17 @@ free_inode(struct wim_inode *inode);
  * path could not be determined.  */
 #define inode_first_full_path(inode) \
 	dentry_full_path(inode_first_dentry(inode))
+
+extern void
+d_associate(struct wim_dentry *dentry, struct wim_inode *inode);
+
+extern void
+d_disassociate(struct wim_dentry *dentry);
+
+#ifdef WITH_FUSE
+extern void
+inode_dec_num_opened_fds(struct wim_inode *inode);
+#endif
 
 /* Is the inode a directory?
  * This doesn't count directories with reparse data.

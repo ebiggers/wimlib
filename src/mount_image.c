@@ -324,15 +324,7 @@ close_wimfs_fd(struct wimfs_fd *fd)
 	if (fd->f_idx < inode->i_next_fd)
 		inode->i_next_fd = fd->f_idx;
 	FREE(fd);
-	if (--inode->i_num_opened_fds == 0) {
-		/* The last file descriptor to this inode was closed.  */
-		FREE(inode->i_fds);
-		inode->i_fds = NULL;
-		inode->i_num_allocated_fds = 0;
-		if (inode->i_nlink == 0)
-			/* No links to this inode remain.  Get rid of it.  */
-			free_inode(inode);
-	}
+	inode_dec_num_opened_fds(inode);
 	return ret;
 }
 
@@ -1439,12 +1431,10 @@ wimfs_link(const char *existing_path, const char *new_path)
 	if (new_dentry(new_name, &new_alias))
 		return -ENOMEM;
 
-	new_alias->d_inode = inode;
-	inode_add_dentry(new_alias, inode);
+	inode_ref_streams(inode);
+	d_associate(new_alias, inode);
 	dentry_add_child(dir, new_alias);
 	touch_inode(dir->d_inode);
-	inode->i_nlink++;
-	inode_ref_streams(inode);
 	return 0;
 }
 

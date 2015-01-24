@@ -925,6 +925,7 @@ _new_dentry_with_inode(const tchar *name, struct wim_dentry **dentry_ret,
 		       bool timeless)
 {
 	struct wim_dentry *dentry;
+	struct wim_inode *inode;
 	int ret;
 
 	ret = new_dentry(name, &dentry);
@@ -932,15 +933,16 @@ _new_dentry_with_inode(const tchar *name, struct wim_dentry **dentry_ret,
 		return ret;
 
 	if (timeless)
-		dentry->d_inode = new_timeless_inode();
+		inode = new_timeless_inode();
 	else
-		dentry->d_inode = new_inode();
-	if (dentry->d_inode == NULL) {
+		inode = new_inode();
+	if (!inode) {
 		free_dentry(dentry);
 		return WIMLIB_ERR_NOMEM;
 	}
 
-	inode_add_dentry(dentry, dentry->d_inode);
+	d_associate(dentry, inode);
+
 	*dentry_ret = dentry;
 	return 0;
 }
@@ -997,19 +999,17 @@ dentry_tree_clear_inode_visited(struct wim_dentry *root)
 /*
  * Free a WIM dentry.
  *
- * In addition to freeing the dentry itself, this decrements the link count of
- * the corresponding inode (if any).  If the inode's link count reaches 0, the
- * inode is freed as well.
+ * In addition to freeing the dentry itself, this disassociates the dentry from
+ * its inode.  If the inode is no longer in use, it will be freed as well.
  */
 void
 free_dentry(struct wim_dentry *dentry)
 {
 	if (dentry) {
+		d_disassociate(dentry);
 		FREE(dentry->file_name);
 		FREE(dentry->short_name);
 		FREE(dentry->_full_path);
-		if (dentry->d_inode)
-			put_inode(dentry->d_inode);
 		FREE(dentry);
 	}
 }

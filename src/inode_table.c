@@ -50,35 +50,6 @@ destroy_inode_table(struct wim_inode_table *table)
 	FREE(table->array);
 }
 
-static struct wim_inode *
-inode_table_get_inode(struct wim_inode_table *table, u64 ino, u64 devno)
-{
-	size_t pos;
-	struct wim_inode *inode;
-	struct hlist_node *cur;
-
-	/* Search for an existing inode having the same inode number and device
-	 * number.  */
-	pos = hash_u64(hash_u64(ino) + hash_u64(devno)) % table->capacity;
-	hlist_for_each_entry(inode, cur, &table->array[pos], i_hlist) {
-		if (inode->i_ino == ino && inode->i_devno == devno) {
-			/* Found; use the existing inode.  */
-			inode->i_nlink++;
-			return inode;
-		}
-	}
-
-	/* Create a new inode and insert it into the table.  */
-	inode = new_timeless_inode();
-	if (inode) {
-		inode->i_ino = ino;
-		inode->i_devno = devno;
-		hlist_add_head(&inode->i_hlist, &table->array[pos]);
-		table->num_entries++;
-	}
-	return inode;
-}
-
 /*
  * Allocate a new dentry, with hard link detection.
  *
@@ -130,23 +101,39 @@ inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
 			return ret;
 		list_add_tail(&dentry->d_inode->i_list, &table->extra_inodes);
 	} else {
+		size_t pos;
+		struct hlist_node *cur;
+
 		/* File that can be hardlinked--- search the table for an
 		 * existing inode matching the inode number and device;
 		 * otherwise create a new inode. */
 		ret = new_dentry(name, &dentry);
 		if (ret)
 			return ret;
-		inode = inode_table_get_inode(table, ino, devno);
+
+		/* Search for an existing inode having the same inode number and
+		 * device number.  */
+		pos = hash_u64(hash_u64(ino) + hash_u64(devno)) % table->capacity;
+		hlist_for_each_entry(inode, cur, &table->array[pos], i_hlist) {
+			if (inode->i_ino == ino && inode->i_devno == devno) {
+				/* Found; use the existing inode.  */
+				inode_ref_streams(inode);
+				goto have_inode;
+			}
+		}
+
+		/* Create a new inode and insert it into the table.  */
+		inode = new_timeless_inode();
 		if (!inode) {
 			free_dentry(dentry);
 			return WIMLIB_ERR_NOMEM;
 		}
-		/* If using an existing inode, we need to gain a reference to
-		 * each of its streams. */
-		if (inode->i_nlink > 1)
-			inode_ref_streams(inode);
-		dentry->d_inode = inode;
-		inode_add_dentry(dentry, inode);
+		inode->i_ino = ino;
+		inode->i_devno = devno;
+		hlist_add_head(&inode->i_hlist, &table->array[pos]);
+		table->num_entries++;
+	have_inode:
+		d_associate(dentry, inode);
 	}
 	*dentry_ret = dentry;
 	return 0;
