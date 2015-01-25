@@ -127,168 +127,75 @@ build_LCPIT(const u32 SA[restrict], u32 LCP[restrict],
 	    u32 pos_data[restrict], const u32 lcp_limit, const u32 n)
 {
 	u32 *intervals = LCP;
-	u32 next_interval;
-	u32 incomplete_intervals[lcp_limit + 1];
-	u32 *cur_interval;
-	u32 prev_pos;
+	u32 next_interval_idx = 0;
+	u32 open_intervals[LZ_LCPIT_LCP_MAX + 1];
+	u32 *top = open_intervals;
+	u32 prev_pos = SA[0];
 
-	/* As we determine lcp-intervals, we assign each one an entry in
-	 * 'intervals', overwriting LCP in the process.  Each such entry will
-	 * contain the index in 'intervals' of the superinterval, along with the
-	 * longest common prefix length that the suffixes in that interval
-	 * share.
-	 *
-	 * Note: since we don't need its memory for anything, we don't overwrite
-	 * the suffix array, even though this could potentially be done since
-	 * it's not actually used during match-finding.  */
+	/* The interval with lcp=0 covers the entire array.  It remains open
+	 * until the end.  */
+	*top = next_interval_idx;
+	intervals[next_interval_idx] = 0;
+	next_interval_idx++;
 
-	/* Process rank 0 as special case.  This creates the lcp-interval
-	 * containing every suffix in the window.  */
-	prev_pos = SA[0];
-	intervals[0] = 0;
-	pos_data[prev_pos] = 0;
-	cur_interval = incomplete_intervals;
-	*cur_interval = 0;
-	next_interval = 1;
-
-	/* Iterate through each suffix array rank.  */
 	for (u32 r = 1; r < n; r++) {
+		u32 next_pos = SA[r];
+		u32 next_lcp = min(LCP[r], lcp_limit);
+		u32 top_lcp = intervals[*top];
 
-		/* Get the longest common prefix (lcp) between the suffixes with
-		 * ranks r and r - 1.  But cap it to the lcp limit.  */
-		const u32 lcp = min(LCP[r], lcp_limit);
-
-		/* Convert rank => position using the suffix array.  */
-		const u32 pos = SA[r];
-
-		/* cur_interval points to the index of the deepest (highest lcp
-		 * value) incomplete lcp-interval.  */
-
-		/*
-		 * There are three cases:
-		 *
-		 * (1) The lcp stayed the same as the previous value.  Place the
-		 * current suffix in cur_interval.  (This placement is
-		 * tentative, because if LCP increases at the next rank, this
-		 * suffix could still be placed in the resulting new LCP
-		 * interval instead.)  cur_interval remains unchanged.
-		 *
-		 * (2) The lcp increased from the previous value.  This signals
-		 * the beginning of a new lcp-interval.  Create it and push it
-		 * onto the stack of incomplete intervals.  But since lcp is
-		 * defined in terms of the longest prefix between this suffix
-		 * and the *previous* ranked suffix, the new lcp-interval
-		 * actually should have begun at the *previous* ranked suffix.
-		 * Therefore, we need to set both pos_data[pos] and
-		 * pos_data[prev_pos] to refer to the new interval.
-		 *
-		 * (3) The lcp decreased from the previous value.  This signals
-		 * the termination of at least one lcp-interval.  Pop the stack,
-		 * finalizing the lcp-intervals, until the current lcp is at
-		 * least as large as the lcp associated with cur_interval.
-		 * Then, if the current lcp is equal to the lcp associated with
-		 * cur_interval, place the current suffix in cur_interval,
-		 * similar to case (1).  Else, create a new lcp-interval,
-		 * similar to case (2).
-		 */
-
-		if (lcp == (intervals[*cur_interval] & LZ_LCPIT_LCP_MASK)) {
-
-			/* Case (1) */
-
-			pos_data[pos] = *cur_interval;
-
-		} else if (lcp > (intervals[*cur_interval] & LZ_LCPIT_LCP_MASK)) {
-
-			/* Case (2) */
-
-			intervals[next_interval] = lcp | 0x80000000;
-			pos_data[prev_pos] = next_interval;
-			pos_data[pos] = next_interval;
-			*++cur_interval = next_interval++;
-
+		if (next_lcp == top_lcp) {
+			/* continuing the deepest open interval  */
+			pos_data[prev_pos] = *top;
+		} else if (next_lcp > top_lcp) {
+			/* opening a new interval  */
+			intervals[next_interval_idx] = next_lcp;
+			*++top = next_interval_idx;
+			pos_data[prev_pos] = next_interval_idx;
+			next_interval_idx++;
 		} else {
-
-			/* Case (3) */
-
-			u32 interval;
-			u32 superinterval;
-
+			/* closing the deepest open interval  */
+			pos_data[prev_pos] = *top;
 			for (;;) {
-				/* Examine the deepest incomplete lcp-interval
-				 * and its superinterval.  */
+				u32 closed_interval_idx = *top;
+				u32 superinterval_idx = *--top;
+				u32 superinterval_lcp = intervals[superinterval_idx];
 
-				interval = *cur_interval;
-				superinterval = *--cur_interval;
-
-				if (lcp >= (intervals[superinterval] &
-					    LZ_LCPIT_LCP_MASK))
+				if (next_lcp == superinterval_lcp) {
+					/* continuing the superinterval */
+					intervals[closed_interval_idx] |=
+						(superinterval_idx << LZ_LCPIT_LCP_BITS) |
+							0x80000000;
 					break;
-
-				/* The current suffix can't go in either of
-				 * them.  Therefore we're visiting 'interval'
-				 * for the last time and finalizing its
-				 * membership in 'superinterval'.  */
-
-				intervals[interval] |=
-					(superinterval << LZ_LCPIT_LCP_BITS);
-			}
-
-			/* The current suffix can't go in 'interval', but it can
-			 * go in 'superinterval'.  */
-
-			if (lcp > (intervals[superinterval] & LZ_LCPIT_LCP_MASK)) {
-				/* Creating a new lcp-interval that is a
-				 * superinterval of 'interval' but a subinterval
-				 * of 'superinterval'.
-				 *
-				 * Example: with the LCP arrayl
-				 *
-				 *            2  2  2  4  4  3
-				 *
-				 * then we will execute this case when
-				 * processing the LCP value 3.  The LCP
-				 * intervals will be:
-				 *
-				 *            2  2  2  4  4  3
-				 * (lcp=0):  |                |
-				 * (lcp=2):  |                |
-				 * (lcp=3):        |          |
-				 * (lcp=4):        |       |
-				 *
-				 * Note that the 3-interval (the one being
-				 * created by this code) is a superinterval of
-				 * the 4-interval (which already existed)!  But
-				 * we don't need to re-assign pos_data values in
-				 * the 4-interval because they point to the
-				 * deepest interval which contains them, which
-				 * is the 4-interval.  */
-
-				intervals[next_interval] = lcp | 0x80000000;
-				intervals[interval] |=
-					(next_interval << LZ_LCPIT_LCP_BITS);
-				pos_data[pos] = next_interval;
-				*++cur_interval = next_interval++;
-			} else {
-				/* Finishing 'interval', continuing with
-				 * 'superinterval'.  */
-
-				intervals[interval] |=
-					(superinterval << LZ_LCPIT_LCP_BITS);
-				pos_data[pos] = superinterval;
+				} else if (next_lcp > superinterval_lcp) {
+					/* creating a new interval that is a
+					 * superinterval of the one being
+					 * closed, but still a subinterval of
+					 * its superinterval  */
+					intervals[next_interval_idx] = next_lcp;
+					*++top = next_interval_idx;
+					intervals[closed_interval_idx] |=
+						(next_interval_idx << LZ_LCPIT_LCP_BITS) |
+							0x80000000;
+					next_interval_idx++;
+					break;
+				} else {
+					/* also closing the superinterval  */
+					intervals[closed_interval_idx] |=
+						(superinterval_idx << LZ_LCPIT_LCP_BITS) |
+							0x80000000;
+				}
 			}
 		}
-
-		/* Remember this suffix index when processing the next-ranked
-		 * suffix.  */
-		prev_pos = pos;
+		prev_pos = next_pos;
 	}
 
-	/* Finalize any still-incomplete lcp-intervals.  */
-	while (intervals[*cur_interval] & LZ_LCPIT_LCP_MASK) {
-		intervals[*cur_interval] |=
-			(*(cur_interval - 1) << LZ_LCPIT_LCP_BITS);
-		cur_interval--;
+	/* close any still-open intervals  */
+	pos_data[prev_pos] = *top;
+	while (top > open_intervals) {
+		u32 closed_interval_idx = *top;
+		u32 superinterval_idx = *--top;
+		intervals[closed_interval_idx] |=
+			(superinterval_idx << LZ_LCPIT_LCP_BITS) | 0x80000000;
 	}
 }
 
