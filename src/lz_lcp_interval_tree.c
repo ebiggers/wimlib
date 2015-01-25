@@ -86,9 +86,17 @@ struct lz_lcpit {
  *
  *  - For decreased memory usage and improved memory locality, pack the two
  *    logically distinct SA and LCP arrays into a single array SA_and_LCP.
- *  - Cap the LCP values to the specified limit.
+ *
  *  - With bytes there is no realistic way to reserve a unique symbol for
  *    end-of-buffer, so use explicit checks for end-of-buffer.
+ *
+ *  - If a LCP value is less than the minimum match length, then store 0.  This
+ *    avoids having to do comparisons against the minimum match length later.
+ *
+ *  - If a LCP value is greater than the "nice match length", then store the
+ *    "nice match length".  This caps the number of bits needed to store each
+ *    LCP value, and this caps the depth of the LCP-interval tree, without
+ *    usually hurting the compression ratio too much.
  *
  * References:
  *
@@ -98,9 +106,10 @@ struct lz_lcpit {
  */
 static void
 build_LCP_packed(u32 * const restrict SA_and_LCP, const u32 * const restrict ISA,
-		 const u8 * const restrict T, const u32 n, const u32 lcp_limit)
+		 const u8 * const restrict T, const u32 n,
+		 const u32 min_lcp, const u32 max_lcp)
 {
-	u32 h, i, r, j, lim;
+	u32 h, i, r, j, lim, stored_lcp;
 
 	h = 0;
 	for (i = 0; i < n; i++) {
@@ -110,7 +119,12 @@ build_LCP_packed(u32 * const restrict SA_and_LCP, const u32 * const restrict ISA
 			lim = min(n - i, n - j);
 			while (h < lim && T[i + h] == T[j + h])
 				h++;
-			SA_and_LCP[r] |= min(h, lcp_limit) << SA_and_LCP_LCP_SHIFT;
+			stored_lcp = h;
+			if (stored_lcp < min_lcp)
+				stored_lcp = 0;
+			else if (stored_lcp > max_lcp)
+				stored_lcp = max_lcp;
+			SA_and_LCP[r] |= stored_lcp << SA_and_LCP_LCP_SHIFT;
 			if (h > 0)
 				h--;
 		}
@@ -294,6 +308,7 @@ lz_lcpit_load_window(struct lz_mf *_mf, const u8 T[], u32 n)
 	build_SA(&mf->mem[0 * n], T, n, &mf->mem[1 * n]);
 	build_ISA(&mf->mem[2 * n], &mf->mem[0 * n], n);
 	build_LCP_packed(&mf->mem[0 * n], &mf->mem[2 * n], T, n,
+			 mf->base.params.min_match_len,
 			 mf->base.params.nice_match_len);
 	build_LCPIT(&mf->mem[0 * n], &mf->mem[1 * n], &mf->mem[2 * n], n);
 	mf->intervals = &mf->mem[1 * n];
@@ -304,7 +319,6 @@ static u32
 lz_lcpit_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 {
 	struct lz_lcpit *mf = (struct lz_lcpit *)_mf;
-	const u32 min_match_len = mf->base.params.min_match_len;
 	const u32 cur_pos = mf->base.cur_window_pos;
 	u32 * const pos_data = mf->pos_data;
 	u32 * const intervals = mf->intervals;
@@ -342,9 +356,8 @@ lz_lcpit_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 		 * be produced, we're done, since the LCP will only ever get
 		 * shorter from here.  This also prevents ascending above the
 		 * root of the lcp-interval tree, since the root is guaranteed
-		 * to be a 0-interval, and min_match_len is guaranteed to be at
-		 * least 2.  */
-		if (lcp < min_match_len)
+		 * to be a 0-interval.  */
+		if (lcp == 0)
 			goto out;
 
 		/* Set the position of the most-recently-seen suffix within this
@@ -378,9 +391,8 @@ lz_lcpit_get_matches(struct lz_mf *_mf, struct lz_match matches[])
 		 * be produced, we're done, since the LCP will only ever get
 		 * shorter from here.  This also prevents ascending above the
 		 * root of the lcp-interval tree, since the root is guaranteed
-		 * to be a 0-interval, and min_match_len is guaranteed to be at
-		 * least 2.  */
-		if (lcp < min_match_len)
+		 * to be a 0-interval.  */
+		if (lcp == 0)
 			break;
 
 		/* Advance the current match until the lcp of the *next* match
@@ -446,7 +458,6 @@ out:
 static void
 lz_lcpit_skip_position(struct lz_lcpit *mf)
 {
-	const u32 min_match_len = mf->base.params.min_match_len;
 	const u32 cur_pos = mf->base.cur_window_pos++;
 	u32 * const pos_data = mf->pos_data;
 	u32 * const intervals = mf->intervals;
@@ -460,14 +471,14 @@ lz_lcpit_skip_position(struct lz_lcpit *mf)
 		lcp = intervals[interval] & LZ_LCPIT_LCP_MASK;
 		next_interval = (intervals[interval] & ~0x80000000)
 					>> LZ_LCPIT_LCP_BITS;
-		if (lcp < min_match_len)
+		if (lcp == 0)
 			return;
 		intervals[interval] = (cur_pos << LZ_LCPIT_LCP_BITS) | lcp;
 		interval = next_interval;
 	}
 	lcp = intervals[interval] & LZ_LCPIT_LCP_MASK;
 	cur_match = intervals[interval] >> LZ_LCPIT_LCP_BITS;
-	while (lcp >= min_match_len) {
+	while (lcp != 0) {
 		next_match = cur_match;
 		do {
 			next_interval = pos_data[next_match];
