@@ -56,7 +56,7 @@ then
 	./configure --host=${ARCH}-w64-mingw32 --disable-static		\
 		CC="${ARCH}-w64-mingw32-gcc -static-libgcc"		\
 		CFLAGS="-O2 -Wall"					\
-		CPPFLAGS="-I$SYSROOT/include -I$SYSROOT/include/libxml2"\
+		CPPFLAGS="-I$SYSROOT/include -I$SYSROOT/include/libxml2 -DLIBXML_STATIC"\
 		LDFLAGS="-L$SYSROOT/lib"				\
 		$extra_args
 	$MAKE clean
