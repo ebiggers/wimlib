@@ -112,23 +112,19 @@ wimlib_wcsdup(const wchar_t *str)
 void *
 wimlib_aligned_malloc(size_t size, size_t alignment)
 {
-	u8 *raw_ptr;
-	u8 *ptr;
-	uintptr_t mask;
-
 	wimlib_assert(alignment != 0 && is_power_of_2(alignment) &&
 		      alignment <= 4096);
-	mask = alignment - 1;
 
-	raw_ptr = MALLOC(size + alignment - 1 + sizeof(size_t));
-	if (!raw_ptr)
-		return NULL;
+	const uintptr_t mask = alignment - 1;
+	char *ptr = NULL;
+	char *raw_ptr;
 
-	ptr = (u8 *)raw_ptr + sizeof(size_t);
-	while ((uintptr_t)ptr & mask)
-		ptr++;
-	*((size_t *)ptr - 1) = (ptr - raw_ptr);
-
+	raw_ptr = MALLOC(mask + sizeof(size_t) + size);
+	if (raw_ptr) {
+		ptr = (char *)raw_ptr + sizeof(size_t);
+		ptr = (void *)(((uintptr_t)ptr + mask) & ~mask);
+		*((size_t *)ptr - 1) = ptr - raw_ptr;
+	}
 	return ptr;
 }
 
@@ -136,7 +132,7 @@ void
 wimlib_aligned_free(void *ptr)
 {
 	if (ptr)
-		FREE((u8 *)ptr - *((size_t *)ptr - 1));
+		FREE((char *)ptr - *((size_t *)ptr - 1));
 }
 
 void *
