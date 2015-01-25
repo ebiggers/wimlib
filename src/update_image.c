@@ -535,7 +535,7 @@ handle_conflict(struct wim_dentry *branch, struct wim_dentry *existing,
 				return ret;
 			}
 		}
-		free_dentry(branch);
+		free_dentry_tree(branch, j->lookup_table);
 		return 0;
 	} else if (add_flags & WIMLIB_ADD_FLAG_NO_REPLACE) {
 		/* Can't replace nondirectory file  */
