@@ -25,7 +25,12 @@
 #  include "config.h"
 #endif
 
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+
 #include "wimlib.h"
+#include "wimlib/alloca.h"
 #include "wimlib/assert.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
@@ -33,15 +38,6 @@
 #include "wimlib/header.h"
 #include "wimlib/util.h"
 #include "wimlib/wim.h"
-
-#include <limits.h>
-#include <string.h>
-#include <unistd.h>
-#ifdef HAVE_ALLOCA_H
-#  include <alloca.h>
-#else
-#  include <stdlib.h>
-#endif
 
 /*
  * Reads the header from a WIM file.

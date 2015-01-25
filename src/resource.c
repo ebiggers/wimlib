@@ -25,6 +25,11 @@
 #  include "config.h"
 #endif
 
+#include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+#include "wimlib/alloca.h"
 #include "wimlib/assert.h"
 #include "wimlib/bitops.h"
 #include "wimlib/endianness.h"
@@ -45,13 +50,6 @@
 #  include "wimlib/ntfs_3g.h"
 #endif
 
-#ifdef HAVE_ALLOCA_H
-#  include <alloca.h>
-#endif
-#include <errno.h>
-#include <fcntl.h>
-#include <stdlib.h>
-#include <unistd.h>
 
 /*
  *                         Compressed WIM resources

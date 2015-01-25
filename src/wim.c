@@ -23,6 +23,14 @@
 #  include "config.h"
 #endif
 
+#include <errno.h>
+#include <fcntl.h>
+#ifndef __WIN32__
+#  include <langinfo.h>
+#endif
+#include <stdlib.h>
+#include <unistd.h>
+
 #include "wimlib.h"
 #include "wimlib/assert.h"
 #include "wimlib/bitops.h"
@@ -38,18 +46,9 @@
 #include "wimlib/security.h"
 #include "wimlib/wim.h"
 #include "wimlib/xml.h"
-
 #ifdef __WIN32__
 #  include "wimlib/win32.h" /* for realpath() replacement */
 #endif
-
-#include <errno.h>
-#include <fcntl.h>
-#ifndef __WIN32__
-#  include <langinfo.h>
-#endif
-#include <stdlib.h>
-#include <unistd.h>
 
 static int
 wim_default_pack_compression_type(void)

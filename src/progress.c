@@ -23,6 +23,8 @@
 #  include "config.h"
 #endif
 
+#include <string.h>
+
 #include "wimlib/progress.h"
 
 int

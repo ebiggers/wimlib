@@ -1,11 +1,11 @@
 #ifndef _WIMLIB_ENCODING_H
 #define _WIMLIB_ENCODING_H
 
+#include <string.h>
+
 #include "wimlib/error.h"
 #include "wimlib/util.h"
 #include "wimlib/types.h"
-
-#include <string.h>
 
 extern void
 iconv_global_init(void);

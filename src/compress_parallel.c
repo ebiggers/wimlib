@@ -27,15 +27,6 @@
 
 #ifdef ENABLE_MULTITHREADED_COMPRESSION
 
-#include "wimlib/assert.h"
-#include "wimlib/chunk_compressor.h"
-#include "wimlib/error.h"
-#include "wimlib/list.h"
-#include "wimlib/util.h"
-#ifdef __WIN32__
-#  include "wimlib/win32.h" /* win32_get_number_of_processors() */
-#endif
-
 #include <errno.h>
 #include <limits.h>
 #include <pthread.h>
@@ -44,6 +35,15 @@
 #include <unistd.h>
 #ifdef HAVE_SYS_SYSCTL_H
 #  include <sys/sysctl.h>
+#endif
+
+#include "wimlib/assert.h"
+#include "wimlib/chunk_compressor.h"
+#include "wimlib/error.h"
+#include "wimlib/list.h"
+#include "wimlib/util.h"
+#ifdef __WIN32__
+#  include "wimlib/win32.h" /* win32_get_number_of_processors() */
 #endif
 
 struct message_queue {

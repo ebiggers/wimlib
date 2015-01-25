@@ -23,6 +23,14 @@
 #  include "config.h"
 #endif
 
+#include <errno.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
+
 #include "wimlib/apply.h"
 #include "wimlib/assert.h"
 #include "wimlib/dentry.h"
@@ -32,15 +40,6 @@
 #include "wimlib/reparse.h"
 #include "wimlib/timestamp.h"
 #include "wimlib/unix_data.h"
-
-#include <errno.h>
-#include <fcntl.h>
-#include <limits.h>
-#include <stdlib.h>
-#include <sys/stat.h>
-#include <sys/time.h>
-#include <sys/types.h>
-#include <unistd.h>
 
 /* We don't require O_NOFOLLOW, but the advantage of having it is that if we
  * need to extract a file to a location at which there exists a symbolic link,

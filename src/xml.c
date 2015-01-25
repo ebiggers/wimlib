@@ -25,6 +25,12 @@
 #  include "config.h"
 #endif
 
+#include <libxml/encoding.h>
+#include <libxml/parser.h>
+#include <libxml/tree.h>
+#include <libxml/xmlwriter.h>
+#include <string.h>
+
 #include "wimlib/assert.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
@@ -36,14 +42,6 @@
 #include "wimlib/timestamp.h"
 #include "wimlib/xml.h"
 #include "wimlib/write.h"
-
-#include <libxml/encoding.h>
-#include <libxml/parser.h>
-#include <libxml/tree.h>
-#include <libxml/xmlwriter.h>
-#include <limits.h>
-#include <string.h>
-#include <unistd.h>
 
 /* Structures used to form an in-memory representation of the XML data (other
  * than the raw parse tree from libxml). */

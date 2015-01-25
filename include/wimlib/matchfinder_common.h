@@ -13,9 +13,9 @@
 #ifndef _MATCHFINDER_COMMON_H
 #define _MATCHFINDER_COMMON_H
 
-#include "wimlib/types.h"
-
 #include <string.h>
+
+#include "wimlib/types.h"
 
 #ifndef MATCHFINDER_MAX_WINDOW_ORDER
 #  error "MATCHFINDER_MAX_WINDOW_ORDER must be defined!"

@@ -14,10 +14,10 @@
 #  include "config.h"
 #endif
 
+#include <string.h>
+
 #include "wimlib/compress_common.h"
 #include "wimlib/util.h"
-
-#include <string.h>
 
 /* Given the binary tree node A[subtree_idx] whose children already
  * satisfy the maxheap property, swap the node with its greater child

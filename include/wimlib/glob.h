@@ -4,9 +4,8 @@
 #ifndef __WIN32__
 #  include <glob.h>
 #else
-
-#include <wchar.h>
 #include <stddef.h>
+#include <wchar.h>
 
 typedef struct {
 	size_t    gl_pathc;

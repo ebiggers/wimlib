@@ -29,17 +29,13 @@
 #ifdef WITH_NTFS_3G
 
 #include <errno.h>
-#include <stdlib.h>
-
-#ifdef HAVE_ALLOCA_H
-#  include <alloca.h>
-#endif
 
 #include <ntfs-3g/attrib.h>
 #include <ntfs-3g/reparse.h>
 #include <ntfs-3g/security.h>
 #include <ntfs-3g/volume.h>
 
+#include "wimlib/alloca.h"
 #include "wimlib/assert.h"
 #include "wimlib/capture.h"
 #include "wimlib/dentry.h"

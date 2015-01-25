@@ -1,16 +1,15 @@
 #ifndef _WIMLIB_WIN32_COMMON_H
 #define _WIMLIB_WIN32_COMMON_H
 
+#include <ntstatus.h>
 #include <windows.h>
+#include <winternl.h>
+
 #ifdef ERROR
 #  undef ERROR
 #endif
-
 #include "wimlib/types.h"
 #include "wimlib/win32.h"
-
-#include <ntstatus.h>
-#include <winternl.h>
 
 extern void
 set_errno_from_GetLastError(void);

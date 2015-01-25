@@ -1,10 +1,10 @@
 #ifndef _WIMBOOT_H_
 #define _WIMBOOT_H_
 
-#include "wimlib/win32_common.h"
+#include "wimlib/header.h"
 #include "wimlib/sha1.h"
 #include "wimlib/types.h"
-#include "wimlib/header.h"
+#include "wimlib/win32_common.h"
 
 struct wim_lookup_table_entry;
 

@@ -23,16 +23,15 @@
 #  include "config.h"
 #endif
 
+#include <errno.h>
+#include <unistd.h>
+
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
 #include "wimlib/util.h"
 #ifdef __WIN32__
 #  include "wimlib/win32.h" /* For pread(), pwrite() replacements */
 #endif
-
-#include <errno.h>
-#include <unistd.h>
-
 
 /* Wrapper around read() that checks for errors keeps retrying until all
  * requested bytes have been read or until end-of file has occurred.

@@ -23,7 +23,13 @@
 #  include "config.h"
 #endif
 
+#include <errno.h>
+#include <iconv.h>
+#include <pthread.h>
+#include <string.h>
+
 #include "wimlib.h"
+#include "wimlib/alloca.h"
 #include "wimlib/assert.h"
 #include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
@@ -31,15 +37,6 @@
 #include "wimlib/list.h"
 #include "wimlib/util.h"
 
-#include <errno.h>
-#include <iconv.h>
-#include <pthread.h>
-#include <stdlib.h>
-#include <string.h>
-
-#ifdef HAVE_ALLOCA_H
-#  include <alloca.h>
-#endif
 
 bool wimlib_mbs_is_utf8 = !TCHAR_IS_UTF16LE;
 

@@ -26,6 +26,7 @@
 #endif
 
 #include "wimlib.h"
+#include "wimlib/alloca.h"
 #include "wimlib/error.h"
 #include "wimlib/list.h"
 #include "wimlib/lookup_table.h"
@@ -34,12 +35,6 @@
 #include "wimlib/resource.h"
 #include "wimlib/wim.h"
 #include "wimlib/write.h"
-
-#ifdef HAVE_ALLOCA_H
-#  include <alloca.h>
-#else
-#  include <stdlib.h>
-#endif
 
 struct swm_part_info {
 	struct list_head stream_list;

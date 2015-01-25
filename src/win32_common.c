@@ -28,6 +28,7 @@
 #include <errno.h>
 
 #include "wimlib/win32_common.h"
+
 #include "wimlib/error.h"
 #include "wimlib/util.h"
 

@@ -94,6 +94,7 @@ libwim_la_SOURCES =		\
 	src/xml.c		\
 	src/xpress_compress.c	\
 	src/xpress_decompress.c \
+	include/wimlib/alloca.h		\
 	include/wimlib/apply.h		\
 	include/wimlib/assert.h		\
 	include/wimlib/avl_tree.h	\

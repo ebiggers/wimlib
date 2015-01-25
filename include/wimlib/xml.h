@@ -2,7 +2,6 @@
 #define _WIMLIB_XML_H
 
 #include "wimlib/types.h"
-#include "wimlib/file_io.h"
 
 struct wim_info;
 struct wim_reshdr;
@@ -71,4 +70,4 @@ xml_set_memory_allocator(void *(*malloc_func)(size_t),
 			 void (*free_func)(void *),
 			 void *(*realloc_func)(void *, size_t));
 
-#endif
+#endif /* _WIMLIB_XML_H */

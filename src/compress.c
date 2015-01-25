@@ -26,13 +26,13 @@
 #  include "config.h"
 #endif
 
+#include <stdlib.h>
+#include <string.h>
+
 #include "wimlib.h"
 #include "wimlib/error.h"
 #include "wimlib/compressor_ops.h"
 #include "wimlib/util.h"
-
-#include <stdlib.h>
-#include <string.h>
 
 struct wimlib_compressor {
 	const struct compressor_ops *ops;

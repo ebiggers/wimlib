@@ -49,6 +49,11 @@
 #  include "config.h"
 #endif
 
+#include <errno.h>
+#include <string.h>
+#include <sys/stat.h>
+
+#include "wimlib/alloca.h"
 #include "wimlib/assert.h"
 #include "wimlib/capture.h"
 #include "wimlib/dentry.h"
@@ -63,14 +68,6 @@
 #include "wimlib/paths.h"
 #include "wimlib/progress.h"
 #include "wimlib/xml.h"
-
-#include <errno.h>
-#include <sys/stat.h>
-#include <stdlib.h>
-
-#ifdef HAVE_ALLOCA_H
-#  include <alloca.h>
-#endif
 
 /* Saved specification of a "primitive" update operation that was performed.  */
 struct update_primitive {

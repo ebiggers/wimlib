@@ -27,6 +27,8 @@
 #  include "config.h"
 #endif
 
+#include <errno.h>
+
 #include "wimlib/win32_common.h"
 
 #include "wimlib/assert.h"
@@ -38,8 +40,6 @@
 #include "wimlib/lookup_table.h"
 #include "wimlib/paths.h"
 #include "wimlib/reparse.h"
-
-#include <errno.h>
 
 struct winnt_scan_stats {
 	unsigned long num_get_sd_access_denied;

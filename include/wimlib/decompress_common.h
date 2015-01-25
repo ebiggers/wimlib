@@ -11,7 +11,6 @@
 #define _WIMLIB_DECOMPRESS_COMMON_H
 
 #include "wimlib/compiler.h"
-#include "wimlib/endianness.h"
 #include "wimlib/types.h"
 #include "wimlib/unaligned.h"
 

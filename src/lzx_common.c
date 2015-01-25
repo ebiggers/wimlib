@@ -25,12 +25,6 @@
 
 #include <string.h>
 
-#include "wimlib/bitops.h"
-#include "wimlib/endianness.h"
-#include "wimlib/lzx_common.h"
-#include "wimlib/unaligned.h"
-#include "wimlib/util.h"
-
 #ifdef __SSE2__
 #  include <emmintrin.h>
 #endif
@@ -38,6 +32,12 @@
 #ifdef __AVX2__
 #  include <immintrin.h>
 #endif
+
+#include "wimlib/bitops.h"
+#include "wimlib/endianness.h"
+#include "wimlib/lzx_common.h"
+#include "wimlib/unaligned.h"
+#include "wimlib/util.h"
 
 /* Mapping: offset slot => first match offset that uses that offset slot.
  */

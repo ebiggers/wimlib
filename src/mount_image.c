@@ -37,20 +37,12 @@
 #  error "FUSE mount not supported on Windows!  Please configure --without-fuse"
 #endif
 
-#include "wimlib/dentry.h"
-#include "wimlib/encoding.h"
-#include "wimlib/lookup_table.h"
-#include "wimlib/metadata.h"
-#include "wimlib/paths.h"
-#include "wimlib/progress.h"
-#include "wimlib/reparse.h"
-#include "wimlib/timestamp.h"
-#include "wimlib/unix_data.h"
-#include "wimlib/write.h"
-#include "wimlib/xml.h"
+#define FUSE_USE_VERSION 26
 
+#include <attr/xattr.h>
 #include <dirent.h>
 #include <errno.h>
+#include <fuse.h>
 #include <limits.h>
 #include <mqueue.h>
 #include <pthread.h>
@@ -62,9 +54,17 @@
 #include <unistd.h>
 #include <utime.h>
 
-#define FUSE_USE_VERSION 26
-#include <fuse.h>
-#include <attr/xattr.h>
+#include "wimlib/dentry.h"
+#include "wimlib/encoding.h"
+#include "wimlib/lookup_table.h"
+#include "wimlib/metadata.h"
+#include "wimlib/paths.h"
+#include "wimlib/progress.h"
+#include "wimlib/reparse.h"
+#include "wimlib/timestamp.h"
+#include "wimlib/unix_data.h"
+#include "wimlib/write.h"
+#include "wimlib/xml.h"
 
 #ifndef O_NOFOLLOW
 #  define O_NOFOLLOW 0  /* Security only...  */

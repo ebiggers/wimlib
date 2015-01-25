@@ -26,6 +26,10 @@
 #  include "config.h"
 #endif
 
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h> /* for unlink()  */
+
 #include "wimlib/assert.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
@@ -36,10 +40,6 @@
 #include "wimlib/unaligned.h"
 #include "wimlib/util.h"
 #include "wimlib/write.h"
-
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h> /* for unlink()  */
 
 /* WIM lookup table:
  *

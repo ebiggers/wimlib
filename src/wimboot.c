@@ -34,12 +34,13 @@
 #endif
 
 #include "wimlib/win32_common.h"
-#include "wimlib/win32.h"
+
 #include "wimlib/assert.h"
 #include "wimlib/error.h"
 #include "wimlib/lookup_table.h"
 #include "wimlib/util.h"
 #include "wimlib/wimboot.h"
+#include "wimlib/win32.h"
 #include "wimlib/wof.h"
 
 static HANDLE

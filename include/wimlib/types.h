@@ -1,12 +1,12 @@
 #ifndef _WIMLIB_TYPES_H
 #define _WIMLIB_TYPES_H
 
-#include "wimlib_tchar.h"
-#include "wimlib/compiler.h"
-
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stddef.h>
+
+#include "wimlib_tchar.h"
+#include "wimlib/compiler.h"
 
 #ifndef _NTFS_TYPES_H
 /* Unsigned integer types of exact size in bits */

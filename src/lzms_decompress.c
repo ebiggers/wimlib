@@ -202,8 +202,8 @@
 #endif
 
 #include "wimlib/compress_common.h"
-#include "wimlib/decompressor_ops.h"
 #include "wimlib/decompress_common.h"
+#include "wimlib/decompressor_ops.h"
 #include "wimlib/error.h"
 #include "wimlib/lzms_common.h"
 #include "wimlib/util.h"

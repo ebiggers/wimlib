@@ -54,13 +54,13 @@
 #  include "config.h"
 #endif
 
+#include <string.h>
+
 #include "wimlib/decompressor_ops.h"
 #include "wimlib/decompress_common.h"
 #include "wimlib/error.h"
 #include "wimlib/lzx_common.h"
 #include "wimlib/util.h"
-
-#include <string.h>
 
 /* These values are chosen for fast decompression.  */
 #define LZX_MAINCODE_TABLEBITS		11

@@ -1,8 +1,9 @@
 #ifndef _WIMLIB_INTEGRITY_H
 #define _WIMLIB_INTEGRITY_H
 
-#include "wimlib/types.h"
 #include <sys/types.h>
+
+#include "wimlib/types.h"
 
 #define WIM_INTEGRITY_OK 0
 #define WIM_INTEGRITY_NOT_OK -1

@@ -25,6 +25,10 @@
 #  include "config.h"
 #endif
 
+#include <limits.h>
+#include <pthread.h>
+#include <string.h>
+
 #include "wimlib/compress_common.h"
 #include "wimlib/compressor_ops.h"
 #include "wimlib/endianness.h"
@@ -34,10 +38,6 @@
 #include "wimlib/lzms_common.h"
 #include "wimlib/unaligned.h"
 #include "wimlib/util.h"
-
-#include <string.h>
-#include <limits.h>
-#include <pthread.h>
 
 /* Stucture used for writing raw bits as a series of 16-bit little endian coding
  * units.  This starts at the *end* of the compressed data buffer and proceeds

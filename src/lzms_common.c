@@ -23,7 +23,6 @@
 #  include "config.h"
 #endif
 
-#include "wimlib/endianness.h"
 #include "wimlib/lzms_common.h"
 #include "wimlib/unaligned.h"
 

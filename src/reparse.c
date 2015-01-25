@@ -23,6 +23,9 @@
 #  include "config.h"
 #endif
 
+#include <errno.h>
+
+#include "wimlib/alloca.h"
 #include "wimlib/assert.h"
 #include "wimlib/compiler.h"
 #include "wimlib/endianness.h"
@@ -32,12 +35,6 @@
 #include "wimlib/lookup_table.h"
 #include "wimlib/reparse.h"
 #include "wimlib/resource.h"
-
-#ifdef HAVE_ALLOCA_H
-#  include <alloca.h>
-#endif
-#include <errno.h>
-#include <stdlib.h>
 
 /*
  * Read the data from a symbolic link, junction, or mount point reparse point

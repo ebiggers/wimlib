@@ -23,18 +23,18 @@
 #  include "config.h"
 #endif
 
-#include "wimlib/encoding.h"
-#include "wimlib/error.h"
-#include "wimlib/file_io.h"
-#include "wimlib/textfile.h"
-#include "wimlib/util.h"
-
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+#include "wimlib/encoding.h"
+#include "wimlib/error.h"
+#include "wimlib/file_io.h"
+#include "wimlib/textfile.h"
+#include "wimlib/util.h"
 
 static int
 read_file_contents(const tchar *path, void **buf_ret, size_t *bufsize_ret)

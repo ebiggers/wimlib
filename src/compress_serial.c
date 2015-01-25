@@ -25,12 +25,12 @@
 #  include "config.h"
 #endif
 
+#include <string.h>
+
 #include "wimlib.h"
 #include "wimlib/assert.h"
 #include "wimlib/chunk_compressor.h"
 #include "wimlib/util.h"
-
-#include <string.h>
 
 struct serial_chunk_compressor {
 	struct chunk_compressor base;

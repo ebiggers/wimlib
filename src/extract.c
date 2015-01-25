@@ -39,6 +39,11 @@
 #  include "config.h"
 #endif
 
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include "wimlib/apply.h"
 #include "wimlib/assert.h"
 #include "wimlib/dentry.h"
@@ -59,12 +64,6 @@
 #include "wimlib/xml.h"
 #include "wimlib/wildcard.h"
 #include "wimlib/wim.h"
-
-#include <errno.h>
-#include <fcntl.h>
-#include <stdlib.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
 #define WIMLIB_EXTRACT_FLAG_FROM_PIPE   0x80000000
 #define WIMLIB_EXTRACT_FLAG_IMAGEMODE   0x40000000

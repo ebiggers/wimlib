@@ -23,11 +23,11 @@
 #  include "config.h"
 #endif
 
+#include <string.h>
+
 #include "wimlib.h"
 #include "wimlib/paths.h"
 #include "wimlib/util.h"
-
-#include <string.h>
 
 /* Like the basename() function, but does not modify @path; it just returns a
  * pointer to it.  This assumes the path separator is the

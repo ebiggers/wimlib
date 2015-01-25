@@ -23,6 +23,8 @@
 #  include "config.h"
 #endif
 
+#include <string.h>
+
 #include "wimlib/capture.h"
 #include "wimlib/dentry.h"
 #include "wimlib/error.h"
@@ -31,8 +33,6 @@
 #include "wimlib/progress.h"
 #include "wimlib/textfile.h"
 #include "wimlib/wildcard.h"
-
-#include <string.h>
 
 /*
  * Tally a file (or directory) that has been scanned for a capture operation,

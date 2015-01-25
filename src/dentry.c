@@ -58,6 +58,8 @@
 #  include "config.h"
 #endif
 
+#include <errno.h>
+
 #include "wimlib/assert.h"
 #include "wimlib/dentry.h"
 #include "wimlib/inode.h"
@@ -65,8 +67,6 @@
 #include "wimlib/endianness.h"
 #include "wimlib/metadata.h"
 #include "wimlib/paths.h"
-
-#include <errno.h>
 
 /* On-disk format of a WIM dentry (directory entry), located in the metadata
  * resource for a WIM image.  */

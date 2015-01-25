@@ -26,6 +26,7 @@
 #endif
 
 #include <ctype.h>
+
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/error.h"

@@ -12,8 +12,8 @@
 #ifndef _WOF_H_
 #define _WOF_H_
 
-#include "wimlib/types.h"
 #include "wimlib/compiler.h"
+#include "wimlib/types.h"
 
 #define WOF_CURRENT_VERSION	1
 #define WOF_PROVIDER_WIM	1

@@ -1,10 +1,10 @@
 #ifndef _WIMLIB_HEADER_H
 #define _WIMLIB_HEADER_H
 
+#include <limits.h>
+
 #include "wimlib/resource.h"
 #include "wimlib/types.h"
-
-#include <limits.h>
 
 /* Length of "Globally Unique ID" field in WIM header.  */
 #define WIM_GUID_LEN    16

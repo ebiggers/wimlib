@@ -32,6 +32,12 @@
 #  include <sys/file.h>
 #endif
 
+#include <errno.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#include "wimlib/alloca.h"
 #include "wimlib/assert.h"
 #include "wimlib/chunk_compressor.h"
 #include "wimlib/endianness.h"
@@ -51,14 +57,6 @@
 #include "wimlib/write.h"
 #include "wimlib/xml.h"
 
-#include <errno.h>
-#include <fcntl.h>
-#include <stdlib.h>
-#include <unistd.h>
-
-#ifdef HAVE_ALLOCA_H
-#  include <alloca.h>
-#endif
 
 /* wimlib internal flags used when writing resources.  */
 #define WRITE_RESOURCE_FLAG_RECOMPRESS		0x00000001
