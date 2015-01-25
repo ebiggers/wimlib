@@ -491,7 +491,7 @@ xml_read_image_info(xmlNode *image_node, struct image_info *image_info)
 	index_prop = xmlGetProp(image_node, "INDEX");
 	if (index_prop) {
 		image_info->index = atoi(index_prop);
-		FREE(index_prop);
+		xmlFree(index_prop);
 	} else {
 		image_info->index = 1;
 	}
