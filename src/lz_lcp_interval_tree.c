@@ -53,19 +53,13 @@
 #define LZ_LCPIT_POS_BITS		(32 - 1 - LZ_LCPIT_LCP_BITS)
 #define LZ_LCPIT_MAX_WINDOW_SIZE	(1UL << LZ_LCPIT_POS_BITS)
 
+#define SA_and_LCP_LCP_SHIFT		(32 - LZ_LCPIT_LCP_BITS)
+#define SA_and_LCP_POS_MASK		(((u32)1 << SA_and_LCP_LCP_SHIFT) - 1)
+
 struct lz_lcpit {
 	struct lz_mf base;
 
-	/* Each of the arrays has length equal to the window size.  This
-	 * therefore results in an additional memory usage of 12 bytes per
-	 * position.  (That's compared to about 8 for binary trees or 4 for hash
-	 * chains, for example.)
-	 *
-	 * We allocate these arrays in one contiguous block.  'SA' is first,
-	 * 'intervals' is second, and 'pos_data' is third.  */
-
-	/* Pointer to the suffix array  */
-	u32 *SA;
+	u32 *mem;
 
 	/* Mapping: lcp-interval index => lcp-interval data
 	 *
@@ -81,6 +75,47 @@ struct lz_lcpit {
 	/* Mapping: suffix index ("window position") => lcp-interval index  */
 	u32 *pos_data;
 };
+
+/*
+ * Build the LCP (Longest Common Prefix) array in linear time.
+ *
+ * LCP[r] will be the length of the longest common prefix between the suffixes
+ * with positions SA[r - 1] and  SA[r].  LCP[0] will be undefined.
+ *
+ * Algorithm taken from Kasai et al. (2001), but modified slightly:
+ *
+ *  - For decreased memory usage and improved memory locality, pack the two
+ *    logically distinct SA and LCP arrays into a single array SA_and_LCP.
+ *  - Cap the LCP values to the specified limit.
+ *  - With bytes there is no realistic way to reserve a unique symbol for
+ *    end-of-buffer, so use explicit checks for end-of-buffer.
+ *
+ * References:
+ *
+ *	Kasai et al.  2001.  Linear-Time Longest-Common-Prefix Computation in
+ *	Suffix Arrays and Its Applications.  CPM '01 Proceedings of the 12th
+ *	Annual Symposium on Combinatorial Pattern Matching pp. 181-192.
+ */
+static void
+build_LCP_packed(u32 * const restrict SA_and_LCP, const u32 * const restrict ISA,
+		 const u8 * const restrict T, const u32 n, const u32 lcp_limit)
+{
+	u32 h, i, r, j, lim;
+
+	h = 0;
+	for (i = 0; i < n; i++) {
+		r = ISA[i];
+		if (r > 0) {
+			j = SA_and_LCP[r - 1] & SA_and_LCP_POS_MASK;
+			lim = min(n - i, n - j);
+			while (h < lim && T[i + h] == T[j + h])
+				h++;
+			SA_and_LCP[r] |= min(h, lcp_limit) << SA_and_LCP_LCP_SHIFT;
+			if (h > 0)
+				h--;
+		}
+	}
+}
 
 /*
  * Use the suffix array accompanied with the longest-common-prefix array --- in
@@ -123,14 +158,14 @@ struct lz_lcpit {
  *	Annual Symposium on Combinatorial Pattern Matching pp. 181-192.
  */
 static void
-build_LCPIT(const u32 SA[restrict], u32 LCP[restrict],
-	    u32 pos_data[restrict], const u32 lcp_limit, const u32 n)
+build_LCPIT(const u32 * const restrict SA_and_LCP,
+	    u32 * const restrict intervals, u32 * const restrict pos_data,
+	    const u32 n)
 {
-	u32 *intervals = LCP;
 	u32 next_interval_idx = 0;
 	u32 open_intervals[LZ_LCPIT_LCP_MAX + 1];
 	u32 *top = open_intervals;
-	u32 prev_pos = SA[0];
+	u32 prev_pos = SA_and_LCP[0] & SA_and_LCP_POS_MASK;
 
 	/* The interval with lcp=0 covers the entire array.  It remains open
 	 * until the end.  */
@@ -139,8 +174,8 @@ build_LCPIT(const u32 SA[restrict], u32 LCP[restrict],
 	next_interval_idx++;
 
 	for (u32 r = 1; r < n; r++) {
-		u32 next_pos = SA[r];
-		u32 next_lcp = min(LCP[r], lcp_limit);
+		u32 next_pos = SA_and_LCP[r] & SA_and_LCP_POS_MASK;
+		u32 next_lcp = SA_and_LCP[r] >> SA_and_LCP_LCP_SHIFT;
 		u32 top_lcp = intervals[*top];
 
 		if (next_lcp == top_lcp) {
@@ -247,27 +282,22 @@ lz_lcpit_init(struct lz_mf *_mf)
 
 	lz_lcpit_set_default_params(&mf->base.params);
 
-	mf->SA = MALLOC(lz_lcpit_get_needed_memory(mf->base.params.max_window_size));
-	if (!mf->SA)
-		return false;
-
-	return true;
+	mf->mem = MALLOC(lz_lcpit_get_needed_memory(mf->base.params.max_window_size));
+	return (mf->mem != NULL);
 }
 
 static void
 lz_lcpit_load_window(struct lz_mf *_mf, const u8 T[], u32 n)
 {
 	struct lz_lcpit *mf = (struct lz_lcpit *)_mf;
-	u32 *mem = mf->SA;
 
-	build_SA(&mem[0 * n], T, n, &mem[1 * n]);
-	build_ISA(&mem[2 * n], &mem[0 * n], n);
-	build_LCP(&mem[1 * n], &mem[0 * n], &mem[2 * n], T, n);
-	build_LCPIT(&mem[0 * n], &mem[1 * n], &mem[2 * n],
-		    mf->base.params.nice_match_len, n);
-	mf->SA = &mem[0 * n];
-	mf->intervals = &mem[1 * n];
-	mf->pos_data = &mem[2 * n];
+	build_SA(&mf->mem[0 * n], T, n, &mf->mem[1 * n]);
+	build_ISA(&mf->mem[2 * n], &mf->mem[0 * n], n);
+	build_LCP_packed(&mf->mem[0 * n], &mf->mem[2 * n], T, n,
+			 mf->base.params.nice_match_len);
+	build_LCPIT(&mf->mem[0 * n], &mf->mem[1 * n], &mf->mem[2 * n], n);
+	mf->intervals = &mf->mem[1 * n];
+	mf->pos_data = &mf->mem[2 * n];
 }
 
 static u32
@@ -468,7 +498,7 @@ lz_lcpit_destroy(struct lz_mf *_mf)
 {
 	struct lz_lcpit *mf = (struct lz_lcpit *)_mf;
 
-	FREE(mf->SA);
+	FREE(mf->mem);
 }
 
 const struct lz_mf_ops lz_lcp_interval_tree_ops = {
