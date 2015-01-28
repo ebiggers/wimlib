@@ -821,6 +821,39 @@ win32_get_encrypted_file_size(const wchar_t *path, u64 *size_ret)
 	return ret;
 }
 
+static int
+winnt_load_encrypted_stream_info(struct wim_inode *inode, const wchar_t *nt_path,
+				 struct list_head *unhashed_streams)
+{
+	struct wim_lookup_table_entry *lte = new_lookup_table_entry();
+	int ret;
+
+	if (unlikely(!lte))
+		return WIMLIB_ERR_NOMEM;
+
+	lte->file_on_disk = WCSDUP(nt_path);
+	if (unlikely(!lte->file_on_disk)) {
+		free_lookup_table_entry(lte);
+		return WIMLIB_ERR_NOMEM;
+	}
+	lte->resource_location = RESOURCE_WIN32_ENCRYPTED;
+
+	/* OpenEncryptedFileRaw() expects a Win32 name.  */
+	wimlib_assert(!wmemcmp(lte->file_on_disk, L"\\??\\", 4));
+	lte->file_on_disk[1] = L'\\';
+
+	ret = win32_get_encrypted_file_size(lte->file_on_disk, &lte->size);
+	if (unlikely(ret)) {
+		free_lookup_table_entry(lte);
+		return ret;
+	}
+
+	lte->file_inode = inode;
+	add_unhashed_stream(lte, inode, 0, unhashed_streams);
+	inode->i_lte = lte;
+	return 0;
+}
+
 static bool
 get_data_stream_name(const wchar_t *raw_stream_name, size_t raw_stream_name_nchars,
 		     const wchar_t **stream_name_ret, size_t *stream_name_nchars_ret)
@@ -905,8 +938,11 @@ winnt_scan_stream(const wchar_t *path, size_t path_nchars,
 							sizeof(wchar_t));
 		if (!ads_entry)
 			return WIMLIB_ERR_NOMEM;
-	} else if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-		/* Ignore unnamed data stream of reparse point  */
+	} else if (inode->i_attributes & (FILE_ATTRIBUTE_REPARSE_POINT |
+					  FILE_ATTRIBUTE_ENCRYPTED))
+	{
+		/* Ignore unnamed data stream of reparse point or encrypted file
+		 */
 		return 0;
 	} else {
 		ads_entry = NULL;
@@ -933,27 +969,6 @@ winnt_scan_stream(const wchar_t *path, size_t path_nchars,
 	lte->file_on_disk = stream_path;
 	lte->resource_location = RESOURCE_IN_WINNT_FILE_ON_DISK;
 	lte->size = stream_size;
-	if ((inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED) && !ads_entry) {
-		/* Special case for encrypted file.  */
-
-		/* OpenEncryptedFileRaw() expects Win32 name, not NT name.
-		 * Change \??\ into \\?\  */
-		lte->file_on_disk[1] = L'\\';
-		wimlib_assert(!wmemcmp(lte->file_on_disk, L"\\\\?\\", 4));
-
-		u64 encrypted_size;
-		int ret;
-
-		ret = win32_get_encrypted_file_size(lte->file_on_disk,
-						    &encrypted_size);
-		if (ret) {
-			free_lookup_table_entry(lte);
-			return ret;
-		}
-		lte->size = encrypted_size;
-		lte->resource_location = RESOURCE_WIN32_ENCRYPTED;
-	}
-
 	if (ads_entry) {
 		stream_id = ads_entry->stream_id;
 		ads_entry->lte = lte;
@@ -981,7 +996,7 @@ winnt_scan_stream(const wchar_t *path, size_t path_nchars,
  *   already present in Windows XP.
  */
 static int
-winnt_scan_streams(HANDLE *hFile_p, const wchar_t *path, size_t path_nchars,
+winnt_scan_streams(HANDLE h, const wchar_t *path, size_t path_nchars,
 		   struct wim_inode *inode, struct list_head *unhashed_streams,
 		   u64 file_size, u32 vol_flags)
 {
@@ -1000,7 +1015,7 @@ winnt_scan_streams(HANDLE *hFile_p, const wchar_t *path, size_t path_nchars,
 		goto unnamed_only;
 
 	/* Get a buffer containing the stream information.  */
-	while (!NT_SUCCESS(status = (*func_NtQueryInformationFile)(*hFile_p,
+	while (!NT_SUCCESS(status = (*func_NtQueryInformationFile)(h,
 								   &iosb,
 								   buf,
 								   bufsize,
@@ -1042,14 +1057,6 @@ winnt_scan_streams(HANDLE *hFile_p, const wchar_t *path, size_t path_nchars,
 		/* No stream information.  */
 		ret = 0;
 		goto out_free_buf;
-	}
-
-	if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED)) {
-		/* OpenEncryptedFileRaw() seems to fail with
-		 * ERROR_SHARING_VIOLATION if there are any handles opened to
-		 * the file.  */
-		(*func_NtClose)(*hFile_p);
-		*hFile_p = INVALID_HANDLE_VALUE;
 	}
 
 	/* Parse one or more stream information structures.  */
@@ -1342,7 +1349,7 @@ retry_open:
 
 	/* Load information about the unnamed data stream and any named data
 	 * streams.  */
-	ret = winnt_scan_streams(&h,
+	ret = winnt_scan_streams(h,
 				 full_path,
 				 full_path_nchars,
 				 inode,
@@ -1352,16 +1359,37 @@ retry_open:
 	if (ret)
 		goto out;
 
-	if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
-
-		/* Reparse point: set the reparse data (already read).  */
-
-		inode->i_not_rpfixed = not_rpfixed;
-		inode->i_reparse_tag = le32_to_cpu(*(le32*)rpbuf);
-		ret = inode_set_unnamed_stream(inode, rpbuf + 8, rpbuflen - 8,
-					       params->lookup_table);
+	if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED)) {
+		/* Load information about the raw encrypted data.  This is
+		 * needed for any directory or non-directory that has
+		 * FILE_ATTRIBUTE_ENCRYPTED set.
+		 *
+		 * Note: since OpenEncryptedFileRaw() fails with
+		 * ERROR_SHARING_VIOLATION if there are any open handles to the
+		 * file, we have to close the file and re-open it later if
+		 * needed.  */
+		(*func_NtClose)(h);
+		h = INVALID_HANDLE_VALUE;
+		ret = winnt_load_encrypted_stream_info(inode, full_path,
+						       params->unhashed_streams);
 		if (ret)
 			goto out;
+	}
+
+	if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+		if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED)) {
+			WARNING("Ignoring reparse data of encrypted reparse point file \"%ls\"",
+				printable_path(full_path));
+		} else {
+			/* Reparse point: set the reparse data (already read).  */
+
+			inode->i_not_rpfixed = not_rpfixed;
+			inode->i_reparse_tag = le32_to_cpu(*(le32*)rpbuf);
+			ret = inode_set_unnamed_stream(inode, rpbuf + 8, rpbuflen - 8,
+						       params->lookup_table);
+			if (ret)
+				goto out;
+		}
 	} else if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
 
 		/* Directory: recurse to children.  */
