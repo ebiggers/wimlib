@@ -6,6 +6,9 @@ Version 1.7.5-BETA:
 	case sensitivity setting, rather than always case sensitively.  This
 	also affects the library function wimlib_iterate_dir_tree().
 
+	Fixed various issues related to capture/apply of EFS-encrypted files on
+	Windows.
+
 Version 1.7.4:
 	The Windows binary distribution no longer contains third party DLLs.
 	These dependencies are instead compiled directly into the libwim DLL.
