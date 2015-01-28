@@ -1737,22 +1737,6 @@ begin_extract_stream_instance(const struct wim_lookup_table_entry *stream,
 		build_extraction_path(dentry, ctx);
 	}
 
-	/* Reparse point?  */
-	if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)
-	    && (stream_name_nchars == 0))
-	{
-		if (!ctx->common.supported_features.reparse_points)
-			return 0;
-
-		/* We can't write the reparse stream directly; we must set it
-		 * with FSCTL_SET_REPARSE_POINT, which requires that all the
-		 * data be available.  So, stage the data in a buffer.  */
-
-		if (!prepare_data_buffer(ctx, stream->size))
-			return WIMLIB_ERR_NOMEM;
-		list_add_tail(&dentry->tmp_list, &ctx->reparse_dentries);
-		return 0;
-	}
 
 	/* Encrypted file?  */
 	if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED)
@@ -1775,6 +1759,28 @@ begin_extract_stream_instance(const struct wim_lookup_table_entry *stream,
 		if (!prepare_data_buffer(ctx, stream->size))
 			return WIMLIB_ERR_NOMEM;
 		list_add_tail(&dentry->tmp_list, &ctx->encrypted_dentries);
+		return 0;
+	}
+
+	/* Reparse point?
+	 *
+	 * Note: FILE_ATTRIBUTE_REPARSE_POINT is tested *after*
+	 * FILE_ATTRIBUTE_ENCRYPTED since the WIM format does not store both EFS
+	 * data and reparse data for the same file, and the EFS data takes
+	 * precedence.  */
+	if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)
+	    && (stream_name_nchars == 0))
+	{
+		if (!ctx->common.supported_features.reparse_points)
+			return 0;
+
+		/* We can't write the reparse stream directly; we must set it
+		 * with FSCTL_SET_REPARSE_POINT, which requires that all the
+		 * data be available.  So, stage the data in a buffer.  */
+
+		if (!prepare_data_buffer(ctx, stream->size))
+			return WIMLIB_ERR_NOMEM;
+		list_add_tail(&dentry->tmp_list, &ctx->reparse_dentries);
 		return 0;
 	}
 
