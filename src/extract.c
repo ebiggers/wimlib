@@ -1473,6 +1473,11 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 	if (ret)
 		goto out_cleanup;
 
+	if (unlikely(list_empty(&dentry_list))) {
+		WARNING("There is nothing to extract!");
+		goto out_cleanup;
+	}
+
 	ret = dentry_list_resolve_streams(&dentry_list, ctx);
 	if (ret)
 		goto out_cleanup;
