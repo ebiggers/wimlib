@@ -153,15 +153,26 @@ for_dentry_in_tree(struct wim_dentry *root,
 		   void *args);
 
 /* Iterate through each @child dentry of the @dir directory inode,
- * in sorted order (by case sensitive name).  */
-#define for_inode_child(child, dir)						\
-	avl_tree_for_each_in_order((child), (dir)->i_children,			\
+ * in sorted order by case sensitive name.  */
+#define for_inode_child(child, dir)					\
+	avl_tree_for_each_in_order((child), (dir)->i_children,		\
 				   struct wim_dentry, d_index_node)
 
 /* Iterate through each @child dentry of the @parent dentry,
- * in sorted order (by case sensitive name).  */
+ * in sorted order by case sensitive name.  */
 #define for_dentry_child(child, parent) \
 	for_inode_child((child), (parent)->d_inode)
+
+/* Iterate through each @child dentry of the @dir directory inode,
+ * in sorted order by case insensitive name.  */
+#define for_inode_child_case_insensitive(child, dir)			\
+	avl_tree_for_each_in_order((child), (dir)->i_children_ci,	\
+				   struct wim_dentry, d_index_node_ci)
+
+/* Iterate through each @child dentry of the @parent dentry,
+ * in sorted order by case insensitive name.  */
+#define for_dentry_child_case_insensitive(child, parent) \
+	for_inode_child_case_insensitive((child), (parent)->d_inode)
 
 /* Iterate through each @child dentry of the @dir directory inode,
  * in postorder (safe for freeing the child dentries).  */

@@ -170,12 +170,22 @@ do_iterate_dir_tree(WIMStruct *wim,
 		struct wim_dentry *child;
 
 		ret = 0;
-		for_dentry_child(child, dentry) {
-			ret = do_iterate_dir_tree(wim, child,
-						  flags & ~WIMLIB_ITERATE_DIR_TREE_FLAG_CHILDREN,
-						  cb, user_ctx);
-			if (ret)
-				break;
+		if (default_ignore_case) {
+			for_dentry_child_case_insensitive(child, dentry) {
+				ret = do_iterate_dir_tree(wim, child,
+							  flags & ~WIMLIB_ITERATE_DIR_TREE_FLAG_CHILDREN,
+							  cb, user_ctx);
+				if (ret)
+					break;
+			}
+		} else {
+			for_dentry_child(child, dentry) {
+				ret = do_iterate_dir_tree(wim, child,
+							  flags & ~WIMLIB_ITERATE_DIR_TREE_FLAG_CHILDREN,
+							  cb, user_ctx);
+				if (ret)
+					break;
+			}
 		}
 	}
 out_free_wimlib_dentry:
