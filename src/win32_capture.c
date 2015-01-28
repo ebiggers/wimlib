@@ -1114,7 +1114,7 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 {
 	struct wim_dentry *root = NULL;
 	struct wim_inode *inode = NULL;
-	HANDLE h = INVALID_HANDLE_VALUE;
+	HANDLE h = NULL;
 	int ret;
 	NTSTATUS status;
 	FILE_ALL_INFORMATION file_info;
@@ -1369,7 +1369,7 @@ retry_open:
 		 * file, we have to close the file and re-open it later if
 		 * needed.  */
 		(*func_NtClose)(h);
-		h = INVALID_HANDLE_VALUE;
+		h = NULL;
 		ret = winnt_load_encrypted_stream_info(inode, full_path,
 						       params->unhashed_streams);
 		if (ret)
@@ -1394,7 +1394,7 @@ retry_open:
 
 		/* Directory: recurse to children.  */
 
-		if (unlikely(h == INVALID_HANDLE_VALUE)) {
+		if (unlikely(!h)) {
 			/* Re-open handle that was closed to read raw encrypted
 			 * data.  */
 			status = winnt_openat(cur_dir,
@@ -1432,7 +1432,7 @@ out_progress:
 	else
 		ret = do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
 out:
-	if (likely(h != INVALID_HANDLE_VALUE))
+	if (likely(h))
 		(*func_NtClose)(h);
 	if (unlikely(ret)) {
 		free_dentry_tree(root, params->lookup_table);
