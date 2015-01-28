@@ -144,16 +144,22 @@ dentry_is_supported(struct wim_dentry *dentry,
 	struct wim_inode *inode = dentry->d_inode;
 
 	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-		return supported_features->reparse_points ||
-			(inode_is_symlink(inode) &&
-			 supported_features->symlink_reparse_points);
+		if (!(supported_features->reparse_points ||
+		      (inode_is_symlink(inode) &&
+		       supported_features->symlink_reparse_points)))
+			return false;
 	}
+
 	if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED) {
-		if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
-			return supported_features->encrypted_directories != 0;
-		else
-			return supported_features->encrypted_files != 0;
+		if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
+			if (!supported_features->encrypted_directories)
+				return false;
+		} else {
+			if (!supported_features->encrypted_files)
+				return false;
+		}
 	}
+
 	return true;
 }
 
@@ -808,7 +814,7 @@ dentry_calculate_extraction_name(struct wim_dentry *dentry,
 {
 	int ret;
 
-	if (!dentry_is_supported(dentry, &ctx->supported_features))
+	if (unlikely(!dentry_is_supported(dentry, &ctx->supported_features)))
 		goto skip_dentry;
 
 	if (dentry_is_root(dentry))
