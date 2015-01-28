@@ -1092,9 +1092,6 @@ ref_unnamed_stream(struct wim_dentry *dentry, struct apply_ctx *ctx)
 	unsigned stream_idx;
 	struct wim_lookup_table_entry *stream;
 
-	if (unlikely(inode_is_encrypted_directory(inode)))
-		return 0;
-
 	if (unlikely(ctx->apply_ops->will_externally_back)) {
 		ret = (*ctx->apply_ops->will_externally_back)(dentry, ctx);
 		if (ret >= 0) {

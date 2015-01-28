@@ -763,26 +763,19 @@ current_path(struct win32_apply_ctx *ctx)
 	return ctx->print_buffer;
 }
 
-/*
- * Ensures the target directory exists and opens a handle to it, in preparation
- * of using paths relative to it.
- */
+/* Open handle to the target directory if it is not already open.  If the target
+ * directory does not exist, this creates it.  */
 static int
-prepare_target(struct list_head *dentry_list, struct win32_apply_ctx *ctx)
+open_target_directory(struct win32_apply_ctx *ctx)
 {
-	int ret;
 	NTSTATUS status;
-	size_t path_max;
 
-	/* Open handle to the target directory (possibly creating it).  */
-
-	ret = win32_path_to_nt_path(ctx->common.target, &ctx->target_ntpath);
-	if (ret)
-		return ret;
+	if (ctx->h_target)
+		return 0;
 
 	ctx->attr.Length = sizeof(ctx->attr);
+	ctx->attr.RootDirectory = NULL;
 	ctx->attr.ObjectName = &ctx->target_ntpath;
-
 	status = (*func_NtCreateFile)(&ctx->h_target,
 				      FILE_TRAVERSE,
 				      &ctx->attr,
@@ -796,7 +789,6 @@ prepare_target(struct list_head *dentry_list, struct win32_apply_ctx *ctx)
 					      FILE_OPEN_FOR_BACKUP_INTENT,
 				      NULL,
 				      0);
-
 	if (!NT_SUCCESS(status)) {
 		set_errno_from_nt_status(status);
 		ERROR_WITH_ERRNO("Can't open or create directory \"%ls\" "
@@ -804,9 +796,40 @@ prepare_target(struct list_head *dentry_list, struct win32_apply_ctx *ctx)
 				 ctx->common.target, (u32)status);
 		return WIMLIB_ERR_OPENDIR;
 	}
+	ctx->attr.RootDirectory = ctx->h_target;
+	ctx->attr.ObjectName = &ctx->pathbuf;
+	return 0;
+}
+
+static void
+close_target_directory(struct win32_apply_ctx *ctx)
+{
+	if (ctx->h_target) {
+		(*func_NtClose)(ctx->h_target);
+		ctx->h_target = NULL;
+		ctx->attr.RootDirectory = NULL;
+	}
+}
+
+/*
+ * Ensures the target directory exists and opens a handle to it, in preparation
+ * of using paths relative to it.
+ */
+static int
+prepare_target(struct list_head *dentry_list, struct win32_apply_ctx *ctx)
+{
+	int ret;
+	size_t path_max;
+
+	ret = win32_path_to_nt_path(ctx->common.target, &ctx->target_ntpath);
+	if (ret)
+		return ret;
+
+	ret = open_target_directory(ctx);
+	if (ret)
+		return ret;
 
 	path_max = compute_path_max(dentry_list);
-
 	/* Add some extra for building Win32 paths for the file encryption APIs,
 	 * and ensure we have at least enough to potentially use a 8.3 name for
 	 * the last component.  */
@@ -817,9 +840,6 @@ prepare_target(struct list_head *dentry_list, struct win32_apply_ctx *ctx)
 	ctx->pathbuf.Buffer = MALLOC(ctx->pathbuf.MaximumLength);
 	if (!ctx->pathbuf.Buffer)
 		return WIMLIB_ERR_NOMEM;
-
-	ctx->attr.RootDirectory = ctx->h_target;
-	ctx->attr.ObjectName = &ctx->pathbuf;
 
 	ctx->print_buffer = MALLOC((ctx->common.target_nchars + 1 + path_max + 1) *
 				   sizeof(wchar_t));
@@ -1335,22 +1355,12 @@ create_directory(const struct wim_dentry *dentry,
 	HANDLE h;
 	NTSTATUS status;
 	int ret;
-	ULONG attrib;
-
-	/* Special attributes:
-	 *
-	 * Use FILE_ATTRIBUTE_ENCRYPTED if the directory needs to have it set.
-	 * This doesn't work for FILE_ATTRIBUTE_COMPRESSED (unfortunately).
-	 *
-	 * Don't specify FILE_ATTRIBUTE_DIRECTORY; it gets set anyway as a
-	 * result of the FILE_DIRECTORY_FILE option.  */
-	attrib = (dentry->d_inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED);
 
 	/* DELETE is needed for set_short_name().
 	 * GENERIC_READ and GENERIC_WRITE are needed for
 	 * adjust_compression_attribute().  */
 	status = create_file(&h, GENERIC_READ | GENERIC_WRITE | DELETE, NULL,
-			     attrib, FILE_OPEN_IF, FILE_DIRECTORY_FILE,
+			     0, FILE_OPEN_IF, FILE_DIRECTORY_FILE,
 			     dentry, ctx);
 	if (!NT_SUCCESS(status)) {
 		set_errno_from_nt_status(status);
@@ -2033,23 +2043,42 @@ import_encrypted_data(PBYTE pbData, PVOID pvCallbackContext, PULONG Length)
 	return ERROR_SUCCESS;
 }
 
-/* Write the raw encrypted data to the already-created file corresponding to
- * @dentry.
+/*
+ * Write the raw encrypted data to the already-created file (or directory)
+ * corresponding to @dentry.
  *
  * The raw encrypted data is provided in ctx->data_buffer, and its size is
- * ctx->encrypted_size.  */
+ * ctx->encrypted_size.
+ *
+ * This function may close the target directory, in which case the caller needs
+ * to re-open it if needed.
+ */
 static int
 extract_encrypted_file(const struct wim_dentry *dentry,
 		       struct win32_apply_ctx *ctx)
 {
 	void *rawctx;
 	DWORD err;
+	ULONG flags;
+	bool retried;
 
 	/* Temporarily build a Win32 path for OpenEncryptedFileRaw()  */
 	build_win32_extraction_path(dentry, ctx);
 
-	err = OpenEncryptedFileRaw(ctx->pathbuf.Buffer,
-				   CREATE_FOR_IMPORT, &rawctx);
+	flags = CREATE_FOR_IMPORT | OVERWRITE_HIDDEN;
+	if (dentry->d_inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
+		flags |= CREATE_FOR_DIR;
+
+	retried = false;
+retry:
+	err = OpenEncryptedFileRaw(ctx->pathbuf.Buffer, flags, &rawctx);
+	if (err == ERROR_SHARING_VIOLATION && !retried) {
+		/* This can be caused by the handle we have open to the target
+		 * directory.  Try closing it temporarily.  */
+		close_target_directory(ctx);
+		retried = true;
+		goto retry;
+	}
 
 	/* Restore the NT namespace path  */
 	build_extraction_path(dentry, ctx);
@@ -2219,6 +2248,10 @@ end_extract_stream(struct wim_lookup_table_entry *stream, int status, void *_ctx
 		list_for_each_entry(dentry, &ctx->encrypted_dentries, tmp_list) {
 			ret = extract_encrypted_file(dentry, ctx);
 			ret = check_apply_error(dentry, ctx, ret);
+			if (ret)
+				return ret;
+			/* Re-open the target directory if needed.  */
+			ret = open_target_directory(ctx);
 			if (ret)
 				return ret;
 		}
@@ -2628,8 +2661,7 @@ win32_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 
 	do_warnings(ctx);
 out:
-	if (ctx->h_target)
-		(*func_NtClose)(ctx->h_target);
+	close_target_directory(ctx);
 	if (ctx->target_ntpath.Buffer)
 		HeapFree(GetProcessHeap(), 0, ctx->target_ntpath.Buffer);
 	FREE(ctx->pathbuf.Buffer);
