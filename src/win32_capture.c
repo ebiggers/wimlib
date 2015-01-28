@@ -1114,6 +1114,7 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	u8 *rpbuf;
 	u16 rpbuflen;
 	u16 not_rpfixed;
+	ACCESS_MASK requestedPerms;
 
 	ret = try_exclude(full_path, full_path_nchars, params);
 	if (ret < 0) /* Excluded? */
@@ -1122,32 +1123,44 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		goto out;
 
 	/* Open the file.  */
+	requestedPerms = FILE_READ_DATA |
+			 FILE_READ_ATTRIBUTES |
+			 READ_CONTROL |
+			 ACCESS_SYSTEM_SECURITY |
+			 SYNCHRONIZE;
+retry_open:
 	status = winnt_openat(cur_dir,
 			      (cur_dir ? filename : full_path),
 			      (cur_dir ? filename_nchars : full_path_nchars),
-			      FILE_READ_DATA |
-					FILE_READ_ATTRIBUTES |
-					READ_CONTROL |
-					ACCESS_SYSTEM_SECURITY |
-					SYNCHRONIZE,
+			      requestedPerms,
 			      &h);
 	if (unlikely(!NT_SUCCESS(status))) {
 		if (status == STATUS_DELETE_PENDING) {
 			WARNING("\"%ls\": Deletion pending; skipping file",
 				printable_path(full_path));
 			ret = 0;
-		} else {
-			set_errno_from_nt_status(status);
-			ERROR_WITH_ERRNO("\"%ls\": Can't open file "
-					 "(status=0x%08"PRIx32")",
-					 printable_path(full_path), (u32)status);
-			if (status == STATUS_FVE_LOCKED_VOLUME)
-				ret = WIMLIB_ERR_FVE_LOCKED_VOLUME;
-			else
-				ret = WIMLIB_ERR_OPEN;
+			goto out;
 		}
-		/* XXX: Provide option to exclude files that fail with
-		 * STATUS_SHARING_VIOLATION?  */
+		if (status == STATUS_ACCESS_DENIED &&
+		    (requestedPerms & FILE_READ_DATA)) {
+			/* This happens on encrypted files.  */
+			requestedPerms &= ~FILE_READ_DATA;
+			goto retry_open;
+		}
+
+		if (status == STATUS_FVE_LOCKED_VOLUME) {
+			ERROR("\"%ls\": Can't open file "
+			      "(encrypted volume has not been unlocked)",
+			      printable_path(full_path));
+			ret = WIMLIB_ERR_FVE_LOCKED_VOLUME;
+			goto out;
+		}
+
+		set_errno_from_nt_status(status);
+		ERROR_WITH_ERRNO("\"%ls\": Can't open file "
+				 "(status=0x%08"PRIx32")",
+				 printable_path(full_path), (u32)status);
+		ret = WIMLIB_ERR_OPEN;
 		goto out;
 	}
 
@@ -1170,6 +1183,15 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 			ret = WIMLIB_ERR_STAT;
 			goto out;
 		}
+	}
+
+	if (unlikely(!(requestedPerms & FILE_READ_DATA)) &&
+	    !(file_info.BasicInformation.FileAttributes & FILE_ATTRIBUTE_ENCRYPTED))
+	{
+		ERROR("\"%ls\": Permission to read data was denied",
+		      printable_path(full_path));
+		ret = WIMLIB_ERR_OPEN;
+		goto out;
 	}
 
 	if (unlikely(!cur_dir)) {
