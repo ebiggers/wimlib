@@ -22,8 +22,6 @@ REM
 REM BEGIN TESTS
 REM
 
-REM goto :rpfix_tests
-
 call :msg "empty directory"
 call :do_test
 if %errorlevel% neq 0 exit /b %errorlevel%
@@ -86,6 +84,38 @@ echo 5 > subdir1\5
 mklink /h link subdir1\1 > nul
 md subdir2\subdir2subdir
 type nul > subdir2\emptyfile
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
+
+call :msg "file with custom security descriptor"
+echo hello > file
+icacls file /deny Administrator:F > nul
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
+
+call :msg "directory with custom security descriptor (inheritence enabled)"
+md subdir
+icacls subdir /inheritance:e > nul
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
+
+call :msg "directory with custom security descriptor (inheritence disabled)"
+md subdir
+icacls subdir /inheritance:d > nul
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
+
+REM            win32-tree-cmp can't handle this case.
+REM
+REM call :msg "file with custom security descriptor (all inherited ACEs removed)"
+REM echo hello > file
+REM icacls file /inheritance:r > nul
+REM call :do_test
+REM if %errorlevel% neq 0 exit /b %errorlevel%
+
+call :msg "file with custom integrity level"
+echo hello > file
+icacls file /setintegritylevel H > nul
 call :do_test
 if %errorlevel% neq 0 exit /b %errorlevel%
 
@@ -261,9 +291,33 @@ attrib +h hidden
 call :do_test
 if %errorlevel% neq 0 exit /b %errorlevel%
 
+call :msg "hidden system file"
+echo 1 > file
+attrib +h +s file
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
+
+call :msg "hidden, readonly, system file"
+echo 1 > file
+attrib +h +r +s file
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
+
 call :msg "hidden directory"
 md subdir
 attrib +h subdir
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
+
+call :msg "hidden system directory"
+echo 1 > subdir
+attrib +h +s subdir
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
+
+call :msg "hidden, readonly, system directory"
+echo 1 > subdir
+attrib +h +r +s subdir
 call :do_test
 if %errorlevel% neq 0 exit /b %errorlevel%
 
@@ -300,6 +354,24 @@ md subdir
 echo 1 > subdir\1
 cipher /e subdir > nul
 cipher /d subdir\1 > nul
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
+
+call :msg "encrypted root directory"
+cd ..
+cipher /e in.dir > nul
+cd in.dir
+echo "hello" > encrypted
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
+
+call :msg "unencrypted file in encrypted directory in compressed directory"
+md 1
+md 1\2
+compact /c 1 > /nul
+cipher /e 1\2 > /nul
+echo hello > 1\2\file
+cipher /d 1\2\file > /nul
 call :do_test
 if %errorlevel% neq 0 exit /b %errorlevel%
 
