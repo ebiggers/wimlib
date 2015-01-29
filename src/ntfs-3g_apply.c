@@ -57,7 +57,6 @@ ntfs_3g_get_supported_features(const char *target,
 	supported_features->hidden_files              = 1;
 	supported_features->system_files              = 1;
 	supported_features->compressed_files          = 1;
-	supported_features->encrypted_directories     = 1;
 	supported_features->not_context_indexed_files = 1;
 	supported_features->named_data_streams        = 1;
 	supported_features->hard_links                = 1;
