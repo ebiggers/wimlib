@@ -2,13 +2,15 @@
  * Compare directory trees (Windows version)
  */
 
+#include <assert.h>
+#include <inttypes.h>
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <wchar.h>
+
 #include <windows.h>
 #include <sddl.h>
-#include <wchar.h>
-#include <stdio.h>
-#include <stdarg.h>
-#include <inttypes.h>
-#include <assert.h>
 
 typedef uint8_t  u8;
 typedef uint16_t u16;
@@ -17,127 +19,134 @@ typedef uint64_t u64;
 
 #define REPARSE_POINT_MAX_SIZE (16 * 1024)
 
+#define ARRAY_LEN(array)	(sizeof(array) / sizeof((array)[0]))
+
 static wchar_t *
 win32_error_string(DWORD err_code)
 {
 	static wchar_t buf[1024];
 	buf[0] = L'\0';
-	FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM, NULL, err_code, 0,
-		      buf, 1024, NULL);
+	FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+		      NULL, err_code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+		      buf, ARRAY_LEN(buf), NULL);
 	return buf;
 }
 
 static void __attribute__((noreturn))
-error(const wchar_t *format, ...)
-{
-	va_list va;
-	va_start(va, format);
-	vfwprintf(stderr, format, va);
-	va_end(va);
-	putwc(L'\n', stderr);
-	exit(1);
-}
-
-static void __attribute__((noreturn))
-win32_error(const wchar_t *format, ...)
+fatal_win32_error(const wchar_t *format, ...)
 {
 	va_list va;
 	DWORD err = GetLastError();
 
 	va_start(va, format);
+	fputws(L"FATAL ERROR: ", stderr);
 	vfwprintf(stderr, format, va);
 	fwprintf(stderr, L": %ls\n", win32_error_string(err));
 	va_end(va);
+
 	exit(1);
 }
 
-struct node {
-	u64 ino_from;
-	u64 ino_to;
-	struct node *left;
-	struct node *right;
+static unsigned long difference_count = 0;
+
+static void
+difference(const wchar_t *format, ...)
+{
+	va_list va;
+
+	va_start(va, format);
+	fputws(L"DIFFERENCE: ", stderr);
+	vfwprintf(stderr, format, va);
+	putwc(L'\n', stderr);
+	va_end(va);
+
+	difference_count++;
+}
+
+struct inode_mapping_node {
+	u64 key;
+	u64 value;
+	struct inode_mapping_node *left;
+	struct inode_mapping_node *right;
 };
 
-static struct node *tree = NULL;
+static struct inode_mapping_node *inode_map = NULL;
 
-static u64 do_lookup_ino(struct node *tree, u64 ino_from)
+#define INODE_NOT_SEEN_YET ((u64)-1)
+
+static u64
+do_lookup_ino(struct inode_mapping_node *tree, u64 key)
 {
 	if (!tree)
-		return -1;
-	if (ino_from == tree->ino_from)
-		return tree->ino_to;
-	else if (ino_from < tree->ino_from)
-		return do_lookup_ino(tree->left, ino_from);
-	else
-		return do_lookup_ino(tree->right, ino_from);
+		return INODE_NOT_SEEN_YET;
+	if (key < tree->key)
+		return do_lookup_ino(tree->left, key);
+	if (key > tree->key)
+		return do_lookup_ino(tree->right, key);
+	return tree->value;
 }
 
-static void do_insert(struct node *tree, struct node *node)
+static void
+do_insert(struct inode_mapping_node *tree, struct inode_mapping_node *node)
 {
-	if (node->ino_from < tree->ino_from) {
+	if (node->key < tree->key) {
 		if (tree->left)
 			return do_insert(tree->left, node);
-		else
-			tree->left = node;
-	} else {
+		tree->left = node;
+		return;
+	}
+	if (node->key > tree->key) {
 		if (tree->right)
 			return do_insert(tree->right, node);
-		else
-			tree->right = node;
+		tree->right = node;
+		return;
 	}
+	assert(0);
 }
 
-static u64 lookup_ino(u64 ino_from)
+static u64
+lookup_ino(u64 key)
 {
-	return do_lookup_ino(tree, ino_from);
+	return do_lookup_ino(inode_map, key);
 }
 
-static void insert_ino(u64 ino_from, u64 ino_to)
+static void
+insert_ino(u64 key, u64 value)
 {
-	struct node *node = malloc(sizeof(struct node));
-	if (!node)
-		error(L"Out of memory");
-	node->ino_from = ino_from;
-	node->ino_to   = ino_to;
-	node->left     = NULL;
-	node->right    = NULL;
-	if (!tree)
-		tree = node;
+	struct inode_mapping_node *node = malloc(sizeof(*node));
+
+	node->key = key;
+	node->value = value;
+	node->left = NULL;
+	node->right = NULL;
+	if (!inode_map)
+		inode_map = node;
 	else
-		do_insert(tree, node);
+		do_insert(inode_map, node);
 }
 
 static HANDLE
-win32_open_file_readonly(const wchar_t *path)
+open_file(const wchar_t *path)
 {
 	HANDLE hFile = CreateFile(path,
 				  GENERIC_READ | ACCESS_SYSTEM_SECURITY,
-				  FILE_SHARE_READ | FILE_SHARE_DELETE | FILE_SHARE_WRITE,
+				  FILE_SHARE_VALID_FLAGS,
 				  NULL,
 				  OPEN_EXISTING,
 				  FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
 				  NULL);
 	if (hFile == INVALID_HANDLE_VALUE)
-		win32_error(L"Failed to open file %ls read-only", path);
+		fatal_win32_error(L"Failed to open file %ls read-only", path);
 	return hFile;
 }
 
 static size_t
-get_reparse_data(HANDLE hFile, const wchar_t *path,
-		 char *rpdata)
+get_reparse_data(HANDLE hFile, const wchar_t *path, char *rpbuf)
 {
 	DWORD bytesReturned = 0;
-	if (!DeviceIoControl(hFile,
-			     FSCTL_GET_REPARSE_POINT,
-			     NULL, /* "Not used with this operation; set to NULL" */
-			     0, /* "Not used with this operation; set to 0" */
-			     rpdata, /* "A pointer to a buffer that
-						   receives the reparse point data */
-			     REPARSE_POINT_MAX_SIZE, /* "The size of the output
-							buffer, in bytes */
-			     &bytesReturned,
-			     NULL))
-		win32_error(L"Can't get reparse data from %ls", path);
+	if (!DeviceIoControl(hFile, FSCTL_GET_REPARSE_POINT, NULL, 0,
+			     rpbuf, REPARSE_POINT_MAX_SIZE, &bytesReturned, NULL))
+		fatal_win32_error(L"Can't get reparse data from %ls", path);
 	return bytesReturned;
 }
 
@@ -145,17 +154,16 @@ static void
 cmp_reparse_data(HANDLE hFile_1, const wchar_t *path_1,
 		 HANDLE hFile_2, const wchar_t *path_2)
 {
-	char rpdata_1[REPARSE_POINT_MAX_SIZE];
-	char rpdata_2[REPARSE_POINT_MAX_SIZE];
+	char rpbuf_1[REPARSE_POINT_MAX_SIZE];
+	char rpbuf_2[REPARSE_POINT_MAX_SIZE];
 	size_t len_1;
 	size_t len_2;
 
-	len_1 = get_reparse_data(hFile_1, path_1, rpdata_1);
-	len_2 = get_reparse_data(hFile_2, path_2, rpdata_2);
-	if (len_1 != len_2 || memcmp(rpdata_1, rpdata_2, len_1)) {
-		error(L"Reparse point data for %ls and %ls differs",
-		      path_1, path_2);
-	}
+	len_1 = get_reparse_data(hFile_1, path_1, rpbuf_1);
+	len_2 = get_reparse_data(hFile_2, path_2, rpbuf_2);
+	if (len_1 != len_2 || memcmp(rpbuf_1, rpbuf_2, len_1))
+		difference(L"Reparse point buffers for %ls and %ls differ",
+			   path_1, path_2);
 }
 
 struct win32_stream_wrapper {
@@ -164,9 +172,10 @@ struct win32_stream_wrapper {
 };
 
 static int
-qsort_cmp_streams_by_name(const void *p1, const void *p2)
+cmp_FIND_STREAM_DATA_by_name(const void *p1, const void *p2)
 {
-	const WIN32_FIND_STREAM_DATA *s1 = p1, *s2 = p2;
+	const WIN32_FIND_STREAM_DATA *s1 = p1;
+	const WIN32_FIND_STREAM_DATA *s2 = p2;
 	return wcscmp(s1->cStreamName, s2->cStreamName);
 }
 
@@ -186,8 +195,6 @@ get_stream_array(const wchar_t *path, size_t *nstreams_ret)
 			struct win32_stream_wrapper *wrapper;
 
 			wrapper = malloc(sizeof(*wrapper));
-			if (!wrapper)
-				error(L"out of memory");
 			memcpy(&wrapper->dat, &dat, sizeof(dat));
 			wrapper->next = stream_list;
 			stream_list = wrapper;
@@ -195,7 +202,7 @@ get_stream_array(const wchar_t *path, size_t *nstreams_ret)
 		} while (FindNextStreamW(hFind, &dat));
 	}
 	if (GetLastError() != ERROR_HANDLE_EOF)
-		win32_error(L"Can't lookup streams from %ls", path);
+		fatal_win32_error(L"Can't lookup streams from %ls", path);
 	if (hFind != INVALID_HANDLE_VALUE)
 		FindClose(hFind);
 	array = malloc(nstreams * sizeof(array[0]));
@@ -210,7 +217,7 @@ get_stream_array(const wchar_t *path, size_t *nstreams_ret)
 		p++;
 	}
 	assert(p - array == nstreams);
-	qsort(array, nstreams, sizeof(array[0]), qsort_cmp_streams_by_name);
+	qsort(array, nstreams, sizeof(array[0]), cmp_FIND_STREAM_DATA_by_name);
 	*nstreams_ret = nstreams;
 	return array;
 }
@@ -253,15 +260,15 @@ cmp_data(HANDLE hFile_1, const wchar_t *path_1,
 		if (!ReadFile(hFile_1, buf_1, bytesToRead, &bytesRead, NULL) ||
 		    bytesRead != bytesToRead)
 		{
-			win32_error(L"Error reading from %ls", path_1);
+			fatal_win32_error(L"Error reading from %ls", path_1);
 		}
 		if (!ReadFile(hFile_2, buf_2, bytesToRead, &bytesRead, NULL) ||
 		    bytesRead != bytesToRead)
 		{
-			win32_error(L"Error reading from %ls", path_2);
+			fatal_win32_error(L"Error reading from %ls", path_2);
 		}
 		if (memcmp(buf_1, buf_2, bytesToRead))
-			error(L"Data of %ls and %ls differs", path_1, path_2);
+			difference(L"Data of %ls and %ls differs", path_1, path_2);
 		bytes_remaining -= bytesToRead;
 	}
 }
@@ -272,31 +279,40 @@ cmp_stream(wchar_t *path_1, size_t path_1_len, WIN32_FIND_STREAM_DATA *dat_1,
 {
 	const wchar_t *stream_name;
 
+	/* Compare stream names  */
 	if (wcscmp(dat_1->cStreamName, dat_2->cStreamName)) {
-		error(L"%ls%ls and %ls%ls are not named the same",
-		      path_1, dat_1->cStreamName,
-		      path_2, dat_2->cStreamName);
+		difference(L"Data streams %ls%ls and %ls%ls are not named the same",
+			   path_1, dat_1->cStreamName,
+			   path_2, dat_2->cStreamName);
+		return;
 	}
+
+	/* Compare stream sizes  */
 	if (dat_1->StreamSize.QuadPart != dat_2->StreamSize.QuadPart) {
-		error(L"%ls%ls (%"PRIu64" bytes) and %ls%ls "
-		      "(%"PRIu64" bytes) are not the same size",
-		      path_1, dat_1->cStreamName, dat_1->StreamSize.QuadPart,
-		      path_2, dat_2->cStreamName, dat_2->StreamSize.QuadPart);
+		difference(L"Data streams %ls%ls (%"PRIu64" bytes) and %ls%ls "
+			   "(%"PRIu64" bytes) are not the same size",
+			   path_1, dat_1->cStreamName, dat_1->StreamSize.QuadPart,
+			   path_2, dat_2->cStreamName, dat_2->StreamSize.QuadPart);
+		return;
 	}
+
+	/* Compare stream data  */
 
 	stream_name = fix_stream_name(dat_1->cStreamName);
 
-	if (!stream_name)
+	if (!stream_name) {
+		fwprintf(stderr, L"WARNING: unrecognized stream name format %ls\n",
+			 dat_1->cStreamName);
 		return;
+	}
 
 	wcscpy(&path_1[path_1_len], stream_name);
 	wcscpy(&path_2[path_2_len], stream_name);
 
-	HANDLE hFile_1 = win32_open_file_readonly(path_1);
-	HANDLE hFile_2 = win32_open_file_readonly(path_2);
+	HANDLE hFile_1 = open_file(path_1);
+	HANDLE hFile_2 = open_file(path_2);
 
-	cmp_data(hFile_1, path_1, hFile_2, path_2,
-		 dat_1->StreamSize.QuadPart);
+	cmp_data(hFile_1, path_1, hFile_2, path_2, dat_1->StreamSize.QuadPart);
 
 	CloseHandle(hFile_1);
 	CloseHandle(hFile_2);
@@ -316,14 +332,17 @@ cmp_streams(wchar_t *path_1, size_t path_1_len,
 	streams_2 = get_stream_array(path_2, &nstreams_2);
 
 	if (nstreams_1 != nstreams_2) {
-		error(L"%ls and %ls do not have the same number of streams "
-		      "(%lu vs %lu)",
-		      path_1, path_2, nstreams_1, nstreams_2);
+		difference(L"%ls and %ls do not have the same number of streams "
+			   "(%lu vs %lu)",
+			   path_1, path_2, nstreams_1, nstreams_2);
+		goto out;
 	}
 
 	for (i = 0; i < nstreams_1; i++)
 		cmp_stream(path_1, path_1_len, &streams_1[i],
 			   path_2, path_2_len, &streams_2[i]);
+
+out:
 	free(streams_1);
 	free(streams_2);
 }
@@ -336,7 +355,8 @@ struct win32_dentry_wrapper {
 static int
 qsort_cmp_dentries_by_name(const void *p1, const void *p2)
 {
-	const WIN32_FIND_DATA *d1 = p1, *d2 = p2;
+	const WIN32_FIND_DATA *d1 = p1;
+	const WIN32_FIND_DATA *d2 = p2;
 	return wcscmp(d1->cFileName, d2->cFileName);
 }
 
@@ -361,8 +381,6 @@ get_dentry_array(wchar_t *path, size_t path_len, size_t *ndentries_ret)
 			struct win32_dentry_wrapper *wrapper;
 
 			wrapper = malloc(sizeof(*wrapper));
-			if (!wrapper)
-				error(L"out of memory");
 			memcpy(&wrapper->dat, &dat, sizeof(dat));
 			wrapper->next = dentry_list;
 			dentry_list = wrapper;
@@ -371,7 +389,7 @@ get_dentry_array(wchar_t *path, size_t path_len, size_t *ndentries_ret)
 	}
 	err = GetLastError();
 	if (err != ERROR_NO_MORE_FILES && err != ERROR_FILE_NOT_FOUND)
-		win32_error(L"Can't lookup dentries from %ls", path);
+		fatal_win32_error(L"Can't lookup dentries from %ls", path);
 	if (hFind != INVALID_HANDLE_VALUE)
 		FindClose(hFind);
 	array = malloc(ndentries * sizeof(array[0]));
@@ -406,8 +424,9 @@ recurse_directory(wchar_t *path_1, size_t path_1_len,
 	dentries_2 = get_dentry_array(path_2, path_2_len, &ndentries_2);
 
 	if (ndentries_1 != ndentries_2) {
-		error(L"%ls and %ls do not have the same number of dentries",
-		      path_1, path_2);
+		difference(L"Directories %ls and %ls do not contain the "
+			   "same number of entries", path_1, path_2);
+		goto out;
 	}
 
 	path_1[path_1_len] = L'\\';
@@ -422,27 +441,31 @@ recurse_directory(wchar_t *path_1, size_t path_1_len,
 
 		if (wcscmp(dentries_1[i].cFileName,
 			   dentries_2[i].cFileName))
-			error(L"%ls and %ls do not have the same name",
-			      path_1, path_2);
+			difference(L"%ls and %ls do not have the same name",
+				   path_1, path_2);
 
 		if (wcscmp(dentries_1[i].cAlternateFileName,
 			   dentries_2[i].cAlternateFileName))
-			error(L"%ls and %ls do not have the same short name",
-			      path_1, path_2);
+			difference(L"%ls and %ls do not have the same short name "
+				   "(%ls vs. %ls)", path_1, path_2,
+				   dentries_1[i].cAlternateFileName,
+				   dentries_2[i].cAlternateFileName);
 
 		if (!wcscmp(dentries_1[i].cFileName, L".") ||
-		    !wcscmp(dentries_2[i].cFileName, L".."))
+		    !wcscmp(dentries_1[i].cFileName, L".."))
 			continue;
 		tree_cmp(path_1, path_1_len + 1 + name_1_len,
 			 path_2, path_2_len + 1 + name_2_len);
 	}
+
+out:
 	path_1[path_1_len] = L'\0';
 	path_2[path_2_len] = L'\0';
 	free(dentries_1);
 	free(dentries_2);
 }
 
-static int
+static bool
 file_times_equal(const FILETIME *t1, const FILETIME *t2)
 {
 	return t1->dwLowDateTime == t2->dwLowDateTime &&
@@ -456,26 +479,23 @@ get_security(const wchar_t *path, size_t *len_ret)
 	DWORD requestedInformation = DACL_SECURITY_INFORMATION |
 				     SACL_SECURITY_INFORMATION |
 				     OWNER_SECURITY_INFORMATION |
-				     GROUP_SECURITY_INFORMATION;
+				     GROUP_SECURITY_INFORMATION |
+				     BACKUP_SECURITY_INFORMATION;
 	void *descr;
 	BOOL bret;
 
-
-	bret = GetFileSecurity(path, requestedInformation,
-			       NULL, 0, &lenNeeded);
+	bret = GetFileSecurity(path, requestedInformation, NULL, 0, &lenNeeded);
 
 	if (bret || GetLastError() != ERROR_INSUFFICIENT_BUFFER)
 		goto err;
 	descr = malloc(lenNeeded);
-	if (!descr)
-		error(L"out of memory");
 	if (!GetFileSecurity(path, requestedInformation, descr, lenNeeded,
 			     &lenNeeded))
 		goto err;
 	*len_ret = lenNeeded;
 	return descr;
 err:
-	win32_error(L"Can't read security descriptor of %ls", path);
+	fatal_win32_error(L"Can't read security descriptor of %ls", path);
 }
 
 static wchar_t *
@@ -487,7 +507,8 @@ get_security_descriptor_string(PSECURITY_DESCRIPTOR desc)
 							    OWNER_SECURITY_INFORMATION |
 								    GROUP_SECURITY_INFORMATION |
 								    DACL_SECURITY_INFORMATION |
-								    SACL_SECURITY_INFORMATION,
+								    SACL_SECURITY_INFORMATION |
+								    BACKUP_SECURITY_INFORMATION,
 							    &str,
 							    NULL);
 	return str;
@@ -506,12 +527,64 @@ cmp_security(const wchar_t *path_1, const wchar_t *path_2)
 	if (len_1 != len_2 || memcmp(descr_1, descr_2, len_1)) {
 		str_1 = get_security_descriptor_string(descr_1);
 		str_2 = get_security_descriptor_string(descr_2);
-		error(L"%ls and %ls do not have the same security "
-		      "descriptor:\n\t%ls\nvs.\n\t%ls",
-		      path_1, path_2, str_1, str_2);
+		difference(L"%ls and %ls do not have the same security "
+			   "descriptor:\n\t%ls\nvs.\n\t%ls",
+			   path_1, path_2, str_1, str_2);
 	}
 	free(descr_1);
 	free(descr_2);
+}
+
+static const struct {
+	uint32_t flag;
+	const wchar_t *name;
+} file_attr_flags[] = {
+	{FILE_ATTRIBUTE_READONLY,	     L"READONLY"},
+	{FILE_ATTRIBUTE_HIDDEN,		     L"HIDDEN"},
+	{FILE_ATTRIBUTE_SYSTEM,		     L"SYSTEM"},
+	{FILE_ATTRIBUTE_DIRECTORY,	     L"DIRECTORY"},
+	{FILE_ATTRIBUTE_ARCHIVE,	     L"ARCHIVE"},
+	{FILE_ATTRIBUTE_DEVICE,		     L"DEVICE"},
+	{FILE_ATTRIBUTE_NORMAL,		     L"NORMAL"},
+	{FILE_ATTRIBUTE_TEMPORARY,	     L"TEMPORARY"},
+	{FILE_ATTRIBUTE_SPARSE_FILE,	     L"SPARSE_FILE"},
+	{FILE_ATTRIBUTE_REPARSE_POINT,	     L"REPARSE_POINT"},
+	{FILE_ATTRIBUTE_COMPRESSED,	     L"COMPRESSED"},
+	{FILE_ATTRIBUTE_OFFLINE,	     L"OFFLINE"},
+	{FILE_ATTRIBUTE_NOT_CONTENT_INDEXED, L"NOT_CONTENT_INDEXED"},
+	{FILE_ATTRIBUTE_ENCRYPTED,	     L"ENCRYPTED"},
+	{FILE_ATTRIBUTE_VIRTUAL,	     L"VIRTUAL"},
+};
+
+static void
+cmp_attributes(const wchar_t *path_1, const BY_HANDLE_FILE_INFORMATION *file_info_1,
+	       const wchar_t *path_2, const BY_HANDLE_FILE_INFORMATION *file_info_2)
+{
+	u32 attrib_1 = file_info_1->dwFileAttributes;
+	u32 attrib_2 = file_info_2->dwFileAttributes;
+	u32 differences = attrib_1 ^ attrib_2;
+
+	if (!differences)
+		return;
+
+	difference(L"Attributes for %ls (0x%"PRIx32") differ "
+		   "from attributes for %ls (0x%"PRIx32"):",
+		   path_1, attrib_1, path_2, attrib_2);
+	for (size_t i = 0; i < ARRAY_LEN(file_attr_flags); i++) {
+		if (differences & file_attr_flags[i].flag) {
+			const wchar_t *set_path;
+			const wchar_t *unset_path;
+			if (attrib_1 & file_attr_flags[i].flag) {
+				set_path = path_1;
+				unset_path = path_2;
+			} else {
+				set_path = path_2;
+				unset_path = path_1;
+			}
+			fwprintf(stderr, L"\t%ls has FILE_ATTRIBUTE_%ls set but %ls does not\n",
+				 set_path, file_attr_flags[i].name, unset_path);
+		}
+	}
 }
 
 static void
@@ -522,63 +595,64 @@ tree_cmp(wchar_t *path_1, size_t path_1_len, wchar_t *path_2, size_t path_2_len)
 	u64 size_1, size_2;
 	u64 ino_1, ino_2;
 	u64 ino_to;
-	DWORD attribs;
+	DWORD common_attribs;
 
-	hFile_1 = win32_open_file_readonly(path_1);
-	hFile_2 = win32_open_file_readonly(path_2);
+	/* Open each file.  */
+	hFile_1 = open_file(path_1);
+	hFile_2 = open_file(path_2);
+
+	/* Get basic file information.  */
 	if (!GetFileInformationByHandle(hFile_1, &file_info_1))
-		win32_error(L"Failed to get file information for %ls", path_1);
+		fatal_win32_error(L"Failed to get file information for %ls", path_1);
 	if (!GetFileInformationByHandle(hFile_2, &file_info_2))
-		win32_error(L"Failed to get file information for %ls", path_2);
+		fatal_win32_error(L"Failed to get file information for %ls", path_2);
 
-	if (file_info_1.dwFileAttributes != file_info_2.dwFileAttributes) {
-		error(L"Attributes for %ls (%#x) differ from attributes for %ls (%#x)",
-		      path_1, (unsigned)file_info_1.dwFileAttributes,
-		      path_2, (unsigned)file_info_2.dwFileAttributes);
-	}
+	/* Compare file attributes.  */
+	cmp_attributes(path_1, &file_info_1, path_2, &file_info_2);
 
-	attribs = file_info_1.dwFileAttributes;
+	common_attribs = file_info_1.dwFileAttributes & file_info_2.dwFileAttributes;
 
-	if (!(attribs & FILE_ATTRIBUTE_DIRECTORY)) {
-		size_1 = ((u64)file_info_1.nFileSizeHigh << 32) |
-				file_info_1.nFileSizeLow;
-		size_2 = ((u64)file_info_2.nFileSizeHigh << 32) |
-				file_info_2.nFileSizeLow;
-		if (size_1 != size_2) {
-			error(L"Size for %ls (%"PRIu64") differs from size for %ls (%"PRIu64")",
-			      path_1, size_1, path_2, size_2);
-		}
-	}
-	if (file_info_1.nNumberOfLinks != file_info_2.nNumberOfLinks) {
-		error(L"Number of links for %ls (%u) differs from number "
-		      "of links for %ls (%u)",
-		      path_1, (unsigned)file_info_1.nNumberOfLinks,
-		      path_2, (unsigned)file_info_2.nNumberOfLinks);
-	}
-	ino_1 = ((u64)file_info_1.nFileIndexHigh << 32) |
-			file_info_1.nFileIndexLow;
-	ino_2 = ((u64)file_info_2.nFileIndexHigh << 32) |
-			file_info_2.nFileIndexLow;
-	ino_to = lookup_ino(ino_1);
-	if (ino_to == -1)
-		insert_ino(ino_1, ino_2);
-	else if (ino_to != ino_2)
-		error(L"Inode number on %ls is wrong", path_2);
+	/* Compare file sizes.  */
+	size_1 = ((u64)file_info_1.nFileSizeHigh << 32) | file_info_1.nFileSizeLow;
+	size_2 = ((u64)file_info_2.nFileSizeHigh << 32) | file_info_2.nFileSizeLow;
+	if (size_1 != size_2)
+		difference(L"Size for %ls (%"PRIu64") differs from size for %ls (%"PRIu64")",
+			   path_1, size_1, path_2, size_2);
 
+	/* Compare file times.  */
 	if (!file_times_equal(&file_info_1.ftCreationTime, &file_info_2.ftCreationTime))
-		error(L"Creation times on %ls and %ls differ",
-		      path_1, path_2);
+		difference(L"Creation times on %ls and %ls differ",
+			   path_1, path_2);
 
 	if (!file_times_equal(&file_info_1.ftLastWriteTime, &file_info_2.ftLastWriteTime))
-		error(L"Last write times on %ls and %ls differ",
-		      path_1, path_2);
+		difference(L"Last write times on %ls and %ls differ",
+			   path_1, path_2);
 
+	/* If we've detected a hard link in tree 1, check that we've detected
+	 * the same hard link in tree 2.  */
+	ino_1 = ((u64)file_info_1.nFileIndexHigh << 32) | file_info_1.nFileIndexLow;
+	ino_2 = ((u64)file_info_2.nFileIndexHigh << 32) | file_info_2.nFileIndexLow;
+	ino_to = lookup_ino(ino_1);
+	if (ino_to == INODE_NOT_SEEN_YET)
+		insert_ino(ino_1, ino_2);
+	else if (ino_to != ino_2)
+		difference(L"%ls and %ls are hard linked differently", path_1, path_2);
+
+	/* Compare security descriptors.  */
 	cmp_security(path_1, path_2);
+
+	/* Compare data streams.  */
 	cmp_streams(path_1, path_1_len, path_2, path_2_len);
-	if (attribs & FILE_ATTRIBUTE_REPARSE_POINT)
+
+	/* Compare reparse data (if both files are reparse points)  */
+	if (common_attribs & FILE_ATTRIBUTE_REPARSE_POINT)
 		cmp_reparse_data(hFile_1, path_1, hFile_2, path_2);
-	else if (attribs & FILE_ATTRIBUTE_DIRECTORY)
+
+	/* Recurse to directory (if both files are directories)  */
+	if ((common_attribs & FILE_ATTRIBUTE_DIRECTORY) &&
+	    !(common_attribs & FILE_ATTRIBUTE_REPARSE_POINT))
 		recurse_directory(path_1, path_1_len, path_2, path_2_len);
+
 	CloseHandle(hFile_1);
 	CloseHandle(hFile_2);
 }
@@ -592,22 +666,24 @@ enable_privilege(const wchar_t *privilege)
 
 	if (!OpenProcessToken(GetCurrentProcess(),
 			      TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken))
-		win32_error(L"Failed to open process token");
+		fatal_win32_error(L"Failed to open process token");
 
-	if (!LookupPrivilegeValueW(NULL, privilege, &luid))
-		win32_error(L"Failed to look up privileges %ls", privilege);
+	if (!LookupPrivilegeValue(NULL, privilege, &luid))
+		fatal_win32_error(L"Failed to look up privileges %ls", privilege);
 
 	newState.PrivilegeCount = 1;
 	newState.Privileges[0].Luid = luid;
 	newState.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 	if (!AdjustTokenPrivileges(hToken, FALSE, &newState, 0, NULL, NULL))
-		win32_error(L"Failed to acquire privilege %ls", privilege);
+		fatal_win32_error(L"Failed to acquire privilege %ls", privilege);
 	CloseHandle(hToken);
 }
 
-int wmain(int argc, wchar_t **argv, wchar_t **envp)
+int
+wmain(int argc, wchar_t **argv)
 {
-	wchar_t dir_1[32769], dir_2[32769];
+	wchar_t *path_1 = malloc(32768 * sizeof(wchar_t));
+	wchar_t *path_2 = malloc(32768 * sizeof(wchar_t));
 	size_t len_1, len_2;
 
 	if (argc != 3) {
@@ -620,8 +696,15 @@ int wmain(int argc, wchar_t **argv, wchar_t **envp)
 
 	len_1 = wcslen(argv[1]);
 	len_2 = wcslen(argv[2]);
-	wmemcpy(dir_1, argv[1], len_1 + 1);
-	wmemcpy(dir_2, argv[2], len_2 + 1);
-	tree_cmp(dir_1, len_1, dir_2, len_2);
+	wmemcpy(path_1, argv[1], len_1 + 1);
+	wmemcpy(path_2, argv[2], len_2 + 1);
+
+	tree_cmp(path_1, len_1, path_2, len_2);
+
+	if (difference_count) {
+		fwprintf(stderr, L"Found %lu differences; exiting with failure status.\n",
+			 difference_count);
+		return 1;
+	}
 	return 0;
 }
