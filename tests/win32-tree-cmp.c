@@ -612,12 +612,15 @@ tree_cmp(wchar_t *path_1, size_t path_1_len, wchar_t *path_2, size_t path_2_len)
 
 	common_attribs = file_info_1.dwFileAttributes & file_info_2.dwFileAttributes;
 
-	/* Compare file sizes.  */
-	size_1 = ((u64)file_info_1.nFileSizeHigh << 32) | file_info_1.nFileSizeLow;
-	size_2 = ((u64)file_info_2.nFileSizeHigh << 32) | file_info_2.nFileSizeLow;
-	if (size_1 != size_2)
-		difference(L"Size for %ls (%"PRIu64") differs from size for %ls (%"PRIu64")",
-			   path_1, size_1, path_2, size_2);
+	/* Compare file sizes, unless the files are both directories in which
+	 * cases the sizes can legitimately differ.  */
+	if (!(common_attribs & FILE_ATTRIBUTE_DIRECTORY)) {
+		size_1 = ((u64)file_info_1.nFileSizeHigh << 32) | file_info_1.nFileSizeLow;
+		size_2 = ((u64)file_info_2.nFileSizeHigh << 32) | file_info_2.nFileSizeLow;
+		if (size_1 != size_2)
+			difference(L"Size for %ls (%"PRIu64") differs from size for %ls (%"PRIu64")",
+				   path_1, size_1, path_2, size_2);
+	}
 
 	/* Compare file times.  */
 	if (!file_times_equal(&file_info_1.ftCreationTime, &file_info_2.ftCreationTime))
