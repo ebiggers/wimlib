@@ -242,6 +242,18 @@ echo aaa > file2:aaa
 call :do_test
 if %errorlevel% neq 0 exit /b %errorlevel%
 
+call :msg "file with empty alternate data stream"
+echo 1 > file
+type nul > file:ads
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
+
+call :msg "directory with empty alternate data stream"
+md subdir
+type nul > subdir:ads
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
+
 call :msg "root directory with alternate data stream"
 echo 1 > ..\in.dir:ads
 call :do_test
