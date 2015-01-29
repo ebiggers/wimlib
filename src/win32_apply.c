@@ -931,73 +931,6 @@ adjust_compression_attribute(HANDLE h, const struct wim_dentry *dentry,
 	return WIMLIB_ERR_SET_ATTRIBUTES;
 }
 
-/*
- * Clear FILE_ATTRIBUTE_ENCRYPTED if the file or directory is not supposed to be
- * encrypted.
- *
- * You can provide FILE_ATTRIBUTE_ENCRYPTED to NtCreateFile() to set it on the
- * created file.  However, the file or directory will otherwise default to the
- * encryption state of the parent directory.  This function works around this
- * limitation by using DecryptFile() to remove FILE_ATTRIBUTE_ENCRYPTED on files
- * (and directories) that are not supposed to have it set.
- *
- * Regardless of whether it succeeds or fails, this function may close the
- * handle to the file.  If it does, it sets it to NULL.
- */
-static int
-maybe_clear_encryption_attribute(HANDLE *h_ptr, const struct wim_dentry *dentry,
-				 struct win32_apply_ctx *ctx)
-{
-	if (dentry->d_inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED)
-		return 0;
-
-	if (ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES)
-		return 0;
-
-	if (!ctx->common.supported_features.encrypted_files)
-		return 0;
-
-	FILE_BASIC_INFORMATION info;
-	NTSTATUS status;
-	BOOL bret;
-
-	/* Get current attributes  */
-	status = (*func_NtQueryInformationFile)(*h_ptr, &ctx->iosb,
-						&info, sizeof(info),
-						FileBasicInformation);
-	if (NT_SUCCESS(status) &&
-	    !(info.FileAttributes & FILE_ATTRIBUTE_ENCRYPTED))
-	{
-		/* Nothing needs to be done.  */
-		return 0;
-	}
-
-	/* Set the new encryption state  */
-
-	/* Due to Windows' crappy file encryption APIs, we need to close the
-	 * handle to the file so we don't get ERROR_SHARING_VIOLATION.  We also
-	 * hack together a Win32 path, although we will use the \\?\ prefix so
-	 * it will actually be a NT path in disguise...  */
-	(*func_NtClose)(*h_ptr);
-	*h_ptr = NULL;
-
-	build_win32_extraction_path(dentry, ctx);
-
-	bret = DecryptFile(ctx->pathbuf.Buffer, 0);
-
-	/* Restore the NT namespace path  */
-	build_extraction_path(dentry, ctx);
-
-	if (!bret) {
-		DWORD err = GetLastError();
-		set_errno_from_win32_error(err);
-		ERROR_WITH_ERRNO("Can't decrypt file \"%ls\" (err=%"PRIu32")",
-				  current_path(ctx), (u32)err);
-		return WIMLIB_ERR_SET_ATTRIBUTES;
-	}
-	return 0;
-}
-
 /* Try to enable short name support on the target volume.  If successful, return
  * true.  If unsuccessful, issue a warning and return false.  */
 static bool
@@ -1266,6 +1199,124 @@ create_file(PHANDLE FileHandle,
 			      ctx);
 }
 
+static int
+delete_file_or_stream(struct win32_apply_ctx *ctx)
+{
+	NTSTATUS status;
+	HANDLE h;
+	FILE_DISPOSITION_INFORMATION disposition_info;
+	FILE_BASIC_INFORMATION basic_info;
+	bool retried = false;
+
+	status = do_create_file(&h,
+				DELETE,
+				NULL,
+				0,
+				FILE_OPEN,
+				FILE_NON_DIRECTORY_FILE,
+				ctx);
+	if (unlikely(!NT_SUCCESS(status))) {
+		set_errno_from_nt_status(status);
+		ERROR_WITH_ERRNO("Can't open \"%ls\" for deletion "
+				 "(status=0x%08"PRIx32")",
+				 current_path(ctx), (u32)status);
+		return WIMLIB_ERR_OPEN;
+	}
+
+retry:
+	disposition_info.DoDeleteFile = TRUE;
+	status = (*func_NtSetInformationFile)(h, &ctx->iosb,
+					      &disposition_info,
+					      sizeof(disposition_info),
+					      FileDispositionInformation);
+	(*func_NtClose)(h);
+	if (likely(NT_SUCCESS(status)))
+		return 0;
+
+	if (status == STATUS_CANNOT_DELETE && !retried) {
+		/* Clear file attributes and try again.  This is necessary for
+		 * FILE_ATTRIBUTE_READONLY files.  */
+		status = do_create_file(&h,
+					FILE_WRITE_ATTRIBUTES | DELETE,
+					NULL,
+					0,
+					FILE_OPEN,
+					FILE_NON_DIRECTORY_FILE,
+					ctx);
+		if (!NT_SUCCESS(status)) {
+			set_errno_from_nt_status(status);
+			ERROR_WITH_ERRNO("Can't open \"%ls\" to reset attributes "
+					 "(status=0x%08"PRIx32")",
+					 current_path(ctx), (u32)status);
+			return WIMLIB_ERR_OPEN;
+		}
+		memset(&basic_info, 0, sizeof(basic_info));
+		basic_info.FileAttributes = FILE_ATTRIBUTE_NORMAL;
+		status = (*func_NtSetInformationFile)(h, &ctx->iosb,
+						      &basic_info,
+						      sizeof(basic_info),
+						      FileBasicInformation);
+		if (!NT_SUCCESS(status)) {
+			set_errno_from_nt_status(status);
+			ERROR_WITH_ERRNO("Can't reset file attributes on \"%ls\" "
+					 "(status=0x%08"PRIx32")",
+					 current_path(ctx), (u32)status);
+			(*func_NtClose)(h);
+			return WIMLIB_ERR_SET_ATTRIBUTES;
+		}
+		retried = true;
+		goto retry;
+	}
+	set_errno_from_nt_status(status);
+	ERROR_WITH_ERRNO("Can't delete \"%ls\" (status=0x%08"PRIx32")",
+			 current_path(ctx), (u32)status);
+	return WIMLIB_ERR_OPEN;
+}
+
+/*
+ * Create a nondirectory file or named data stream at the current path,
+ * superseding any that already exists at that path.  If successful, return an
+ * open handle to the file or named data stream.
+ */
+static int
+supersede_file_or_stream(struct win32_apply_ctx *ctx, HANDLE *h_ret)
+{
+	NTSTATUS status;
+	bool retried = false;
+
+	/* FILE_ATTRIBUTE_SYSTEM is needed to ensure that
+	 * FILE_ATTRIBUTE_ENCRYPTED doesn't get set before we want it to be.  */
+retry:
+	status = do_create_file(h_ret,
+				GENERIC_READ | GENERIC_WRITE | DELETE,
+				NULL,
+				FILE_ATTRIBUTE_SYSTEM,
+				FILE_CREATE,
+				FILE_NON_DIRECTORY_FILE,
+				ctx);
+	if (likely(NT_SUCCESS(status)))
+		return 0;
+
+	/* STATUS_OBJECT_NAME_COLLISION means that the file or stream already
+	 * exists.  Delete the existing file or stream, then try again.
+	 *
+	 * Note: we don't use FILE_OVERWRITE_IF or FILE_SUPERSEDE because of
+	 * problems with certain file attributes, especially
+	 * FILE_ATTRIBUTE_ENCRYPTED.  FILE_SUPERSEDE is also broken in the
+	 * Windows PE ramdisk.  */
+	if (status == STATUS_OBJECT_NAME_COLLISION && !retried) {
+		int ret = delete_file_or_stream(ctx);
+		if (ret)
+			return ret;
+		retried = true;
+		goto retry;
+	}
+	set_errno_from_nt_status(status);
+	ERROR_WITH_ERRNO("Can't create \"%ls\" (status=0x%08"PRIx32")",
+			 current_path(ctx), (u32)status);
+	return WIMLIB_ERR_OPEN;
+}
+
 /* Create empty named data streams.
  *
  * Since these won't have 'struct wim_lookup_table_entry's, they won't show up
@@ -1276,7 +1327,6 @@ create_any_empty_ads(const struct wim_dentry *dentry,
 		     struct win32_apply_ctx *ctx)
 {
 	const struct wim_inode *inode = dentry->d_inode;
-	LARGE_INTEGER allocation_size;
 	bool path_modified = false;
 	int ret = 0;
 
@@ -1285,10 +1335,7 @@ create_any_empty_ads(const struct wim_dentry *dentry,
 
 	for (u16 i = 0; i < inode->i_num_ads; i++) {
 		const struct wim_ads_entry *entry;
-		NTSTATUS status;
 		HANDLE h;
-		bool retried;
-		DWORD disposition;
 
 		entry = &inode->i_ads_entries[i];
 
@@ -1300,39 +1347,14 @@ create_any_empty_ads(const struct wim_dentry *dentry,
 		if (entry->lte)
 			continue;
 
-		/* Probably setting the allocation size to 0 has no effect, but
-		 * we might as well try.  */
-		allocation_size.QuadPart = 0;
-
 		build_extraction_path_with_ads(dentry, ctx,
 					       entry->stream_name,
 					       entry->stream_name_nbytes /
 							sizeof(wchar_t));
 		path_modified = true;
-
-		retried = false;
-		disposition = FILE_SUPERSEDE;
-	retry:
-		status = do_create_file(&h, FILE_WRITE_DATA, &allocation_size,
-					0, disposition, 0, ctx);
-		if (unlikely(!NT_SUCCESS(status))) {
-			if (status == STATUS_OBJECT_NAME_NOT_FOUND && !retried) {
-				/* Workaround for defect in the Windows PE
-				 * in-memory filesystem implementation:
-				 * FILE_SUPERSEDE does not create the file, as
-				 * expected and documented, when the named file
-				 * does not exist.  */
-				retried = true;
-				disposition = FILE_CREATE;
-				goto retry;
-			}
-			set_errno_from_nt_status(status);
-			ERROR_WITH_ERRNO("Can't create \"%ls\" "
-					 "(status=0x%08"PRIx32")",
-					 current_path(ctx), (u32)status);
-			ret = WIMLIB_ERR_OPEN;
+		ret = supersede_file_or_stream(ctx, &h);
+		if (ret)
 			break;
-		}
 		(*func_NtClose)(h);
 	}
 	/* Restore the path to the dentry itself  */
@@ -1356,11 +1378,13 @@ create_directory(const struct wim_dentry *dentry,
 	NTSTATUS status;
 	int ret;
 
-	/* DELETE is needed for set_short_name().
-	 * GENERIC_READ and GENERIC_WRITE are needed for
-	 * adjust_compression_attribute().  */
+	/* DELETE is needed for set_short_name(); GENERIC_READ and GENERIC_WRITE
+	 * are needed for adjust_compression_attribute().
+	 *
+	 * FILE_ATTRIBUTE_SYSTEM is needed to ensure that
+	 * FILE_ATTRIBUTE_ENCRYPTED doesn't get set before we want it to be.  */
 	status = create_file(&h, GENERIC_READ | GENERIC_WRITE | DELETE, NULL,
-			     0, FILE_OPEN_IF, FILE_DIRECTORY_FILE,
+			     FILE_ATTRIBUTE_SYSTEM, FILE_OPEN_IF, FILE_DIRECTORY_FILE,
 			     dentry, ctx);
 	if (!NT_SUCCESS(status)) {
 		set_errno_from_nt_status(status);
@@ -1375,12 +1399,7 @@ create_directory(const struct wim_dentry *dentry,
 	if (!ret)
 		ret = adjust_compression_attribute(h, dentry, ctx);
 
-	if (!ret)
-		ret = maybe_clear_encryption_attribute(&h, dentry, ctx);
-		/* May close the handle!!! */
-
-	if (h)
-		(*func_NtClose)(h);
+	(*func_NtClose)(h);
 	return ret;
 }
 
@@ -1433,128 +1452,36 @@ create_directories(struct list_head *dentry_list,
  *
  * On success, returns an open handle to the file in @h_ret, with GENERIC_READ,
  * GENERIC_WRITE, and DELETE access.  Also, the path to the file will be saved
- * in ctx->pathbuf.  On failure, returns WIMLIB_ERR_OPEN.
+ * in ctx->pathbuf.  On failure, returns an error code.
  */
 static int
 create_nondirectory_inode(HANDLE *h_ret, const struct wim_dentry *dentry,
 			  struct win32_apply_ctx *ctx)
 {
-	const struct wim_inode *inode;
-	ULONG attrib;
-	NTSTATUS status;
-	bool retried = false;
-	DWORD disposition;
+	int ret;
+	HANDLE h;
 
-	inode = dentry->d_inode;
-
-	/* If the file already exists and has FILE_ATTRIBUTE_SYSTEM and/or
-	 * FILE_ATTRIBUTE_HIDDEN, these must be specified in order to supersede
-	 * the file.
-	 *
-	 * Normally the user shouldn't be trying to overwrite such files anyway,
-	 * but we at least provide FILE_ATTRIBUTE_SYSTEM and
-	 * FILE_ATTRIBUTE_HIDDEN if the WIM inode has those attributes so that
-	 * we catch the case where the user extracts the same files to the same
-	 * location more than one time.
-	 *
-	 * Also specify FILE_ATTRIBUTE_ENCRYPTED if the file needs to be
-	 * encrypted.
-	 *
-	 * In NO_ATTRIBUTES mode just don't specify any attributes at all.
-	 */
-	if (ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES) {
-		attrib = 0;
-	} else {
-		attrib = (inode->i_attributes & (FILE_ATTRIBUTE_SYSTEM |
-						 FILE_ATTRIBUTE_HIDDEN |
-						 FILE_ATTRIBUTE_ENCRYPTED));
-	}
 	build_extraction_path(dentry, ctx);
-	disposition = FILE_SUPERSEDE;
-retry:
-	status = do_create_file(h_ret, GENERIC_READ | GENERIC_WRITE | DELETE,
-				NULL, attrib, disposition,
-				FILE_NON_DIRECTORY_FILE, ctx);
-	if (likely(NT_SUCCESS(status))) {
-		int ret;
 
-		ret = adjust_compression_attribute(*h_ret, dentry, ctx);
-		if (ret) {
-			(*func_NtClose)(*h_ret);
-			return ret;
-		}
+	ret = supersede_file_or_stream(ctx, &h);
+	if (ret)
+		goto out;
 
-		ret = maybe_clear_encryption_attribute(h_ret, dentry, ctx);
-		/* May close the handle!!! */
+	ret = adjust_compression_attribute(h, dentry, ctx);
+	if (ret)
+		goto out_close;
 
-		if (ret) {
-			if (*h_ret)
-				(*func_NtClose)(*h_ret);
-			return ret;
-		}
+	ret = create_any_empty_ads(dentry, ctx);
+	if (ret)
+		goto out_close;
 
-		if (!*h_ret) {
-			/* Re-open the handle so that we can return it on
-			 * success.  */
-			status = do_create_file(h_ret,
-						GENERIC_READ |
-							GENERIC_WRITE | DELETE,
-						NULL, 0, FILE_OPEN,
-						FILE_NON_DIRECTORY_FILE, ctx);
-			if (!NT_SUCCESS(status))
-				goto fail;
-		}
+	*h_ret = h;
+	return 0;
 
-		ret = create_any_empty_ads(dentry, ctx);
-		if (ret) {
-			(*func_NtClose)(*h_ret);
-			return ret;
-		}
-		return 0;
-	}
-
-	if (status == STATUS_OBJECT_NAME_NOT_FOUND && !retried) {
-		/* Workaround for defect in the Windows PE in-memory filesystem
-		 * implementation: FILE_SUPERSEDE does not create the file, as
-		 * expected and documented, when the named file does not exist.
-		 */
-		retried = true;
-		disposition = FILE_CREATE;
-		goto retry;
-	}
-
-	if (status == STATUS_ACCESS_DENIED && !retried) {
-		/* We also can't supersede an existing file that has
-		 * FILE_ATTRIBUTE_READONLY set; doing so causes NtCreateFile()
-		 * to return STATUS_ACCESS_DENIED .  The only workaround seems
-		 * to be to explicitly remove FILE_ATTRIBUTE_READONLY on the
-		 * existing file, then try again.  */
-
-		FILE_BASIC_INFORMATION info;
-		HANDLE h;
-
-		status = do_create_file(&h, FILE_WRITE_ATTRIBUTES, NULL, 0,
-					FILE_OPEN, FILE_NON_DIRECTORY_FILE, ctx);
-		if (!NT_SUCCESS(status))
-			goto fail;
-
-		memset(&info, 0, sizeof(info));
-		info.FileAttributes = FILE_ATTRIBUTE_NORMAL;
-
-		status = (*func_NtSetInformationFile)(h, &ctx->iosb,
-						      &info, sizeof(info),
-						      FileBasicInformation);
-		(*func_NtClose)(h);
-		if (!NT_SUCCESS(status))
-			goto fail;
-		retried = true;
-		goto retry;
-	}
-fail:
-	set_errno_from_nt_status(status);
-	ERROR_WITH_ERRNO("Can't create file \"%ls\" (status=0x%08"PRIx32")",
-			 current_path(ctx), (u32)status);
-	return WIMLIB_ERR_OPEN;
+out_close:
+	(*func_NtClose)(h);
+out:
+	return ret;
 }
 
 /* Creates a hard link at the location named by @dentry to the file represented
@@ -2441,10 +2368,13 @@ do_apply_metadata_to_file(HANDLE h, const struct wim_inode *inode,
 	info.LastAccessTime.QuadPart = inode->i_last_access_time;
 	info.LastWriteTime.QuadPart = inode->i_last_write_time;
 	info.ChangeTime.QuadPart = 0;
-	if (ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES)
+	if (ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES) {
 		info.FileAttributes = 0;
-	else
+	} else {
 		info.FileAttributes = inode->i_attributes & ~SPECIAL_ATTRIBUTES;
+		if (info.FileAttributes == 0)
+			info.FileAttributes = FILE_ATTRIBUTE_NORMAL;
+	}
 
 	status = (*func_NtSetInformationFile)(h, &ctx->iosb,
 					      &info, sizeof(info),
