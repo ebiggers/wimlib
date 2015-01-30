@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2013, 2014 Eric Biggers
+ * Copyright (C) 2013, 2014, 2015 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -26,8 +26,6 @@
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #endif
-
-#include <errno.h>
 
 #include "wimlib/win32_common.h"
 
@@ -123,10 +121,8 @@ read_winnt_file_prefix(const struct wim_lookup_table_entry *lte, u64 size,
 	status = winnt_openat(NULL, path, wcslen(path),
 			      FILE_READ_DATA | SYNCHRONIZE, &h);
 	if (!NT_SUCCESS(status)) {
-		set_errno_from_nt_status(status);
-		ERROR_WITH_ERRNO("\"%ls\": Can't open for reading "
-				 "(status=0x%08"PRIx32")",
-				 printable_path(path), (u32)status);
+		winnt_error(status, L"\"%ls\": Can't open for reading",
+			    printable_path(path));
 		return WIMLIB_ERR_OPEN;
 	}
 
@@ -142,10 +138,8 @@ read_winnt_file_prefix(const struct wim_lookup_table_entry *lte, u64 size,
 		status = (*func_NtReadFile)(h, NULL, NULL, NULL,
 					    &iosb, buf, count, NULL, NULL);
 		if (!NT_SUCCESS(status)) {
-			set_errno_from_nt_status(status);
-			ERROR_WITH_ERRNO("\"%ls\": Error reading data "
-					 "(status=0x%08"PRIx32")",
-					 printable_path(path), (u32)status);
+			winnt_error(status, L"\"%ls\": Error reading data",
+				    printable_path(path));
 			ret = WIMLIB_ERR_READ;
 			break;
 		}
@@ -181,8 +175,8 @@ win32_encrypted_export_cb(unsigned char *data, void *_ctx, unsigned long len)
 	ret = (*ctx->read_prefix_cb)(data, bytes_to_consume, ctx->read_prefix_ctx);
 	if (ret) {
 		ctx->wimlib_err_code = ret;
-		/* Shouldn't matter what error code is returned here, as long as
-		 * it isn't ERROR_SUCCESS.  */
+		/* It doesn't matter what error code is returned here, as long
+		 * as it isn't ERROR_SUCCESS.  */
 		return ERROR_READ_FAULT;
 	}
 	ctx->bytes_remaining -= bytes_to_consume;
@@ -206,21 +200,21 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 
 	err = OpenEncryptedFileRaw(lte->file_on_disk, 0, &file_ctx);
 	if (err != ERROR_SUCCESS) {
-		set_errno_from_win32_error(err);
-		ERROR_WITH_ERRNO("Failed to open encrypted file \"%ls\" "
-				 "for raw read",
-				 printable_path(lte->file_on_disk));
+		win32_error(err,
+			    L"Failed to open encrypted file \"%ls\" for raw read",
+			    printable_path(lte->file_on_disk));
 		return WIMLIB_ERR_OPEN;
 	}
 	err = ReadEncryptedFileRaw(win32_encrypted_export_cb,
 				   &export_ctx, file_ctx);
 	if (err != ERROR_SUCCESS) {
-		set_errno_from_win32_error(err);
-		ERROR_WITH_ERRNO("Failed to read encrypted file \"%ls\"",
-				 printable_path(lte->file_on_disk));
 		ret = export_ctx.wimlib_err_code;
-		if (ret == 0)
+		if (ret == 0) {
+			win32_error(err,
+				    L"Failed to read encrypted file \"%ls\"",
+				    printable_path(lte->file_on_disk));
 			ret = WIMLIB_ERR_READ;
+		}
 	} else if (export_ctx.bytes_remaining != 0) {
 		ERROR("Only could read %"PRIu64" of %"PRIu64" bytes from "
 		      "encrypted file \"%ls\"",
@@ -465,10 +459,8 @@ winnt_recurse_directory(HANDLE h,
 	}
 
 	if (unlikely(status != STATUS_NO_MORE_FILES)) {
-		set_errno_from_nt_status(status);
-		ERROR_WITH_ERRNO("\"%ls\": Can't read directory "
-				 "(status=0x%08"PRIx32")",
-				 printable_path(full_path), (u32)status);
+		winnt_error(status, L"\"%ls\": Can't read directory",
+			    printable_path(full_path));
 		ret = WIMLIB_ERR_READ;
 	}
 out_free_buf:
@@ -759,12 +751,14 @@ winnt_get_reparse_data(HANDLE h, const wchar_t *path,
 			     NULL, 0, rpbuf, REPARSE_POINT_MAX_SIZE,
 			     &bytes_returned, NULL))
 	{
-		set_errno_from_GetLastError();
+		win32_error(GetLastError(), L"\"%ls\": Can't get reparse data",
+			    printable_path(path));
 		return WIMLIB_ERR_READ;
 	}
 
 	if (unlikely(bytes_returned < 8)) {
-		errno = EINVAL;
+		ERROR("\"%ls\": Reparse point data is invalid",
+		      printable_path(path));
 		return WIMLIB_ERR_INVALID_REPARSE_DATA;
 	}
 
@@ -801,18 +795,18 @@ win32_get_encrypted_file_size(const wchar_t *path, u64 *size_ret)
 
 	err = OpenEncryptedFileRaw(path, 0, &file_ctx);
 	if (err != ERROR_SUCCESS) {
-		set_errno_from_win32_error(err);
-		ERROR_WITH_ERRNO("Failed to open encrypted file \"%ls\" "
-				 "for raw read", printable_path(path));
+		win32_error(err,
+			    L"Failed to open encrypted file \"%ls\" for raw read",
+			    printable_path(path));
 		return WIMLIB_ERR_OPEN;
 	}
 	*size_ret = 0;
 	err = ReadEncryptedFileRaw(win32_tally_encrypted_size_cb,
 				   size_ret, file_ctx);
 	if (err != ERROR_SUCCESS) {
-		set_errno_from_win32_error(err);
-		ERROR_WITH_ERRNO("Failed to read raw encrypted data from "
-				 "\"%ls\"", printable_path(path));
+		win32_error(err,
+			    L"Failed to read raw encrypted data from \"%ls\"",
+			    printable_path(path));
 		ret = WIMLIB_ERR_READ;
 	} else {
 		ret = 0;
@@ -1044,10 +1038,9 @@ winnt_scan_streams(HANDLE h, const wchar_t *path, size_t path_nchars,
 		case STATUS_INVALID_INFO_CLASS:
 			goto unnamed_only;
 		default:
-			set_errno_from_nt_status(status);
-			ERROR_WITH_ERRNO("\"%ls\": Failed to query stream "
-					 "information (status=0x%08"PRIx32")",
-					 printable_path(path), (u32)status);
+			winnt_error(status,
+				    L"\"%ls\": Failed to query stream information",
+				    printable_path(path));
 			ret = WIMLIB_ERR_READ;
 			goto out_free_buf;
 		}
@@ -1155,19 +1148,12 @@ retry_open:
 			goto retry_open;
 		}
 
-		if (status == STATUS_FVE_LOCKED_VOLUME) {
-			ERROR("\"%ls\": Can't open file "
-			      "(encrypted volume has not been unlocked)",
-			      printable_path(full_path));
+		winnt_error(status, L"\"%ls\": Can't open file",
+			    printable_path(full_path));
+		if (status == STATUS_FVE_LOCKED_VOLUME)
 			ret = WIMLIB_ERR_FVE_LOCKED_VOLUME;
-			goto out;
-		}
-
-		set_errno_from_nt_status(status);
-		ERROR_WITH_ERRNO("\"%ls\": Can't open file "
-				 "(status=0x%08"PRIx32")",
-				 printable_path(full_path), (u32)status);
-		ret = WIMLIB_ERR_OPEN;
+		else
+			ret = WIMLIB_ERR_OPEN;
 		goto out;
 	}
 
@@ -1183,10 +1169,9 @@ retry_open:
 		if (unlikely(!NT_SUCCESS(status) &&
 			     status != STATUS_BUFFER_OVERFLOW))
 		{
-			set_errno_from_nt_status(status);
-			ERROR_WITH_ERRNO("\"%ls\": Can't get file information "
-					 "(status=0x%08"PRIx32")",
-					 printable_path(full_path), (u32)status);
+			winnt_error(status,
+				    L"\"%ls\": Can't get file information",
+				    printable_path(full_path));
 			ret = WIMLIB_ERR_STAT;
 			goto out;
 		}
@@ -1223,11 +1208,9 @@ retry_open:
 		{
 			vol_flags = attr_info.FileSystemAttributes;
 		} else {
-			set_errno_from_nt_status(status);
-			WARNING_WITH_ERRNO("\"%ls\": Can't get volume attributes "
-					   "(status=0x%08"PRIx32")",
-					   printable_path(full_path),
-					   (u32)status);
+			winnt_warning(status,
+				      L"\"%ls\": Can't get volume attributes",
+				      printable_path(full_path));
 			vol_flags = 0;
 		}
 
@@ -1249,11 +1232,8 @@ retry_open:
 		{
 			params->capture_root_dev = vol_info.VolumeSerialNumber;
 		} else {
-			set_errno_from_nt_status(status);
-			WARNING_WITH_ERRNO("\"%ls\": Can't get volume ID "
-					   "(status=0x%08"PRIx32")",
-					   printable_path(full_path),
-					   (u32)status);
+			winnt_warning(status, L"\"%ls\": Can't get volume ID",
+				      printable_path(full_path));
 			params->capture_root_dev = 0;
 		}
 	}
@@ -1273,8 +1253,6 @@ retry_open:
 			not_rpfixed = 1;
 			break;
 		default:
-			ERROR_WITH_ERRNO("\"%ls\": Can't get reparse data",
-					 printable_path(full_path));
 			goto out;
 		}
 	}
@@ -1337,11 +1315,9 @@ retry_open:
 						       params->sd_set, stats,
 						       params->add_flags);
 		if (!NT_SUCCESS(status)) {
-			set_errno_from_nt_status(status);
-			ERROR_WITH_ERRNO("\"%ls\": Can't read security "
-					 "descriptor (status=0x%08"PRIx32")",
-					 printable_path(full_path),
-					 (u32)status);
+			winnt_error(status,
+				    L"\"%ls\": Can't read security descriptor",
+				    printable_path(full_path));
 			ret = WIMLIB_ERR_STAT;
 			goto out;
 		}
@@ -1405,11 +1381,9 @@ retry_open:
 					      FILE_LIST_DIRECTORY | SYNCHRONIZE,
 					      &h);
 			if (!NT_SUCCESS(status)) {
-				set_errno_from_nt_status(status);
-				ERROR_WITH_ERRNO("\"%ls\": Can't re-open file "
-						 "(status=0x%08"PRIx32")",
-						 printable_path(full_path),
-						 (u32)status);
+				winnt_error(status,
+					    L"\"%ls\": Can't re-open file",
+					    printable_path(full_path));
 				ret = WIMLIB_ERR_OPEN;
 				goto out;
 			}

@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2013, 2014 Eric Biggers
+ * Copyright (C) 2013, 2014, 2015 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -311,12 +311,6 @@ void
 set_errno_from_GetLastError(void)
 {
 	set_errno_from_win32_error(GetLastError());
-}
-
-void
-set_errno_from_nt_status(NTSTATUS status)
-{
-	set_errno_from_win32_error((*func_RtlNtStatusToDosError)(status));
 }
 
 static bool
@@ -664,5 +658,106 @@ win32_get_drive_path(const wchar_t *file_path, wchar_t drive_path[7])
 	return 0;
 }
 
+static void
+windows_msg(u32 code, const wchar_t *format, va_list va,
+	    bool is_ntstatus, bool is_error)
+{
+	wchar_t _buf[STACK_MAX / 8];
+	wchar_t *buf = _buf;
+	size_t buflen = ARRAY_LEN(_buf);
+	size_t ret;
+	size_t n;
+
+retry:
+	n = vsnwprintf(buf, buflen, format, va);
+
+	if (n >= buflen)
+		goto realloc;
+
+	n += snwprintf(&buf[n], buflen - n,
+		       (is_ntstatus ?
+			L" (status=%08"PRIx32"): " :
+			L" (err=%"PRIu32"): "),
+		       code);
+
+	if (n >= buflen)
+		goto realloc;
+
+	ret = FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+			    NULL,
+			    is_ntstatus ? (*func_RtlNtStatusToDosError)(code) : code,
+			    MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+			    &buf[n],
+			    buflen - n,
+			    NULL);
+	n += ret;
+
+	if (n >= buflen || (ret == 0 && GetLastError() == ERROR_INSUFFICIENT_BUFFER))
+		goto realloc;
+
+        if (buf[n - 1] == L'\n')
+		buf[--n] = L'\0';
+        if (buf[n - 1] == L'\r')
+		buf[--n] = L'\0';
+        if (buf[n - 1] == L'.')
+		buf[--n] = L'\0';
+
+	if (is_error)
+		ERROR("%ls", buf);
+	else
+		WARNING("%ls", buf);
+	if (buf != _buf)
+		FREE(buf);
+	return;
+
+realloc:
+	if (buf != _buf)
+		FREE(buf);
+	buflen *= 2;
+	buf = MALLOC(buflen * sizeof(buf[0]));
+	if (buf)
+		goto retry;
+	ERROR("Ran out of memory while building error message!!!");
+}
+
+void
+win32_warning(DWORD err, const wchar_t *format, ...)
+{
+	va_list va;
+
+	va_start(va, format);
+	windows_msg(err, format, va, false, false);
+	va_end(va);
+}
+
+void
+win32_error(DWORD err, const wchar_t *format, ...)
+{
+	va_list va;
+
+	va_start(va, format);
+	windows_msg(err, format, va, false, true);
+	va_end(va);
+}
+
+void
+winnt_warning(NTSTATUS status, const wchar_t *format, ...)
+{
+	va_list va;
+
+	va_start(va, format);
+	windows_msg(status, format, va, true, false);
+	va_end(va);
+}
+
+void
+winnt_error(NTSTATUS status, const wchar_t *format, ...)
+{
+	va_list va;
+
+	va_start(va, format);
+	windows_msg(status, format, va, true, true);
+	va_end(va);
+}
 
 #endif /* __WIN32__ */

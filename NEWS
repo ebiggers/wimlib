@@ -9,6 +9,8 @@ Version 1.7.5-BETA:
 	Fixed various issues related to capture/apply of EFS-encrypted files on
 	Windows.
 
+	On Windows, some error and warning messages have been improved.
+
 Version 1.7.4:
 	The Windows binary distribution no longer contains third party DLLs.
 	These dependencies are instead compiled directly into the libwim DLL.

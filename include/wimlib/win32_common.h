@@ -17,9 +17,6 @@ set_errno_from_GetLastError(void);
 extern void
 set_errno_from_win32_error(DWORD err);
 
-extern void
-set_errno_from_nt_status(NTSTATUS status);
-
 /* ntdll functions  */
 
 extern NTSTATUS (WINAPI *func_NtCreateFile)(PHANDLE FileHandle,
@@ -158,5 +155,17 @@ win32_path_to_nt_path(const wchar_t *win32_path, UNICODE_STRING *nt_path);
 
 extern int
 win32_get_drive_path(const wchar_t *file_path, wchar_t drive_path[7]);
+
+extern void
+win32_warning(DWORD err, const wchar_t *format, ...) _cold_attribute;
+
+extern void
+win32_error(DWORD err, const wchar_t *format, ...) _cold_attribute;
+
+extern void
+winnt_warning(NTSTATUS status, const wchar_t *format, ...) _cold_attribute;
+
+extern void
+winnt_error(NTSTATUS status, const wchar_t *format, ...) _cold_attribute;
 
 #endif /* _WIMLIB_WIN32_COMMON_H */
