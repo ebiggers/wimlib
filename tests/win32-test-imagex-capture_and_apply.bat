@@ -322,13 +322,13 @@ call :do_test
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 call :msg "hidden system directory"
-echo 1 > subdir
+md subdir
 attrib +h +s subdir
 call :do_test
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 call :msg "hidden, readonly, system directory"
-echo 1 > subdir
+md subdir
 attrib +h +r +s subdir
 call :do_test
 if %errorlevel% neq 0 exit /b %errorlevel%
@@ -380,10 +380,10 @@ if %errorlevel% neq 0 exit /b %errorlevel%
 call :msg "unencrypted file in encrypted directory in compressed directory"
 md 1
 md 1\2
-compact /c 1 > /nul
-cipher /e 1\2 > /nul
+compact /c 1 > nul
+cipher /e 1\2 > nul
 echo hello > 1\2\file
-cipher /d 1\2\file > /nul
+cipher /d 1\2\file > nul
 call :do_test
 if %errorlevel% neq 0 exit /b %errorlevel%
 
