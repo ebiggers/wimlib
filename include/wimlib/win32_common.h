@@ -11,12 +11,6 @@
 #include "wimlib/types.h"
 #include "wimlib/win32.h"
 
-extern void
-set_errno_from_GetLastError(void);
-
-extern void
-set_errno_from_win32_error(DWORD err);
-
 /* ntdll functions  */
 
 extern NTSTATUS (WINAPI *func_NtCreateFile)(PHANDLE FileHandle,
