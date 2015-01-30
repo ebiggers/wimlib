@@ -2369,7 +2369,7 @@ do_apply_metadata_to_file(HANDLE h, const struct wim_inode *inode,
 	info.LastWriteTime.QuadPart = inode->i_last_write_time;
 	info.ChangeTime.QuadPart = 0;
 	if (ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES) {
-		info.FileAttributes = 0;
+		info.FileAttributes = FILE_ATTRIBUTE_NORMAL;
 	} else {
 		info.FileAttributes = inode->i_attributes & ~SPECIAL_ATTRIBUTES;
 		if (info.FileAttributes == 0)
