@@ -29,8 +29,9 @@
 #endif
 
 #include "wimlib/divsufsort.h"
-#include "wimlib/lz_mf.h"
 #include "wimlib/util.h"
+
+#define DIVSUFSORT_ASSERT(expr)
 
 /*- Constants -*/
 #define ALPHABET_SIZE 256
@@ -61,26 +62,26 @@
 
 #define STACK_PUSH(_a, _b, _c, _d)\
   do {\
-    LZ_ASSERT(ssize < STACK_SIZE);\
+    DIVSUFSORT_ASSERT(ssize < STACK_SIZE);\
     stack[ssize].a = (_a), stack[ssize].b = (_b),\
     stack[ssize].c = (_c), stack[ssize++].d = (_d);\
   } while(0)
 #define STACK_PUSH5(_a, _b, _c, _d, _e)\
   do {\
-    LZ_ASSERT(ssize < STACK_SIZE);\
+    DIVSUFSORT_ASSERT(ssize < STACK_SIZE);\
     stack[ssize].a = (_a), stack[ssize].b = (_b),\
     stack[ssize].c = (_c), stack[ssize].d = (_d), stack[ssize++].e = (_e);\
   } while(0)
 #define STACK_POP(_a, _b, _c, _d)\
   do {\
-    LZ_ASSERT(0 <= ssize);\
+    DIVSUFSORT_ASSERT(0 <= ssize);\
     if(ssize == 0) { return; }\
     (_a) = stack[--ssize].a, (_b) = stack[ssize].b,\
     (_c) = stack[ssize].c, (_d) = stack[ssize].d;\
   } while(0)
 #define STACK_POP5(_a, _b, _c, _d, _e)\
   do {\
-    LZ_ASSERT(0 <= ssize);\
+    DIVSUFSORT_ASSERT(0 <= ssize);\
     if(ssize == 0) { return; }\
     (_a) = stack[--ssize].a, (_b) = stack[ssize].b,\
     (_c) = stack[ssize].c, (_d) = stack[ssize].d, (_e) = stack[ssize].e;\
@@ -1528,9 +1529,9 @@ construct_SA(const unsigned char *T, int *SA,
           i <= j;
           --j) {
         if(0 < (s = *j)) {
-          LZ_ASSERT(T[s] == c1);
-          LZ_ASSERT(((s + 1) < n) && (T[s] <= T[s + 1]));
-          LZ_ASSERT(T[s - 1] <= T[s]);
+          DIVSUFSORT_ASSERT(T[s] == c1);
+          DIVSUFSORT_ASSERT(((s + 1) < n) && (T[s] <= T[s + 1]));
+          DIVSUFSORT_ASSERT(T[s - 1] <= T[s]);
           *j = ~s;
           c0 = T[--s];
           if((0 < s) && (T[s - 1] > c0)) { s = ~s; }
@@ -1538,10 +1539,10 @@ construct_SA(const unsigned char *T, int *SA,
             if(0 <= c2) { BUCKET_B(c2, c1) = k - SA; }
             k = SA + BUCKET_B(c2 = c0, c1);
           }
-          LZ_ASSERT(k < j);
+          DIVSUFSORT_ASSERT(k < j);
           *k-- = s;
         } else {
-          LZ_ASSERT(((s == 0) && (T[s] == c1)) || (s < 0));
+          DIVSUFSORT_ASSERT(((s == 0) && (T[s] == c1)) || (s < 0));
           *j = ~s;
         }
       }
@@ -1555,17 +1556,17 @@ construct_SA(const unsigned char *T, int *SA,
   /* Scan the suffix array from left to right. */
   for(i = SA, j = SA + n; i < j; ++i) {
     if(0 < (s = *i)) {
-      LZ_ASSERT(T[s - 1] >= T[s]);
+      DIVSUFSORT_ASSERT(T[s - 1] >= T[s]);
       c0 = T[--s];
       if((s == 0) || (T[s - 1] < c0)) { s = ~s; }
       if(c0 != c2) {
         BUCKET_A(c2) = k - SA;
         k = SA + BUCKET_A(c2 = c0);
       }
-      LZ_ASSERT(i < k);
+      DIVSUFSORT_ASSERT(i < k);
       *k++ = s;
     } else {
-      LZ_ASSERT(s < 0);
+      DIVSUFSORT_ASSERT(s < 0);
       *i = ~s;
     }
   }
@@ -1578,8 +1579,10 @@ construct_SA(const unsigned char *T, int *SA,
 /* XXX Modified from original: use provided temporary space instead of
  * allocating it.  */
 void
-divsufsort(const u8 *T, u32 *SA, u32 n, u32 *bucket_A, u32 *bucket_B)
+divsufsort(const u8 *T, u32 *SA, u32 n, u32 *tmp)
 {
+  u32 *bucket_A = tmp;
+  u32 *bucket_B = tmp + BUCKET_A_SIZE;
   u32 m;
 
   switch (n) {

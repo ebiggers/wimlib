@@ -33,7 +33,7 @@
 #include "wimlib/compressor_ops.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
-#include "wimlib/lz_mf.h"
+#include "wimlib/lcpit_matchfinder.h"
 #include "wimlib/lz_repsearch.h"
 #include "wimlib/lzms_common.h"
 #include "wimlib/unaligned.h"
@@ -144,7 +144,6 @@ struct lzms_huffman_encoder {
 struct lzms_compressor_params {
 	u32 min_match_length;
 	u32 nice_match_length;
-	u32 max_search_depth;
 	u32 optim_array_length;
 };
 
@@ -159,7 +158,7 @@ struct lzms_compressor {
 	u32 cur_window_size;
 
 	/* Lempel-Ziv match-finder  */
-	struct lz_mf *mf;
+	struct lcpit_matchfinder mf;
 
 	/* Temporary space to store found matches  */
 	struct lz_match *matches;
@@ -873,8 +872,8 @@ lzms_consider_lz_repeat_offset_match(const struct lzms_compressor *c,
 /*
  * Consider coding each match in @matches as an explicit offset match.
  *
- * @matches must be sorted by strictly increasing length and strictly increasing
- * offset.  This is guaranteed by the match-finder.
+ * @matches must be sorted by strictly decreasing length.  This is guaranteed by
+ * the match-finder.
  *
  * We consider each length from the minimum (2) to the longest
  * (matches[num_matches - 1].len).  For each length, we consider only the
@@ -905,7 +904,7 @@ lzms_consider_lz_explicit_offset_matches(const struct lzms_compressor *c,
 	base_cost += lzms_rc_bit_cost(&c->lz_match_range_encoder,
 				      cur_optimum_ptr->state.lz_match_state, 0);
 	len = 2;
-	i = 0;
+	i = num_matches - 1;
 	do {
 		position_cost = base_cost + lzms_lz_offset_cost(c, matches[i].offset);
 		do {
@@ -916,8 +915,8 @@ lzms_consider_lz_explicit_offset_matches(const struct lzms_compressor *c,
 						<< MC_OFFSET_SHIFT) | len;
 				(cur_optimum_ptr + len)->cost = cost;
 			}
-		} while (++len <= matches[i].len);
-	} while (++i != num_matches);
+		} while (++len <= matches[i].length);
+	} while (i--);
 }
 
 static void
@@ -1039,8 +1038,7 @@ begin:
 	for (;;) {
 
 		/* Find explicit offset matches with the current position.  */
-		num_matches = lz_mf_get_matches(c->mf, c->matches);
-
+		num_matches = lcpit_matchfinder_get_matches(&c->mf, c->matches);
 		if (num_matches) {
 			/*
 			 * Find the longest repeat offset match with the current
@@ -1072,7 +1070,7 @@ begin:
 				 * choose it immediately.  */
 				if (rep_max_len >= c->params.nice_match_length) {
 
-					lz_mf_skip_positions(c->mf, rep_max_len - 1);
+					lcpit_matchfinder_skip_bytes(&c->mf, rep_max_len - 1);
 					window_ptr += rep_max_len;
 
 					if (cur_optimum_ptr != c->optimum)
@@ -1110,20 +1108,29 @@ begin:
 								     rep_max_len, rep_max_idx);
 			}
 
-			longest_len = c->matches[num_matches - 1].len;
+			longest_len = c->matches[0].length;
 
 			/* If there's a very long explicit offset match, choose
 			 * it immediately.  */
 			if (longest_len >= c->params.nice_match_length) {
 
-				lz_mf_skip_positions(c->mf, longest_len - 1);
+				u32 offset = c->matches[0].offset;
+
+				/* Extend the match as far as possible.  (The
+				 * LCP-interval tree matchfinder only reports up
+				 * to the "nice" length.)  */
+				longest_len = lz_extend(window_ptr,
+							window_ptr - offset,
+							longest_len,
+							window_end - window_ptr);
+
+				lcpit_matchfinder_skip_bytes(&c->mf, longest_len - 1);
 				window_ptr += longest_len;
 
 				if (cur_optimum_ptr != c->optimum)
 					lzms_encode_item_list(c, cur_optimum_ptr);
 
-				lzms_encode_lz_explicit_offset_match(c, longest_len,
-								     c->matches[num_matches - 1].offset);
+				lzms_encode_lz_explicit_offset_match(c, longest_len, offset);
 
 				c->optimum[0].state = cur_optimum_ptr->state;
 
@@ -1131,8 +1138,7 @@ begin:
 				lzms_update_match_state(&c->optimum[0].state, 0);
 				lzms_update_lz_match_state(&c->optimum[0].state, 0);
 
-				c->optimum[0].state.lru.upcoming_offset =
-					c->matches[num_matches - 1].offset;
+				c->optimum[0].state.lru.upcoming_offset = offset;
 
 				lzms_update_lz_lru_queue(&c->optimum[0].state.lru);
 				goto begin;
@@ -1400,37 +1406,15 @@ lzms_build_params(unsigned int compression_level,
 	else
 		params->min_match_length = 3;
 
-	/* Scale nice_match_length and max_search_depth with the compression
-	 * level.  But to allow an optimization on length cost calculations,
-	 * don't allow nice_match_length to exceed LZMS_NUM_FAST_LENGTH.  */
+	/* Scale nice_match_length with the compression level.  But to allow an
+	 * optimization on length cost calculations, don't allow
+	 * nice_match_length to exceed LZMS_NUM_FAST_LENGTH.  */
 	params->nice_match_length = ((u64)compression_level * 32) / 50;
 	if (params->nice_match_length < params->min_match_length)
 		params->nice_match_length = params->min_match_length;
 	if (params->nice_match_length > LZMS_NUM_FAST_LENGTHS)
 		params->nice_match_length = LZMS_NUM_FAST_LENGTHS;
-	params->max_search_depth = compression_level;
-
 	params->optim_array_length = 1024;
-}
-
-/* Given the internal compression parameters and maximum window size, build the
- * Lempel-Ziv match-finder parameters.  */
-static void
-lzms_build_mf_params(const struct lzms_compressor_params *lzms_params,
-		     u32 max_window_size, struct lz_mf_params *mf_params)
-{
-	memset(mf_params, 0, sizeof(*mf_params));
-
-	/* Choose an appropriate match-finding algorithm.  */
-	if (max_window_size <= 33554432)
-		mf_params->algorithm = LZ_MF_LCP_INTERVAL_TREE;
-	else
-		mf_params->algorithm = LZ_MF_LINKED_SUFFIX_ARRAY;
-
-	mf_params->max_window_size = max_window_size;
-	mf_params->min_match_len = lzms_params->min_match_length;
-	mf_params->max_search_depth = lzms_params->max_search_depth;
-	mf_params->nice_match_len = lzms_params->nice_match_length;
 }
 
 static void
@@ -1440,14 +1424,12 @@ static u64
 lzms_get_needed_memory(size_t max_block_size, unsigned int compression_level)
 {
 	struct lzms_compressor_params params;
-	struct lz_mf_params mf_params;
 	u64 size = 0;
 
 	if (max_block_size > LZMS_MAX_BUFFER_SIZE)
 		return 0;
 
 	lzms_build_params(compression_level, &params);
-	lzms_build_mf_params(&params, max_block_size, &mf_params);
 
 	size += sizeof(struct lzms_compressor);
 
@@ -1455,10 +1437,10 @@ lzms_get_needed_memory(size_t max_block_size, unsigned int compression_level)
 	size += max_block_size;
 
 	/* mf */
-	size += lz_mf_get_needed_memory(mf_params.algorithm, max_block_size);
+	size += lcpit_matchfinder_get_needed_memory(max_block_size);
 
 	/* matches */
-	size += min(params.max_search_depth, params.nice_match_length) *
+	size += (params.nice_match_length - params.min_match_length + 1) *
 		sizeof(struct lz_match);
 
 	/* optimum */
@@ -1474,15 +1456,11 @@ lzms_create_compressor(size_t max_block_size, unsigned int compression_level,
 {
 	struct lzms_compressor *c;
 	struct lzms_compressor_params params;
-	struct lz_mf_params mf_params;
 
 	if (max_block_size > LZMS_MAX_BUFFER_SIZE)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	lzms_build_params(compression_level, &params);
-	lzms_build_mf_params(&params, max_block_size, &mf_params);
-	if (!lz_mf_params_valid(&mf_params))
-		return WIMLIB_ERR_INVALID_PARAM;
 
 	c = CALLOC(1, sizeof(struct lzms_compressor));
 	if (!c)
@@ -1494,12 +1472,12 @@ lzms_create_compressor(size_t max_block_size, unsigned int compression_level,
 	if (!c->cur_window)
 		goto oom;
 
-	c->mf = lz_mf_alloc(&mf_params);
-	if (!c->mf)
+	if (!lcpit_matchfinder_init(&c->mf, max_block_size,
+				    c->params.min_match_length,
+				    c->params.nice_match_length))
 		goto oom;
 
-	c->matches = MALLOC(min(params.max_search_depth,
-				params.nice_match_length) *
+	c->matches = MALLOC((params.nice_match_length - params.min_match_length + 1) *
 			    sizeof(struct lz_match));
 	if (!c->matches)
 		goto oom;
@@ -1549,7 +1527,7 @@ lzms_compress(const void *uncompressed_data, size_t uncompressed_size,
 			c->last_target_usages, false);
 
 	/* Load the window into the match-finder.  */
-	lz_mf_load_window(c->mf, c->cur_window, c->cur_window_size);
+	lcpit_matchfinder_load_buffer(&c->mf, c->cur_window, c->cur_window_size);
 
 	/* Compute and encode a literal/match sequence that decompresses to the
 	 * preprocessed data.  */
@@ -1566,7 +1544,7 @@ lzms_free_compressor(void *_c)
 
 	if (c) {
 		FREE(c->cur_window);
-		lz_mf_free(c->mf);
+		lcpit_matchfinder_destroy(&c->mf);
 		FREE(c->matches);
 		FREE(c->optimum);
 		FREE(c);
