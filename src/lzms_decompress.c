@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2013, 2014 Eric Biggers
+ * Copyright (C) 2013, 2014, 2015 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -50,19 +50,67 @@
  * matches or "delta" matches, either of which can have its offset encoded
  * explicitly or encoded via a reference to a recently used (repeat) offset.
  *
- * A traditional LZ match consists of a length and offset; it asserts that the
- * sequence of bytes beginning at the current position and extending for the
- * length is exactly equal to the equal-length sequence of bytes at the offset
- * back in the data buffer.  On the other hand, a delta match consists of a
- * length, raw offset, and power.  It asserts that the sequence of bytes
- * beginning at the current position and extending for the length is equal to
- * the bytewise sum of the two equal-length sequences of bytes (2**power) and
- * (raw_offset * 2**power) bytes before the current position, minus bytewise the
- * sequence of bytes beginning at (2**power + raw_offset * 2**power) bytes
- * before the current position.  Although not generally as useful as traditional
- * LZ matches, delta matches can be helpful on some types of data.  Both LZ and
- * delta matches may overlap with the current position; in fact, the minimum
- * offset is 1, regardless of match length.
+ * A traditional LZ77 match consists of a length and offset.  It asserts that
+ * the sequence of bytes beginning at the current position and extending for the
+ * length is equal to the same-length sequence of bytes at the offset back in
+ * the data buffer.  This type of match can be visualized as follows, with the
+ * caveat that the sequences may overlap:
+ *
+ *                                offset
+ *                         --------------------
+ *                         |                  |
+ *                         B[1...len]         A[1...len]
+ *
+ * Decoding proceeds as follows:
+ *
+ *                      do {
+ *                              *A++ = *B++;
+ *                      } while (--length);
+ *
+ * On the other hand, a delta match consists of a "span" as well as a length and
+ * offset.  A delta match can be visualized as follows, with the caveat that the
+ * various sequences may overlap:
+ *
+ *                                       offset
+ *                            -----------------------------
+ *                            |                           |
+ *                    span    |                   span    |
+ *                -------------               -------------
+ *                |           |               |           |
+ *                D[1...len]  C[1...len]      B[1...len]  A[1...len]
+ *
+ * Decoding proceeds as follows:
+ *
+ *                      do {
+ *                              *A++ = *B++ + *C++ - *D++;
+ *                      } while (--length);
+ *
+ * A delta match asserts that the bytewise differences of the A and B sequences
+ * are equal to the bytewise differences of the C and D sequences.  The
+ * sequences within each pair are separated by the same number of bytes, the
+ * "span".  The inter-pair distance is the "offset".  In LZMS, spans are
+ * restricted to powers of 2 between 2**0 and 2**7 inclusively.  Offsets are
+ * restricted to multiples of the span.  The stored value for the offset is the
+ * "raw offset", which is the real offset divided by the span.
+ *
+ * Delta matches can cover data containing a series of power-of-2 sized integers
+ * that is linearly increasing or decreasing.  Another way of thinking about it
+ * is that a delta match can match a longer sequence that is interrupted by a
+ * non-matching byte, provided that the non-matching byte is a continuation of a
+ * linearly changing pattern.  Examples of files that may contain data like this
+ * are uncompressed bitmap images, uncompressed digital audio, and Unicode data
+ * tables.  To some extent, this match type is a replacement for delta filters
+ * or multimedia filters that are sometimes used in other compression software
+ * (e.g.  'xz --delta --lzma2').  However, on most types of files, delta matches
+ * do not seem to be very useful.
+ *
+ * Both LZ and delta matches may use overlapping sequences.  Therefore, they
+ * must be decoded as if only one byte is copied at a time.
+ *
+ * For both LZ and delta matches, any match length in [1, 1073809578] can be
+ * represented.  Similarly, any match offset in [1, 1180427428] can be
+ * represented.  For delta matches, this range applies to the raw offset, so the
+ * real offset may be larger.
  *
  * For LZ matches, up to 3 repeat offsets are allowed, similar to some other
  * LZ-based formats such as LZX and LZMA.  They must updated in an LRU fashion,
