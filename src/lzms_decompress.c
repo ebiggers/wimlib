@@ -793,9 +793,13 @@ lzms_decode_items(struct lzms_decompressor * const restrict d,
 		} else {
 			/* Delta match  */
 
+			/* (See beginning of file for more information.)  */
+
 			u32 power;
-			u32 raw_offset, offset1, offset2, offset;
-			const u8 *matchptr1, *matchptr2, *matchptr;
+			u32 raw_offset;
+			u32 span;
+			u32 offset;
+			const u8 *B, *C, *D;
 			u32 length;
 
 			if (d->pending_delta_offset != 0 &&
@@ -846,30 +850,31 @@ lzms_decode_items(struct lzms_decompressor * const restrict d,
 
 			length = lzms_decode_length(d);
 
-			offset1 = (u32)1 << power;
-			offset2 = raw_offset << power;
-			offset = offset1 + offset2;
+			span = (u32)1 << power;
+			offset = raw_offset << power;
 
-			/* raw_offset<<power overflowed?  */
-			if (unlikely((offset2 >> power) != raw_offset))
+			/* raw_offset<<power overflows?  */
+			if (unlikely(offset >> power != raw_offset))
 				return -1;
 
-			/* offset1+offset2 overflowed?  */
-			if (unlikely(offset < offset2))
+			/* offset+span overflows?  */
+			if (unlikely(offset + span < offset))
 				return -1;
 
+			/* buffer underrun?  */
+			if (unlikely(offset + span > out_next - out))
+				return -1;
+
+			/* buffer overrun?  */
 			if (unlikely(length > out_end - out_next))
 				return -1;
 
-			if (unlikely(offset > out_next - out))
-				return -1;
-
-			matchptr1 = out_next - offset1;
-			matchptr2 = out_next - offset2;
-			matchptr = out_next - offset;
+			B = out_next - span;
+			C = out_next - offset;
+			D = C - span;
 
 			do {
-				*out_next++ = *matchptr1++ + *matchptr2++ - *matchptr++;
+				*out_next++ = *B++ + *C++ - *D++;
 			} while (--length);
 
 			d->delta_offset_still_pending = out_next;
