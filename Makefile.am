@@ -59,7 +59,6 @@ libwim_la_SOURCES =		\
 	src/iterate_dir.c	\
 	src/join.c		\
 	src/lcpit_matchfinder.c	\
-	src/lcpit_matchfinder_templates.h	\
 	src/lookup_table.c	\
 	src/lzms_common.c	\
 	src/lzms_compress.c	\

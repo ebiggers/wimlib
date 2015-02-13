@@ -17,31 +17,13 @@
 #include "wimlib/types.h"
 
 struct lcpit_matchfinder {
-
 	bool huge_mode;
-
 	u32 cur_pos;
-
-	/* Mapping: suffix index ("window position") => lcp-interval index  */
 	u32 *pos_data;
-
-	/* Mapping: lcp-interval index => lcp-interval data
-	 *
-	 * Initially, the lcp-interval data for an lcp-interval contains that
-	 * interval's lcp and superinterval index.
-	 *
-	 * After a lcp-interval is visited during match-finding, its
-	 * lcp-interval data contains that interval's lcp and the position of
-	 * the next suffix to consider as a match when matching against that
-	 * lcp-interval.  */
 	union {
 		u32 *intervals;
 		u64 *intervals64;
 	};
-
-	/* The suffix array  */
-	u32 *SA;
-
 	u32 min_match_len;
 	u32 nice_match_len;
 };
@@ -59,9 +41,6 @@ lcpit_matchfinder_init(struct lcpit_matchfinder *mf, size_t max_bufsize,
 		       u32 min_match_len, u32 nice_match_len);
 
 extern void
-lcpit_matchfinder_destroy(struct lcpit_matchfinder *mf);
-
-extern void
 lcpit_matchfinder_load_buffer(struct lcpit_matchfinder *mf, const u8 *T, u32 n);
 
 extern u32
@@ -70,5 +49,8 @@ lcpit_matchfinder_get_matches(struct lcpit_matchfinder *mf,
 
 extern void
 lcpit_matchfinder_skip_bytes(struct lcpit_matchfinder *mf, u32 count);
+
+extern void
+lcpit_matchfinder_destroy(struct lcpit_matchfinder *mf);
 
 #endif /* _LCPIT_MATCHFINDER_H */
