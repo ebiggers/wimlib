@@ -302,8 +302,8 @@ const u32 lzms_length_slot_base[LZMS_NUM_LENGTH_SYMS + 1] = {
 	0x0000009b, 0x000000ab, 0x000000cb, 0x000000eb,
 	0x0000012b, 0x000001ab, 0x000002ab, 0x000004ab,
 	0x000008ab, 0x000108ab, 0x400108ab,
-	/* The last entry is extra; it is equal to LZMS_MAX_MATCH_LEN + 1 and is
-	 * here to aid binary search.  */
+	/* The last entry is extra; it is equal to LZMS_MAX_MATCH_LENGTH + 1 and
+	 * is here to aid binary search.  */
 };
 
 /* Table: length slot => number of extra length bits  */
@@ -355,10 +355,17 @@ lzms_init_probability_entries(struct lzms_probability_entry *entries, size_t cou
 }
 
 void
-lzms_init_symbol_frequencies(u32 freqs[], size_t num_syms)
+lzms_init_symbol_frequencies(u32 freqs[], unsigned num_syms)
 {
-	for (size_t i = 0; i < num_syms; i++)
-		freqs[i] = 1;
+	for (unsigned sym = 0; sym < num_syms; sym++)
+		freqs[sym] = 1;
+}
+
+void
+lzms_dilute_symbol_frequencies(u32 freqs[], unsigned num_syms)
+{
+	for (unsigned sym = 0; sym < num_syms; sym++)
+		freqs[sym] = (freqs[sym] >> 1) + 1;
 }
 
 /*
@@ -528,8 +535,6 @@ lzms_x86_filter(u8 data[restrict], s32 size,
 	have_opcode:
 		if (undo) {
 			if (i - last_x86_pos <= max_trans_offset) {
-				LZMS_DEBUG("Undid x86 translation at position %d "
-					   "(opcode 0x%02x)", i, data[i]);
 				void *p32 = &data[i + opcode_nbytes];
 				u32 n = get_unaligned_u32_le(p32);
 				put_unaligned_u32_le(n - i, p32);
@@ -538,8 +543,6 @@ lzms_x86_filter(u8 data[restrict], s32 size,
 		} else {
 			target16 = i + get_unaligned_u16_le(&data[i + opcode_nbytes]);
 			if (i - last_x86_pos <= max_trans_offset) {
-				LZMS_DEBUG("Did x86 translation at position %d "
-					   "(opcode 0x%02x)", i, data[i]);
 				void *p32 = &data[i + opcode_nbytes];
 				u32 n = get_unaligned_u32_le(p32);
 				put_unaligned_u32_le(n + i, p32);

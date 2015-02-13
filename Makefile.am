@@ -61,7 +61,6 @@ libwim_la_SOURCES =		\
 	src/lcpit_matchfinder.c	\
 	src/lcpit_matchfinder_templates.h	\
 	src/lookup_table.c	\
-	src/lz_repsearch.c	\
 	src/lzms_common.c	\
 	src/lzms_compress.c	\
 	src/lzms_decompress.c	\
@@ -125,7 +124,6 @@ libwim_la_SOURCES =		\
 	include/wimlib/lookup_table.h	\
 	include/wimlib/lz_extend.h	\
 	include/wimlib/lz_hash.h	\
-	include/wimlib/lz_repsearch.h	\
 	include/wimlib/lzms_common.h	\
 	include/wimlib/lzms_constants.h	\
 	include/wimlib/lzx_common.h	\
