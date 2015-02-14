@@ -64,6 +64,7 @@
 #define WRITE_RESOURCE_FLAG_PIPABLE		0x00000002
 #define WRITE_RESOURCE_FLAG_SOLID		0x00000004
 #define WRITE_RESOURCE_FLAG_SEND_DONE_WITH_FILE	0x00000008
+#define WRITE_RESOURCE_FLAG_SOLID_SORT		0x00000010
 
 static inline int
 write_flags_to_resource_flags(int write_flags)
@@ -78,6 +79,10 @@ write_flags_to_resource_flags(int write_flags)
 		write_resource_flags |= WRITE_RESOURCE_FLAG_SOLID;
 	if (write_flags & WIMLIB_WRITE_FLAG_SEND_DONE_WITH_FILE_MESSAGES)
 		write_resource_flags |= WRITE_RESOURCE_FLAG_SEND_DONE_WITH_FILE;
+	if ((write_flags & (WIMLIB_WRITE_FLAG_SOLID |
+			    WIMLIB_WRITE_FLAG_NO_SOLID_SORT)) ==
+	    WIMLIB_WRITE_FLAG_SOLID)
+		write_resource_flags |= WRITE_RESOURCE_FLAG_SOLID_SORT;
 	return write_resource_flags;
 }
 
@@ -1590,7 +1595,7 @@ write_stream_list(struct list_head *stream_list,
 
 	compute_stream_list_stats(stream_list, &ctx);
 
-	if (write_resource_flags & WRITE_RESOURCE_FLAG_SOLID) {
+	if (write_resource_flags & WRITE_RESOURCE_FLAG_SOLID_SORT) {
 		ret = sort_stream_list_for_solid_compression(stream_list);
 		if (unlikely(ret))
 			WARNING("Failed to sort streams for solid compression. Continuing anyways.");

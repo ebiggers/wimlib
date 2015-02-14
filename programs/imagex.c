@@ -170,6 +170,7 @@ enum {
 	IMAGEX_NO_ATTRIBUTES_OPTION,
 	IMAGEX_NO_REPLACE_OPTION,
 	IMAGEX_NO_GLOBS_OPTION,
+	IMAGEX_NO_SOLID_SORT_OPTION,
 	IMAGEX_NULLGLOB_OPTION,
 	IMAGEX_ONE_FILE_ONLY_OPTION,
 	IMAGEX_PATH_OPTION,
@@ -232,6 +233,7 @@ static const struct option capture_or_append_options[] = {
 	{T("pack-compress"), required_argument, NULL, IMAGEX_SOLID_COMPRESS_OPTION},
 	{T("solid-chunk-size"),required_argument, NULL, IMAGEX_SOLID_CHUNK_SIZE_OPTION},
 	{T("pack-chunk-size"), required_argument, NULL, IMAGEX_SOLID_CHUNK_SIZE_OPTION},
+	{T("no-solid-sort"), no_argument,     NULL, IMAGEX_NO_SOLID_SORT_OPTION},
 	{T("config"),      required_argument, NULL, IMAGEX_CONFIG_OPTION},
 	{T("dereference"), no_argument,       NULL, IMAGEX_DEREFERENCE_OPTION},
 	{T("flags"),       required_argument, NULL, IMAGEX_FLAGS_OPTION},
@@ -281,6 +283,7 @@ static const struct option export_options[] = {
 	{T("pack-compress"), required_argument, NULL, IMAGEX_SOLID_COMPRESS_OPTION},
 	{T("solid-chunk-size"),required_argument, NULL, IMAGEX_SOLID_CHUNK_SIZE_OPTION},
 	{T("pack-chunk-size"), required_argument, NULL, IMAGEX_SOLID_CHUNK_SIZE_OPTION},
+	{T("no-solid-sort"), no_argument,     NULL, IMAGEX_NO_SOLID_SORT_OPTION},
 	{T("ref"),         required_argument, NULL, IMAGEX_REF_OPTION},
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
 	{T("rebuild"),     no_argument,       NULL, IMAGEX_REBUILD_OPTION},
@@ -354,6 +357,7 @@ static const struct option optimize_options[] = {
 	{T("pack-compress"), required_argument, NULL, IMAGEX_SOLID_COMPRESS_OPTION},
 	{T("solid-chunk-size"),required_argument, NULL, IMAGEX_SOLID_CHUNK_SIZE_OPTION},
 	{T("pack-chunk-size"), required_argument, NULL, IMAGEX_SOLID_CHUNK_SIZE_OPTION},
+	{T("no-solid-sort"), no_argument,     NULL, IMAGEX_NO_SOLID_SORT_OPTION},
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
 	{T("pipable"),     no_argument,       NULL, IMAGEX_PIPABLE_OPTION},
 	{T("not-pipable"), no_argument,       NULL, IMAGEX_NOT_PIPABLE_OPTION},
@@ -1816,6 +1820,9 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		case IMAGEX_SOLID_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_SOLID;
 			break;
+		case IMAGEX_NO_SOLID_SORT_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_NO_SOLID_SORT;
+			break;
 		case IMAGEX_FLAGS_OPTION:
 			flags_element = optarg;
 			break;
@@ -2689,6 +2696,9 @@ imagex_export(int argc, tchar **argv, int cmd)
 			break;
 		case IMAGEX_SOLID_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_SOLID;
+			break;
+		case IMAGEX_NO_SOLID_SORT_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_NO_SOLID_SORT;
 			break;
 		case IMAGEX_CHUNK_SIZE_OPTION:
 			chunk_size = parse_chunk_size(optarg);
@@ -3594,6 +3604,9 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 		case IMAGEX_SOLID_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_SOLID;
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
+			break;
+		case IMAGEX_NO_SOLID_SORT_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_NO_SOLID_SORT;
 			break;
 		case IMAGEX_THREADS_OPTION:
 			num_threads = parse_num_threads(optarg);

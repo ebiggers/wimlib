@@ -2262,6 +2262,13 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  */
 #define WIMLIB_WRITE_FLAG_SEND_DONE_WITH_FILE_MESSAGES	0x00002000
 
+/**
+ * If using solid compression, do not sort the streams ("files") to compress by
+ * estimated content similarily.  This flag only has an effect if
+ * ::WIMLIB_WRITE_FLAG_SOLID is also specified.
+ */
+#define WIMLIB_WRITE_FLAG_NO_SOLID_SORT			0x00004000
+
 /** @} */
 /** @addtogroup G_general
  * @{ */
