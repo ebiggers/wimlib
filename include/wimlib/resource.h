@@ -10,17 +10,17 @@ struct filedes;
 struct wim_lookup_table_entry;
 struct wim_image_metadata;
 
-/* Specification of a resource in a WIM file.
+/*
+ * Specification of a resource in a WIM file.
  *
- * If a `struct wim_lookup_table_entry' lte has
- * (lte->resource_location == RESOURCE_IN_WIM), then lte->wim_res_spec points to
- * an instance of this structure.
+ * If a `struct wim_lookup_table_entry' lte has (lte->resource_location ==
+ * RESOURCE_IN_WIM), then lte->rspec points to an instance of this structure.
  *
- * Normally, there is a one-to-one correspondence between WIM lookup table
- * entries ("streams", each of which may be the contents of a file, for example)
- * and WIM resources.  However, WIM resources with the
- * WIM_RESHDR_FLAG_PACKED_STREAMS flag set may actually contain multiple streams
- * compressed together.  */
+ * Normally, there is a one-to-one correspondence between lookup table entries
+ * ("streams", each of which may be the contents of a file, for example) and
+ * resources.  However, a resource with the WIM_RESHDR_FLAG_SOLID flag set is a
+ * "solid" resource that may contain multiple streams compressed together.
+ */
 struct wim_resource_spec {
 	/* The WIM containing this resource.  @wim->in_fd is expected to be a
 	 * file descriptor to the underlying WIM file, opened for reading.  */
@@ -97,32 +97,30 @@ struct wim_reshdr {
  * or XML data for the WIM.  */
 #define WIM_RESHDR_FLAG_METADATA        0x02
 
-/* The resource is compressed using the WIM's default compression type and uses
- * the regular chunk table format.  */
+/* The resource is a non-solid resource compressed using the WIM's default
+ * compression type.  */
 #define WIM_RESHDR_FLAG_COMPRESSED	0x04
 
 /* Unknown meaning; may be intended to indicate a partial stream.  Currently
  * ignored by wimlib.  */
 #define WIM_RESHDR_FLAG_SPANNED         0x08
 
-/* The resource is packed in a special format that may contain multiple
- * underlying streams, or this resource entry represents a stream packed into
- * one such resource.  When resources have this flag set, the WIM version number
- * should be WIM_VERSION_PACKED_STREAMS.  */
-#define WIM_RESHDR_FLAG_PACKED_STREAMS	0x10
+/* The resource is a solid compressed resource which may contain multiple
+ * streams.  This flag is only allowed if the WIM version number is
+ * WIM_VERSION_SOLID.  */
+#define WIM_RESHDR_FLAG_SOLID		0x10
 
 /* Magic number in the 'uncompressed_size' field of the resource header that
- * identifies the main entry for a pack.  */
-#define WIM_PACK_MAGIC_NUMBER		0x100000000ULL
+ * identifies the main entry for a solid resource.  */
+#define SOLID_RESOURCE_MAGIC_NUMBER	0x100000000ULL
 
-/* Returns true if the specified WIM resource is compressed, using either the
- * original chunk table layout or the alternate layout for resources that may
- * contain multiple packed streams.  */
+/* Returns true if the specified WIM resource is compressed (may be either solid
+ * or non-solid)  */
 static inline bool
 resource_is_compressed(const struct wim_resource_spec *rspec)
 {
 	return (rspec->flags & (WIM_RESHDR_FLAG_COMPRESSED |
-				WIM_RESHDR_FLAG_PACKED_STREAMS));
+				WIM_RESHDR_FLAG_SOLID));
 }
 
 static inline void
@@ -153,8 +151,8 @@ void
 put_wim_reshdr(const struct wim_reshdr *reshdr,
 	       struct wim_reshdr_disk *disk_reshdr);
 
-/* Alternate chunk table format for resources with
- * WIM_RESHDR_FLAG_PACKED_STREAMS set.  */
+/* Alternate chunk table format for resources with WIM_RESHDR_FLAG_SOLID set.
+ */
 struct alt_chunk_table_header_disk {
 	/* Uncompressed size of the resource in bytes.  */
 	le64 res_usize;

@@ -234,18 +234,18 @@ mounted with \fBwimlib-imagex mount\fR.  Also, WIMs created using this
 option use a different version number in their header and are only compatible
 with WIMGAPI Windows 8 and later, and DISM Windows 8.1 and later.
 .IP ""
-The default compression type and chunk size in solid blocks is LZMS with 2^25
+The default compression type and chunk size in solid resources is LZMS with 2^25
 (33554432) byte chunks.  This is independent of the WIM's main compression type
 and chunk size.
 .TP
 \fB--solid-chunk-size\fR=\fISIZE\fR
-Like \fB--chunk-size\fR, but set the chunk size used in solid blocks.  The
+Like \fB--chunk-size\fR, but set the chunk size used in solid resources.  The
 default is LZMS compression with 2^25 (33554432) byte chunks.  This option only
 has an effect when \fB--solid\fR is also specified.  For maximum compatibility
 with the Microsoft implementation, do not use either of these options.
 .TP
 \fB--solid-compress\fR=\fITYPE\fR[:\fILEVEL\fR]
-Like \fB--compress\fR, but set the compression type used in solid blocks.  The
+Like \fB--compress\fR, but set the compression type used in solid resources.  The
 default is LZMS compression with 2^25 (33554432) byte chunks.  This option only
 has an effect when \fB--solid\fR is also specified.  For maximum compatibility
 with the Microsoft implementation, do not use either of these options.

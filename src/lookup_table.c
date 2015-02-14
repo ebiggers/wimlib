@@ -589,13 +589,13 @@ struct wim_lookup_table_entry_disk {
 
 #define WIM_LOOKUP_TABLE_ENTRY_DISK_SIZE 50
 
-/* Given a nonempty run of consecutive lookup table entries with the
- * PACKED_STREAMS flag set, count how many specify resources (as opposed to
- * streams within those resources).
+/* Given a nonempty run of consecutive lookup table entries with the SOLID flag
+ * set, count how many specify resources (as opposed to streams within those
+ * resources).
  *
  * Returns the resulting count.  */
 static size_t
-count_subpacks(const struct wim_lookup_table_entry_disk *entries, size_t max)
+count_solid_resources(const struct wim_lookup_table_entry_disk *entries, size_t max)
 {
 	size_t count = 0;
 	do {
@@ -603,12 +603,12 @@ count_subpacks(const struct wim_lookup_table_entry_disk *entries, size_t max)
 
 		get_wim_reshdr(&(entries++)->reshdr, &reshdr);
 
-		if (!(reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS)) {
+		if (!(reshdr.flags & WIM_RESHDR_FLAG_SOLID)) {
 			/* Run was terminated by a stand-alone stream entry.  */
 			break;
 		}
 
-		if (reshdr.uncompressed_size == WIM_PACK_MAGIC_NUMBER) {
+		if (reshdr.uncompressed_size == SOLID_RESOURCE_MAGIC_NUMBER) {
 			/* This is a resource entry.  */
 			count++;
 		}
@@ -616,17 +616,19 @@ count_subpacks(const struct wim_lookup_table_entry_disk *entries, size_t max)
 	return count;
 }
 
-/* Given a run of consecutive lookup table entries with the PACKED_STREAMS flag
- * set and having @num_subpacks resource entries, load resource information from
- * them into the resource specifications in the @subpacks array.
+/*
+ * Given a run of consecutive lookup table entries with the SOLID flag set and
+ * having @num_rspecs resource entries, load resource information from them into
+ * the resource specifications in the @rspecs array.
  *
- * Returns 0 on success, or a nonzero error code on failure.  */
+ * Returns 0 on success, or a nonzero error code on failure.
+ */
 static int
-do_load_subpack_info(WIMStruct *wim, struct wim_resource_spec **subpacks,
-		     size_t num_subpacks,
-		     const struct wim_lookup_table_entry_disk *entries)
+do_load_solid_info(WIMStruct *wim, struct wim_resource_spec **rspecs,
+		   size_t num_rspecs,
+		   const struct wim_lookup_table_entry_disk *entries)
 {
-	for (size_t i = 0; i < num_subpacks; i++) {
+	for (size_t i = 0; i < num_rspecs; i++) {
 		struct wim_reshdr reshdr;
 		struct alt_chunk_table_header_disk hdr;
 		struct wim_resource_spec *rspec;
@@ -636,20 +638,20 @@ do_load_subpack_info(WIMStruct *wim, struct wim_resource_spec **subpacks,
 
 		do {
 			get_wim_reshdr(&(entries++)->reshdr, &reshdr);
-		} while (reshdr.uncompressed_size != WIM_PACK_MAGIC_NUMBER);
+		} while (reshdr.uncompressed_size != SOLID_RESOURCE_MAGIC_NUMBER);
 
-		rspec = subpacks[i];
+		rspec = rspecs[i];
 
 		wim_res_hdr_to_spec(&reshdr, wim, rspec);
 
-		/* For packed resources, the uncompressed size, compression
-		 * type, and chunk size are stored in the resource itself, not
-		 * in the lookup table.  */
+		/* For solid resources, the uncompressed size, compression type,
+		 * and chunk size are stored in the resource itself, not in the
+		 * lookup table.  */
 
 		ret = full_pread(&wim->in_fd, &hdr,
 				 sizeof(hdr), reshdr.offset_in_wim);
 		if (ret) {
-			ERROR("Failed to read header of packed resource "
+			ERROR("Failed to read header of solid resource "
 			      "(offset_in_wim=%"PRIu64")",
 			      reshdr.offset_in_wim);
 			return ret;
@@ -667,9 +669,9 @@ do_load_subpack_info(WIMStruct *wim, struct wim_resource_spec **subpacks,
 
 		rspec->chunk_size = le32_to_cpu(hdr.chunk_size);
 
-		DEBUG("Subpack %zu/%zu: %"PRIu64" => %"PRIu64" "
+		DEBUG("Solid resource %zu/%zu: %"PRIu64" => %"PRIu64" "
 		      "(%"TS"/%"PRIu32") @ +%"PRIu64"",
-		      i + 1, num_subpacks,
+		      i + 1, num_rspecs,
 		      rspec->uncompressed_size,
 		      rspec->size_in_wim,
 		      wimlib_get_compression_type_string(rspec->compression_type),
@@ -680,88 +682,87 @@ do_load_subpack_info(WIMStruct *wim, struct wim_resource_spec **subpacks,
 	return 0;
 }
 
-/* Given a nonempty run of consecutive lookup table entries with the
- * PACKED_STREAMS flag set, allocate a 'struct wim_resource_spec' for each
- * resource within that run.
+/*
+ * Given a nonempty run of consecutive lookup table entries with the SOLID flag
+ * set, allocate a 'struct wim_resource_spec' for each resource within that run.
  *
  * Returns 0 on success, or a nonzero error code on failure.
- * Returns the pointers and count in *subpacks_ret and *num_subpacks_ret.
+ * Returns the pointers and count in *rspecs_ret and *num_rspecs_ret.
  */
 static int
-load_subpack_info(WIMStruct *wim,
-		  const struct wim_lookup_table_entry_disk *entries,
-		  size_t num_remaining_entries,
-		  struct wim_resource_spec ***subpacks_ret,
-		  size_t *num_subpacks_ret)
+load_solid_info(WIMStruct *wim,
+		const struct wim_lookup_table_entry_disk *entries,
+		size_t num_remaining_entries,
+		struct wim_resource_spec ***rspecs_ret,
+		size_t *num_rspecs_ret)
 {
-	size_t num_subpacks;
-	struct wim_resource_spec **subpacks;
+	size_t num_rspecs;
+	struct wim_resource_spec **rspecs;
 	size_t i;
 	int ret;
 
-	num_subpacks = count_subpacks(entries, num_remaining_entries);
-	subpacks = CALLOC(num_subpacks, sizeof(subpacks[0]));
-	if (!subpacks)
+	num_rspecs = count_solid_resources(entries, num_remaining_entries);
+	rspecs = CALLOC(num_rspecs, sizeof(rspecs[0]));
+	if (!rspecs)
 		return WIMLIB_ERR_NOMEM;
 
-	for (i = 0; i < num_subpacks; i++) {
-		subpacks[i] = MALLOC(sizeof(struct wim_resource_spec));
-		if (!subpacks[i]) {
+	for (i = 0; i < num_rspecs; i++) {
+		rspecs[i] = MALLOC(sizeof(struct wim_resource_spec));
+		if (!rspecs[i]) {
 			ret = WIMLIB_ERR_NOMEM;
-			goto out_free_subpacks;
+			goto out_free_rspecs;
 		}
 	}
 
-	ret = do_load_subpack_info(wim, subpacks, num_subpacks, entries);
+	ret = do_load_solid_info(wim, rspecs, num_rspecs, entries);
 	if (ret)
-		goto out_free_subpacks;
+		goto out_free_rspecs;
 
-	*subpacks_ret = subpacks;
-	*num_subpacks_ret = num_subpacks;
+	*rspecs_ret = rspecs;
+	*num_rspecs_ret = num_rspecs;
 	return 0;
 
-out_free_subpacks:
-	for (i = 0; i < num_subpacks; i++)
-		FREE(subpacks[i]);
-	FREE(subpacks);
+out_free_rspecs:
+	for (i = 0; i < num_rspecs; i++)
+		FREE(rspecs[i]);
+	FREE(rspecs);
 	return ret;
 }
 
-/* Given a 'struct wim_lookup_table_entry' allocated for a stream entry with
- * PACKED_STREAMS set, try to bind it to a subpack of the current PACKED_STREAMS
- * run.  */
+/* Given a 'struct wim_lookup_table_entry' allocated for a stream entry with the
+ * SOLID flag set, try to bind it to resource in the current solid run.  */
 static int
-bind_stream_to_subpack(const struct wim_reshdr *reshdr,
-		       struct wim_lookup_table_entry *stream,
-		       struct wim_resource_spec **subpacks,
-		       size_t num_subpacks)
+bind_stream_to_solid_resource(const struct wim_reshdr *reshdr,
+			      struct wim_lookup_table_entry *stream,
+			      struct wim_resource_spec **rspecs,
+			      size_t num_rspecs)
 {
 	u64 offset = reshdr->offset_in_wim;
 
 	/* XXX: This linear search will be slow in the degenerate case where the
-	 * number of subpacks is huge.  */
+	 * number of solid resources in the run is huge.  */
 	stream->size = reshdr->size_in_wim;
 	stream->flags = reshdr->flags;
-	for (size_t i = 0; i < num_subpacks; i++) {
-		if (offset + stream->size <= subpacks[i]->uncompressed_size) {
+	for (size_t i = 0; i < num_rspecs; i++) {
+		if (offset + stream->size <= rspecs[i]->uncompressed_size) {
 			stream->offset_in_res = offset;
-			lte_bind_wim_resource_spec(stream, subpacks[i]);
+			lte_bind_wim_resource_spec(stream, rspecs[i]);
 			return 0;
 		}
-		offset -= subpacks[i]->uncompressed_size;
+		offset -= rspecs[i]->uncompressed_size;
 	}
-	ERROR("Packed stream could not be assigned to any resource");
+	ERROR("Stream could not be assigned to a solid resource");
 	return WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
 }
 
 static void
-free_subpack_info(struct wim_resource_spec **subpacks, size_t num_subpacks)
+free_solid_rspecs(struct wim_resource_spec **rspecs, size_t num_rspecs)
 {
-	if (subpacks) {
-		for (size_t i = 0; i < num_subpacks; i++)
-			if (list_empty(&subpacks[i]->stream_list))
-				FREE(subpacks[i]);
-		FREE(subpacks);
+	if (rspecs) {
+		for (size_t i = 0; i < num_rspecs; i++)
+			if (list_empty(&rspecs[i]->stream_list))
+				FREE(rspecs[i]);
+		FREE(rspecs);
 	}
 }
 
@@ -831,20 +832,20 @@ invalid_due_to_overflow:
 	return WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
 
 invalid_due_to_overlap:
-	ERROR("Invalid resource entry (streams in packed resource overlap)");
+	ERROR("Invalid resource entry (streams in solid resource overlap)");
 	return WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
 }
 
 static int
-finish_subpacks(struct wim_resource_spec **subpacks, size_t num_subpacks)
+finish_solid_rspecs(struct wim_resource_spec **rspecs, size_t num_rspecs)
 {
 	int ret = 0;
-	for (size_t i = 0; i < num_subpacks; i++) {
-		ret = validate_resource(subpacks[i]);
+	for (size_t i = 0; i < num_rspecs; i++) {
+		ret = validate_resource(rspecs[i]);
 		if (ret)
 			break;
 	}
-	free_subpack_info(subpacks, num_subpacks);
+	free_solid_rspecs(rspecs, num_rspecs);
 	return ret;
 }
 
@@ -858,16 +859,16 @@ finish_subpacks(struct wim_resource_spec **subpacks, size_t num_subpacks)
  * per-image location (the wim->image_metadata array).
  *
  * This works for both version WIM_VERSION_DEFAULT (68864) and version
- * WIM_VERSION_PACKED_STREAMS (3584) WIMs.  In the latter, a consecutive run of
- * lookup table entries that all have flag WIM_RESHDR_FLAG_PACKED_STREAMS (0x10)
- * set is a "packed run".  A packed run logically contains zero or more
- * resources, each of which logically contains zero or more streams.
- * Physically, in such a run, a "lookup table entry" with uncompressed size
- * WIM_PACK_MAGIC_NUMBER (0x100000000) specifies a resource, whereas any other
- * entry specifies a stream.  Within such a run, stream entries and resource
- * entries need not be in any particular order, except that the order of the
- * resource entries is important, as it affects how streams are assigned to
- * resources.  See the code for details.
+ * WIM_VERSION_SOLID (3584) WIMs.  In the latter, a consecutive run of lookup
+ * table entries that all have flag WIM_RESHDR_FLAG_SOLID (0x10) set is a "solid
+ * run".  A solid run logically contains zero or more resources, each of which
+ * logically contains zero or more streams.  Physically, in such a run, a
+ * "lookup table entry" with uncompressed size SOLID_RESOURCE_MAGIC_NUMBER
+ * (0x100000000) specifies a resource, whereas any other entry specifies a
+ * stream.  Within such a run, stream entries and resource entries need not be
+ * in any particular order, except that the order of the resource entries is
+ * important, as it affects how streams are assigned to resources.  See the code
+ * for details.
  *
  * Possible return values:
  *	WIMLIB_ERR_SUCCESS (0)
@@ -888,8 +889,8 @@ read_wim_lookup_table(WIMStruct *wim)
 	size_t num_duplicate_entries = 0;
 	size_t num_wrong_part_entries = 0;
 	u32 image_index = 0;
-	struct wim_resource_spec **cur_subpacks = NULL;
-	size_t cur_num_subpacks = 0;
+	struct wim_resource_spec **cur_solid_rspecs = NULL;
+	size_t cur_num_solid_rspecs = 0;
 
 	DEBUG("Reading lookup table.");
 
@@ -916,7 +917,7 @@ read_wim_lookup_table(WIMStruct *wim)
 	 * wim_lookup_table_entry's) from the raw lookup table buffer.  Each of
 	 * these entries will point to a 'struct wim_resource_spec' that
 	 * describes the underlying resource.  In WIMs with version number
-	 * WIM_VERSION_PACKED_STREAMS, a resource may contain multiple streams.
+	 * WIM_VERSION_SOLID, a resource may contain multiple streams.
 	 */
 	for (size_t i = 0; i < num_entries; i++) {
 		const struct wim_lookup_table_entry_disk *disk_entry =
@@ -934,10 +935,10 @@ read_wim_lookup_table(WIMStruct *wim)
 		      reshdr.size_in_wim, reshdr.uncompressed_size,
 		      reshdr.offset_in_wim, reshdr.flags);
 
-		/* Ignore PACKED_STREAMS flag if it isn't supposed to be used in
-		 * this WIM version.  */
+		/* Ignore SOLID flag if it isn't supposed to be used in this WIM
+		 * version.  */
 		if (wim->hdr.wim_version == WIM_VERSION_DEFAULT)
-			reshdr.flags &= ~WIM_RESHDR_FLAG_PACKED_STREAMS;
+			reshdr.flags &= ~WIM_RESHDR_FLAG_SOLID;
 
 		/* Allocate a new 'struct wim_lookup_table_entry'.  */
 		cur_entry = new_lookup_table_entry();
@@ -949,45 +950,44 @@ read_wim_lookup_table(WIMStruct *wim)
 		cur_entry->refcnt = le32_to_cpu(disk_entry->refcnt);
 		copy_hash(cur_entry->hash, disk_entry->hash);
 
-		if (reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
+		if (reshdr.flags & WIM_RESHDR_FLAG_SOLID) {
 
-			/* PACKED_STREAMS entry  */
+			/* SOLID entry  */
 
-			if (!cur_subpacks) {
+			if (!cur_solid_rspecs) {
 				/* Starting new run  */
-				ret = load_subpack_info(wim, disk_entry,
-							num_entries - i,
-							&cur_subpacks,
-							&cur_num_subpacks);
+				ret = load_solid_info(wim, disk_entry,
+						      num_entries - i,
+						      &cur_solid_rspecs,
+						      &cur_num_solid_rspecs);
 				if (ret)
 					goto out;
 			}
 
-			if (reshdr.uncompressed_size == WIM_PACK_MAGIC_NUMBER) {
+			if (reshdr.uncompressed_size == SOLID_RESOURCE_MAGIC_NUMBER) {
 				/* Resource entry, not stream entry  */
 				goto free_cur_entry_and_continue;
 			}
 
 			/* Stream entry  */
 
-			ret = bind_stream_to_subpack(&reshdr,
-						     cur_entry,
-						     cur_subpacks,
-						     cur_num_subpacks);
+			ret = bind_stream_to_solid_resource(&reshdr,
+							    cur_entry,
+							    cur_solid_rspecs,
+							    cur_num_solid_rspecs);
 			if (ret)
 				goto out;
 
 		} else {
-			/* Normal stream/resource entry; PACKED_STREAMS not set.
-			 */
+			/* Normal stream/resource entry; SOLID not set.  */
 
 			struct wim_resource_spec *rspec;
 
-			if (unlikely(cur_subpacks)) {
-				/* This entry terminated a packed run.  */
-				ret = finish_subpacks(cur_subpacks,
-						      cur_num_subpacks);
-				cur_subpacks = NULL;
+			if (unlikely(cur_solid_rspecs)) {
+				/* This entry terminated a solid run.  */
+				ret = finish_solid_rspecs(cur_solid_rspecs,
+							  cur_num_solid_rspecs);
+				cur_solid_rspecs = NULL;
 				if (ret)
 					goto out;
 			}
@@ -1107,17 +1107,17 @@ read_wim_lookup_table(WIMStruct *wim)
 		continue;
 
 	free_cur_entry_and_continue:
-		if (cur_subpacks &&
+		if (cur_solid_rspecs &&
 		    cur_entry->resource_location == RESOURCE_IN_WIM)
 			lte_unbind_wim_resource_spec(cur_entry);
 		free_lookup_table_entry(cur_entry);
 	}
 	cur_entry = NULL;
 
-	if (cur_subpacks) {
-		/* End of lookup table terminated a packed run.  */
-		ret = finish_subpacks(cur_subpacks, cur_num_subpacks);
-		cur_subpacks = NULL;
+	if (cur_solid_rspecs) {
+		/* End of lookup table terminated a solid run.  */
+		ret = finish_solid_rspecs(cur_solid_rspecs, cur_num_solid_rspecs);
+		cur_solid_rspecs = NULL;
 		if (ret)
 			goto out;
 	}
@@ -1148,7 +1148,7 @@ oom:
 	ERROR("Not enough memory to read lookup table!");
 	ret = WIMLIB_ERR_NOMEM;
 out:
-	free_subpack_info(cur_subpacks, cur_num_subpacks);
+	free_solid_rspecs(cur_solid_rspecs, cur_num_solid_rspecs);
 	free_lookup_table_entry(cur_entry);
 	free_lookup_table(table);
 out_free_buf:
@@ -1168,7 +1168,7 @@ put_wim_lookup_table_entry(struct wim_lookup_table_entry_disk *disk_entry,
 }
 
 /* Note: the list of stream entries must be sorted so that all entries for the
- * same packed resource are consecutive.  In addition, entries with
+ * same solid resource are consecutive.  In addition, entries with
  * WIM_RESHDR_FLAG_METADATA set must be in the same order as the indices of the
  * underlying images.  */
 int
@@ -1191,7 +1191,7 @@ write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
 	list_for_each_entry(lte, stream_list, lookup_table_list) {
 		table_size += sizeof(struct wim_lookup_table_entry_disk);
 
-		if (lte->out_reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS &&
+		if (lte->out_reshdr.flags & WIM_RESHDR_FLAG_SOLID &&
 		    lte->out_res_offset_in_wim != prev_res_offset_in_wim)
 		{
 			table_size += sizeof(struct wim_lookup_table_entry_disk);
@@ -1214,19 +1214,19 @@ write_wim_lookup_table_from_stream_list(struct list_head *stream_list,
 	prev_uncompressed_size = 0;
 	logical_offset = 0;
 	list_for_each_entry(lte, stream_list, lookup_table_list) {
-		if (lte->out_reshdr.flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
+		if (lte->out_reshdr.flags & WIM_RESHDR_FLAG_SOLID) {
 			struct wim_reshdr tmp_reshdr;
 
-			/* Eww.  When WIMGAPI sees multiple resource packs, it
+			/* Eww.  When WIMGAPI sees multiple solid resources, it
 			 * expects the offsets to be adjusted as if there were
-			 * really only one pack.  */
+			 * really only one solid resource.  */
 
 			if (lte->out_res_offset_in_wim != prev_res_offset_in_wim) {
-				/* Put the resource entry for pack  */
+				/* Put the resource entry for solid resource  */
 				tmp_reshdr.offset_in_wim = lte->out_res_offset_in_wim;
 				tmp_reshdr.size_in_wim = lte->out_res_size_in_wim;
-				tmp_reshdr.uncompressed_size = WIM_PACK_MAGIC_NUMBER;
-				tmp_reshdr.flags = WIM_RESHDR_FLAG_PACKED_STREAMS;
+				tmp_reshdr.uncompressed_size = SOLID_RESOURCE_MAGIC_NUMBER;
+				tmp_reshdr.flags = WIM_RESHDR_FLAG_SOLID;
 
 				put_wim_lookup_table_entry(table_buf_ptr++,
 							   &tmp_reshdr,
@@ -1373,7 +1373,7 @@ lte_to_wimlib_resource_entry(const struct wim_lookup_table_entry *lte,
 	wentry->uncompressed_size = lte->size;
 	if (lte->resource_location == RESOURCE_IN_WIM) {
 		wentry->part_number = lte->rspec->wim->hdr.part_number;
-		if (lte->flags & WIM_RESHDR_FLAG_PACKED_STREAMS) {
+		if (lte->flags & WIM_RESHDR_FLAG_SOLID) {
 			wentry->compressed_size = 0;
 			wentry->offset = lte->offset_in_res;
 		} else {
@@ -1390,7 +1390,7 @@ lte_to_wimlib_resource_entry(const struct wim_lookup_table_entry *lte,
 	wentry->is_metadata = (lte->flags & WIM_RESHDR_FLAG_METADATA) != 0;
 	wentry->is_free = (lte->flags & WIM_RESHDR_FLAG_FREE) != 0;
 	wentry->is_spanned = (lte->flags & WIM_RESHDR_FLAG_SPANNED) != 0;
-	wentry->packed = (lte->flags & WIM_RESHDR_FLAG_PACKED_STREAMS) != 0;
+	wentry->packed = (lte->flags & WIM_RESHDR_FLAG_SOLID) != 0;
 }
 
 struct iterate_lte_context {

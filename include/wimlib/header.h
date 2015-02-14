@@ -16,12 +16,12 @@
 /* Default WIM version number.  Streams are always compressed independently.  */
 #define WIM_VERSION_DEFAULT 0x10d00
 
-/* Version number used for WIMs that allow multiple streams packed into one
- * resource ("solid blocks", marked by WIM_RESHDR_FLAG_PACKED_STREAMS) and also
- * a new compression format (LZMS).  This version is new as of Windows 8
- * WIMGAPI.  Although it is used by Windows 8 web downloader, it is not yet
- * properly documented by Microsoft.  */
-#define WIM_VERSION_PACKED_STREAMS 0xe00
+/* Version number used for WIMs that allow multiple streams combined into one
+ * resource ("solid resources", marked by WIM_RESHDR_FLAG_SOLID) and also a new
+ * compression format (LZMS).  This version is new as of Windows 8 WIMGAPI.
+ * Although it is used by Windows 8 web downloader, it is not yet properly
+ * documented by Microsoft.  */
+#define WIM_VERSION_SOLID 0xe00
 
 /* Note: there is another WIM version from Vista pre-releases, but it is not
  * supported by wimlib.  */
@@ -66,10 +66,9 @@ struct wim_header_disk {
 	/* +0x10: Flags for the WIM file (WIM_HDR_FLAG_*).  */
 	u32 wim_flags;
 
-	/* +0x14: Uncompressed chunk size for compressed resources in the WIM
-	 * other than packed resources, or 0 if the WIM is uncompressed.
-	 * (However wimlib will currently accept any value here if the WIM is
-	 * uncompressed.)  */
+	/* +0x14: Uncompressed chunk size for non-solid compressed resources in
+	 * the WIM or 0 if the WIM is uncompressed.  (However wimlib will accept
+	 * any value here if the WIM is uncompressed.)  */
 	u32 chunk_size;
 
 	/* +0x18: Globally unique identifier for the WIM file.  Basically a
@@ -188,8 +187,8 @@ struct wim_header {
 
 /* Resources in the WIM with WIM_RESHDR_FLAG_COMPRESSED set in their headers are
  * compressed with LZMS compression.  Note: this flag is only valid if the WIM
- * version is WIM_VERSION_PACKED_STREAMS.  Also, this flag is only supported in
- * wimlib v1.6.0 and later and WIMGAPI Windows 8 and later.  */
+ * version is WIM_VERSION_SOLID.  Also, this flag is only supported in wimlib
+ * v1.6.0 and later and WIMGAPI Windows 8 and later.  */
 #define WIM_HDR_FLAG_COMPRESS_LZMS      0x00080000
 
 /* XPRESS, with small chunk size???  */

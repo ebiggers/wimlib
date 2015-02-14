@@ -1392,7 +1392,7 @@ struct wimlib_wim_info {
 };
 
 /** Information about a unique stream in the WIM file.  (A stream is the same
- * thing as a "resource", except in the case of packed resources.)  */
+ * thing as a "resource", except in the case of solid resources.)  */
 struct wimlib_resource_entry {
 	/** Uncompressed size of the stream in bytes. */
 	uint64_t uncompressed_size;
@@ -1404,7 +1404,7 @@ struct wimlib_resource_entry {
 
 	/** Offset, in bytes, of this stream from the start of the WIM file.  Or
 	 * if @p packed is 1, then this is actually the offset at which this
-	 * stream begins in the uncompressed contents of the packed resource.
+	 * stream begins in the uncompressed contents of the solid resource.
 	 */
 	uint64_t offset;
 
@@ -1433,18 +1433,18 @@ struct wimlib_resource_entry {
 	 * */
 	uint32_t is_missing : 1;
 
-	/** 1 if this stream is located in a packed resource which may contain
+	/** 1 if this stream is located in a solid resource which may contain
 	 * other streams (all compressed together) as well.  */
 	uint32_t packed : 1;
 
 	uint32_t reserved_flags : 26;
 
-	/** If @p packed is 1, then this will specify the offset of the packed
+	/** If @p packed is 1, then this will specify the offset of the solid
 	 * resource in the WIM.  */
 	uint64_t raw_resource_offset_in_wim;
 
 	/** If @p packed is 1, then this will specify the compressed size of the
-	 * packed resource in the WIM.  */
+	 * solid resource in the WIM.  */
 	uint64_t raw_resource_compressed_size;
 
 	uint64_t reserved[2];
@@ -2119,10 +2119,10 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * wimlib_set_default_compression_level() can be called beforehand to set an
  * even higher compression level than the default.
  *
- * If the WIM contains solid blocks, then ::WIMLIB_WRITE_FLAG_RECOMPRESS can be
- * used in combination with ::WIMLIB_WRITE_FLAG_PACK_STREAMS to prevent any
- * solid blocks from being re-used.  Otherwise, solid blocks are re-used
- * somewhat more liberally than normal compressed blocks.
+ * If the WIM contains solid resources, then ::WIMLIB_WRITE_FLAG_RECOMPRESS can
+ * be used in combination with ::WIMLIB_WRITE_FLAG_SOLID to prevent any solid
+ * resources from being re-used.  Otherwise, solid resources are re-used
+ * somewhat more liberally than normal compressed resources.
  *
  * ::WIMLIB_WRITE_FLAG_RECOMPRESS does <b>not</b> cause recompression of streams
  * that would not otherwise be written.  For example, a call to
@@ -2216,8 +2216,8 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 #define WIMLIB_WRITE_FLAG_RETAIN_GUID			0x00000800
 
 /**
- * When writing streams in the resulting WIM file, pack multiple streams into a
- * single compressed resource instead of compressing them independently.  This
+ * When writing streams in the resulting WIM file, combine multiple streams into
+ * a single compressed resource instead of compressing them independently.  This
  * is also known as creating a "solid archive".  This tends to produce a better
  * compression ratio at the cost of much slower random access.
  *
@@ -2231,23 +2231,29 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * ::WIMLIB_WRITE_FLAG_RECOMPRESS to force the entire WIM file be rebuilt with
  * all streams recompressed in solid mode.
  *
- * Currently, new solid blocks will, by default, be written using LZMS
+ * Currently, new solid resources will, by default, be written using LZMS
  * compression with 32 MiB (33554432 byte) chunks.  Use
  * wimlib_set_output_pack_compression_type() and/or
  * wimlib_set_output_pack_chunk_size() to change this.  This is independent of
  * the WIM's main compression type and chunk size; you can have a WIM that
  * nominally uses LZX compression and 32768 byte chunks but actually contains
- * LZMS-compressed solid blocks, for example.  However, if including solid
+ * LZMS-compressed solid resources, for example.  However, if including solid
  * blocks, I suggest that you set the WIM's main compression type to LZMS as
  * well, either by creating the WIM with
  * ::wimlib_create_new_wim(::WIMLIB_COMPRESSION_TYPE_LZMS, ...) or by calling
  * ::wimlib_set_output_compression_type(..., ::WIMLIB_COMPRESSION_TYPE_LZMS).
  *
  * This flag will be set by default when writing or overwriting a WIM file that
- * either already contains packed streams, or has had packed streams exported
+ * either already contains solid resources, or has had solid resources exported
  * into it and the WIM's main compression type is LZMS.
  */
-#define WIMLIB_WRITE_FLAG_PACK_STREAMS			0x00001000
+#define WIMLIB_WRITE_FLAG_SOLID				0x00001000
+
+/**
+ * Deprecated: this is the old name for ::WIMLIB_WRITE_FLAG_SOLID, retained for
+ * source compatibility.
+ */
+#define WIMLIB_WRITE_FLAG_PACK_STREAMS			WIMLIB_WRITE_FLAG_SOLID
 
 /**
  * Send ::WIMLIB_PROGRESS_MSG_DONE_WITH_FILE messages while writing the WIM
@@ -4031,7 +4037,7 @@ wimlib_set_output_chunk_size(WIMStruct *wim, uint32_t chunk_size);
  * @ingroup G_writing_and_overwriting_wims
  *
  * Similar to wimlib_set_output_chunk_size(), but set the chunk size for writing
- * packed streams (solid blocks).
+ * solid resources.
  */
 extern int
 wimlib_set_output_pack_chunk_size(WIMStruct *wim, uint32_t chunk_size);
@@ -4062,7 +4068,7 @@ wimlib_set_output_compression_type(WIMStruct *wim, int ctype);
  * @ingroup G_writing_and_overwriting_wims
  *
  * Similar to wimlib_set_output_compression_type(), but set the compression type
- * for writing packed streams (solid blocks).
+ * for writing solid resources.
  */
 extern int
 wimlib_set_output_pack_compression_type(WIMStruct *wim, int ctype);

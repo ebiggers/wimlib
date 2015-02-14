@@ -88,12 +88,12 @@ compatibility.  See the documentation for this option to \fBwimlib-imagex
 capture\fR (1) for more details.
 .TP
 \fB--solid-chunk-size\fR=\fISIZE\fR
-Like \fB--chunk-size\fR, but set the chunk size used in solid blocks.  See the
+Like \fB--chunk-size\fR, but set the chunk size used in solid resources.  See the
 documentation for this option to \fBwimlib-imagex capture\fR (1) for more
 details.
 .TP
 \fB--solid-compress\fR=\fITYPE\fR[:\fILEVEL\fR]
-Like \fB--compress\fR, but set the compression type used in solid blocks.  See
+Like \fB--compress\fR, but set the compression type used in solid resources.  See
 the documentation for this option to \fBwimlib-imagex capture\fR (1) for
 more details.
 .TP
@@ -170,7 +170,7 @@ image's metadata resource, which describes the full directory structure, will
 always be created.
 .PP
 \fIESD files\fR: wimlib v1.6.0 and later can export images from version 3584
-WIMs, which usually contain LZMS-compressed solid blocks and may carry the
+WIMs, which usually contain LZMS-compressed solid resources and may carry the
 \fI.esd\fR file extension rather than \fI.wim\fR.  However, \fI.esd\fR files
 downloaded directly by the Windows 8 web downloader have encrypted segments, and
 wimlib cannot export images from such files until they are first decrypted.  In

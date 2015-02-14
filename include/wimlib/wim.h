@@ -129,9 +129,9 @@ struct WIMStruct {
 	 * the same as compression_type.  */
 	u8 out_compression_type;
 
-	/* Compression type for writing packed streams; can be set with
+	/* Compression type for writing solid resources; can be set with
 	 * wimlib_set_output_pack_compression_type().  */
-	u8 out_pack_compression_type;
+	u8 out_solid_compression_type;
 
 	/* If this WIM is backed by a file, then this is the compression chunk
 	 * size for non-solid resources in that file.  */
@@ -142,9 +142,9 @@ struct WIMStruct {
 	 * as chunk_size.  */
 	u32 out_chunk_size;
 
-	/* Chunk size for writing packed streams; can be set with
+	/* Chunk size for writing solid resources; can be set with
 	 * wimlib_set_output_pack_chunk_size().  */
-	u32 out_pack_chunk_size;
+	u32 out_solid_chunk_size;
 
 	/* Currently registered progress function for this WIMStruct, or NULL if
 	 * no progress function is currently registered for this WIMStruct.  */

@@ -169,7 +169,7 @@ read_compressed_wim_resource(const struct wim_resource_spec * const rspec,
 	const bool is_pipe_read = (rspec->is_pipable && !filedes_is_seekable(in_fd));
 
 	/* Determine if the chunk table is in an alternate format.  */
-	const bool alt_chunk_table = (rspec->flags & WIM_RESHDR_FLAG_PACKED_STREAMS)
+	const bool alt_chunk_table = (rspec->flags & WIM_RESHDR_FLAG_SOLID)
 					&& !is_pipe_read;
 
 	/* Get the maximum size of uncompressed chunks in this resource, which
@@ -742,7 +742,7 @@ int
 skip_wim_stream(struct wim_lookup_table_entry *lte)
 {
 	wimlib_assert(lte->resource_location == RESOURCE_IN_WIM);
-	wimlib_assert(!(lte->flags & WIM_RESHDR_FLAG_PACKED_STREAMS));
+	wimlib_assert(!(lte->flags & WIM_RESHDR_FLAG_SOLID));
 	DEBUG("Skipping stream (size=%"PRIu64")", lte->size);
 	return read_partial_wim_resource(lte->rspec,
 					 0,
@@ -1187,11 +1187,11 @@ read_full_stream_with_sha1(struct wim_lookup_table_entry *lte,
 }
 
 static int
-read_packed_streams(struct wim_lookup_table_entry *first_stream,
-		    struct wim_lookup_table_entry *last_stream,
-		    u64 stream_count,
-		    size_t list_head_offset,
-		    const struct read_stream_list_callbacks *sink_cbs)
+read_streams_in_solid_resource(struct wim_lookup_table_entry *first_stream,
+			       struct wim_lookup_table_entry *last_stream,
+			       u64 stream_count,
+			       size_t list_head_offset,
+			       const struct read_stream_list_callbacks *sink_cbs)
 {
 	struct data_range *ranges;
 	bool ranges_malloced;
@@ -1266,8 +1266,8 @@ read_packed_streams(struct wim_lookup_table_entry *first_stream,
  * Read a list of streams, each of which may be in any supported location (e.g.
  * in a WIM or in an external file).  Unlike read_stream_prefix() or the
  * functions which call it, this function optimizes the case where multiple
- * streams are packed into a single compressed WIM resource and reads them all
- * consecutively, only decompressing the data one time.
+ * streams are combined into a single solid compressed WIM resource and reads
+ * them all consecutively, only decompressing the data one time.
  *
  * @stream_list
  *	List of streams (represented as `struct wim_lookup_table_entry's) to
@@ -1344,7 +1344,7 @@ read_stream_list(struct list_head *stream_list,
 	{
 		lte = (struct wim_lookup_table_entry*)((u8*)cur - list_head_offset);
 
-		if (lte->flags & WIM_RESHDR_FLAG_PACKED_STREAMS &&
+		if (lte->flags & WIM_RESHDR_FLAG_SOLID &&
 		    lte->size != lte->rspec->uncompressed_size)
 		{
 
@@ -1380,10 +1380,10 @@ read_stream_list(struct list_head *stream_list,
 				 * read and @lte_last specifies the last stream
 				 * in the resource that needs to be read.  */
 				next = next2;
-				ret = read_packed_streams(lte, lte_last,
-							  stream_count,
-							  list_head_offset,
-							  sink_cbs);
+				ret = read_streams_in_solid_resource(lte, lte_last,
+								     stream_count,
+								     list_head_offset,
+								     sink_cbs);
 				if (ret)
 					return ret;
 				continue;
@@ -1469,7 +1469,7 @@ sha1_stream(struct wim_lookup_table_entry *lte)
 /* Convert a short WIM resource header to a stand-alone WIM resource
  * specification.
  *
- * Note: for packed resources some fields still need to be overridden.
+ * Note: for solid resources some fields still need to be overridden.
  */
 void
 wim_res_hdr_to_spec(const struct wim_reshdr *reshdr, WIMStruct *wim,

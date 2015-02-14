@@ -51,13 +51,13 @@
 #endif
 
 static int
-wim_default_pack_compression_type(void)
+wim_default_solid_compression_type(void)
 {
 	return WIMLIB_COMPRESSION_TYPE_LZMS;
 }
 
 static u32
-wim_default_pack_chunk_size(int ctype) {
+wim_default_solid_chunk_size(int ctype) {
 	switch (ctype) {
 	case WIMLIB_COMPRESSION_TYPE_LZMS:
 		return 1U << 25; /* 33554432  */
@@ -75,9 +75,9 @@ new_wim_struct(void)
 
 	filedes_invalidate(&wim->in_fd);
 	filedes_invalidate(&wim->out_fd);
-	wim->out_pack_compression_type = wim_default_pack_compression_type();
-	wim->out_pack_chunk_size = wim_default_pack_chunk_size(
-					wim->out_pack_compression_type);
+	wim->out_solid_compression_type = wim_default_solid_compression_type();
+	wim->out_solid_chunk_size = wim_default_solid_chunk_size(
+					wim->out_solid_compression_type);
 	INIT_LIST_HEAD(&wim->subwims);
 	return wim;
 }
@@ -535,13 +535,13 @@ wimlib_set_output_compression_type(WIMStruct *wim, int ctype)
 WIMLIBAPI int
 wimlib_set_output_pack_compression_type(WIMStruct *wim, int ctype)
 {
-	int ret = set_out_ctype(ctype, &wim->out_pack_compression_type);
+	int ret = set_out_ctype(ctype, &wim->out_solid_compression_type);
 	if (ret)
 		return ret;
 
 	/* Reset the chunk size if it's no longer valid.  */
-	if (!wim_chunk_size_valid(wim->out_pack_chunk_size, ctype))
-		wim->out_pack_chunk_size = wim_default_pack_chunk_size(ctype);
+	if (!wim_chunk_size_valid(wim->out_solid_chunk_size, ctype))
+		wim->out_solid_chunk_size = wim_default_solid_chunk_size(ctype);
 	return 0;
 }
 
@@ -575,14 +575,14 @@ WIMLIBAPI int
 wimlib_set_output_pack_chunk_size(WIMStruct *wim, uint32_t chunk_size)
 {
 	if (chunk_size == 0) {
-		wim->out_pack_chunk_size =
-			wim_default_pack_chunk_size(wim->out_pack_compression_type);
+		wim->out_solid_chunk_size =
+			wim_default_solid_chunk_size(wim->out_solid_compression_type);
 		return 0;
 	}
 
 	return set_out_chunk_size(chunk_size,
-				  wim->out_pack_compression_type,
-				  &wim->out_pack_chunk_size);
+				  wim->out_solid_compression_type,
+				  &wim->out_solid_chunk_size);
 }
 
 WIMLIBAPI void

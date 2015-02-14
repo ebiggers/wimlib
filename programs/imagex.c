@@ -1793,7 +1793,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 				goto out_err;
 			break;
 		case IMAGEX_SOLID_OPTION:
-			write_flags |= WIMLIB_WRITE_FLAG_PACK_STREAMS;
+			write_flags |= WIMLIB_WRITE_FLAG_SOLID;
 			break;
 		case IMAGEX_FLAGS_OPTION:
 			flags_element = optarg;
@@ -1891,9 +1891,9 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		if (add_flags & WIMLIB_ADD_FLAG_WIMBOOT) {
 			/* With --wimboot, default to XPRESS compression.  */
 			compression_type = WIMLIB_COMPRESSION_TYPE_XPRESS;
-		} else if (write_flags & WIMLIB_WRITE_FLAG_PACK_STREAMS) {
+		} else if (write_flags & WIMLIB_WRITE_FLAG_SOLID) {
 			/* With --solid, default to LZMS compression.  (However,
-			 * this will not affect solid blocks!)  */
+			 * this will not affect solid resources!)  */
 			compression_type = WIMLIB_COMPRESSION_TYPE_LZMS;
 		} else {
 			/* Otherwise, default to LZX compression.  */
@@ -2449,7 +2449,7 @@ print_resource(const struct wimlib_resource_entry *resource,
 		if (resource->is_spanned)
 			tprintf(T("WIM_RESHDR_FLAG_SPANNED  "));
 		if (resource->packed)
-			tprintf(T("WIM_RESHDR_FLAG_PACKED_STREAMS  "));
+			tprintf(T("WIM_RESHDR_FLAG_SOLID  "));
 		tputchar(T('\n'));
 	}
 	tputchar(T('\n'));
@@ -2667,7 +2667,7 @@ imagex_export(int argc, tchar **argv, int cmd)
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
 			break;
 		case IMAGEX_SOLID_OPTION:
-			write_flags |= WIMLIB_WRITE_FLAG_PACK_STREAMS;
+			write_flags |= WIMLIB_WRITE_FLAG_SOLID;
 			break;
 		case IMAGEX_CHUNK_SIZE_OPTION:
 			chunk_size = parse_chunk_size(optarg);
@@ -2802,7 +2802,7 @@ imagex_export(int argc, tchar **argv, int cmd)
 			 * to that of the source WIM, unless --solid or
 			 * --wimboot was specified.   */
 
-			if (write_flags & WIMLIB_WRITE_FLAG_PACK_STREAMS)
+			if (write_flags & WIMLIB_WRITE_FLAG_SOLID)
 				compression_type = WIMLIB_COMPRESSION_TYPE_LZMS;
 			else if (export_flags & WIMLIB_EXPORT_FLAG_WIMBOOT)
 				compression_type = WIMLIB_COMPRESSION_TYPE_XPRESS;
@@ -3571,7 +3571,7 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 				goto out_err;
 			break;
 		case IMAGEX_SOLID_OPTION:
-			write_flags |= WIMLIB_WRITE_FLAG_PACK_STREAMS;
+			write_flags |= WIMLIB_WRITE_FLAG_SOLID;
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
 			break;
 		case IMAGEX_THREADS_OPTION:

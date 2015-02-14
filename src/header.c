@@ -111,7 +111,7 @@ read_wim_header(WIMStruct *wim, struct wim_header *hdr)
 
 	hdr->wim_version = le32_to_cpu(disk_hdr.wim_version);
 	if (hdr->wim_version != WIM_VERSION_DEFAULT &&
-	    hdr->wim_version != WIM_VERSION_PACKED_STREAMS)
+	    hdr->wim_version != WIM_VERSION_SOLID)
 	{
 		ERROR("\"%"TS"\": Unknown WIM version: %u",
 		      filename, hdr->wim_version);
@@ -257,7 +257,7 @@ init_wim_header(struct wim_header *hdr, int ctype, u32 chunk_size)
 	hdr->magic = WIM_MAGIC;
 
 	if (ctype == WIMLIB_COMPRESSION_TYPE_LZMS)
-		hdr->wim_version = WIM_VERSION_PACKED_STREAMS;
+		hdr->wim_version = WIM_VERSION_SOLID;
 	else
 		hdr->wim_version = WIM_VERSION_DEFAULT;
 	if (set_wim_hdr_cflags(ctype, hdr)) {

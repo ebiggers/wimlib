@@ -116,7 +116,8 @@ Notes:
 
    [8] '--solid' for wimlib-imagex.  Should be '/compress:recovery' for DISM,
        but only works for /Export-Image, not /Capture-Image.  Compression chunk
-       size in solid blocks defaults to 33554432 for wimlib, 67108864 for DISM.
+       size in solid resources defaults to 33554432 for wimlib, 67108864 for
+       DISM.
 
    [9] '--wimboot' for wimlib-imagex; '/wimboot' for DISM.
        This is really XPRESS compression with 4096 byte chunks, so the same as
@@ -327,7 +328,7 @@ extensions are used in the code.
 The WIM file format is partially specified in a document that can be found in
 the Microsoft Download Center.  However, this document really only provides an
 overview of the format and is not a formal specification.  It also does not
-cover later extensions of the format, such as solid blocks.
+cover later extensions of the format, such as solid resources.
 
 With regards to the supported compression formats:
 

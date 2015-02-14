@@ -151,8 +151,8 @@ add_stream_to_swm(struct wim_lookup_table_entry *lte, void *_swm_info)
 	u64 stream_size;
 
 	if (lte_is_partial(lte)) {
-		ERROR("Splitting of WIM containing packed streams is not supported.\n"
-		      "        Export it in the default format first.");
+		ERROR("Splitting of WIM containing solid resources is not supported.\n"
+		      "        Export it in non-solid format first.");
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 	if (lte->resource_location == RESOURCE_IN_WIM)
