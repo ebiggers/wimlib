@@ -213,9 +213,19 @@ struct wim_lookup_table_entry {
 			/* Links streams being written to the WIM.  */
 			struct list_head write_streams_list;
 
-			/* Metadata for this stream in the WIM being written.
-			 */
-			struct wim_reshdr out_reshdr;
+			union {
+				/* Metadata for this stream in the WIM being
+				 * written.  */
+				struct wim_reshdr out_reshdr;
+
+				struct {
+					/* Name under which this stream is being
+					 * sorted; used only when sorting
+					 * streams for solid compression.  */
+					utf16lechar *solid_sort_name;
+					size_t solid_sort_name_nbytes;
+				};
+			};
 		};
 
 		/* Used temporarily during extraction.  This is an array of
@@ -338,6 +348,9 @@ sort_stream_list(struct list_head *stream_list,
 extern int
 sort_stream_list_by_sequential_order(struct list_head *stream_list,
 				     size_t list_head_offset);
+
+extern int
+cmp_streams_by_sequential_order(const void *p1, const void *p2);
 
 /* Utility functions  */
 

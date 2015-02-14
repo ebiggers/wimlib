@@ -343,13 +343,7 @@ select_wim_image(WIMStruct *wim, int image)
 
 	/* If a valid image is currently selected, its metadata can be freed if
 	 * it has not been modified.  */
-	if (wim->current_image != WIMLIB_NO_IMAGE) {
-		imd = wim_get_current_image_metadata(wim);
-		if (!imd->modified) {
-			wimlib_assert(list_empty(&imd->unhashed_streams));
-			destroy_image_metadata(imd, NULL, false);
-		}
-	}
+	deselect_current_wim_image(wim);
 	wim->current_image = image;
 	imd = wim_get_current_image_metadata(wim);
 	if (imd->root_dentry || imd->modified) {
@@ -362,6 +356,19 @@ select_wim_image(WIMStruct *wim, int image)
 	return ret;
 }
 
+void
+deselect_current_wim_image(WIMStruct *wim)
+{
+	struct wim_image_metadata *imd;
+	if (wim->current_image == WIMLIB_NO_IMAGE)
+		return;
+	imd = wim_get_current_image_metadata(wim);
+	if (!imd->modified) {
+		wimlib_assert(list_empty(&imd->unhashed_streams));
+		destroy_image_metadata(imd, NULL, false);
+	}
+	wim->current_image = WIMLIB_NO_IMAGE;
+}
 
 /* API function documented in wimlib.h  */
 WIMLIBAPI const tchar *

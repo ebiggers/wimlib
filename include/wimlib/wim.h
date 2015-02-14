@@ -204,6 +204,9 @@ write_wim_header_flags(u32 hdr_flags, struct filedes *out_fd);
 extern int
 select_wim_image(WIMStruct *wim, int image);
 
+extern void
+deselect_current_wim_image(WIMStruct *wim);
+
 extern int
 for_image(WIMStruct *wim, int image, int (*visitor)(WIMStruct *));
 

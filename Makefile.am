@@ -76,6 +76,7 @@ libwim_la_SOURCES =		\
 	src/reference.c		\
 	src/security.c		\
 	src/sha1.c		\
+	src/solid.c		\
 	src/split.c		\
 	src/reparse.c		\
 	src/tagged_items.c	\
@@ -140,6 +141,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/security.h	\
 	include/wimlib/security_descriptor.h	\
 	include/wimlib/sha1.h		\
+	include/wimlib/solid.h		\
 	include/wimlib/textfile.h	\
 	include/wimlib/timestamp.h	\
 	include/wimlib/types.h		\

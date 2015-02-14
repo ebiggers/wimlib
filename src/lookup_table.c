@@ -415,7 +415,7 @@ for_lookup_table_entry(struct wim_lookup_table *table,
  * per-resource location order.  For example, resources in WIM files are sorted
  * primarily by part number, then secondarily by offset, as to implement optimal
  * reading of either a standalone or split WIM.  */
-static int
+int
 cmp_streams_by_sequential_order(const void *p1, const void *p2)
 {
 	const struct wim_lookup_table_entry *lte1, *lte2;

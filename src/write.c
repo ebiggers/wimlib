@@ -51,6 +51,7 @@
 #include "wimlib/paths.h"
 #include "wimlib/progress.h"
 #include "wimlib/resource.h"
+#include "wimlib/solid.h"
 #ifdef __WIN32__
 #  include "wimlib/win32.h" /* win32_rename_replacement() */
 #endif
@@ -1561,20 +1562,39 @@ write_stream_list(struct list_head *stream_list,
 
 	memset(&ctx, 0, sizeof(ctx));
 
-	/* Pre-sorting the streams is required for compute_stream_list_stats().
-	 * Afterwards, read_stream_list() need not sort them again.  */
-	ret = sort_stream_list_by_sequential_order(stream_list,
-						   offsetof(struct wim_lookup_table_entry,
-							    write_streams_list));
-	if (ret)
-		return ret;
-
 	ctx.out_fd = out_fd;
 	ctx.lookup_table = lookup_table;
 	ctx.out_ctype = out_ctype;
 	ctx.out_chunk_size = out_chunk_size;
 	ctx.write_resource_flags = write_resource_flags;
 	ctx.filter_ctx = filter_ctx;
+
+	/*
+	 * We normally sort the streams to write by a "sequential" order that is
+	 * optimized for reading.  But when using solid compression, we instead
+	 * sort the streams by file extension and file name (when applicable;
+	 * and we don't do this for streams from solid resources) so that
+	 * similar files are grouped together, which improves the compression
+	 * ratio.  This is somewhat of a hack since a stream does not
+	 * necessarily correspond one-to-one with a filename, nor is there any
+	 * guarantee that two files with similar names or extensions are
+	 * actually similar in content.  A potential TODO is to sort the streams
+	 * based on some measure of similarity of their actual contents.
+	 */
+
+	ret = sort_stream_list_by_sequential_order(stream_list,
+						   offsetof(struct wim_lookup_table_entry,
+							    write_streams_list));
+	if (ret)
+		return ret;
+
+	compute_stream_list_stats(stream_list, &ctx);
+
+	if (write_resource_flags & WRITE_RESOURCE_FLAG_SOLID) {
+		ret = sort_stream_list_for_solid_compression(stream_list);
+		if (unlikely(ret))
+			WARNING("Failed to sort streams for solid compression. Continuing anyways.");
+	}
 
 	if (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE) {
 		wimlib_assert(out_chunk_size != 0);
@@ -1589,8 +1609,6 @@ write_stream_list(struct list_head *stream_list,
 		}
 	}
 	ctx.chunk_buf_filled = 0;
-
-	compute_stream_list_stats(stream_list, &ctx);
 
 	ctx.progress_data.progfunc = progfunc;
 	ctx.progress_data.progctx = progctx;
