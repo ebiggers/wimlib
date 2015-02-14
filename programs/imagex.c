@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014 Eric Biggers
+ * Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1303,16 +1303,37 @@ parse_num_threads(const tchar *optarg)
 	}
 }
 
-static uint32_t parse_chunk_size(const tchar *optarg)
+static uint32_t
+parse_chunk_size(const tchar *optarg)
 {
-       tchar *tmp;
-       unsigned long chunk_size = tstrtoul(optarg, &tmp, 10);
-       if (chunk_size >= UINT32_MAX || *tmp || tmp == optarg) {
-               imagex_error(T("Chunk size must be a non-negative integer!"));
-               return UINT32_MAX;
-       } else {
-               return chunk_size;
-       }
+	tchar *tmp;
+	uint64_t chunk_size = tstrtoul(optarg, &tmp, 10);
+	if (chunk_size == 0) {
+		imagex_error(T("Invalid chunk size specification; must be a positive integer\n"
+			       "       with optional K, M, or G suffix"));
+		return UINT32_MAX;
+	}
+	if (*tmp) {
+		if (*tmp == T('k') || *tmp == T('K')) {
+			chunk_size <<= 10;
+			tmp++;
+		} else if (*tmp == T('m') || *tmp == T('M')) {
+			chunk_size <<= 20;
+			tmp++;
+		} else if (*tmp == T('g') || *tmp == T('G')) {
+			chunk_size <<= 30;
+			tmp++;
+		}
+		if (*tmp && !(*tmp == T('i') && *(tmp + 1) == T('B'))) {
+			imagex_error(T("Invalid chunk size specification; suffix must be K, M, or G"));
+			return UINT32_MAX;
+		}
+	}
+	if (chunk_size >= UINT32_MAX) {
+		imagex_error(T("Invalid chunk size specification; the value is too large!"));
+		return UINT32_MAX;
+	}
+	return chunk_size;
 }
 
 
@@ -4269,7 +4290,7 @@ version(void)
 	static const tchar *s =
 	T(
 "wimlib-imagex (distributed with " PACKAGE " " PACKAGE_VERSION ")\n"
-"Copyright (C) 2012, 2013, 2014 Eric Biggers\n"
+"Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers\n"
 "License GPLv3+; GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>.\n"
 "This is free software: you are free to change and redistribute it.\n"
 "There is NO WARRANTY, to the extent permitted by law.\n"
