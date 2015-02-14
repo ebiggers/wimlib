@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014 Eric Biggers
+ * Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -379,12 +379,13 @@ struct write_streams_ctx {
 	 * uncompressed.  */
 	struct chunk_compressor *compressor;
 
-	/* Buffer for dividing the read data into chunks of size
-	 * @out_chunk_size.  */
-	u8 *chunk_buf;
+	/* A buffer of size @out_chunk_size that has been loaned out from the
+	 * chunk compressor and is currently being filled with the uncompressed
+	 * data of the next chunk.  */
+	u8 *cur_chunk_buf;
 
-	/* Number of bytes in @chunk_buf that are currently filled.  */
-	size_t chunk_buf_filled;
+	/* Number of bytes in @cur_chunk_buf that are currently filled.  */
+	size_t cur_chunk_buf_filled;
 
 	/* List of streams that currently have chunks being compressed.  */
 	struct list_head pending_streams;
@@ -1057,22 +1058,23 @@ write_error:
 }
 
 static int
-submit_chunk_for_compression(struct write_streams_ctx *ctx,
-			     const void *chunk, size_t size)
+prepare_chunk_buffer(struct write_streams_ctx *ctx)
 {
-	/* While we are unable to submit the chunk for compression (due to too
-	 * many chunks already outstanding), retrieve and write the next
-	 * compressed chunk.  */
-	while (!ctx->compressor->submit_chunk(ctx->compressor, chunk, size)) {
+	/* While we are unable to get a new chunk buffer due to too many chunks
+	 * already outstanding, retrieve and write the next compressed chunk. */
+	while (!(ctx->cur_chunk_buf =
+		 ctx->compressor->get_chunk_buffer(ctx->compressor)))
+	{
 		const void *cchunk;
 		u32 csize;
 		u32 usize;
 		bool bret;
 		int ret;
 
-		bret = ctx->compressor->get_chunk(ctx->compressor,
-						  &cchunk, &csize, &usize);
-
+		bret = ctx->compressor->get_compression_result(ctx->compressor,
+							       &cchunk,
+							       &csize,
+							       &usize);
 		wimlib_assert(bret);
 
 		ret = write_chunk(ctx, cchunk, csize, usize);
@@ -1107,55 +1109,40 @@ write_stream_process_chunk(const void *chunk, size_t size, void *_ctx)
 	chunkptr = chunk;
 	chunkend = chunkptr + size;
 	do {
-		const u8 *resized_chunk;
 		size_t needed_chunk_size;
+		size_t bytes_consumed;
+
+		if (!ctx->cur_chunk_buf) {
+			ret = prepare_chunk_buffer(ctx);
+			if (ret)
+				return ret;
+		}
 
 		if (ctx->write_resource_flags & WRITE_RESOURCE_FLAG_SOLID) {
 			needed_chunk_size = ctx->out_chunk_size;
 		} else {
-			u64 res_bytes_remaining;
-
-			res_bytes_remaining = ctx->cur_read_stream_size -
-					      ctx->cur_read_stream_offset;
 			needed_chunk_size = min(ctx->out_chunk_size,
-						ctx->chunk_buf_filled +
-							res_bytes_remaining);
+						ctx->cur_chunk_buf_filled +
+							(ctx->cur_read_stream_size -
+							 ctx->cur_read_stream_offset));
 		}
 
-		if (ctx->chunk_buf_filled == 0 &&
-		    chunkend - chunkptr >= needed_chunk_size)
-		{
-			/* No intermediate buffering needed.  */
-			resized_chunk = chunkptr;
-			chunkptr += needed_chunk_size;
-			ctx->cur_read_stream_offset += needed_chunk_size;
-		} else {
-			/* Intermediate buffering needed.  */
-			size_t bytes_consumed;
+		bytes_consumed = min(chunkend - chunkptr,
+				     needed_chunk_size - ctx->cur_chunk_buf_filled);
 
-			bytes_consumed = min(chunkend - chunkptr,
-					     needed_chunk_size - ctx->chunk_buf_filled);
+		memcpy(&ctx->cur_chunk_buf[ctx->cur_chunk_buf_filled],
+		       chunkptr, bytes_consumed);
 
-			memcpy(&ctx->chunk_buf[ctx->chunk_buf_filled],
-			       chunkptr, bytes_consumed);
+		chunkptr += bytes_consumed;
+		ctx->cur_read_stream_offset += bytes_consumed;
+		ctx->cur_chunk_buf_filled += bytes_consumed;
 
-			chunkptr += bytes_consumed;
-			ctx->cur_read_stream_offset += bytes_consumed;
-			ctx->chunk_buf_filled += bytes_consumed;
-			if (ctx->chunk_buf_filled == needed_chunk_size) {
-				resized_chunk = ctx->chunk_buf;
-				ctx->chunk_buf_filled = 0;
-			} else {
-				break;
-			}
-
+		if (ctx->cur_chunk_buf_filled == needed_chunk_size) {
+			ctx->compressor->signal_chunk_filled(ctx->compressor,
+							     ctx->cur_chunk_buf_filled);
+			ctx->cur_chunk_buf = NULL;
+			ctx->cur_chunk_buf_filled = 0;
 		}
-
-		ret = submit_chunk_for_compression(ctx, resized_chunk,
-						   needed_chunk_size);
-		if (ret)
-			return ret;
-
 	} while (chunkptr != chunkend);
 	return 0;
 }
@@ -1374,14 +1361,14 @@ finish_remaining_chunks(struct write_streams_ctx *ctx)
 	if (ctx->compressor == NULL)
 		return 0;
 
-	if (ctx->chunk_buf_filled != 0) {
-		ret = submit_chunk_for_compression(ctx, ctx->chunk_buf,
-						   ctx->chunk_buf_filled);
-		if (ret)
-			return ret;
+	if (ctx->cur_chunk_buf_filled != 0) {
+		ctx->compressor->signal_chunk_filled(ctx->compressor,
+						     ctx->cur_chunk_buf_filled);
 	}
 
-	while (ctx->compressor->get_chunk(ctx->compressor, &cdata, &csize, &usize)) {
+	while (ctx->compressor->get_compression_result(ctx->compressor, &cdata,
+						       &csize, &usize))
+	{
 		ret = write_chunk(ctx, cdata, csize, usize);
 		if (ret)
 			return ret;
@@ -1601,20 +1588,6 @@ write_stream_list(struct list_head *stream_list,
 			WARNING("Failed to sort streams for solid compression. Continuing anyways.");
 	}
 
-	if (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE) {
-		wimlib_assert(out_chunk_size != 0);
-		if (out_chunk_size <= STACK_MAX) {
-			ctx.chunk_buf = alloca(out_chunk_size);
-		} else {
-			ctx.chunk_buf = MALLOC(out_chunk_size);
-			if (ctx.chunk_buf == NULL) {
-				ret = WIMLIB_ERR_NOMEM;
-				goto out_destroy_context;
-			}
-		}
-	}
-	ctx.chunk_buf_filled = 0;
-
 	ctx.progress_data.progfunc = progfunc;
 	ctx.progress_data.progctx = progctx;
 
@@ -1753,8 +1726,6 @@ out_write_raw_copy_resources:
 				       &ctx.progress_data);
 
 out_destroy_context:
-	if (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE && out_chunk_size > STACK_MAX)
-		FREE(ctx.chunk_buf);
 	FREE(ctx.chunk_csizes);
 	if (ctx.compressor)
 		ctx.compressor->destroy(ctx.compressor);

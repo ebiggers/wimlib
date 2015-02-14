@@ -329,21 +329,17 @@ submit_compression_msg(struct parallel_chunk_compressor *ctx)
 	ctx->next_submit_msg = NULL;
 }
 
-static bool
-parallel_chunk_compressor_submit_chunk(struct chunk_compressor *_ctx,
-				       const void *chunk, u32 size)
+static void *
+parallel_chunk_compressor_get_chunk_buffer(struct chunk_compressor *_ctx)
 {
 	struct parallel_chunk_compressor *ctx = (struct parallel_chunk_compressor *)_ctx;
 	struct message *msg;
-
-	wimlib_assert(size > 0);
-	wimlib_assert(size <= ctx->base.out_chunk_size);
 
 	if (ctx->next_submit_msg) {
 		msg = ctx->next_submit_msg;
 	} else {
 		if (list_empty(&ctx->available_msgs))
-			return false;
+			return NULL;
 
 		msg = list_entry(ctx->available_msgs.next, struct message, list);
 		list_del(&msg->list);
@@ -351,21 +347,32 @@ parallel_chunk_compressor_submit_chunk(struct chunk_compressor *_ctx,
 		msg->num_filled_chunks = 0;
 	}
 
-	memcpy(msg->uncompressed_chunks[msg->num_filled_chunks], chunk, size);
-	msg->uncompressed_chunk_sizes[msg->num_filled_chunks] = size;
-	if (++msg->num_filled_chunks == msg->num_alloc_chunks)
-		submit_compression_msg(ctx);
-	return true;
+	return msg->uncompressed_chunks[msg->num_filled_chunks];
 }
 
-static bool
-parallel_chunk_compressor_get_chunk(struct chunk_compressor *_ctx,
-				    const void **cdata_ret, u32 *csize_ret,
-				    u32 *usize_ret)
+static void
+parallel_chunk_compressor_signal_chunk_filled(struct chunk_compressor *_ctx, u32 usize)
 {
 	struct parallel_chunk_compressor *ctx = (struct parallel_chunk_compressor *)_ctx;
 	struct message *msg;
 
+	wimlib_assert(usize > 0);
+	wimlib_assert(usize <= ctx->base.out_chunk_size);
+	wimlib_assert(ctx->next_submit_msg);
+
+	msg = ctx->next_submit_msg;
+	msg->uncompressed_chunk_sizes[msg->num_filled_chunks] = usize;
+	if (++msg->num_filled_chunks == msg->num_alloc_chunks)
+		submit_compression_msg(ctx);
+}
+
+static bool
+parallel_chunk_compressor_get_compression_result(struct chunk_compressor *_ctx,
+						 const void **cdata_ret, u32 *csize_ret,
+						 u32 *usize_ret)
+{
+	struct parallel_chunk_compressor *ctx = (struct parallel_chunk_compressor *)_ctx;
+	struct message *msg;
 
 	if (ctx->next_submit_msg)
 		submit_compression_msg(ctx);
@@ -490,8 +497,9 @@ new_parallel_chunk_compressor(int out_ctype, u32 out_chunk_size,
 	ctx->base.out_ctype = out_ctype;
 	ctx->base.out_chunk_size = out_chunk_size;
 	ctx->base.destroy = parallel_chunk_compressor_destroy;
-	ctx->base.submit_chunk = parallel_chunk_compressor_submit_chunk;
-	ctx->base.get_chunk = parallel_chunk_compressor_get_chunk;
+	ctx->base.get_chunk_buffer = parallel_chunk_compressor_get_chunk_buffer;
+	ctx->base.signal_chunk_filled = parallel_chunk_compressor_signal_chunk_filled;
+	ctx->base.get_compression_result = parallel_chunk_compressor_get_compression_result;
 
 	ctx->num_thread_data = num_threads;
 

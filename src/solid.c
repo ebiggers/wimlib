@@ -236,7 +236,6 @@ sort_stream_list_for_solid_compression(struct list_head *stream_list)
 					write_streams_list),
 			       cmp_streams_by_solid_sort_name);
 
-out_free_solid_sort_names:
 	list_for_each_entry(lte, stream_list, write_streams_list)
 		FREE(lte->solid_sort_name);
 out_free_lookup_table:

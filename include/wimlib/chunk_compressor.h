@@ -23,16 +23,20 @@ struct chunk_compressor {
 	/* Free the chunk compressor.  */
 	void (*destroy)(struct chunk_compressor *);
 
-	/* Submit a chunk of uncompressed data for compression.
+	/* Try to borrow a buffer into which the uncompressed data for the next
+	 * chunk should be prepared.
 	 *
-	 * The chunk must have size greater than 0 and less than or equal to
-	 * @out_chunk_size.
+	 * Only one buffer can be borrowed at a time.
 	 *
-	 * The return value is %true if the chunk was successfully submitted, or
-	 * %false if the chunk compressor does not have space for the chunk at
-	 * the present time.  In the latter case, get_chunk() must be called to
-	 * retrieve a compressed chunk before trying again.  */
-	bool (*submit_chunk)(struct chunk_compressor *, const void *, u32);
+	 * Returns a pointer to the buffer, or NULL if no buffer is available.
+	 * If no buffer is available, you must call ->get_compression_result()
+	 * to retrieve a compressed chunk before trying again.  */
+	void *(*get_chunk_buffer)(struct chunk_compressor *);
+
+	/* Signals to the chunk compressor that the buffer which was loaned out
+	 * from ->get_chunk_buffer() has finished being filled and contains the
+	 * specified number of bytes of uncompressed data.  */
+	void (*signal_chunk_filled)(struct chunk_compressor *, u32);
 
 	/* Get the next chunk of compressed data.
 	 *
@@ -52,8 +56,8 @@ struct chunk_compressor {
 	 * The return value is %true if a chunk of compressed data was
 	 * successfully retrieved, or %false if there are no chunks currently
 	 * being compressed.  */
-	bool (*get_chunk)(struct chunk_compressor *,
-			  const void **, u32 *, u32 *);
+	bool (*get_compression_result)(struct chunk_compressor *,
+				       const void **, u32 *, u32 *);
 };
 
 
