@@ -206,49 +206,65 @@ values.  The default is 50.
 .IP ""
 Be careful if you choose LZMS compression.  It is not compatible with wimlib
 before v1.6.0, WIMGAPI before Windows 8, DISM before Windows 8.1, and 7-Zip.
+.IP ""
+Also note that choosing LZMS compression does not automatically imply solid-mode
+compression, as it does with DISM.  Use \fB--solid\fR if you want to create a
+solid WIM, or "ESD file".
 .TP
 \fB--chunk-size\fR=\fISIZE\fR
-Set the WIM compression chunk size to \fISIZE\fR bytes.  Larger chunks mean larger
-LZ77 dictionaries and better compression ratios on sufficiently large files, but
-slower random access.  \fBUsing this option is generally not recommended because
-of the compatibility limitations detailed in the next paragraph.\fR  But if you
-decide to use this option regardless, you may choose a chunk size that is
-allowed by the compression format.  All formats only allow power-of-2 chunk
-sizes.  For LZX ("maximum") compression the maximum allowed chunk size is 2^21
-(2097152), for XPRESS ("fast") compression the maximum allowed chunk size is
-2^16 (65536), and for LZMS ("recovery") compression the maximum allowed chunk
-size is 2^30 (1073741824).
+Set the compression chunk size to \fISIZE\fR bytes.  A larger compression chunk
+size results in a better compression ratio.  wimlib supports different chunk
+sizes depending on the compression type:
+.RS
+.IP \[bu] 2
+XPRESS: 4K, 8K, 16K, 32K, 64K
+.IP \[bu]
+LZX: 32K, 64K, 128K, 256K, 512K, 1M, 2M
+.IP \[bu]
+LZMS: 32K, 64K, 128K, 256K, 512K, 1M, 2M, 4M, 8M, 16M, 32M, 64M, 128M, 256M, 512M, 1G
+.RE
 .IP ""
-Beware that Microsoft's implementation has limited support for non-default chunk
-sizes.  Depending on the version, their software may refuse to open the WIM, or
-open it and crash, or open it and report the data is invalid, or even extract
-the data incorrectly.  In addition, wimlib versions before 1.6.0 do not support
-alternate chunk sizes.
+You can provide the full number (e.g. 32768), or you can use one of the K, M, or
+G suffixes.  KiB, MiB, and GiB are also accepted.
+.IP ""
+This option only affects the chunk size used for non-solid WIM resources.  If
+you are creating a solid WIM (using the \fB--solid\fR option), then you probably
+want \fB--solid-chunk-size\fR instead.
+.IP ""
+Use this option with caution if compatibility with Microsoft's implementation is
+desired, since their implementation has limited support for non-default chunk
+sizes.
 .TP
 \fB--solid\fR
-Create a "solid" archive that compresses multiple unique streams ("files")
-together, rather than each unique stream ("file") independently.  This can
-result in a significantly better compression ratio, but this format greatly
-decreases the performance of random access to the data, as may occur on a WIM
-mounted with \fBwimlib-imagex mount\fR.  Also, WIMs created using this
-option use a different version number in their header and are only compatible
-with WIMGAPI Windows 8 and later, and DISM Windows 8.1 and later.
+Create a "solid" WIM file that compresses files together rather than
+independently.  This results in a significantly better compression ratio, but it
+comes at the cost of various tradeoffs, including: slow compression with very
+high memory usage; slow random access to the resulting WIM file; and reduced
+compatibility.
 .IP ""
-The default compression type and chunk size in solid resources is LZMS with 2^25
-(33554432) byte chunks.  This is independent of the WIM's main compression type
-and chunk size.
+Compatibility-wise, the first version of Microsoft's WIMGAPI to support solid
+WIM files was released with Windows 8, and the first version of DISM to do so
+was released with Windows 8.1.
+.IP ""
+If you want to create an "ESD" file, then use this option.  An (unencrypted)
+"ESD" file is a solid WIM file.
+.IP ""
+By default, this option has an effect equivalent to DISM's option
+\fB/compress:recovery\fR.  The options for wimlib-imagex are different because
+they try not to conflate the compression type (e.g. LZX or LZMS) with solid-mode
+compression, as these are two different things.
 .TP
 \fB--solid-chunk-size\fR=\fISIZE\fR
 Like \fB--chunk-size\fR, but set the chunk size used in solid resources.  The
-default is LZMS compression with 2^25 (33554432) byte chunks.  This option only
-has an effect when \fB--solid\fR is also specified.  For maximum compatibility
-with the Microsoft implementation, do not use either of these options.
+default, assuming LZMS compression, is 32MiB (33554432).  This option only has
+an effect when \fB--solid\fR is also specified.  For maximum compatibility with
+the Microsoft implementation, do not use this option.
 .TP
 \fB--solid-compress\fR=\fITYPE\fR[:\fILEVEL\fR]
-Like \fB--compress\fR, but set the compression type used in solid resources.  The
-default is LZMS compression with 2^25 (33554432) byte chunks.  This option only
-has an effect when \fB--solid\fR is also specified.  For maximum compatibility
-with the Microsoft implementation, do not use either of these options.
+Like \fB--compress\fR, but set the compression type used in solid resources.
+The default is LZMS compression.  This option only has an effect when
+\fB--solid\fR is also specified.  For maximum compatibility with the Microsoft
+implementation, do not use this option.
 .TP
 \fB--threads\fR=\fINUM_THREADS\fR
 Number of threads to use for compressing data.  Default: autodetect (number of
