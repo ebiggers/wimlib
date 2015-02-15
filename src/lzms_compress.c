@@ -287,6 +287,10 @@ struct lzms_compressor {
 	 */
 	bool use_delta_matches;
 
+	/* If true, the compressor need not preserve the input buffer if it
+	 * compresses the data successfully.  */
+	bool destructive;
+
 	/* 'last_target_usages' is a large array that is only needed for
 	 * preprocessing, so it is in union with fields that don't need to be
 	 * initialized until after preprocessing.  */
@@ -2100,7 +2104,8 @@ lzms_finalize(struct lzms_compressor *c)
 }
 
 static u64
-lzms_get_needed_memory(size_t max_bufsize, unsigned compression_level)
+lzms_get_needed_memory(size_t max_bufsize, unsigned compression_level,
+		       bool destructive)
 {
 	u64 size = 0;
 
@@ -2109,8 +2114,8 @@ lzms_get_needed_memory(size_t max_bufsize, unsigned compression_level)
 
 	size += sizeof(struct lzms_compressor);
 
-	/* in_buffer */
-	size += max_bufsize;
+	if (!destructive)
+		size += max_bufsize; /* in_buffer */
 
 	/* mf */
 	size += lcpit_matchfinder_get_needed_memory(max_bufsize);
@@ -2120,7 +2125,7 @@ lzms_get_needed_memory(size_t max_bufsize, unsigned compression_level)
 
 static int
 lzms_create_compressor(size_t max_bufsize, unsigned compression_level,
-		       void **c_ret)
+		       bool destructive, void **c_ret)
 {
 	struct lzms_compressor *c;
 	u32 nice_match_len;
@@ -2132,6 +2137,8 @@ lzms_create_compressor(size_t max_bufsize, unsigned compression_level,
 	if (!c)
 		goto oom0;
 
+	c->destructive = destructive;
+
 	/* Scale nice_match_len with the compression level.  But to allow an
 	 * optimization for length cost calculations, don't allow nice_match_len
 	 * to exceed MAX_FAST_LENGTH.  */
@@ -2142,9 +2149,11 @@ lzms_create_compressor(size_t max_bufsize, unsigned compression_level,
 	c->try_lit_lzrep0 = (compression_level >= 60);
 	c->try_lzrep_lit_lzrep0 = (compression_level >= 60);
 
-	c->in_buffer = MALLOC(max_bufsize);
-	if (!c->in_buffer)
-		goto oom1;
+	if (!c->destructive) {
+		c->in_buffer = MALLOC(max_bufsize);
+		if (!c->in_buffer)
+			goto oom1;
+	}
 
 	if (!lcpit_matchfinder_init(&c->mf, max_bufsize, 2, nice_match_len))
 		goto oom2;
@@ -2156,7 +2165,8 @@ lzms_create_compressor(size_t max_bufsize, unsigned compression_level,
 	return 0;
 
 oom2:
-	FREE(c->in_buffer);
+	if (!c->destructive)
+		FREE(c->in_buffer);
 oom1:
 	ALIGNED_FREE(c);
 oom0:
@@ -2168,13 +2178,17 @@ lzms_compress(const void *in, size_t in_nbytes,
 	      void *out, size_t out_nbytes_avail, void *_c)
 {
 	struct lzms_compressor *c = _c;
+	size_t result;
 
 	/* Don't bother trying to compress extremely small inputs.  */
 	if (in_nbytes < 4)
 		return 0;
 
 	/* Copy the input data into the internal buffer and preprocess it.  */
-	memcpy(c->in_buffer, in, in_nbytes);
+	if (c->destructive)
+		c->in_buffer = (void *)in;
+	else
+		memcpy(c->in_buffer, in, in_nbytes);
 	c->in_nbytes = in_nbytes;
 	lzms_x86_filter(c->in_buffer, in_nbytes, c->last_target_usages, false);
 
@@ -2187,13 +2201,16 @@ lzms_compress(const void *in, size_t in_nbytes,
 	lzms_range_encoder_init(&c->rc, out, out_nbytes_avail / sizeof(le16));
 	lzms_output_bitstream_init(&c->os, out, out_nbytes_avail / sizeof(le16));
 	lzms_init_states_and_probabilities(c);
-	lzms_init_huffman_codes(c, lzms_get_num_offset_slots(in_nbytes));
+	lzms_init_huffman_codes(c, lzms_get_num_offset_slots(c->in_nbytes));
 
 	/* The main loop: parse and encode.  */
 	lzms_near_optimal_parse(c);
 
 	/* Return the compressed data size or 0.  */
-	return lzms_finalize(c);
+	result = lzms_finalize(c);
+	if (!result && c->destructive)
+		lzms_x86_filter(c->in_buffer, c->in_nbytes, c->last_target_usages, true);
+	return result;
 }
 
 static void
@@ -2201,7 +2218,8 @@ lzms_free_compressor(void *_c)
 {
 	struct lzms_compressor *c = _c;
 
-	FREE(c->in_buffer);
+	if (!c->destructive)
+		FREE(c->in_buffer);
 	lcpit_matchfinder_destroy(&c->mf);
 	ALIGNED_FREE(c);
 }

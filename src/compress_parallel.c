@@ -523,7 +523,8 @@ new_parallel_chunk_compressor(int out_ctype, u32 out_chunk_size,
 
 		dat->chunks_to_compress_queue = &ctx->chunks_to_compress_queue;
 		dat->compressed_chunks_queue = &ctx->compressed_chunks_queue;
-		ret = wimlib_create_compressor(out_ctype, out_chunk_size, 0,
+		ret = wimlib_create_compressor(out_ctype, out_chunk_size,
+					       WIMLIB_COMPRESSOR_FLAG_DESTRUCTIVE,
 					       &dat->compressor);
 		if (ret)
 			goto err;

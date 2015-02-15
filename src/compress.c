@@ -81,10 +81,17 @@ wimlib_get_compressor_needed_memory(enum wimlib_compression_type ctype,
 				    size_t max_block_size,
 				    unsigned int compression_level)
 {
+	bool destructive;
 	const struct compressor_ops *ops;
 	u64 size;
 
+	destructive = (compression_level & WIMLIB_COMPRESSOR_FLAG_DESTRUCTIVE);
+	compression_level &= ~WIMLIB_COMPRESSOR_FLAG_DESTRUCTIVE;
+
 	if (!compressor_ctype_valid(ctype))
+		return 0;
+
+	if (compression_level > 0xFFFFFF)
 		return 0;
 
 	if (max_block_size == 0)
@@ -98,7 +105,8 @@ wimlib_get_compressor_needed_memory(enum wimlib_compression_type ctype,
 		compression_level = DEFAULT_COMPRESSION_LEVEL;
 
 	if (ops->get_needed_memory) {
-		size = ops->get_needed_memory(max_block_size, compression_level);
+		size = ops->get_needed_memory(max_block_size, compression_level,
+					      destructive);
 
 		/* 0 is never valid and indicates an invalid max_block_size.  */
 		if (size == 0)
@@ -115,10 +123,17 @@ wimlib_create_compressor(enum wimlib_compression_type ctype,
 			 unsigned int compression_level,
 			 struct wimlib_compressor **c_ret)
 {
+	bool destructive;
 	struct wimlib_compressor *c;
+
+	destructive = (compression_level & WIMLIB_COMPRESSOR_FLAG_DESTRUCTIVE);
+	compression_level &= ~WIMLIB_COMPRESSOR_FLAG_DESTRUCTIVE;
 
 	if (!compressor_ctype_valid(ctype))
 		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
+
+	if (compression_level > 0xFFFFFF)
+		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (c_ret == NULL)
 		return WIMLIB_ERR_INVALID_PARAM;
@@ -143,6 +158,7 @@ wimlib_create_compressor(enum wimlib_compression_type ctype,
 
 		ret = c->ops->create_compressor(max_block_size,
 						compression_level,
+						destructive,
 						&c->private);
 		if (ret) {
 			FREE(c);

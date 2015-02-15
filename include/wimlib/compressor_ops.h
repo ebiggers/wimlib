@@ -12,10 +12,12 @@
 struct compressor_ops {
 
 	u64 (*get_needed_memory)(size_t max_block_size,
-				 unsigned int compression_level);
+				 unsigned int compression_level,
+				 bool destructive);
 
 	int (*create_compressor)(size_t max_block_size,
 				 unsigned int compression_level,
+				 bool destructive,
 				 void **private_ret);
 
 	size_t (*compress)(const void *uncompressed_data,

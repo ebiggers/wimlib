@@ -4624,6 +4624,8 @@ wimlib_get_compressor_needed_memory(enum wimlib_compression_type ctype,
 				    size_t max_block_size,
 				    unsigned int compression_level);
 
+#define WIMLIB_COMPRESSOR_FLAG_DESTRUCTIVE	0x80000000
+
 /**
  * Allocate a compressor for the specified compression type using the specified
  * parameters.  This function is part of wimlib's compression API; it is not
@@ -4668,6 +4670,15 @@ wimlib_get_compressor_needed_memory(enum wimlib_compression_type ctype,
  *	The compression level does not affect the format of the compressed data.
  *	Therefore, it is a compressor-only parameter and does not need to be
  *	passed to the decompressor.
+ *	<br/>
+ *	Since wimlib v1.7.5, this parameter can be OR-ed with the flag
+ *	::WIMLIB_COMPRESSOR_FLAG_DESTRUCTIVE.  This creates the compressor in a
+ *	mode where it is allowed to modify the input buffer.  Specifically, in
+ *	this mode, if compression succeeds, the input buffer may have been
+ *	modified, whereas if compression does not succeed the input buffer still
+ *	may have been written to but will have been restored exactly to its
+ *	original state.  This mode is designed to save some memory when using
+ *	large buffer sizes.
  * @param compressor_ret
  *	A location into which to return the pointer to the allocated compressor.
  *	The allocated compressor can be used for any number of calls to

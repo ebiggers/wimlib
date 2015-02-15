@@ -1031,7 +1031,8 @@ xpress_get_compressor_size(size_t max_bufsize, unsigned compression_level)
 }
 
 static u64
-xpress_get_needed_memory(size_t max_bufsize, unsigned compression_level)
+xpress_get_needed_memory(size_t max_bufsize, unsigned compression_level,
+			 bool destructive)
 {
 	u64 size = 0;
 
@@ -1060,7 +1061,7 @@ xpress_get_needed_memory(size_t max_bufsize, unsigned compression_level)
 
 static int
 xpress_create_compressor(size_t max_bufsize, unsigned compression_level,
-			 void **c_ret)
+			 bool destructive, void **c_ret)
 {
 	struct xpress_compressor *c;
 

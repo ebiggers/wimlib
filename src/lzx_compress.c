@@ -368,6 +368,10 @@ struct lzx_compressor {
 	/* Pointer to the compress() implementation chosen at allocation time */
 	void (*impl)(struct lzx_compressor *, struct lzx_output_bitstream *);
 
+	/* If true, the compressor need not preserve the input buffer if it
+	 * compresses the data successfully.  */
+	bool destructive;
+
 	/* The Huffman symbol frequency counters for the current block.  */
 	struct lzx_freqs freqs;
 
@@ -2010,7 +2014,8 @@ lzx_get_compressor_size(size_t max_bufsize, unsigned compression_level)
 }
 
 static u64
-lzx_get_needed_memory(size_t max_bufsize, unsigned compression_level)
+lzx_get_needed_memory(size_t max_bufsize, unsigned compression_level,
+		      bool destructive)
 {
 	u64 size = 0;
 
@@ -2018,13 +2023,14 @@ lzx_get_needed_memory(size_t max_bufsize, unsigned compression_level)
 		return 0;
 
 	size += lzx_get_compressor_size(max_bufsize, compression_level);
-	size += max_bufsize; /* in_buffer */
+	if (!destructive)
+		size += max_bufsize; /* in_buffer */
 	return size;
 }
 
 static int
 lzx_create_compressor(size_t max_bufsize, unsigned compression_level,
-		      void **c_ret)
+		      bool destructive, void **c_ret)
 {
 	unsigned window_order;
 	struct lzx_compressor *c;
@@ -2039,12 +2045,16 @@ lzx_create_compressor(size_t max_bufsize, unsigned compression_level,
 	if (!c)
 		goto oom0;
 
+	c->destructive = destructive;
+
 	c->num_main_syms = lzx_get_num_main_syms(window_order);
 	c->window_order = window_order;
 
-	c->in_buffer = MALLOC(max_bufsize);
-	if (!c->in_buffer)
-		goto oom1;
+	if (!c->destructive) {
+		c->in_buffer = MALLOC(max_bufsize);
+		if (!c->in_buffer)
+			goto oom1;
+	}
 
 	if (compression_level <= LZX_MAX_FAST_LEVEL) {
 
@@ -2117,13 +2127,17 @@ lzx_compress(const void *in, size_t in_nbytes,
 {
 	struct lzx_compressor *c = _c;
 	struct lzx_output_bitstream os;
+	size_t result;
 
 	/* Don't bother trying to compress very small inputs.  */
 	if (in_nbytes < 100)
 		return 0;
 
 	/* Copy the input data into the internal buffer and preprocess it.  */
-	memcpy(c->in_buffer, in, in_nbytes);
+	if (c->destructive)
+		c->in_buffer = (void *)in;
+	else
+		memcpy(c->in_buffer, in, in_nbytes);
 	c->in_nbytes = in_nbytes;
 	lzx_do_e8_preprocessing(c->in_buffer, in_nbytes);
 
@@ -2138,7 +2152,10 @@ lzx_compress(const void *in, size_t in_nbytes,
 	(*c->impl)(c, &os);
 
 	/* Flush the output bitstream and return the compressed size or 0.  */
-	return lzx_flush_output(&os);
+	result = lzx_flush_output(&os);
+	if (!result && c->destructive)
+		lzx_undo_e8_preprocessing(c->in_buffer, c->in_nbytes);
+	return result;
 }
 
 static void
@@ -2146,7 +2163,8 @@ lzx_free_compressor(void *_c)
 {
 	struct lzx_compressor *c = _c;
 
-	FREE(c->in_buffer);
+	if (!c->destructive)
+		FREE(c->in_buffer);
 	ALIGNED_FREE(c);
 }
 
