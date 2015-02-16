@@ -511,9 +511,11 @@ enum wimlib_compression_type {
 	 * later.  Also, chunk sizes larger than <c>2^26</c> are not compatible
 	 * with the Microsoft implementation.
 	 *
-	 * wimlib's LZMS compressor is currently faster but will usually not
-	 * compress as much as the implementation in Microsoft's WIMGAPI
-	 * (Windows 8.1).
+	 * wimlib's LZMS compressor will, with the default settings, usually
+	 * produce a better compression ratio, and work more quickly, than the
+	 * implementation in Microsoft's WIMGAPI (as of Windows 8.1).  There is
+	 * limited support for non-default compression levels, but compression
+	 * will be noticably faster if you choose a level < 35.
 	 *
 	 * If using wimlib_create_compressor() to create an LZMS compressor
 	 * directly, the @p max_block_size parameter may be any positive value

@@ -1,13 +1,31 @@
 Version 1.7.5-BETA:
-	The performance of LZX compression has been improved by 15-20%.  This is
-	the default compression mode of wimlib-imagex.
+	Improved the LZX compressor.  It is now 15-20% faster than before and
+	provides a slightly better compression ratio.
+
+	Improved the LZMS compressor.  It now provides a compression ratio
+	slightly better than WIMGAPI while still being faster and using slightly
+	less memory.
+
+	The compression chunk size in solid resources, e.g. when capturing or
+	exporting a WIM file using the '--solid' option, now defaults to 64 MiB
+	(67108864 bytes) instead of 32 MiB (33554432 bytes).  This provides a
+	better compression ratio and is the same value that WIMGAPI uses.  The
+	memory usage is less than 50% higher than wimlib v1.7.4 and is slightly
+	lower than WIMGAPI's memory usage, but if it is too much, it is still
+	possible to choose a lower value, e.g. with the '--solid-chunk-size'
+	option to wimlib-imagex.
+
+	The '--chunk-size' and '--solid-chunk-size' options to wimlib-imagex now
+	accept the 'K', 'M', and 'G' suffixes.
+
+	Files are now sorted by name extension when creating a solid WIM file.
+
+	Fixed various issues related to capture/apply of EFS-encrypted files on
+	Windows.
 
 	The file list printed by 'wimdir' is now sorted by the platform-specific
 	case sensitivity setting, rather than always case sensitively.  This
 	also affects the library function wimlib_iterate_dir_tree().
-
-	Fixed various issues related to capture/apply of EFS-encrypted files on
-	Windows.
 
 	On Windows, some error and warning messages have been improved.
 
