@@ -517,7 +517,7 @@ enum wimlib_compression_type {
 	 *
 	 * If using wimlib_create_compressor() to create an LZMS compressor
 	 * directly, the @p max_block_size parameter may be any positive value
-	 * up to and including <c>1180427429</c>.
+	 * up to and including <c>2^30</c>.
 	 */
 	WIMLIB_COMPRESSION_TYPE_LZMS = 3,
 };
@@ -2232,7 +2232,7 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * all streams recompressed in solid mode.
  *
  * Currently, new solid resources will, by default, be written using LZMS
- * compression with 32 MiB (33554432 byte) chunks.  Use
+ * compression with 64 MiB (67108864 byte) chunks.  Use
  * wimlib_set_output_pack_compression_type() and/or
  * wimlib_set_output_pack_chunk_size() to change this.  This is independent of
  * the WIM's main compression type and chunk size; you can have a WIM that

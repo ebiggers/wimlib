@@ -60,9 +60,9 @@ static u32
 wim_default_solid_chunk_size(int ctype) {
 	switch (ctype) {
 	case WIMLIB_COMPRESSION_TYPE_LZMS:
-		return 1U << 25; /* 33554432  */
+		return (u32)1 << 26; /* 67108864  */
 	default:
-		return 1U << 15; /* 32768     */
+		return (u32)1 << 15; /* 32768     */
 	}
 }
 
