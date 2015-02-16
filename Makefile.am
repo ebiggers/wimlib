@@ -119,7 +119,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/inode.h		\
 	include/wimlib/inode_table.h	\
 	include/wimlib/integrity.h	\
-	include/wimlib/lcpit_matchfinder.h
+	include/wimlib/lcpit_matchfinder.h	\
 	include/wimlib/list.h		\
 	include/wimlib/lookup_table.h	\
 	include/wimlib/lz_extend.h	\
