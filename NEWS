@@ -1,4 +1,4 @@
-Version 1.7.5-BETA:
+Version 1.8.0-BETA:
 	Improved the LZX compressor.  It is now 15-20% faster than before and
 	provides a slightly better compression ratio.
 

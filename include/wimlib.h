@@ -4673,7 +4673,7 @@ wimlib_get_compressor_needed_memory(enum wimlib_compression_type ctype,
  *	Therefore, it is a compressor-only parameter and does not need to be
  *	passed to the decompressor.
  *	<br/>
- *	Since wimlib v1.7.5, this parameter can be OR-ed with the flag
+ *	Since wimlib v1.8.0, this parameter can be OR-ed with the flag
  *	::WIMLIB_COMPRESSOR_FLAG_DESTRUCTIVE.  This creates the compressor in a
  *	mode where it is allowed to modify the input buffer.  Specifically, in
  *	this mode, if compression succeeds, the input buffer may have been

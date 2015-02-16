@@ -1,6 +1,6 @@
                                   INTRODUCTION
 
-This is wimlib version 1.7.5-BETA (January 2015).  wimlib is a C library for
+This is wimlib version 1.8.0-BETA (February 2015).  wimlib is a C library for
 creating, modifying, extracting, and mounting files in the Windows Imaging
 Format (WIM files).  wimlib and its command-line frontend 'wimlib-imagex'
 provide a free and cross-platform alternative to Microsoft's WIMGAPI, ImageX,
@@ -78,7 +78,7 @@ create the file.  When applicable, the results with the equivalent Microsoft
 implementation in WIMGAPI is included.
 
   =============================================================================
-  | Compression            ||  wimlib (v1.7.5-BETA)  |  WIMGAPI (Windows 8.1) |
+  | Compression            ||  wimlib (v1.8.0)       |  WIMGAPI (Windows 8.1) |
   =============================================================================
   | None             [1]   ||  361,314,224 in 2.4s   |  361,315,338 in 4.5s   |
   | XPRESS           [2]   ||  138,218,750 in 3.0s   |  140,457,436 in 6.0s   |
@@ -139,7 +139,7 @@ Testing environment:
 
 The compression ratio provided by wimlib is also competitive with commonly used
 archive formats.  Below are file sizes that result when the Canterbury corpus is
-compressed with wimlib (v1.7.5), WIMGAPI (Windows 8.1), and some other
+compressed with wimlib (v1.8.0), WIMGAPI (Windows 8.1), and some other
 formats/programs:
 
      =====================================================
