@@ -4209,7 +4209,7 @@ T(
 "                        [DEST_IMAGE_NAME [DEST_IMAGE_DESC]]\n"
 "                    [--boot] [--check] [--nocheck] [--compress=TYPE]\n"
 "                    [--ref=\"GLOB\"] [--threads=NUM_THREADS] [--rebuild]\n"
-"                    [--wimboot]\n"
+"                    [--wimboot] [--solid]\n"
 ),
 [CMD_EXTRACT] =
 T(
@@ -4246,8 +4246,8 @@ T(
 [CMD_OPTIMIZE] =
 T(
 "    %"TS" WIMFILE\n"
-"                    [--recompress] [--compress=TYPE]\n"
-"                    [--threads=NUM_THREADS] [--check] [--nocheck]\n"
+"                    [--recompress] [--compress=TYPE] [--threads=NUM_THREADS]\n"
+"                    [--check] [--nocheck] [--solid]\n"
 "\n"
 ),
 [CMD_SPLIT] =
