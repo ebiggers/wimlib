@@ -65,17 +65,12 @@ commands and their syntax.  For additional documentation:
                                 COMPRESSION RATIO
 
 wimlib (and wimlib-imagex) can create XPRESS, LZX, or LZMS compressed WIM files.
-wimlib includes its own compression codecs and does not use the compression API
-available on some versions of Windows.
-
-I have gradually been improving the compression codecs in wimlib.  For all three
-codecs, they now usually outperform and outcompress the equivalent Microsoft
-implementations.  Although results will vary depending on the data being
-compressed, in the table below I present the results for a common use case:
-compressing an x86 Windows PE image.  Each row displays the compression type,
-the size of the resulting WIM file in bytes, and how many seconds it took to
-create the file.  When applicable, the results with the equivalent Microsoft
-implementation in WIMGAPI is included.
+wimlib's compression codecs usually outperform and outcompress their Microsoft
+equivalents.  Although results will vary depending on the data being compressed,
+the table below shows results for a common use case: creating an x86 Windows PE
+image ("boot.wim").  Each row shows the compression type, the size of the
+resulting WIM file in bytes, and the time it took to create the file.  When
+possible, the results with the Microsoft equivalent are included.
 
   =============================================================================
   | Compression            ||  wimlib (v1.8.0)       |  WIMGAPI (Windows 8.1) |

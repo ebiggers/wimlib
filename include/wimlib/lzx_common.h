@@ -21,7 +21,7 @@
 
 extern const u32 lzx_offset_slot_base[LZX_MAX_OFFSET_SLOTS + 1];
 
-extern const u8 lzx_extra_offset_bits[LZX_MAX_OFFSET_SLOTS + 1];
+extern const u8 lzx_extra_offset_bits[LZX_MAX_OFFSET_SLOTS];
 
 /*
  * Return the offset slot for the specified match offset.

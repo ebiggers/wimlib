@@ -19,8 +19,8 @@
 /* Version number used for WIMs that allow multiple streams combined into one
  * resource ("solid resources", marked by WIM_RESHDR_FLAG_SOLID) and also a new
  * compression format (LZMS).  This version is new as of Windows 8 WIMGAPI.
- * Although it is used by Windows 8 web downloader, it is not yet properly
- * documented by Microsoft.  */
+ * Although it is used by Windows 8 web downloader, it is not yet documented by
+ * Microsoft.  */
 #define WIM_VERSION_SOLID 0xe00
 
 /* Note: there is another WIM version from Vista pre-releases, but it is not

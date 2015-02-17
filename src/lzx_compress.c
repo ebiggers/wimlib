@@ -105,7 +105,7 @@
 
 /*
  * LZX_BIT_COST is a scaling factor that represents the cost to output one bit.
- * THis makes it possible to consider fractional bit costs.
+ * This makes it possible to consider fractional bit costs.
  *
  * Note: this is only useful as a statistical trick for when the true costs are
  * unknown.  In reality, each token in LZX requires a whole number of bits to
@@ -128,7 +128,7 @@
 /*
  * LZX_HASH2_ORDER is the log base 2 of the number of entries in the hash table
  * for finding length 2 matches.  This can be as high as 16 (in which case the
- * hash function is trivial), but using a smaller hash table actually speeds up
+ * hash function is trivial), but using a smaller hash table speeds up
  * compression due to reduced cache pressure.
  */
 #define LZX_HASH2_ORDER		12
@@ -1624,13 +1624,11 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 				max_len = in_end - in_next;
 				nice_len = min(max_len, nice_len);
 
-				/* This extra check is needed to ensure that
-				 * reading the next 3 bytes when looking for a
-				 * length 2 match is valid.  In addition, we
-				 * cannot allow ourselves to find a length 2
-				 * match of the very last two bytes with the
-				 * very first two bytes, since such a match has
-				 * an offset too large to be represented.  */
+				/* This extra check is needed to ensure that we
+				 * never output a length 2 match of the very
+				 * last two bytes with the very first two bytes,
+				 * since such a match has an offset too large to
+				 * be represented.  */
 				if (unlikely(max_len < 3)) {
 					in_next++;
 					cache_ptr->length = 0;

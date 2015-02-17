@@ -57,7 +57,7 @@ const u32 lzx_offset_slot_base[LZX_MAX_OFFSET_SLOTS + 1] = {
 
 /* Mapping: offset slot => how many extra bits must be read and added to the
  * corresponding offset slot base to decode the match offset.  */
-const u8 lzx_extra_offset_bits[LZX_MAX_OFFSET_SLOTS + 1] = {
+const u8 lzx_extra_offset_bits[LZX_MAX_OFFSET_SLOTS] = {
 	0 , 0 , 0 , 0 , 1 ,
 	1 , 2 , 2 , 3 , 3 ,
 	4 , 4 , 5 , 5 , 6 ,
@@ -68,7 +68,6 @@ const u8 lzx_extra_offset_bits[LZX_MAX_OFFSET_SLOTS + 1] = {
 	16, 17, 17, 17, 17,
 	17, 17, 17, 17, 17,
 	17, 17, 17, 17, 17,
-	17
 };
 
 /* Round the specified buffer size up to the next valid LZX window size, and

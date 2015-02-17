@@ -2218,7 +2218,7 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 #define WIMLIB_WRITE_FLAG_RETAIN_GUID			0x00000800
 
 /**
- * When writing streams in the resulting WIM file, combine multiple streams into
+ * When writing streams to the resulting WIM file, combine multiple streams into
  * a single compressed resource instead of compressing them independently.  This
  * is also known as creating a "solid archive".  This tends to produce a better
  * compression ratio at the cost of much slower random access.
@@ -2240,7 +2240,7 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * the WIM's main compression type and chunk size; you can have a WIM that
  * nominally uses LZX compression and 32768 byte chunks but actually contains
  * LZMS-compressed solid resources, for example.  However, if including solid
- * blocks, I suggest that you set the WIM's main compression type to LZMS as
+ * resources, I suggest that you set the WIM's main compression type to LZMS as
  * well, either by creating the WIM with
  * ::wimlib_create_new_wim(::WIMLIB_COMPRESSION_TYPE_LZMS, ...) or by calling
  * ::wimlib_set_output_compression_type(..., ::WIMLIB_COMPRESSION_TYPE_LZMS).

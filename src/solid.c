@@ -227,7 +227,7 @@ sort_stream_list_for_solid_compression(struct list_head *stream_list)
 		ret = for_image(wims[i], WIMLIB_ALL_IMAGES,
 				image_fill_in_solid_sort_names);
 		if (ret)
-			goto out_free_lookup_table;
+			goto out;
 		deselect_current_wim_image(wims[i]);
 	}
 
@@ -236,9 +236,9 @@ sort_stream_list_for_solid_compression(struct list_head *stream_list)
 					write_streams_list),
 			       cmp_streams_by_solid_sort_name);
 
+out:
 	list_for_each_entry(lte, stream_list, write_streams_list)
 		FREE(lte->solid_sort_name);
-out_free_lookup_table:
 	FREE(lookup_table.table);
 	return ret;
 }

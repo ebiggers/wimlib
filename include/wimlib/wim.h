@@ -94,7 +94,7 @@ struct WIMStruct {
 	 * decompressor can be used for all data --- and that decompressor will
 	 * be cached here.  However, if we do encounter any data with a
 	 * different compression type or chunk size (this is possible in solid
-	 * blocks), then this cached decompressor will be replaced with a new
+	 * resources), then this cached decompressor will be replaced with a new
 	 * one.
 	 */
 	struct wimlib_decompressor *decompressor;

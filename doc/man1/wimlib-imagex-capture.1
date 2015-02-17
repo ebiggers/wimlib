@@ -246,8 +246,8 @@ Compatibility-wise, the first version of Microsoft's WIMGAPI to support solid
 WIM files was released with Windows 8, and the first version of DISM to do so
 was released with Windows 8.1.
 .IP ""
-If you want to create an "ESD" file, then use this option.  An (unencrypted)
-"ESD" file is a solid WIM file.
+If you want to create an "ESD file", then use this option.  An (unencrypted)
+"ESD file" is a solid WIM file.
 .IP ""
 By default, this option has an effect equivalent to DISM's option
 \fB/compress:recovery\fR.  The options for wimlib-imagex are different because
@@ -258,14 +258,13 @@ compression, as these are two different things.
 Like \fB--chunk-size\fR, but set the chunk size used in solid resources.  The
 default, assuming LZMS compression, is 64MiB (67108864); this requires about
 640MiB of memory per thread.  This option only has an effect when \fB--solid\fR
-is also specified.  For maximum compatibility with the Microsoft implementation,
-do not use this option.
+is also specified.  Note: Microsoft's implementation is not compatible with LZMS
+chunk sizes larger than 64MiB.
 .TP
 \fB--solid-compress\fR=\fITYPE\fR[:\fILEVEL\fR]
 Like \fB--compress\fR, but set the compression type used in solid resources.
 The default is LZMS compression.  This option only has an effect when
-\fB--solid\fR is also specified.  For maximum compatibility with the Microsoft
-implementation, do not use this option.
+\fB--solid\fR is also specified.
 .TP
 \fB--threads\fR=\fINUM_THREADS\fR
 Number of threads to use for compressing data.  Default: autodetect (number of
