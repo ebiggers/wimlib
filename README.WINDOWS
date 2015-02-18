@@ -9,8 +9,7 @@ you should read too.
 
                               WINDOWS DISTRIBUTION
 
-For the convenience of Windows users, the Windows distribution of wimlib is a
-ZIP file containing the following items:
+The Windows distribution of wimlib is a ZIP file containing the following items:
 
   * wimlib-imagex.exe, a command-line tool to deal with WIM (.wim), split WIM
     (.swm), and ESD (.esd) files that is inspired by Microsoft's ImageX and
@@ -30,37 +29,40 @@ ZIP file containing the following items:
 
                                  WIMLIB-IMAGEX
 
-wimlib-imagex provides most features of Microsoft's ImageX, plus additional
-features.  Perhaps the main limitation is that mounting images from a WIM file
-is not supported on Windows.  However, wimlib-imagex provides a number of
-advantages compared to Microsoft's ImageX, including but not limited to the
-following:
+wimlib-imagex supports most features of Microsoft's ImageX as well as some
+features that are supported by DISM but not by ImageX.  wimlib-imagex also
+supports some features that neither ImageX nor DISM support.  Some of the
+advantages of wimlib-imagex compared to ImageX and DISM are:
 
-  * wimlib-imagex provides "extract" and "update" commands that can be used to
-    work around the lack of mount support.  These commands are very fast
-    compared to mounting and unmounting images with Microsoft's ImageX, so you
-    may prefer them anyway.
+  * wimlib-imagex provides "extract" and "update" commands which allow
+    you to quickly work with WIM images without mounting them.
 
-  * wimlib-imagex provides an easy-to-use "optimize" command to remove wasted
-    space from WIM files.
+  * wimlib-imagex provides an easy-to-use "optimize" command which removes
+    wasted space from a WIM file and optionally recompresses it with stronger
+    compression.
 
-  * In some cases, wimlib-imagex uses simpler command-line syntax.  For
-    example, integrity tables are treated as persistent, and in some cases image
-    names need not be explicitly specified.
+  * wimlib includes advanced implementations of all compression algorithms used
+    in WIM files.  They usually outperform and outcompress their Microsoft
+    equivalents.
+
+  * wimlib-imagex supports solid WIM files and LZMS compression, for example as
+    used in ESD (.esd) files.  (These are partially supported by recent DISM
+    versions but not by ImageX.)
+
+  * In many cases, wimlib-imagex has simpler command-line syntax than either
+    ImageX or DISM.
 
   * Whenever possible, wimlib-imagex includes improved documentation and
     informational output compared to Microsoft's software.
 
-  * On Windows, wimlib-imagex can correctly save and restore some combinations
-    of data that Microsoft's ImageX runs into bugs on --- for example,
-    uncompressed files in compressed directories, or files with alternate data
-    streams and multiple hard links.
-
-  * wimlib-imagex also supports ESD (.esd) files, except when encrypted.  (These
-    use a newer version of the WIM file format.)
-
   * wimlib and wimlib-imagex are free software, so you can modify and/or audit
     the source code.
+
+However, some limitations of wimlib-imagex compared to ImageX and DISM are:
+
+  * On Windows, wimlib-imagex does not support mounting WIM images.
+
+  * wimlib-imagex has no awareness of Windows "packages".
 
                                 ADDITIONAL NOTES
 
