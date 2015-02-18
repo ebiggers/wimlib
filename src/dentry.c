@@ -348,14 +348,28 @@ ads_entry_out_total_length(const struct wim_ads_entry *entry)
  * though there is already a field in the dentry itself for the unnamed stream
  * reference, which then goes to waste.
  */
-static inline bool
+static bool
 inode_needs_dummy_stream(const struct wim_inode *inode)
 {
-	return (inode->i_num_ads > 0 &&
-		inode->i_num_ads < 0xffff && /* overflow check */
-		inode->i_canonical_streams); /* assume the dentry is okay if it
-						already had an unnamed ADS entry
-						when it was read in  */
+	/* Normal case  */
+	if (likely(inode->i_num_ads <= 0))
+		return false;
+
+	/* Overflow check  */
+	if (inode->i_num_ads >= 0xFFFF)
+		return false;
+
+	/* Assume the dentry is okay if it already had an unnamed ADS entry when
+	 * it was read in.  */
+	if (!inode->i_canonical_streams)
+		return false;
+
+	/* We can't use use this workaround on encrypted files because WIMGAPI
+	 * reports that the WIM is in an incorrect format.  */
+	if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED)
+		return false;
+
+	return true;
 }
 
 /* Calculate the total number of bytes that will be consumed when a dentry is
