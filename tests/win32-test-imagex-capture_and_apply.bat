@@ -61,6 +61,12 @@ type nul > emptyfile
 call :do_test
 if %errorlevel% neq 0 exit /b %errorlevel%
 
+call :msg "hard linked empty file"
+type nul > file
+mklink /h link file > nul
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
+
 call :msg "various hard linked, identical, different, and empty files"
 echo 1 > file
 echo 5 > file
@@ -387,6 +393,14 @@ cipher /d 1\2\file > nul
 call :do_test
 if %errorlevel% neq 0 exit /b %errorlevel%
 
+call :msg "encrypted directory with alternate data streams"
+md subdir
+cipher /e subdir > nul
+echo ads1 > subdir:ads1
+echo ads2 > subdir:ads2
+call :do_test
+if %errorlevel% neq 0 exit /b %errorlevel%
+
 call :msg "hardlinked, encrypted file with alternate data streams"
 echo hello > file
 echo hello > file:ads
@@ -449,22 +463,16 @@ if %errorlevel% neq 0 (
 	exit /b %errorlevel%
 )
 
-REM Fun fact:  There are bugs in Microsoft's imagex.exe that make it fail some
-REM of our tests.
-REM
-REM rd /S /Q out.dir
-REM md out.dir
-REM imagex /capture in.dir test.wim "test" /norpfix > nul
+REM Fun fact: Microsoft's WIMGAPI has bugs that make it fail some of our tests.
+REM Even the Windows 8.1 version has incorrect behavior with empty files with
+REM multiple links, or files with named data streams and multiple links.
+rd /S /Q out.dir
+md out.dir
+REM dism /capture-image /capturedir:in.dir /imagefile:test.wim /name:"test" /norpfix > nul
 REM if %errorlevel% neq 0 exit /b %errorlevel%
-REM imagex /apply test.wim 1 out.dir > nul
-REM if %errorlevel% neq 0 exit /b %errorlevel%
-REM %WIN32_TREE_CMP% in.dir out.dir
-REM if %errorlevel% neq 0 (
-	REM echo @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-	REM echo            TEST FAILED!!!!!!! ^(imagex^)
-	REM echo @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-	REM exit /b %errorlevel%
-REM )
+dism /apply-image /imagefile:test.wim /index:1 /applydir:out.dir > nul
+if %errorlevel% neq 0 exit /b %errorlevel%
+%WIN32_TREE_CMP% in.dir out.dir
 
 rd /S /Q in.dir out.dir
 md in.dir
