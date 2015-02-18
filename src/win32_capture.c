@@ -192,13 +192,17 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 	DWORD err;
 	void *file_ctx;
 	int ret;
+	DWORD flags = 0;
+
+	if (lte->file_inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
+		flags |= CREATE_FOR_DIR;
 
 	export_ctx.read_prefix_cb = cb;
 	export_ctx.read_prefix_ctx = cb_ctx;
 	export_ctx.wimlib_err_code = 0;
 	export_ctx.bytes_remaining = size;
 
-	err = OpenEncryptedFileRaw(lte->file_on_disk, 0, &file_ctx);
+	err = OpenEncryptedFileRaw(lte->file_on_disk, flags, &file_ctx);
 	if (err != ERROR_SUCCESS) {
 		win32_error(err,
 			    L"Failed to open encrypted file \"%ls\" for raw read",
@@ -787,13 +791,17 @@ win32_tally_encrypted_size_cb(unsigned char *_data, void *_size_ret,
 }
 
 static int
-win32_get_encrypted_file_size(const wchar_t *path, u64 *size_ret)
+win32_get_encrypted_file_size(const wchar_t *path, bool is_dir, u64 *size_ret)
 {
 	DWORD err;
 	void *file_ctx;
 	int ret;
+	DWORD flags = 0;
 
-	err = OpenEncryptedFileRaw(path, 0, &file_ctx);
+	if (is_dir)
+		flags |= CREATE_FOR_DIR;
+
+	err = OpenEncryptedFileRaw(path, flags, &file_ctx);
 	if (err != ERROR_SUCCESS) {
 		win32_error(err,
 			    L"Failed to open encrypted file \"%ls\" for raw read",
@@ -836,7 +844,9 @@ winnt_load_encrypted_stream_info(struct wim_inode *inode, const wchar_t *nt_path
 	wimlib_assert(!wmemcmp(lte->file_on_disk, L"\\??\\", 4));
 	lte->file_on_disk[1] = L'\\';
 
-	ret = win32_get_encrypted_file_size(lte->file_on_disk, &lte->size);
+	ret = win32_get_encrypted_file_size(lte->file_on_disk,
+					    (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY),
+					    &lte->size);
 	if (unlikely(ret)) {
 		free_lookup_table_entry(lte);
 		return ret;
