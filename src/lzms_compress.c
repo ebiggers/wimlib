@@ -307,7 +307,8 @@ struct lzms_compressor {
 	u32 next_delta_hashes[NUM_POWERS_TO_CONSIDER];
 
 	/* The per-byte graph nodes for near-optimal parsing  */
-	struct lzms_optimum_node optimum_nodes[NUM_OPTIM_NODES + MAX_FAST_LENGTH];
+	struct lzms_optimum_node optimum_nodes[NUM_OPTIM_NODES + MAX_FAST_LENGTH +
+					       1 + MAX_FAST_LENGTH];
 
 	/* Table: length => current cost for small match lengths  */
 	u32 fast_length_cost_tab[MAX_FAST_LENGTH + 1];
@@ -946,7 +947,7 @@ lzms_encode_item_list(struct lzms_compressor *c,
 }
 
 /******************************************************************************
- *                             Cost evalution                                 *
+ *                             Cost evaluation                                *
  ******************************************************************************/
 
 /*
@@ -1764,6 +1765,11 @@ begin:
 									span);
 
 				const u32 raw_offset = offset >> power;
+
+				if (unlikely(raw_offset > DELTA_SOURCE_RAW_OFFSET_MASK -
+							  (LZMS_NUM_DELTA_REPS - 1)))
+					continue;
+
 				const u32 pair = (power << DELTA_SOURCE_POWER_SHIFT) |
 						 raw_offset;
 				const u32 source = DELTA_SOURCE_TAG |

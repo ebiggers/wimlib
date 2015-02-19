@@ -11,6 +11,10 @@
  * You can do whatever you want with this file.
  */
 
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
 #include <limits.h>
 
 #include "wimlib/divsufsort.h"
@@ -37,7 +41,7 @@
  * Build the LCP (Longest Common Prefix) array in linear time.
  *
  * LCP[r] will be the length of the longest common prefix between the suffixes
- * with positions SA[r - 1] and  SA[r].  LCP[0] will be undefined.
+ * with positions SA[r - 1] and SA[r].  LCP[0] will be undefined.
  *
  * Algorithm taken from Kasai et al. (2001), but modified slightly:
  *
@@ -219,11 +223,11 @@ build_LCPIT(u32 intervals[restrict], u32 pos_data[restrict], const u32 n)
  * 'cur_pos' is the position of the current suffix, which is the suffix being
  * matched against.  'cur_pos' starts at 0 and is incremented each time this
  * function is called.  This function finds each suffix with position less than
- * 'cur_pos' that shares a prefix with the current position, but for each
- * distinct prefix length it finds only the suffix with the greatest position
- * (i.e. the most recently seen in the linear traversal by position).  This
- * function accomplishes this using the lcp-interval tree data structure that
- * was built by build_LCPIT() and is updated dynamically by this function.
+ * 'cur_pos' that shares a prefix with the current suffix, but for each distinct
+ * prefix length it finds only the suffix with the greatest position (i.e. the
+ * most recently seen in the linear traversal by position).  This function
+ * accomplishes this using the lcp-interval tree data structure that was built
+ * by build_LCPIT() and is updated dynamically by this function.
  *
  * The first step is to read 'pos_data[cur_pos]', which gives the index and lcp
  * value of the deepest lcp-interval containing the current suffix --- or,
@@ -334,13 +338,13 @@ lcpit_advance_one_byte(const u32 cur_pos,
 
 /* Expand SA from 32 bits to 64 bits.  */
 static void
-expand_SA(u32 *p, u32 n)
+expand_SA(void *p, u32 n)
 {
 	typedef u32 _may_alias_attribute aliased_u32_t;
 	typedef u64 _may_alias_attribute aliased_u64_t;
 
-	aliased_u32_t *SA = (aliased_u32_t *)p;
-	aliased_u64_t *SA64 = (aliased_u64_t *)p;
+	aliased_u32_t *SA = p;
+	aliased_u64_t *SA64 = p;
 
 	u32 r = n - 1;
 	do {
@@ -596,11 +600,10 @@ lcpit_matchfinder_init(struct lcpit_matchfinder *mf, size_t max_bufsize,
 static void
 build_SA(u32 SA[], const u8 T[], u32 n, u32 *tmp)
 {
-	/* Note: divsufsort() needs temporary space --- one array with 256
-	 * spaces and one array with 65536 spaces.  The implementation of
-	 * divsufsort() has been modified from the original to use the provided
-	 * temporary space instead of allocating its own, since we don't want to
-	 * have to deal with malloc() failures here.  */
+	/* Note: divsufsort() requires a fixed amount of temporary space.  The
+	 * implementation of divsufsort() has been modified from the original to
+	 * use the provided temporary space instead of allocating its own, since
+	 * we don't want to have to deal with malloc() failures here.  */
 	divsufsort(T, SA, n, tmp);
 }
 
