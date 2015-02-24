@@ -23,14 +23,15 @@
 
 #define LCP_BITS		6
 #define LCP_MAX			(((u32)1 << LCP_BITS) - 1)
-#define POS_MASK		(((u32)1 << (32 - LCP_BITS)) - 1)
 #define LCP_SHIFT		(32 - LCP_BITS)
 #define LCP_MASK		(LCP_MAX << LCP_SHIFT)
+#define POS_MASK		(((u32)1 << (32 - LCP_BITS)) - 1)
 #define MAX_NORMAL_BUFSIZE	(POS_MASK + 1)
 
 #define HUGE_LCP_BITS		7
 #define HUGE_LCP_MAX		(((u32)1 << HUGE_LCP_BITS) - 1)
 #define HUGE_LCP_SHIFT		(64 - HUGE_LCP_BITS)
+#define HUGE_LCP_MASK		((u64)HUGE_LCP_MAX << HUGE_LCP_SHIFT)
 #define HUGE_POS_MASK		0xFFFFFFFF
 #define MAX_HUGE_BUFSIZE	((u64)HUGE_POS_MASK + 1)
 #define HUGE_UNVISITED_TAG	0x100000000
@@ -166,22 +167,24 @@ build_LCPIT(u32 intervals[restrict], u32 pos_data[restrict], const u32 n)
 
 	for (u32 r = 1; r < n; r++) {
 		const u32 next_pos = SA_and_LCP[r] & POS_MASK;
-		const u32 next_lcp = SA_and_LCP[r] >> LCP_SHIFT;
-		const u32 top_lcp = *top >> LCP_SHIFT;
+		const u32 next_lcp = SA_and_LCP[r] & LCP_MASK;
+		const u32 top_lcp = *top & LCP_MASK;
+
+		prefetch(&pos_data[SA_and_LCP[r + PREFETCH_SAFETY] & POS_MASK]);
 
 		if (next_lcp == top_lcp) {
 			/* Continuing the deepest open interval  */
 			pos_data[prev_pos] = *top;
 		} else if (next_lcp > top_lcp) {
 			/* Opening a new interval  */
-			*++top = (next_lcp << LCP_SHIFT) | next_interval_idx++;
+			*++top = next_lcp | next_interval_idx++;
 			pos_data[prev_pos] = *top;
 		} else {
 			/* Closing the deepest open interval  */
 			pos_data[prev_pos] = *top;
 			for (;;) {
 				const u32 closed_interval_idx = *top-- & POS_MASK;
-				const u32 superinterval_lcp = *top >> LCP_SHIFT;
+				const u32 superinterval_lcp = *top & LCP_MASK;
 
 				if (next_lcp == superinterval_lcp) {
 					/* Continuing the superinterval */
@@ -192,7 +195,7 @@ build_LCPIT(u32 intervals[restrict], u32 pos_data[restrict], const u32 n)
 					 * superinterval of the one being
 					 * closed, but still a subinterval of
 					 * its superinterval  */
-					*++top = (next_lcp << LCP_SHIFT) | next_interval_idx++;
+					*++top = next_lcp | next_interval_idx++;
 					intervals[closed_interval_idx] = *top;
 					break;
 				} else {
@@ -278,60 +281,60 @@ lcpit_advance_one_byte(const u32 cur_pos,
 		       struct lz_match matches[restrict],
 		       const bool record_matches)
 {
-	u32 lcp;
-	u32 interval_idx;
+	u32 ref;
+	u32 super_ref;
 	u32 match_pos;
 	struct lz_match *matchptr;
 
 	/* Get the deepest lcp-interval containing the current suffix. */
-	lcp = pos_data[cur_pos] >> LCP_SHIFT;
-	interval_idx = pos_data[cur_pos] & POS_MASK;
+	ref = pos_data[cur_pos];
+
+	/* Prefetch the deepest lcp-interval containing the *next* suffix. */
 	prefetch(&intervals[pos_data[cur_pos + 1] & POS_MASK]);
+
+	/* There is no "next suffix" after the current one.  */
 	pos_data[cur_pos] = 0;
 
-	/* Ascend until we reach a visited interval, linking the unvisited
-	 * intervals to the current suffix as we go.  */
-	while (intervals[interval_idx] & LCP_MASK) {
-		const u32 superinterval_lcp = intervals[interval_idx] >> LCP_SHIFT;
-		const u32 superinterval_idx = intervals[interval_idx] & POS_MASK;
-		intervals[interval_idx] = cur_pos;
-		lcp = superinterval_lcp;
-		interval_idx = superinterval_idx;
+	/* Ascend until we reach a visited interval, the root, or a child of the
+	 * root.  Link unvisited intervals to the current suffix as we go.  */
+	while ((super_ref = intervals[ref & POS_MASK]) & LCP_MASK) {
+		intervals[ref & POS_MASK] = cur_pos;
+		ref = super_ref;
 	}
 
-	match_pos = intervals[interval_idx] & POS_MASK;
-	if (match_pos == 0) {
-		/* Ambiguous case; just don't allow matches with position 0. */
-		if (interval_idx != 0)
-			intervals[interval_idx] = cur_pos;
+	if (super_ref == 0) {
+		/* In this case, the current interval may be any of:
+		 * (1) the root;
+		 * (2) an unvisited child of the root;
+		 * (3) an interval last visited by suffix 0
+		 *
+		 * We could avoid the ambiguity with (3) by using an lcp
+		 * placeholder value other than 0 to represent "visited", but
+		 * it's fastest to use 0.  So we just don't allow matches with
+		 * position 0.  */
+
+		if (ref != 0)  /* Not the root?  */
+			intervals[ref & POS_MASK] = cur_pos;
 		return 0;
 	}
-	matchptr = matches;
-	/* Ascend indirectly via pos_data[] links.  */
-	for (;;) {
-		u32 next_lcp;
-		u32 next_interval_idx;
 
-		for (;;) {
-			next_lcp = pos_data[match_pos] >> LCP_SHIFT;
-			next_interval_idx = pos_data[match_pos] & POS_MASK;
-			if (next_lcp < lcp)
-				break;
-			/* Suffix was out of date.  */
-			match_pos = intervals[next_interval_idx];
-		}
-		intervals[interval_idx] = cur_pos;
-		pos_data[match_pos] = (lcp << LCP_SHIFT) | interval_idx;
+	/* Ascend indirectly via pos_data[] links.  */
+	match_pos = super_ref;
+	matchptr = matches;
+	for (;;) {
+		while ((super_ref = pos_data[match_pos]) > ref)
+			match_pos = intervals[super_ref & POS_MASK];
+		intervals[ref & POS_MASK] = cur_pos;
+		pos_data[match_pos] = ref;
 		if (record_matches) {
-			matchptr->length = lcp;
+			matchptr->length = ref >> LCP_SHIFT;
 			matchptr->offset = cur_pos - match_pos;
 			matchptr++;
 		}
-		if (next_interval_idx == 0)
+		if (super_ref == 0)
 			break;
-		match_pos = intervals[next_interval_idx];
-		interval_idx = next_interval_idx;
-		lcp = next_lcp;
+		ref = super_ref;
+		match_pos = intervals[ref & POS_MASK];
 	}
 	return matchptr - matches;
 }
@@ -405,15 +408,17 @@ build_LCPIT_huge(u64 intervals64[restrict], u32 pos_data[restrict], const u32 n)
 
 	for (u32 r = 1; r < n; r++) {
 		const u32 next_pos = SA_and_LCP64[r] & HUGE_POS_MASK;
-		const u32 next_lcp = SA_and_LCP64[r] >> HUGE_LCP_SHIFT;
-		const u32 top_lcp = intervals64[*top] >> HUGE_LCP_SHIFT;
+		const u64 next_lcp = SA_and_LCP64[r] & HUGE_LCP_MASK;
+		const u64 top_lcp = intervals64[*top];
+
+		prefetch(&pos_data[SA_and_LCP64[r + PREFETCH_SAFETY] & HUGE_POS_MASK]);
 
 		if (next_lcp == top_lcp) {
 			/* Continuing the deepest open interval  */
 			pos_data[prev_pos] = *top;
 		} else if (next_lcp > top_lcp) {
 			/* Opening a new interval  */
-			intervals64[next_interval_idx] = (u64)next_lcp << HUGE_LCP_SHIFT;
+			intervals64[next_interval_idx] = next_lcp;
 			pos_data[prev_pos] = next_interval_idx;
 			*++top = next_interval_idx++;
 		} else {
@@ -421,7 +426,7 @@ build_LCPIT_huge(u64 intervals64[restrict], u32 pos_data[restrict], const u32 n)
 			pos_data[prev_pos] = *top;
 			for (;;) {
 				const u32 closed_interval_idx = *top--;
-				const u32 superinterval_lcp = intervals64[*top] >> HUGE_LCP_SHIFT;
+				const u64 superinterval_lcp = intervals64[*top];
 
 				if (next_lcp == superinterval_lcp) {
 					/* Continuing the superinterval */
@@ -433,8 +438,7 @@ build_LCPIT_huge(u64 intervals64[restrict], u32 pos_data[restrict], const u32 n)
 					 * superinterval of the one being
 					 * closed, but still a subinterval of
 					 * its superinterval  */
-					intervals64[next_interval_idx] =
-						(u64)next_lcp << HUGE_LCP_SHIFT;
+					intervals64[next_interval_idx] = next_lcp;
 					intervals64[closed_interval_idx] |=
 						HUGE_UNVISITED_TAG | next_interval_idx;
 					*++top = next_interval_idx++;
@@ -465,47 +469,38 @@ lcpit_advance_one_byte_huge(const u32 cur_pos,
 			    const bool record_matches)
 {
 	u32 interval_idx;
-	u32 lcp;
+	u32 next_interval_idx;
+	u64 cur;
+	u64 next;
 	u32 match_pos;
 	struct lz_match *matchptr;
 
 	interval_idx = pos_data[cur_pos];
-	prefetch(&intervals64[pos_data[cur_pos + 1]]);
+	prefetch(&pos_data[intervals64[pos_data[cur_pos + 1]] & HUGE_POS_MASK]);
+	prefetch(&intervals64[pos_data[cur_pos + 2]]);
 	pos_data[cur_pos] = 0;
 
-	while (intervals64[interval_idx] & HUGE_UNVISITED_TAG) {
-		lcp = intervals64[interval_idx] >> HUGE_LCP_SHIFT;
-		if (lcp == 0)
-			return 0;
-		const u32 superinterval_idx = intervals64[interval_idx] & HUGE_POS_MASK;
-		intervals64[interval_idx] = ((u64)lcp << HUGE_LCP_SHIFT) | cur_pos;
-		interval_idx = superinterval_idx;
+	while ((next = intervals64[interval_idx]) & HUGE_UNVISITED_TAG) {
+		intervals64[interval_idx] = (next & HUGE_LCP_MASK) | cur_pos;
+		interval_idx = next & HUGE_POS_MASK;
 	}
 
-	match_pos = intervals64[interval_idx] & HUGE_POS_MASK;
-	lcp = intervals64[interval_idx] >> HUGE_LCP_SHIFT;
 	matchptr = matches;
-	while (lcp != 0) {
-		u32 next_interval_idx;
-		u32 next_lcp;
-
-		for (;;) {
+	while (next & HUGE_LCP_MASK) {
+		cur = next;
+		do {
+			match_pos = next & HUGE_POS_MASK;
 			next_interval_idx = pos_data[match_pos];
-			next_lcp = intervals64[next_interval_idx] >> HUGE_LCP_SHIFT;
-			if (next_lcp < lcp)
-				break;
-			match_pos = intervals64[next_interval_idx] & HUGE_POS_MASK;
-		}
-		intervals64[interval_idx] = ((u64)lcp << HUGE_LCP_SHIFT) | cur_pos;
+			next = intervals64[next_interval_idx];
+		} while (next > cur);
+		intervals64[interval_idx] = (cur & HUGE_LCP_MASK) | cur_pos;
 		pos_data[match_pos] = interval_idx;
 		if (record_matches) {
-			matchptr->length = lcp;
+			matchptr->length = cur >> HUGE_LCP_SHIFT;
 			matchptr->offset = cur_pos - match_pos;
 			matchptr++;
 		}
-		match_pos = intervals64[next_interval_idx] & HUGE_POS_MASK;
 		interval_idx = next_interval_idx;
-		lcp = next_lcp;
 	}
 	return matchptr - matches;
 }
@@ -520,8 +515,8 @@ get_pos_data_size(size_t max_bufsize)
 static inline u64
 get_intervals_size(size_t max_bufsize)
 {
-	return (u64)max_bufsize * (max_bufsize <= MAX_NORMAL_BUFSIZE ?
-				   sizeof(u32) : sizeof(u64));
+	return ((u64)max_bufsize + PREFETCH_SAFETY) *
+		(max_bufsize <= MAX_NORMAL_BUFSIZE ? sizeof(u32) : sizeof(u64));
 }
 
 /*
@@ -568,8 +563,6 @@ lcpit_matchfinder_init(struct lcpit_matchfinder *mf, size_t max_bufsize,
 	mf->nice_match_len = min(nice_match_len,
 				 (max_bufsize <= MAX_NORMAL_BUFSIZE) ?
 				 LCP_MAX : HUGE_LCP_MAX);
-	for (u32 i = 0; i < PREFETCH_SAFETY; i++)
-		mf->pos_data[max_bufsize + i] = 0;
 	return true;
 }
 
@@ -638,11 +631,19 @@ lcpit_matchfinder_load_buffer(struct lcpit_matchfinder *mf, const u8 *T, u32 n)
 	build_SA(mf->intervals, T, n, mf->pos_data);
 	build_ISA(mf->pos_data, mf->intervals, n);
 	if (n <= MAX_NORMAL_BUFSIZE) {
+		for (u32 i = 0; i < PREFETCH_SAFETY; i++) {
+			mf->intervals[n + i] = 0;
+			mf->pos_data[n + i] = 0;
+		}
 		build_LCP(mf->intervals, mf->pos_data, T, n,
 			  mf->min_match_len, mf->nice_match_len);
 		build_LCPIT(mf->intervals, mf->pos_data, n);
 		mf->huge_mode = false;
 	} else {
+		for (u32 i = 0; i < PREFETCH_SAFETY; i++) {
+			mf->intervals64[n + i] = 0;
+			mf->pos_data[n + i] = 0;
+		}
 		expand_SA(mf->intervals, n);
 		build_LCP_huge(mf->intervals64, mf->pos_data, T, n,
 			       mf->min_match_len, mf->nice_match_len);
