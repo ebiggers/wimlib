@@ -551,28 +551,28 @@ lzms_decode_match_bit(struct lzms_decompressor *d)
 }
 
 static int
-lzms_decode_lz_match_bit(struct lzms_decompressor *d)
+lzms_decode_lz_bit(struct lzms_decompressor *d)
 {
 	return lzms_decode_bit(&d->rd, &d->lz_state,
 			       LZMS_NUM_LZ_PROBS, d->lz_probs);
 }
 
 static int
-lzms_decode_delta_match_bit(struct lzms_decompressor *d)
+lzms_decode_delta_bit(struct lzms_decompressor *d)
 {
 	return lzms_decode_bit(&d->rd, &d->delta_state,
 			       LZMS_NUM_DELTA_PROBS, d->delta_probs);
 }
 
 static noinline int
-lzms_decode_lz_repeat_match_bit(struct lzms_decompressor *d, int idx)
+lzms_decode_lz_rep_bit(struct lzms_decompressor *d, int idx)
 {
 	return lzms_decode_bit(&d->rd, &d->lz_rep_states[idx],
 			       LZMS_NUM_LZ_REP_PROBS, d->lz_rep_probs[idx]);
 }
 
 static noinline int
-lzms_decode_delta_repeat_match_bit(struct lzms_decompressor *d, int idx)
+lzms_decode_delta_rep_bit(struct lzms_decompressor *d, int idx)
 {
 	return lzms_decode_bit(&d->rd, &d->delta_rep_states[idx],
 			       LZMS_NUM_DELTA_REP_PROBS, d->delta_rep_probs[idx]);
@@ -753,19 +753,19 @@ lzms_decode_items(struct lzms_decompressor * const restrict d,
 				d->pending_lz_offset = 0;
 			}
 
-			if (!lzms_decode_lz_match_bit(d)) {
+			if (!lzms_decode_lz_bit(d)) {
 				/* Explicit offset  */
 				offset = lzms_decode_lz_offset(d);
 			} else {
 				/* Repeat offset  */
 
 				BUILD_BUG_ON(LZMS_NUM_LZ_REPS != 3);
-				if (!lzms_decode_lz_repeat_match_bit(d, 0)) {
+				if (!lzms_decode_lz_rep_bit(d, 0)) {
 					offset = d->recent_lz_offsets[0];
 					d->recent_lz_offsets[0] = d->recent_lz_offsets[1];
 					d->recent_lz_offsets[1] = d->recent_lz_offsets[2];
 					d->recent_lz_offsets[2] = d->recent_lz_offsets[3];
-				} else if (!lzms_decode_lz_repeat_match_bit(d, 1)) {
+				} else if (!lzms_decode_lz_rep_bit(d, 1)) {
 					offset = d->recent_lz_offsets[1];
 					d->recent_lz_offsets[1] = d->recent_lz_offsets[2];
 					d->recent_lz_offsets[2] = d->recent_lz_offsets[3];
@@ -818,7 +818,7 @@ lzms_decode_items(struct lzms_decompressor * const restrict d,
 				d->pending_delta_pair = 0;
 			}
 
-			if (!lzms_decode_delta_match_bit(d)) {
+			if (!lzms_decode_delta_bit(d)) {
 				/* Explicit offset  */
 				power = lzms_decode_delta_power(d);
 				raw_offset = lzms_decode_delta_offset(d);
@@ -827,12 +827,12 @@ lzms_decode_items(struct lzms_decompressor * const restrict d,
 				u64 val;
 
 				BUILD_BUG_ON(LZMS_NUM_DELTA_REPS != 3);
-				if (!lzms_decode_delta_repeat_match_bit(d, 0)) {
+				if (!lzms_decode_delta_rep_bit(d, 0)) {
 					val = d->recent_delta_pairs[0];
 					d->recent_delta_pairs[0] = d->recent_delta_pairs[1];
 					d->recent_delta_pairs[1] = d->recent_delta_pairs[2];
 					d->recent_delta_pairs[2] = d->recent_delta_pairs[3];
-				} else if (!lzms_decode_delta_repeat_match_bit(d, 1)) {
+				} else if (!lzms_decode_delta_rep_bit(d, 1)) {
 					val = d->recent_delta_pairs[1];
 					d->recent_delta_pairs[1] = d->recent_delta_pairs[2];
 					d->recent_delta_pairs[2] = d->recent_delta_pairs[3];
