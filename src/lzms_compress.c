@@ -1202,7 +1202,7 @@ lzms_init_delta_matchfinder(struct lzms_compressor *c)
  * delta context with the specified @span.
  */
 static inline u32
-lzms_delta_hash(const u8 *p, u32 span)
+lzms_delta_hash(const u8 *p, const u32 pos, u32 span)
 {
 	/* A delta match has a certain span and an offset that is a multiple of
 	 * that span.  To reduce wasted space we use a single combined hash
@@ -1214,7 +1214,7 @@ lzms_delta_hash(const u8 *p, u32 span)
 	u8 d0 = *(p + 0) - *(p + 0 - span);
 	u8 d1 = *(p + 1) - *(p + 1 - span);
 	u8 d2 = *(p + 2) - *(p + 2 - span);
-	u32 v = ((span + ((u32)(uintptr_t)p & (span - 1))) << 24) |
+	u32 v = ((span + (pos & (span - 1))) << 24) |
 		((u32)d2 << 16) | ((u32)d1 << 8) | d0;
 	return lz_hash(v, DELTA_HASH_ORDER);
 }
@@ -1250,7 +1250,7 @@ lzms_delta_matchfinder_skip_bytes(struct lzms_compressor *c,
 			const u32 span = (u32)1 << power;
 			if (unlikely(pos < span))
 				continue;
-			const u32 next_hash = lzms_delta_hash(in_next + 1, span);
+			const u32 next_hash = lzms_delta_hash(in_next + 1, pos + 1, span);
 			const u32 hash = c->next_delta_hashes[power];
 			c->delta_hash_table[hash] =
 				(power << DELTA_SOURCE_POWER_SHIFT) | pos;
@@ -1727,7 +1727,7 @@ begin:
 				if (unlikely(pos < span))
 					continue;
 
-				const u32 next_hash = lzms_delta_hash(in_next + 1, span);
+				const u32 next_hash = lzms_delta_hash(in_next + 1, pos + 1, span);
 				const u32 hash = c->next_delta_hashes[power];
 				const u32 cur_match = c->delta_hash_table[hash];
 
