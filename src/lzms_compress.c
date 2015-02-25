@@ -1127,7 +1127,7 @@ lzms_update_lru_queues(struct lzms_adaptive_state *state)
 static inline void
 lzms_update_state(u8 *state_p, int bit, unsigned num_states)
 {
-	*state_p = ((*state_p << 1) | bit) % num_states;
+	*state_p = ((*state_p << 1) | bit) & (num_states - 1);
 }
 
 static inline void
@@ -1287,10 +1287,10 @@ lzms_skip_bytes(struct lzms_compressor *c, u32 count, const u8 *in_next)
  * can be reached using a match or literal from the current position.  This is
  * essentially Dijkstra's algorithm in disguise: the graph nodes are positions,
  * the graph edges are possible matches/literals to code, and the cost of each
- * edge is the estimated number of bits that will be required to output the
- * corresponding match or literal.  But one difference is that we actually
- * compute the lowest-cost path in pieces, where each piece is terminated when
- * there are no choices to be made.
+ * edge is the estimated number of bits (scaled up by COST_SHIFT) that will be
+ * required to output the corresponding match or literal.  But one difference is
+ * that we actually compute the lowest-cost path in pieces, where each piece is
+ * terminated when there are no choices to be made.
  *
  * The costs of literals and matches are estimated using the range encoder
  * states and the semi-adaptive Huffman codes.  Except for range encoding
@@ -1760,7 +1760,7 @@ begin:
 				/* Extend the delta match to its full length.  */
 				const u32 len = lzms_extend_delta_match(in_next,
 									matchptr,
-									3,
+									NBYTES_HASHED_FOR_DELTA,
 									in_end - in_next,
 									span);
 
@@ -1895,7 +1895,7 @@ begin:
 		 * Finalize the adaptive state that results from taking this
 		 * lowest-cost path.  */
 		struct lzms_item item_to_take = cur_node->item;
-		struct lzms_optimum_node *source_node = cur_node - (item_to_take.length);
+		struct lzms_optimum_node *source_node = cur_node - item_to_take.length;
 		int next_item_idx = -1;
 		for (unsigned i = 0; i < cur_node->num_extra_items; i++) {
 			item_to_take = cur_node->extra_items[i];
@@ -1922,9 +1922,9 @@ begin:
 
 					if (source >= LZMS_NUM_DELTA_REPS) {
 						/* Explicit offset delta match  */
-						u32 pair = source - (LZMS_NUM_DELTA_REPS - 1);
 						lzms_update_delta_state(&cur_node->state, 0);
-						cur_node->state.upcoming_delta_pair = pair;
+						cur_node->state.upcoming_delta_pair =
+							source - (LZMS_NUM_DELTA_REPS - 1);
 					} else {
 						/* Repeat offset delta match  */
 						int rep_idx = source;
