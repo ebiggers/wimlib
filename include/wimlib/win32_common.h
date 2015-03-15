@@ -25,6 +25,10 @@ extern NTSTATUS (WINAPI *func_NtCreateFile)(PHANDLE FileHandle,
 					    PVOID EaBuffer,
 					    ULONG EaLength);
 
+#ifndef FILE_OPENED
+#  define FILE_OPENED 0x00000001
+#endif
+
 extern NTSTATUS (WINAPI *func_NtOpenFile) (PHANDLE FileHandle,
 					   ACCESS_MASK DesiredAccess,
 					   POBJECT_ATTRIBUTES ObjectAttributes,

@@ -1370,6 +1370,20 @@ create_directory(const struct wim_dentry *dentry, struct win32_apply_ctx *ctx)
 		return WIMLIB_ERR_MKDIR;
 	}
 
+	if (ctx->iosb.Information == FILE_OPENED) {
+		/* If we opened an existing directory, try to clear its file
+		 * attributes.  As far as I know, this only actually makes a
+		 * difference in the case where a FILE_ATTRIBUTE_READONLY
+		 * directory has a named data stream which needs to be
+		 * extracted.  You cannot create a named data stream of such a
+		 * directory, even though this contradicts Microsoft's
+		 * documentation for FILE_ATTRIBUTE_READONLY which states it is
+		 * not honored for directories!  */
+		FILE_BASIC_INFORMATION basic_info = { .FileAttributes = FILE_ATTRIBUTE_NORMAL };
+		(*func_NtSetInformationFile)(h, &ctx->iosb, &basic_info,
+					     sizeof(basic_info), FileBasicInformation);
+	}
+
 	if (!dentry_is_root(dentry)) {
 		ret = set_short_name(h, dentry, ctx);
 		if (ret)
