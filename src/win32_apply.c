@@ -1347,32 +1347,37 @@ create_any_empty_ads(const struct wim_dentry *dentry,
  * Returns 0, WIMLIB_ERR_MKDIR, or WIMLIB_ERR_SET_SHORT_NAME.
  */
 static int
-create_directory(const struct wim_dentry *dentry,
-		 struct win32_apply_ctx *ctx)
+create_directory(const struct wim_dentry *dentry, struct win32_apply_ctx *ctx)
 {
-	HANDLE h;
+	DWORD perms;
 	NTSTATUS status;
+	HANDLE h;
 	int ret;
 
 	/* DELETE is needed for set_short_name(); GENERIC_READ and GENERIC_WRITE
-	 * are needed for adjust_compression_attribute().
-	 *
-	 * FILE_ATTRIBUTE_SYSTEM is needed to ensure that
+	 * are needed for adjust_compression_attribute().  */
+	perms = GENERIC_READ | GENERIC_WRITE;
+	if (!dentry_is_root(dentry))
+		perms |= DELETE;
+
+	/* FILE_ATTRIBUTE_SYSTEM is needed to ensure that
 	 * FILE_ATTRIBUTE_ENCRYPTED doesn't get set before we want it to be.  */
-	status = create_file(&h, GENERIC_READ | GENERIC_WRITE | DELETE, NULL,
-			     FILE_ATTRIBUTE_SYSTEM, FILE_OPEN_IF, FILE_DIRECTORY_FILE,
-			     dentry, ctx);
+	status = create_file(&h, perms, NULL, FILE_ATTRIBUTE_SYSTEM,
+			     FILE_OPEN_IF, FILE_DIRECTORY_FILE, dentry, ctx);
 	if (!NT_SUCCESS(status)) {
 		winnt_error(status, L"Can't create directory \"%ls\"",
 			    current_path(ctx));
 		return WIMLIB_ERR_MKDIR;
 	}
 
-	ret = set_short_name(h, dentry, ctx);
+	if (!dentry_is_root(dentry)) {
+		ret = set_short_name(h, dentry, ctx);
+		if (ret)
+			goto out;
+	}
 
-	if (!ret)
-		ret = adjust_compression_attribute(h, dentry, ctx);
-
+	ret = adjust_compression_attribute(h, dentry, ctx);
+out:
 	(*func_NtClose)(h);
 	return ret;
 }
@@ -1400,19 +1405,14 @@ create_directories(struct list_head *dentry_list,
 		 * FILE_ATTRIBUTE_DIRECTORY|FILE_ATTRIBUTE_REPARSE_POINT, but we
 		 * wait until later to actually set the reparse data.  */
 
-		/* If the root dentry is being extracted, it was already done so
-		 * in prepare_target().  */
-		if (!dentry_is_root(dentry)) {
-			ret = create_directory(dentry, ctx);
-			ret = check_apply_error(dentry, ctx, ret);
-			if (ret)
-				return ret;
+		ret = create_directory(dentry, ctx);
 
+		if (!ret)
 			ret = create_any_empty_ads(dentry, ctx);
-			ret = check_apply_error(dentry, ctx, ret);
-			if (ret)
-				return ret;
-		}
+
+		ret = check_apply_error(dentry, ctx, ret);
+		if (ret)
+			return ret;
 
 		ret = report_file_created(&ctx->common);
 		if (ret)
