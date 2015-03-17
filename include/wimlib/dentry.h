@@ -9,11 +9,11 @@
 #include "wimlib/types.h"
 
 struct wim_inode;
-struct wim_lookup_table;
+struct blob_table;
 
 /* Base size of a WIM dentry in the on-disk format, up to and including the file
  * name length.  This does not include the variable-length file name, short
- * name, alternate data stream entries, and padding to 8-byte boundaries.  */
+ * name, extra stream entries, and padding to 8-byte boundaries.  */
 #define WIM_DENTRY_DISK_SIZE 102
 
 /*
@@ -144,7 +144,7 @@ will_extract_dentry(const struct wim_dentry *dentry)
 	return dentry->d_extraction_list_node.next != NULL;
 }
 
-extern u64
+extern size_t
 dentry_out_total_length(const struct wim_dentry *dentry);
 
 extern int
@@ -250,7 +250,7 @@ free_dentry(struct wim_dentry *dentry);
 
 extern void
 free_dentry_tree(struct wim_dentry *root,
-		 struct wim_lookup_table *lookup_table);
+		 struct blob_table *blob_table);
 
 extern void
 unlink_dentry(struct wim_dentry *dentry);

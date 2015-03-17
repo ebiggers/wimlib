@@ -8,14 +8,14 @@
 #include "wimlib/callback.h"
 #include "wimlib/types.h"
 
-struct wim_lookup_table_entry;
+struct blob_descriptor;
 
 extern int
-read_winnt_file_prefix(const struct wim_lookup_table_entry *lte, u64 size,
-		       consume_data_callback_t cb, void *cb_ctx);
+read_winnt_stream_prefix(const struct blob_descriptor *blob, u64 size,
+			 consume_data_callback_t cb, void *cb_ctx);
 
 extern int
-read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
+read_win32_encrypted_file_prefix(const struct blob_descriptor *blob,
 				 u64 size,
 				 consume_data_callback_t cb,
 				 void *cb_ctx);

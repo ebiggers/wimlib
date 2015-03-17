@@ -30,12 +30,12 @@
 #include "wimlib/win32_common.h"
 
 #include "wimlib/assert.h"
+#include "wimlib/blob_table.h"
 #include "wimlib/capture.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
-#include "wimlib/lookup_table.h"
 #include "wimlib/paths.h"
 #include "wimlib/reparse.h"
 
@@ -103,10 +103,10 @@ retry:
 }
 
 /* Read the first @size bytes from the file, or named data stream of a file,
- * from which the stream entry @lte was created.  */
+ * described by @blob.  */
 int
-read_winnt_file_prefix(const struct wim_lookup_table_entry *lte, u64 size,
-		       consume_data_callback_t cb, void *cb_ctx)
+read_winnt_stream_prefix(const struct blob_descriptor *blob, u64 size,
+			 consume_data_callback_t cb, void *cb_ctx)
 {
 	const wchar_t *path;
 	HANDLE h;
@@ -116,7 +116,7 @@ read_winnt_file_prefix(const struct wim_lookup_table_entry *lte, u64 size,
 	int ret;
 
 	/* This is an NT namespace path.  */
-	path = lte->file_on_disk;
+	path = blob->file_on_disk;
 
 	status = winnt_openat(NULL, path, wcslen(path),
 			      FILE_READ_DATA | SYNCHRONIZE, &h);
@@ -184,7 +184,7 @@ win32_encrypted_export_cb(unsigned char *data, void *_ctx, unsigned long len)
 }
 
 int
-read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
+read_win32_encrypted_file_prefix(const struct blob_descriptor *blob,
 				 u64 size,
 				 consume_data_callback_t cb, void *cb_ctx)
 {
@@ -194,7 +194,7 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 	int ret;
 	DWORD flags = 0;
 
-	if (lte->file_inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
+	if (blob->file_inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
 		flags |= CREATE_FOR_DIR;
 
 	export_ctx.read_prefix_cb = cb;
@@ -202,11 +202,11 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 	export_ctx.wimlib_err_code = 0;
 	export_ctx.bytes_remaining = size;
 
-	err = OpenEncryptedFileRaw(lte->file_on_disk, flags, &file_ctx);
+	err = OpenEncryptedFileRaw(blob->file_on_disk, flags, &file_ctx);
 	if (err != ERROR_SUCCESS) {
 		win32_error(err,
 			    L"Failed to open encrypted file \"%ls\" for raw read",
-			    printable_path(lte->file_on_disk));
+			    printable_path(blob->file_on_disk));
 		return WIMLIB_ERR_OPEN;
 	}
 	err = ReadEncryptedFileRaw(win32_encrypted_export_cb,
@@ -216,14 +216,14 @@ read_win32_encrypted_file_prefix(const struct wim_lookup_table_entry *lte,
 		if (ret == 0) {
 			win32_error(err,
 				    L"Failed to read encrypted file \"%ls\"",
-				    printable_path(lte->file_on_disk));
+				    printable_path(blob->file_on_disk));
 			ret = WIMLIB_ERR_READ;
 		}
 	} else if (export_ctx.bytes_remaining != 0) {
 		ERROR("Only could read %"PRIu64" of %"PRIu64" bytes from "
 		      "encrypted file \"%ls\"",
 		      size - export_ctx.bytes_remaining, size,
-		      printable_path(lte->file_on_disk));
+		      printable_path(blob->file_on_disk));
 		ret = WIMLIB_ERR_READ;
 	} else {
 		ret = 0;
@@ -760,7 +760,7 @@ winnt_get_reparse_data(HANDLE h, const wchar_t *path,
 		return WIMLIB_ERR_READ;
 	}
 
-	if (unlikely(bytes_returned < 8)) {
+	if (unlikely(bytes_returned < REPARSE_DATA_OFFSET)) {
 		ERROR("\"%ls\": Reparse point data is invalid",
 		      printable_path(path));
 		return WIMLIB_ERR_INVALID_REPARSE_DATA;
@@ -824,43 +824,52 @@ win32_get_encrypted_file_size(const wchar_t *path, bool is_dir, u64 *size_ret)
 }
 
 static int
-winnt_load_encrypted_stream_info(struct wim_inode *inode, const wchar_t *nt_path,
-				 struct list_head *unhashed_streams)
+winnt_load_efsrpc_raw_data(struct wim_inode *inode, const wchar_t *nt_path,
+			   struct list_head *unhashed_blobs)
 {
-	struct wim_lookup_table_entry *lte = new_lookup_table_entry();
+	struct blob_descriptor *blob;
+	struct wim_inode_stream *strm;
 	int ret;
 
-	if (unlikely(!lte))
-		return WIMLIB_ERR_NOMEM;
+	blob = new_blob_descriptor();
+	if (!blob)
+		goto err_nomem;
 
-	lte->file_on_disk = WCSDUP(nt_path);
-	if (unlikely(!lte->file_on_disk)) {
-		free_lookup_table_entry(lte);
-		return WIMLIB_ERR_NOMEM;
-	}
-	lte->resource_location = RESOURCE_WIN32_ENCRYPTED;
+	blob->file_on_disk = WCSDUP(nt_path);
+	if (!blob->file_on_disk)
+		goto err_nomem;
+	blob->blob_location = BLOB_WIN32_ENCRYPTED;
 
 	/* OpenEncryptedFileRaw() expects a Win32 name.  */
-	wimlib_assert(!wmemcmp(lte->file_on_disk, L"\\??\\", 4));
-	lte->file_on_disk[1] = L'\\';
+	wimlib_assert(!wmemcmp(blob->file_on_disk, L"\\??\\", 4));
+	blob->file_on_disk[1] = L'\\';
 
-	ret = win32_get_encrypted_file_size(lte->file_on_disk,
+	blob->file_inode = inode;
+
+	ret = win32_get_encrypted_file_size(blob->file_on_disk,
 					    (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY),
-					    &lte->size);
-	if (unlikely(ret)) {
-		free_lookup_table_entry(lte);
-		return ret;
-	}
+					    &blob->size);
+	if (ret)
+		goto err;
 
-	lte->file_inode = inode;
-	add_unhashed_stream(lte, inode, 0, unhashed_streams);
-	inode->i_lte = lte;
+	strm = inode_add_stream(inode, STREAM_TYPE_EFSRPC_RAW_DATA,
+				NO_STREAM_NAME, blob);
+	if (!strm)
+		goto err_nomem;
+
+	prepare_unhashed_blob(blob, inode, strm->stream_id, unhashed_blobs);
 	return 0;
+
+err_nomem:
+	ret = WIMLIB_ERR_NOMEM;
+err:
+	free_blob_descriptor(blob);
+	return ret;
 }
 
 static bool
-get_data_stream_name(const wchar_t *raw_stream_name, size_t raw_stream_name_nchars,
-		     const wchar_t **stream_name_ret, size_t *stream_name_nchars_ret)
+get_data_stream_name(wchar_t *raw_stream_name, size_t raw_stream_name_nchars,
+		     wchar_t **stream_name_ret, size_t *stream_name_nchars_ret)
 {
 	const wchar_t *sep, *type, *end;
 
@@ -891,6 +900,9 @@ get_data_stream_name(const wchar_t *raw_stream_name, size_t raw_stream_name_ncha
 	return true;
 }
 
+/* Build the path to the stream.  For unnamed streams, this is simply the path
+ * to the file.  For named streams, this is the path to the file, followed by a
+ * colon, followed by the stream name.  */
 static wchar_t *
 build_stream_path(const wchar_t *path, size_t path_nchars,
 		  const wchar_t *stream_name, size_t stream_name_nchars)
@@ -916,77 +928,57 @@ build_stream_path(const wchar_t *path, size_t path_nchars,
 }
 
 static int
-winnt_scan_stream(const wchar_t *path, size_t path_nchars,
-		  const wchar_t *raw_stream_name, size_t raw_stream_name_nchars,
-		  u64 stream_size,
-		  struct wim_inode *inode, struct list_head *unhashed_streams)
+winnt_scan_data_stream(const wchar_t *path, size_t path_nchars,
+		       wchar_t *raw_stream_name, size_t raw_stream_name_nchars,
+		       u64 stream_size,
+		       struct wim_inode *inode, struct list_head *unhashed_blobs)
 {
-	const wchar_t *stream_name;
+	wchar_t *stream_name;
 	size_t stream_name_nchars;
-	struct wim_ads_entry *ads_entry;
-	wchar_t *stream_path;
-	struct wim_lookup_table_entry *lte;
-	u32 stream_id;
+	struct blob_descriptor *blob;
+	struct wim_inode_stream *strm;
 
 	/* Given the raw stream name (which is something like
-	 * :streamname:$DATA), extract just the stream name part.
+	 * :streamname:$DATA), extract just the stream name part (streamname).
 	 * Ignore any non-$DATA streams.  */
 	if (!get_data_stream_name(raw_stream_name, raw_stream_name_nchars,
 				  &stream_name, &stream_name_nchars))
 		return 0;
 
-	/* If this is a named stream, allocate an ADS entry for it.  */
-	if (stream_name_nchars) {
-		ads_entry = inode_add_ads_utf16le(inode, stream_name,
-						  stream_name_nchars *
-							sizeof(wchar_t));
-		if (!ads_entry)
-			return WIMLIB_ERR_NOMEM;
-	} else if (inode->i_attributes & (FILE_ATTRIBUTE_REPARSE_POINT |
-					  FILE_ATTRIBUTE_ENCRYPTED))
-	{
-		/* Ignore unnamed data stream of reparse point or encrypted file
-		 */
-		return 0;
+	stream_name[stream_name_nchars] = L'\0';
+
+	/* If the stream is non-empty, set up a blob descriptor for it.  */
+	if (stream_size != 0) {
+		blob = new_blob_descriptor();
+		if (!blob)
+			goto err_nomem;
+		blob->file_on_disk = build_stream_path(path,
+						       path_nchars,
+						       stream_name,
+						       stream_name_nchars);
+		if (!blob->file_on_disk)
+			goto err_nomem;
+		blob->blob_location = BLOB_IN_WINNT_FILE_ON_DISK;
+		blob->size = stream_size;
+		blob->file_inode = inode;
 	} else {
-		ads_entry = NULL;
+		blob = NULL;
 	}
 
-	/* If the stream is empty, no lookup table entry is needed. */
-	if (stream_size == 0)
-		return 0;
+	strm = inode_add_stream(inode, STREAM_TYPE_DATA, stream_name, blob);
+	if (!strm)
+		goto err_nomem;
 
-	/* Build the path to the stream.  For unnamed streams, this is simply
-	 * the path to the file.  For named streams, this is the path to the
-	 * file, followed by a colon, followed by the stream name.  */
-	stream_path = build_stream_path(path, path_nchars,
-					stream_name, stream_name_nchars);
-	if (!stream_path)
-		return WIMLIB_ERR_NOMEM;
-
-	/* Set up the lookup table entry for the stream.  */
-	lte = new_lookup_table_entry();
-	if (!lte) {
-		FREE(stream_path);
-		return WIMLIB_ERR_NOMEM;
-	}
-	lte->file_on_disk = stream_path;
-	lte->resource_location = RESOURCE_IN_WINNT_FILE_ON_DISK;
-	lte->size = stream_size;
-	if (ads_entry) {
-		stream_id = ads_entry->stream_id;
-		ads_entry->lte = lte;
-	} else {
-		stream_id = 0;
-		inode->i_lte = lte;
-	}
-	lte->file_inode = inode;
-	add_unhashed_stream(lte, inode, stream_id, unhashed_streams);
+	prepare_unhashed_blob(blob, inode, strm->stream_id, unhashed_blobs);
 	return 0;
+
+err_nomem:
+	free_blob_descriptor(blob);
+	return WIMLIB_ERR_NOMEM;
 }
 
 /*
- * Load information about the streams of an open file into a WIM inode.
+ * Load information about the data streams of an open file into a WIM inode.
  *
  * We use the NtQueryInformationFile() system call instead of FindFirstStream()
  * and FindNextStream().  This is done for two reasons:
@@ -1000,9 +992,9 @@ winnt_scan_stream(const wchar_t *path, size_t path_nchars,
  *   already present in Windows XP.
  */
 static int
-winnt_scan_streams(HANDLE h, const wchar_t *path, size_t path_nchars,
-		   struct wim_inode *inode, struct list_head *unhashed_streams,
-		   u64 file_size, u32 vol_flags)
+winnt_scan_data_streams(HANDLE h, const wchar_t *path, size_t path_nchars,
+			struct wim_inode *inode, struct list_head *unhashed_blobs,
+			u64 file_size, u32 vol_flags)
 {
 	int ret;
 	u8 _buf[1024] _aligned_attribute(8);
@@ -1010,7 +1002,7 @@ winnt_scan_streams(HANDLE h, const wchar_t *path, size_t path_nchars,
 	size_t bufsize;
 	IO_STATUS_BLOCK iosb;
 	NTSTATUS status;
-	const FILE_STREAM_INFORMATION *info;
+	FILE_STREAM_INFORMATION *info;
 
 	buf = _buf;
 	bufsize = sizeof(_buf);
@@ -1063,14 +1055,14 @@ winnt_scan_streams(HANDLE h, const wchar_t *path, size_t path_nchars,
 	}
 
 	/* Parse one or more stream information structures.  */
-	info = (const FILE_STREAM_INFORMATION *)buf;
+	info = (FILE_STREAM_INFORMATION *)buf;
 	for (;;) {
 		/* Load the stream information.  */
-		ret = winnt_scan_stream(path, path_nchars,
-					info->StreamName,
-					info->StreamNameLength / 2,
-					info->StreamSize.QuadPart,
-					inode, unhashed_streams);
+		ret = winnt_scan_data_stream(path, path_nchars,
+					     info->StreamName,
+					     info->StreamNameLength / 2,
+					     info->StreamSize.QuadPart,
+					     inode, unhashed_blobs);
 		if (ret)
 			goto out_free_buf;
 
@@ -1079,8 +1071,8 @@ winnt_scan_streams(HANDLE h, const wchar_t *path, size_t path_nchars,
 			break;
 		}
 		/* Advance to next stream information.  */
-		info = (const FILE_STREAM_INFORMATION *)
-				((const u8 *)info + info->NextEntryOffset);
+		info = (FILE_STREAM_INFORMATION *)
+				((u8 *)info + info->NextEntryOffset);
 	}
 	ret = 0;
 	goto out_free_buf;
@@ -1095,8 +1087,8 @@ unnamed_only:
 		goto out_free_buf;
 	}
 
-	ret = winnt_scan_stream(path, path_nchars, L"::$DATA", 7,
-				file_size, inode, unhashed_streams);
+	ret = winnt_scan_data_stream(path, path_nchars, L"::$DATA", 7,
+				     file_size, inode, unhashed_blobs);
 out_free_buf:
 	/* Free buffer if allocated on heap.  */
 	if (unlikely(buf != _buf))
@@ -1121,9 +1113,6 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	int ret;
 	NTSTATUS status;
 	FILE_ALL_INFORMATION file_info;
-	u8 *rpbuf;
-	u16 rpbuflen;
-	u16 not_rpfixed;
 	ACCESS_MASK requestedPerms;
 
 	ret = try_exclude(full_path, full_path_nchars, params);
@@ -1248,25 +1237,6 @@ retry_open:
 		}
 	}
 
-	/* If this is a reparse point, read the reparse data.  */
-	if (unlikely(file_info.BasicInformation.FileAttributes &
-		     FILE_ATTRIBUTE_REPARSE_POINT))
-	{
-		rpbuf = alloca(REPARSE_POINT_MAX_SIZE);
-		ret = winnt_get_reparse_data(h, full_path, params,
-					     rpbuf, &rpbuflen);
-		switch (ret) {
-		case RP_FIXED:
-			not_rpfixed = 0;
-			break;
-		case RP_NOT_FIXED:
-			not_rpfixed = 1;
-			break;
-		default:
-			goto out;
-		}
-	}
-
 	/* Create a WIM dentry with an associated inode, which may be shared.
 	 *
 	 * However, we need to explicitly check for directories and files with
@@ -1314,7 +1284,6 @@ retry_open:
 	inode->i_creation_time = file_info.BasicInformation.CreationTime.QuadPart;
 	inode->i_last_write_time = file_info.BasicInformation.LastWriteTime.QuadPart;
 	inode->i_last_access_time = file_info.BasicInformation.LastAccessTime.QuadPart;
-	inode->i_resolved = 1;
 
 	/* Get the file's security descriptor, unless we are capturing in
 	 * NO_ACLS mode or the volume does not support security descriptors.  */
@@ -1333,17 +1302,41 @@ retry_open:
 		}
 	}
 
-	/* Load information about the unnamed data stream and any named data
-	 * streams.  */
-	ret = winnt_scan_streams(h,
-				 full_path,
-				 full_path_nchars,
-				 inode,
-				 params->unhashed_streams,
-				 file_info.StandardInformation.EndOfFile.QuadPart,
-				 vol_flags);
-	if (ret)
-		goto out;
+	/* If this is a reparse point, load the reparse data.  */
+	if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+		if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED) {
+			/* See comment above assign_stream_types_encrypted()  */
+			WARNING("Ignoring reparse data of encrypted file \"%ls\"",
+				printable_path(full_path));
+		} else {
+			u8 rpbuf[REPARSE_POINT_MAX_SIZE] _aligned_attribute(8);
+			u16 rpbuflen;
+
+			ret = winnt_get_reparse_data(h, full_path, params,
+						     rpbuf, &rpbuflen);
+			switch (ret) {
+			case RP_FIXED:
+				inode->i_not_rpfixed = 0;
+				break;
+			case RP_NOT_FIXED:
+				inode->i_not_rpfixed = 1;
+				break;
+			default:
+				goto out;
+			}
+			inode->i_reparse_tag = le32_to_cpu(*(le32*)rpbuf);
+			if (!inode_add_stream_with_data(inode,
+							STREAM_TYPE_REPARSE_POINT,
+							NO_STREAM_NAME,
+							rpbuf + REPARSE_DATA_OFFSET,
+							rpbuflen - REPARSE_DATA_OFFSET,
+							params->blob_table))
+			{
+				ret = WIMLIB_ERR_NOMEM;
+				goto out;
+			}
+		}
+	}
 
 	if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED)) {
 		/* Load information about the raw encrypted data.  This is
@@ -1356,27 +1349,33 @@ retry_open:
 		 * needed.  */
 		(*func_NtClose)(h);
 		h = NULL;
-		ret = winnt_load_encrypted_stream_info(inode, full_path,
-						       params->unhashed_streams);
+		ret = winnt_load_efsrpc_raw_data(inode, full_path,
+						 params->unhashed_blobs);
+		if (ret)
+			goto out;
+	} else {
+		/*
+		 * Load information about data streams (unnamed and named).
+		 *
+		 * Skip this step for encrypted files, since the data from
+		 * ReadEncryptedFileRaw() already contains all data streams (and
+		 * they do in fact all get restored by WriteEncryptedFileRaw().)
+		 *
+		 * Note: WIMGAPI (as of Windows 8.1) gets wrong and stores both
+		 * the EFSRPC data and the named data stream(s)...!
+		 */
+		ret = winnt_scan_data_streams(h,
+					      full_path,
+					      full_path_nchars,
+					      inode,
+					      params->unhashed_blobs,
+					      file_info.StandardInformation.EndOfFile.QuadPart,
+					      vol_flags);
 		if (ret)
 			goto out;
 	}
 
-	if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
-		if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED)) {
-			WARNING("Ignoring reparse data of encrypted reparse point file \"%ls\"",
-				printable_path(full_path));
-		} else {
-			/* Reparse point: set the reparse data (already read).  */
-
-			inode->i_not_rpfixed = not_rpfixed;
-			inode->i_reparse_tag = le32_to_cpu(*(le32*)rpbuf);
-			ret = inode_set_unnamed_stream(inode, rpbuf + 8, rpbuflen - 8,
-						       params->lookup_table);
-			if (ret)
-				goto out;
-		}
-	} else if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
+	if (inode_is_directory(inode)) {
 
 		/* Directory: recurse to children.  */
 
@@ -1419,7 +1418,7 @@ out:
 	if (likely(h))
 		(*func_NtClose)(h);
 	if (unlikely(ret)) {
-		free_dentry_tree(root, params->lookup_table);
+		free_dentry_tree(root, params->blob_table);
 		root = NULL;
 		ret = report_capture_error(params, ret, full_path);
 	}

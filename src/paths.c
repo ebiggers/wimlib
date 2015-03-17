@@ -113,7 +113,7 @@ do_canonicalize_path(const tchar *in, tchar *out)
  *
  * Examples (with WIM_PATH_SEPARATOR == '/'):
  *
- * 		=> /		[ either NULL or empty string ]
+ *		=> /		[ either NULL or empty string ]
  * /		=> /
  * \		=> /
  * hello	=> /hello

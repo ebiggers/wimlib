@@ -160,7 +160,7 @@ enum {
 	IMAGEX_HEADER_OPTION,
 	IMAGEX_INCLUDE_INVALID_NAMES_OPTION,
 	IMAGEX_LAZY_OPTION,
-	IMAGEX_LOOKUP_TABLE_OPTION,
+	IMAGEX_BLOBS_OPTION,
 	IMAGEX_METADATA_OPTION,
 	IMAGEX_NEW_IMAGE_OPTION,
 	IMAGEX_NOCHECK_OPTION,
@@ -320,7 +320,8 @@ static const struct option info_options[] = {
 	{T("no-check"),     no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("extract-xml"),  required_argument, NULL, IMAGEX_EXTRACT_XML_OPTION},
 	{T("header"),       no_argument,       NULL, IMAGEX_HEADER_OPTION},
-	{T("lookup-table"), no_argument,       NULL, IMAGEX_LOOKUP_TABLE_OPTION},
+	{T("lookup-table"), no_argument,       NULL, IMAGEX_BLOBS_OPTION},
+	{T("blobs"),        no_argument,       NULL, IMAGEX_BLOBS_OPTION},
 	{T("metadata"),     no_argument,       NULL, IMAGEX_METADATA_OPTION},
 	{T("xml"),          no_argument,       NULL, IMAGEX_XML_OPTION},
 	{NULL, 0, NULL, 0},
@@ -2440,34 +2441,34 @@ static int
 print_resource(const struct wimlib_resource_entry *resource,
 	       void *_ignore)
 {
-	tprintf(T("Hash                = 0x"));
+	tprintf(T("Hash              = 0x"));
 	print_byte_field(resource->sha1_hash, sizeof(resource->sha1_hash));
 	tputchar(T('\n'));
 
 	if (!resource->is_missing) {
-		tprintf(T("Uncompressed size   = %"PRIu64" bytes\n"),
+		tprintf(T("Uncompressed size = %"PRIu64" bytes\n"),
 			resource->uncompressed_size);
 		if (resource->packed) {
-			tprintf(T("Raw compressed size = %"PRIu64" bytes\n"),
-				resource->raw_resource_compressed_size);
-
-			tprintf(T("Raw offset in WIM   = %"PRIu64" bytes\n"),
+			tprintf(T("Solid resource    = %"PRIu64" => %"PRIu64" "
+				  "bytes @ offset %"PRIu64"\n"),
+				resource->raw_resource_uncompressed_size,
+				resource->raw_resource_compressed_size,
 				resource->raw_resource_offset_in_wim);
 
-			tprintf(T("Offset in raw       = %"PRIu64" bytes\n"),
+			tprintf(T("Solid offset      = %"PRIu64" bytes\n"),
 				resource->offset);
 		} else {
-			tprintf(T("Compressed size     = %"PRIu64" bytes\n"),
+			tprintf(T("Compressed size   = %"PRIu64" bytes\n"),
 				resource->compressed_size);
 
-			tprintf(T("Offset in WIM       = %"PRIu64" bytes\n"),
+			tprintf(T("Offset in WIM     = %"PRIu64" bytes\n"),
 				resource->offset);
 		}
 
-		tprintf(T("Part Number         = %u\n"), resource->part_number);
-		tprintf(T("Reference Count     = %u\n"), resource->reference_count);
+		tprintf(T("Part Number       = %u\n"), resource->part_number);
+		tprintf(T("Reference Count   = %u\n"), resource->reference_count);
 
-		tprintf(T("Flags               = "));
+		tprintf(T("Flags             = "));
 		if (resource->is_compressed)
 			tprintf(T("WIM_RESHDR_FLAG_COMPRESSED  "));
 		if (resource->is_metadata)
@@ -2485,7 +2486,7 @@ print_resource(const struct wimlib_resource_entry *resource,
 }
 
 static void
-print_lookup_table(WIMStruct *wim)
+print_blobs(WIMStruct *wim)
 {
 	wimlib_iterate_lookup_table(wim, 0, print_resource, NULL);
 }
@@ -2538,8 +2539,12 @@ print_dentry_detailed(const struct wimlib_dir_entry *dentry)
 
 	for (uint32_t i = 0; i <= dentry->num_named_streams; i++) {
 		if (dentry->streams[i].stream_name) {
-			tprintf(T("\tData stream \"%"TS"\":\n"),
+			tprintf(T("\tNamed data stream \"%"TS"\":\n"),
 				dentry->streams[i].stream_name);
+		} else if (dentry->attributes & WIMLIB_FILE_ATTRIBUTE_ENCRYPTED) {
+			tprintf(T("\tRaw encrypted data stream:\n"));
+		} else if (dentry->attributes & WIMLIB_FILE_ATTRIBUTE_REPARSE_POINT) {
+			tprintf(T("\tReparse point stream:\n"));
 		} else {
 			tprintf(T("\tUnnamed data stream:\n"));
 		}
@@ -3119,7 +3124,7 @@ imagex_info(int argc, tchar **argv, int cmd)
 	bool check        = false;
 	bool nocheck      = false;
 	bool header       = false;
-	bool lookup_table = false;
+	bool blobs        = false;
 	bool xml          = false;
 	bool short_header = true;
 	const tchar *xml_out_file = NULL;
@@ -3148,8 +3153,8 @@ imagex_info(int argc, tchar **argv, int cmd)
 			header = true;
 			short_header = false;
 			break;
-		case IMAGEX_LOOKUP_TABLE_OPTION:
-			lookup_table = true;
+		case IMAGEX_BLOBS_OPTION:
+			blobs = true;
 			short_header = false;
 			break;
 		case IMAGEX_XML_OPTION:
@@ -3244,13 +3249,13 @@ imagex_info(int argc, tchar **argv, int cmd)
 		if (header)
 			wimlib_print_header(wim);
 
-		if (lookup_table) {
+		if (blobs) {
 			if (info.total_parts != 1) {
-				tfprintf(stderr, T("Warning: Only showing the lookup table "
+				tfprintf(stderr, T("Warning: Only showing the blobs "
 						   "for part %d of a %d-part WIM.\n"),
 					 info.part_number, info.total_parts);
 			}
-			print_lookup_table(wim);
+			print_blobs(wim);
 		}
 
 		if (xml) {
@@ -4223,7 +4228,7 @@ T(
 T(
 "    %"TS" WIMFILE [IMAGE [NEW_NAME [NEW_DESC]]]\n"
 "                    [--boot] [--check] [--nocheck] [--xml]\n"
-"                    [--extract-xml FILE] [--header] [--lookup-table]\n"
+"                    [--extract-xml FILE] [--header] [--blobs]\n"
 ),
 [CMD_JOIN] =
 T(

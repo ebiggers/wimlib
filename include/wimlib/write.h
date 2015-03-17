@@ -5,7 +5,7 @@
 #include "wimlib/types.h"
 
 /* Internal use only */
-#define WIMLIB_WRITE_FLAG_NO_LOOKUP_TABLE		0x80000000
+#define WIMLIB_WRITE_FLAG_NO_BLOB_TABLE			0x80000000
 #define WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML		0x40000000
 #define WIMLIB_WRITE_FLAG_HEADER_AT_END			0x20000000
 #define WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR		0x10000000
@@ -60,7 +60,7 @@ write_wim_part(WIMStruct *wim,
 	       unsigned num_threads,
 	       unsigned part_number,
 	       unsigned total_parts,
-	       struct list_head *stream_list_override,
+	       struct list_head *blob_list_override,
 	       const u8 *guid);
 
 int

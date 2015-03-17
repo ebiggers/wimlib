@@ -84,9 +84,6 @@ extern void *
 mempcpy(void *dst, const void *src, size_t n);
 #endif
 
-extern size_t
-utf16le_strlen(const utf16lechar *s);
-
 extern void
 randomize_byte_array(u8 *p, size_t n);
 

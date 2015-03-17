@@ -25,10 +25,10 @@
 
 #include <string.h>
 
+#include "wimlib/blob_table.h"
 #include "wimlib/capture.h"
 #include "wimlib/dentry.h"
 #include "wimlib/error.h"
-#include "wimlib/lookup_table.h"
 #include "wimlib/paths.h"
 #include "wimlib/progress.h"
 #include "wimlib/textfile.h"
@@ -71,12 +71,12 @@ do_capture_progress(struct capture_params *params, int status,
 
 		/* Successful scan, and visiting inode for the first time  */
 
-		/* Tally size of all data streams.  */
-		const struct wim_lookup_table_entry *lte;
-		for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-			lte = inode_stream_lte_resolved(inode, i);
-			if (lte)
-				params->progress.scan.num_bytes_scanned += lte->size;
+		/* Tally size of all streams.  */
+		for (unsigned i = 0; i < inode->i_num_streams; i++) {
+			const struct blob_descriptor *blob =
+				stream_blob_resolved(&inode->i_streams[i]);
+			if (blob)
+				params->progress.scan.num_bytes_scanned += blob->size;
 		}
 
 		/* Tally the file itself.  */

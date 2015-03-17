@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014 Eric Biggers
+ * Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -39,10 +39,10 @@
 
 #include "wimlib/assert.h"
 #include "wimlib/apply.h"
+#include "wimlib/blob_table.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/error.h"
-#include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
 #include "wimlib/ntfs_3g.h"
 #include "wimlib/reparse.h"
@@ -75,20 +75,20 @@ struct ntfs_3g_apply_ctx {
 	/* Pointer to the open NTFS volume  */
 	ntfs_volume *vol;
 
-	ntfs_attr *open_attrs[MAX_OPEN_STREAMS];
+	ntfs_attr *open_attrs[MAX_OPEN_FILES];
 	unsigned num_open_attrs;
-	ntfs_inode *open_inodes[MAX_OPEN_STREAMS];
+	ntfs_inode *open_inodes[MAX_OPEN_FILES];
 	unsigned num_open_inodes;
 
 	struct reparse_buffer_disk rpbuf;
 	u8 *reparse_ptr;
 
-	/* Offset in the stream currently being read  */
+	/* Offset in the blob currently being read  */
 	u64 offset;
 
 	unsigned num_reparse_inodes;
-	ntfs_inode *ntfs_reparse_inodes[MAX_OPEN_STREAMS];
-	struct wim_inode *wim_reparse_inodes[MAX_OPEN_STREAMS];
+	ntfs_inode *ntfs_reparse_inodes[MAX_OPEN_FILES];
+	struct wim_inode *wim_reparse_inodes[MAX_OPEN_FILES];
 };
 
 static size_t
@@ -315,31 +315,27 @@ out_close:
 	return ret;
 }
 
-/* Create empty named data streams.
+/*
+ * Create empty named data streams for the specified file, if there are any.
  *
- * Since these won't have 'struct wim_lookup_table_entry's, they won't show up
- * in the call to extract_stream_list().  Hence the need for the special case.
+ * Since these won't have blob descriptors, they won't show up in the call to
+ * extract_blob_list().  Hence the need for the special case.
  */
 static int
-ntfs_3g_create_any_empty_ads(ntfs_inode *ni, const struct wim_inode *inode,
-			     const struct ntfs_3g_apply_ctx *ctx)
+ntfs_3g_create_empty_named_data_streams(ntfs_inode *ni,
+					const struct wim_inode *inode,
+					const struct ntfs_3g_apply_ctx *ctx)
 {
-	for (u16 i = 0; i < inode->i_num_ads; i++) {
-		const struct wim_ads_entry *entry;
+	for (unsigned i = 0; i < inode->i_num_streams; i++) {
 
-		entry = &inode->i_ads_entries[i];
+		const struct wim_inode_stream *strm = &inode->i_streams[i];
 
-		/* Not named?  */
-		if (!entry->stream_name_nbytes)
+		if (!stream_is_named_data_stream(strm) ||
+		    stream_blob_resolved(strm) != NULL)
 			continue;
 
-		/* Not empty?  */
-		if (entry->lte)
-			continue;
-
-		if (ntfs_attr_add(ni, AT_DATA, entry->stream_name,
-				  entry->stream_name_nbytes /
-					sizeof(utf16lechar),
+		if (ntfs_attr_add(ni, AT_DATA, strm->stream_name,
+				  utf16le_len_chars(strm->stream_name),
 				  NULL, 0))
 		{
 			ERROR_WITH_ERRNO("Failed to create named data stream "
@@ -450,7 +446,7 @@ ntfs_3g_create_dirs_recursive(ntfs_inode *dir_ni, struct wim_dentry *dir,
 		if (!ret)
 			ret = ntfs_3g_set_metadata(ni, child->d_inode, ctx);
 		if (!ret)
-			ret = ntfs_3g_create_any_empty_ads(ni, child->d_inode, ctx);
+			ret = ntfs_3g_create_empty_named_data_streams(ni, child->d_inode, ctx);
 		if (!ret)
 			ret = ntfs_3g_create_dirs_recursive(ni, child, ctx);
 
@@ -645,7 +641,7 @@ ntfs_3g_create_nondirectory(struct wim_inode *inode,
 	if (ret)
 		goto out_close_ni;
 
-	ret = ntfs_3g_create_any_empty_ads(ni, inode, ctx);
+	ret = ntfs_3g_create_empty_named_data_streams(ni, inode, ctx);
 
 out_close_ni:
 	/* Close the inode.  */
@@ -686,34 +682,27 @@ ntfs_3g_create_nondirectories(struct list_head *dentry_list,
 }
 
 static int
-ntfs_3g_begin_extract_stream_to_attr(struct wim_lookup_table_entry *stream,
-				     ntfs_inode *ni,
-				     struct wim_inode *inode,
-				     ntfschar *stream_name,
-				     struct ntfs_3g_apply_ctx *ctx)
+ntfs_3g_begin_extract_blob_instance(struct blob_descriptor *blob,
+				    ntfs_inode *ni,
+				    struct wim_inode *inode,
+				    const struct wim_inode_stream *strm,
+				    struct ntfs_3g_apply_ctx *ctx)
 {
 	struct wim_dentry *one_dentry = inode_first_extraction_dentry(inode);
-	size_t stream_name_nchars = 0;
+	size_t stream_name_nchars;
 	ntfs_attr *attr;
 
-	if (stream_name)
-		for (const ntfschar *p = stream_name; *p; p++)
-			stream_name_nchars++;
+	if (unlikely(strm->stream_type == STREAM_TYPE_REPARSE_POINT)) {
 
-	if (stream_name_nchars == 0)
-		stream_name = AT_UNNAMED;
-	if ((inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)
-	    && (stream_name_nchars == 0))
-	{
-		if (stream->size > REPARSE_DATA_MAX_SIZE) {
+		if (blob->size > REPARSE_DATA_MAX_SIZE) {
 			ERROR("Reparse data of \"%s\" has size "
 			      "%"PRIu64" bytes (exceeds %u bytes)",
 			      dentry_full_path(one_dentry),
-			      stream->size, REPARSE_DATA_MAX_SIZE);
+			      blob->size, REPARSE_DATA_MAX_SIZE);
 			return WIMLIB_ERR_INVALID_REPARSE_DATA;
 		}
 		ctx->reparse_ptr = ctx->rpbuf.rpdata;
-		ctx->rpbuf.rpdatalen = cpu_to_le16(stream->size);
+		ctx->rpbuf.rpdatalen = cpu_to_le16(blob->size);
 		ctx->rpbuf.rpreserved = cpu_to_le16(0);
 		ctx->ntfs_reparse_inodes[ctx->num_reparse_inodes] = ni;
 		ctx->wim_reparse_inodes[ctx->num_reparse_inodes] = inode;
@@ -721,8 +710,13 @@ ntfs_3g_begin_extract_stream_to_attr(struct wim_lookup_table_entry *stream,
 		return 0;
 	}
 
+	/* It's a data stream (may be unnamed or named).  */
+	wimlib_assert(strm->stream_type == STREAM_TYPE_DATA);
+
+	stream_name_nchars = utf16le_len_chars(strm->stream_name);
+
 	if (stream_name_nchars &&
-	    (ntfs_attr_add(ni, AT_DATA, stream_name,
+	    (ntfs_attr_add(ni, AT_DATA, strm->stream_name,
 			   stream_name_nchars, NULL, 0)))
 	{
 		ERROR_WITH_ERRNO("Failed to create named data stream of \"%s\"",
@@ -730,22 +724,23 @@ ntfs_3g_begin_extract_stream_to_attr(struct wim_lookup_table_entry *stream,
 		return WIMLIB_ERR_NTFS_3G;
 	}
 
-	/* This should be ensured by extract_stream_list()  */
-	wimlib_assert(ctx->num_open_attrs < MAX_OPEN_STREAMS);
+	/* This should be ensured by extract_blob_list()  */
+	wimlib_assert(ctx->num_open_attrs < MAX_OPEN_FILES);
 
-	attr = ntfs_attr_open(ni, AT_DATA, stream_name, stream_name_nchars);
+	attr = ntfs_attr_open(ni, AT_DATA, strm->stream_name,
+			      stream_name_nchars);
 	if (!attr) {
 		ERROR_WITH_ERRNO("Failed to open data stream of \"%s\"",
 				 dentry_full_path(one_dentry));
 		return WIMLIB_ERR_NTFS_3G;
 	}
 	ctx->open_attrs[ctx->num_open_attrs++] = attr;
-	ntfs_attr_truncate_solid(attr, stream->size);
+	ntfs_attr_truncate_solid(attr, blob->size);
 	return 0;
 }
 
 static int
-ntfs_3g_cleanup_stream_extract(struct ntfs_3g_apply_ctx *ctx)
+ntfs_3g_cleanup_blob_extract(struct ntfs_3g_apply_ctx *ctx)
 {
 	int ret = 0;
 
@@ -798,24 +793,22 @@ ntfs_3g_open_inode(struct wim_inode *inode, struct ntfs_3g_apply_ctx *ctx)
 }
 
 static int
-ntfs_3g_begin_extract_stream(struct wim_lookup_table_entry *stream, void *_ctx)
+ntfs_3g_begin_extract_blob(struct blob_descriptor *blob, void *_ctx)
 {
 	struct ntfs_3g_apply_ctx *ctx = _ctx;
-	const struct stream_owner *owners = stream_owners(stream);
+	const struct blob_extraction_target *targets = blob_extraction_targets(blob);
 	int ret;
+	ntfs_inode *ni;
 
-	for (u32 i = 0; i < stream->out_refcnt; i++) {
-		struct wim_inode *inode = owners[i].inode;
-		ntfschar *stream_name = (ntfschar *)owners[i].stream_name;
-		ntfs_inode *ni;
-
+	for (u32 i = 0; i < blob->out_refcnt; i++) {
 		ret = WIMLIB_ERR_NTFS_3G;
-		ni = ntfs_3g_open_inode(inode, ctx);
+		ni = ntfs_3g_open_inode(targets[i].inode, ctx);
 		if (!ni)
 			goto out_cleanup;
 
-		ret = ntfs_3g_begin_extract_stream_to_attr(stream, ni, inode,
-							   stream_name, ctx);
+		ret = ntfs_3g_begin_extract_blob_instance(blob, ni,
+							  targets[i].inode,
+							  targets[i].stream, ctx);
 		if (ret)
 			goto out_cleanup;
 	}
@@ -823,10 +816,10 @@ ntfs_3g_begin_extract_stream(struct wim_lookup_table_entry *stream, void *_ctx)
 	goto out;
 
 out_cleanup:
-	ntfs_3g_cleanup_stream_extract(ctx);
+	ntfs_3g_cleanup_blob_extract(ctx);
 out:
-	for (u32 i = 0; i < stream->out_refcnt; i++)
-		owners[i].inode->i_visited = 0;
+	for (u32 i = 0; i < blob->out_refcnt; i++)
+		targets[i].inode->i_visited = 0;
 	return ret;
 }
 
@@ -851,8 +844,7 @@ ntfs_3g_extract_chunk(const void *chunk, size_t size, void *_ctx)
 }
 
 static int
-ntfs_3g_end_extract_stream(struct wim_lookup_table_entry *stream,
-			   int status, void *_ctx)
+ntfs_3g_end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
 {
 	struct ntfs_3g_apply_ctx *ctx = _ctx;
 	int ret;
@@ -869,7 +861,7 @@ ntfs_3g_end_extract_stream(struct wim_lookup_table_entry *stream,
 
 		if (ntfs_set_ntfs_reparse_data(ctx->ntfs_reparse_inodes[i],
 					       (const char *)&ctx->rpbuf,
-					       stream->size + REPARSE_DATA_OFFSET,
+					       blob->size + REPARSE_DATA_OFFSET,
 					       0))
 		{
 			ERROR_WITH_ERRNO("Failed to set reparse "
@@ -882,7 +874,7 @@ ntfs_3g_end_extract_stream(struct wim_lookup_table_entry *stream,
 	}
 	ret = 0;
 out:
-	if (ntfs_3g_cleanup_stream_extract(ctx) && !ret) {
+	if (ntfs_3g_cleanup_blob_extract(ctx) && !ret) {
 		ERROR_WITH_ERRNO("Error writing data to NTFS volume");
 		ret = WIMLIB_ERR_NTFS_3G;
 	}
@@ -902,7 +894,6 @@ ntfs_3g_count_dentries(const struct list_head *dentry_list)
 		{
 			count++;
 		}
-
 	}
 
 	return count;
@@ -950,16 +941,16 @@ ntfs_3g_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	if (ret)
 		goto out_unmount;
 
-	/* Extract streams.  */
-	struct read_stream_list_callbacks cbs = {
-		.begin_stream      = ntfs_3g_begin_extract_stream,
-		.begin_stream_ctx  = ctx,
+	/* Extract blobs.  */
+	struct read_blob_list_callbacks cbs = {
+		.begin_blob        = ntfs_3g_begin_extract_blob,
+		.begin_blob_ctx    = ctx,
 		.consume_chunk     = ntfs_3g_extract_chunk,
 		.consume_chunk_ctx = ctx,
-		.end_stream        = ntfs_3g_end_extract_stream,
-		.end_stream_ctx    = ctx,
+		.end_blob          = ntfs_3g_end_extract_blob,
+		.end_blob_ctx      = ctx,
 	};
-	ret = extract_stream_list(&ctx->common, &cbs);
+	ret = extract_blob_list(&ctx->common, &cbs);
 
 	/* We do not need a final pass to set timestamps because libntfs-3g does
 	 * not update timestamps automatically (exception:

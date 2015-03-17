@@ -33,12 +33,12 @@
 
 #include "wimlib.h"
 #include "wimlib/assert.h"
+#include "wimlib/blob_table.h"
 #include "wimlib/bitops.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/file_io.h"
 #include "wimlib/integrity.h"
-#include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
 #ifdef WITH_NTFS_3G
 #  include "wimlib/ntfs_3g.h" /* for do_ntfs_umount() */
@@ -182,7 +182,6 @@ WIMLIBAPI int
 wimlib_create_new_wim(int ctype, WIMStruct **wim_ret)
 {
 	WIMStruct *wim;
-	struct wim_lookup_table *table;
 	int ret;
 
 	ret = wimlib_global_init(WIMLIB_INIT_FLAG_ASSUME_UTF8);
@@ -197,12 +196,11 @@ wimlib_create_new_wim(int ctype, WIMStruct **wim_ret)
 	if (ret)
 		goto out_free_wim;
 
-	table = new_lookup_table(9001);
-	if (!table) {
+	wim->blob_table = new_blob_table(9001);
+	if (!wim->blob_table) {
 		ret = WIMLIB_ERR_NOMEM;
 		goto out_free_wim;
 	}
-	wim->lookup_table = table;
 	wim->compression_type = ctype;
 	wim->out_compression_type = ctype;
 	wim->chunk_size = wim->hdr.chunk_size;
@@ -217,24 +215,24 @@ out_free_wim:
 
 static void
 destroy_image_metadata(struct wim_image_metadata *imd,
-		       struct wim_lookup_table *table,
-		       bool free_metadata_lte)
+		       struct blob_table *table,
+		       bool free_metadata_blob_descriptor)
 {
 	free_dentry_tree(imd->root_dentry, table);
 	imd->root_dentry = NULL;
 	free_wim_security_data(imd->security_data);
 	imd->security_data = NULL;
 
-	if (free_metadata_lte) {
-		free_lookup_table_entry(imd->metadata_lte);
-		imd->metadata_lte = NULL;
+	if (free_metadata_blob_descriptor) {
+		free_blob_descriptor(imd->metadata_blob);
+		imd->metadata_blob = NULL;
 	}
 	if (!table) {
-		struct wim_lookup_table_entry *lte, *tmp;
-		list_for_each_entry_safe(lte, tmp, &imd->unhashed_streams, unhashed_list)
-			free_lookup_table_entry(lte);
+		struct blob_descriptor *blob, *tmp;
+		list_for_each_entry_safe(blob, tmp, &imd->unhashed_blobs, unhashed_list)
+			free_blob_descriptor(blob);
 	}
-	INIT_LIST_HEAD(&imd->unhashed_streams);
+	INIT_LIST_HEAD(&imd->unhashed_blobs);
 	INIT_LIST_HEAD(&imd->inode_list);
 #ifdef WITH_NTFS_3G
 	if (imd->ntfs_vol) {
@@ -245,8 +243,7 @@ destroy_image_metadata(struct wim_image_metadata *imd,
 }
 
 void
-put_image_metadata(struct wim_image_metadata *imd,
-		   struct wim_lookup_table *table)
+put_image_metadata(struct wim_image_metadata *imd, struct blob_table *table)
 {
 	if (imd && --imd->refcnt == 0) {
 		destroy_image_metadata(imd, table, true);
@@ -280,7 +277,7 @@ new_image_metadata(void)
 	if (imd) {
 		imd->refcnt = 1;
 		INIT_LIST_HEAD(&imd->inode_list);
-		INIT_LIST_HEAD(&imd->unhashed_streams);
+		INIT_LIST_HEAD(&imd->unhashed_blobs);
 	}
 	return imd;
 }
@@ -364,7 +361,7 @@ deselect_current_wim_image(WIMStruct *wim)
 		return;
 	imd = wim_get_current_image_metadata(wim);
 	if (!imd->modified) {
-		wimlib_assert(list_empty(&imd->unhashed_streams));
+		wimlib_assert(list_empty(&imd->unhashed_blobs));
 		destroy_image_metadata(imd, NULL, false);
 	}
 	wim->current_image = WIMLIB_NO_IMAGE;
@@ -617,7 +614,7 @@ open_wim_file(const tchar *filename, struct filedes *fd_ret)
 
 /*
  * Begins the reading of a WIM file; opens the file and reads its header and
- * lookup table, and optionally checks the integrity.
+ * blob table, and optionally checks the integrity.
  */
 static int
 begin_read(WIMStruct *wim, const void *wim_filename_or_fd, int open_flags)
@@ -733,8 +730,8 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd, int open_flags)
 	}
 
 	if (open_flags & WIMLIB_OPEN_FLAG_FROM_PIPE) {
-		wim->lookup_table = new_lookup_table(9001);
-		if (!wim->lookup_table)
+		wim->blob_table = new_blob_table(9001);
+		if (!wim->blob_table)
 			return WIMLIB_ERR_NOMEM;
 	} else {
 
@@ -750,7 +747,7 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd, int open_flags)
 			return WIMLIB_ERR_IMAGE_COUNT;
 		}
 
-		ret = read_wim_lookup_table(wim);
+		ret = read_blob_table(wim);
 		if (ret)
 			return ret;
 	}
@@ -812,27 +809,26 @@ wimlib_open_wim(const tchar *wimfile, int open_flags, WIMStruct **wim_ret)
 					     NULL, NULL);
 }
 
-/* Checksum all streams that are unhashed (other than the metadata streams),
- * merging them into the lookup table as needed.  This is a no-op unless the
- * library has previously used to add or mount an image using the same
- * WIMStruct. */
+/* Checksum all blobs that are unhashed (other than the metadata blobs), merging
+ * them into the blob table as needed.  This is a no-op unless files have been
+ * added to an image in the same WIMStruct.  */
 int
-wim_checksum_unhashed_streams(WIMStruct *wim)
+wim_checksum_unhashed_blobs(WIMStruct *wim)
 {
 	int ret;
 
 	if (!wim_has_metadata(wim))
 		return 0;
 	for (int i = 0; i < wim->hdr.image_count; i++) {
-		struct wim_lookup_table_entry *lte, *tmp;
+		struct blob_descriptor *blob, *tmp;
 		struct wim_image_metadata *imd = wim->image_metadata[i];
-		image_for_each_unhashed_stream_safe(lte, tmp, imd) {
-			struct wim_lookup_table_entry *new_lte;
-			ret = hash_unhashed_stream(lte, wim->lookup_table, &new_lte);
+		image_for_each_unhashed_blob_safe(blob, tmp, imd) {
+			struct blob_descriptor *new_blob;
+			ret = hash_unhashed_blob(blob, wim->blob_table, &new_blob);
 			if (ret)
 				return ret;
-			if (new_lte != lte)
-				free_lookup_table_entry(lte);
+			if (new_blob != blob)
+				free_blob_descriptor(blob);
 		}
 	}
 	return 0;
@@ -890,7 +886,7 @@ wimlib_free(WIMStruct *wim)
 	if (filedes_valid(&wim->out_fd))
 		filedes_close(&wim->out_fd);
 
-	free_lookup_table(wim->lookup_table);
+	free_blob_table(wim->blob_table);
 
 	wimlib_free_decompressor(wim->decompressor);
 

@@ -38,15 +38,15 @@ delete_wim_image(WIMStruct *wim, int image)
 	int ret;
 
 	/* Load the metadata for the image to be deleted.  This is necessary
-	 * because streams referenced by files in the image need to have their
+	 * because blobs referenced by files in the image need to have their
 	 * reference counts decremented.  */
 	ret = select_wim_image(wim, image);
 	if (ret)
 		return ret;
 
 	/* Release the reference to the image metadata and decrement reference
-	 * counts on the streams referenced by files in the image.  */
-	put_image_metadata(wim->image_metadata[image - 1], wim->lookup_table);
+	 * counts on the blobs referenced by files in the image.  */
+	put_image_metadata(wim->image_metadata[image - 1], wim->blob_table);
 
 	/* Remove the empty slot from the image metadata array.  */
 	memmove(&wim->image_metadata[image - 1], &wim->image_metadata[image],

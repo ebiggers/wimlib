@@ -36,6 +36,7 @@ wimlib.pc: config.status
 libwim_la_SOURCES =		\
 	src/add_image.c		\
 	src/avl_tree.c		\
+	src/blob_table.c	\
 	src/capture_common.c	\
 	src/compress.c		\
 	src/compress_common.c	\
@@ -59,7 +60,6 @@ libwim_la_SOURCES =		\
 	src/iterate_dir.c	\
 	src/join.c		\
 	src/lcpit_matchfinder.c	\
-	src/lookup_table.c	\
 	src/lzms_common.c	\
 	src/lzms_compress.c	\
 	src/lzms_decompress.c	\

@@ -29,10 +29,11 @@
 
 #include "wimlib/apply.h"
 #include "wimlib/assert.h"
+#include "wimlib/blob_table.h"
 #include "wimlib/capture.h" /* for mangle_pat() and match_pattern_list()  */
 #include "wimlib/dentry.h"
+#include "wimlib/encoding.h"
 #include "wimlib/error.h"
-#include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
 #include "wimlib/paths.h"
 #include "wimlib/reparse.h"
@@ -52,7 +53,7 @@ struct win32_apply_ctx {
 		u64 data_source_id;
 		struct string_set *prepopulate_pats;
 		void *mem_prepopulate_pats;
-		u8 wim_lookup_table_hash[SHA1_HASH_SIZE];
+		u8 blob_table_hash[SHA1_HASH_SIZE];
 		bool wof_running;
 		bool tried_to_load_prepopulate_list;
 	} wimboot;
@@ -78,7 +79,7 @@ struct win32_apply_ctx {
 	 * target-relative NT paths  */
 	wchar_t *print_buffer;
 
-	/* Allocated buffer for reading stream data when it cannot be extracted
+	/* Allocated buffer for reading blob data when it cannot be extracted
 	 * directly  */
 	u8 *data_buffer;
 
@@ -103,20 +104,20 @@ struct win32_apply_ctx {
 
 	/* Array of open handles to filesystem streams currently being written
 	 */
-	HANDLE open_handles[MAX_OPEN_STREAMS];
+	HANDLE open_handles[MAX_OPEN_FILES];
 
 	/* Number of handles in @open_handles currently open (filled in from the
 	 * beginning of the array)  */
 	unsigned num_open_handles;
 
 	/* List of dentries, joined by @tmp_list, that need to have reparse data
-	 * extracted as soon as the whole stream has been read into
-	 * @data_buffer.  */
+	 * extracted as soon as the whole blob has been read into @data_buffer.
+	 * */
 	struct list_head reparse_dentries;
 
 	/* List of dentries, joined by @tmp_list, that need to have raw
-	 * encrypted data extracted as soon as the whole stream has been read
-	 * into @data_buffer.  */
+	 * encrypted data extracted as soon as the whole blob has been read into
+	 * @data_buffer.  */
 	struct list_head encrypted_dentries;
 
 	/* Number of files for which we didn't have permission to set the full
@@ -276,7 +277,7 @@ load_prepopulate_pats(struct win32_apply_ctx *ctx)
 {
 	const wchar_t *path = L"\\Windows\\System32\\WimBootCompress.ini";
 	struct wim_dentry *dentry;
-	struct wim_lookup_table_entry *lte;
+	struct blob_descriptor *blob;
 	int ret;
 	void *buf;
 	struct string_set *s;
@@ -290,13 +291,14 @@ load_prepopulate_pats(struct win32_apply_ctx *ctx)
 	    (dentry->d_inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
 					      FILE_ATTRIBUTE_REPARSE_POINT |
 					      FILE_ATTRIBUTE_ENCRYPTED)) ||
-	    !(lte = inode_unnamed_lte(dentry->d_inode, ctx->common.wim->lookup_table)))
+	    !(blob = inode_get_blob_for_unnamed_data_stream(dentry->d_inode,
+							    ctx->common.wim->blob_table)))
 	{
 		WARNING("%ls does not exist in WIM image!", path);
 		return WIMLIB_ERR_PATH_DOES_NOT_EXIST;
 	}
 
-	ret = read_full_stream_into_alloc_buf(lte, &buf);
+	ret = read_full_blob_into_alloc_buf(blob, &buf);
 	if (ret)
 		return ret;
 
@@ -309,7 +311,7 @@ load_prepopulate_pats(struct win32_apply_ctx *ctx)
 	sec.name = T("PrepopulateList");
 	sec.strings = s;
 
-	ret = do_load_text_file(path, buf, lte->size, &mem, &sec, 1,
+	ret = do_load_text_file(path, buf, blob->size, &mem, &sec, 1,
 				LOAD_TEXT_FILE_REMOVE_QUOTES |
 					LOAD_TEXT_FILE_NO_WARNINGS,
 				mangle_pat);
@@ -374,7 +376,7 @@ will_externally_back_inode(struct wim_inode *inode, struct win32_apply_ctx *ctx,
 {
 	struct list_head *next;
 	struct wim_dentry *dentry;
-	struct wim_lookup_table_entry *stream;
+	struct blob_descriptor *blob;
 	int ret;
 
 	if (inode->i_can_externally_back)
@@ -390,15 +392,15 @@ will_externally_back_inode(struct wim_inode *inode, struct win32_apply_ctx *ctx,
 				   FILE_ATTRIBUTE_ENCRYPTED))
 		return WIM_BACKING_NOT_POSSIBLE;
 
-	stream = inode_unnamed_lte_resolved(inode);
+	blob = inode_get_blob_for_unnamed_data_stream_resolved(inode);
 
 	/* Note: Microsoft's WoF driver errors out if it tries to satisfy a
 	 * read, with ending offset >= 4 GiB, from an externally backed file. */
-	if (!stream ||
-	    stream->resource_location != RESOURCE_IN_WIM ||
-	    stream->rspec->wim != ctx->common.wim ||
-	    stream->size != stream->rspec->uncompressed_size ||
-	    stream->size > 4200000000)
+	if (!blob ||
+	    blob->blob_location != BLOB_IN_WIM ||
+	    blob->rdesc->wim != ctx->common.wim ||
+	    blob->size != blob->rdesc->uncompressed_size ||
+	    blob->size > 4200000000)
 		return WIM_BACKING_NOT_POSSIBLE;
 
 	/*
@@ -475,9 +477,9 @@ set_external_backing(HANDLE h, struct wim_inode *inode, struct win32_apply_ctx *
 	} else {
 		/* Externally backing.  */
 		if (unlikely(!wimboot_set_pointer(h,
-						  inode_unnamed_lte_resolved(inode),
+						  inode_get_blob_for_unnamed_data_stream_resolved(inode),
 						  ctx->wimboot.data_source_id,
-						  ctx->wimboot.wim_lookup_table_hash,
+						  ctx->wimboot.blob_table_hash,
 						  ctx->wimboot.wof_running)))
 		{
 			const DWORD err = GetLastError();
@@ -491,11 +493,11 @@ set_external_backing(HANDLE h, struct wim_inode *inode, struct win32_apply_ctx *
 	}
 }
 
-/* Calculates the SHA-1 message digest of the WIM's lookup table.  */
+/* Calculates the SHA-1 message digest of the WIM's blob table.  */
 static int
-hash_lookup_table(WIMStruct *wim, u8 hash[SHA1_HASH_SIZE])
+hash_blob_table(WIMStruct *wim, u8 hash[SHA1_HASH_SIZE])
 {
-	return wim_reshdr_to_hash(&wim->hdr.lookup_table_reshdr, wim, hash);
+	return wim_reshdr_to_hash(&wim->hdr.blob_table_reshdr, wim, hash);
 }
 
 /* Prepare for doing a "WIMBoot" extraction by loading patterns from
@@ -514,8 +516,7 @@ start_wimboot_extraction(struct win32_apply_ctx *ctx)
 	if (!wim_info_get_wimboot(wim->wim_info, wim->current_image))
 		WARNING("Image is not marked as WIMBoot compatible!");
 
-	ret = hash_lookup_table(ctx->common.wim,
-				ctx->wimboot.wim_lookup_table_hash);
+	ret = hash_blob_table(ctx->common.wim, ctx->wimboot.blob_table_hash);
 	if (ret)
 		return ret;
 
@@ -629,8 +630,11 @@ static size_t
 inode_longest_named_data_stream_spec(const struct wim_inode *inode)
 {
 	size_t max = 0;
-	for (u16 i = 0; i < inode->i_num_ads; i++) {
-		size_t len = inode->i_ads_entries[i].stream_name_nbytes;
+	for (unsigned i = 0; i < inode->i_num_streams; i++) {
+		const struct wim_inode_stream *strm = &inode->i_streams[i];
+		if (!stream_is_named_data_stream(strm))
+			continue;
+		size_t len = utf16le_len_bytes(strm->stream_name);
 		if (len > max)
 			max = len;
 	}
@@ -1296,14 +1300,15 @@ retry:
 	return WIMLIB_ERR_OPEN;
 }
 
-/* Create empty named data streams.
+/*
+ * Create empty named data streams for the specified file, if there are any.
  *
- * Since these won't have 'struct wim_lookup_table_entry's, they won't show up
- * in the call to extract_stream_list().  Hence the need for the special case.
+ * Since these won't have blob descriptors, they won't show up in the call to
+ * extract_blob_list().  Hence the need for the special case.
  */
 static int
-create_any_empty_ads(const struct wim_dentry *dentry,
-		     struct win32_apply_ctx *ctx)
+create_empty_named_data_streams(const struct wim_dentry *dentry,
+				struct win32_apply_ctx *ctx)
 {
 	const struct wim_inode *inode = dentry->d_inode;
 	bool path_modified = false;
@@ -1312,24 +1317,17 @@ create_any_empty_ads(const struct wim_dentry *dentry,
 	if (!ctx->common.supported_features.named_data_streams)
 		return 0;
 
-	for (u16 i = 0; i < inode->i_num_ads; i++) {
-		const struct wim_ads_entry *entry;
+	for (unsigned i = 0; i < inode->i_num_streams; i++) {
+		const struct wim_inode_stream *strm = &inode->i_streams[i];
 		HANDLE h;
 
-		entry = &inode->i_ads_entries[i];
-
-		/* Not named?  */
-		if (!entry->stream_name_nbytes)
-			continue;
-
-		/* Not empty?  */
-		if (entry->lte)
+		if (!stream_is_named_data_stream(strm) ||
+		    stream_blob_resolved(strm) != NULL)
 			continue;
 
 		build_extraction_path_with_ads(dentry, ctx,
-					       entry->stream_name,
-					       entry->stream_name_nbytes /
-							sizeof(wchar_t));
+					       strm->stream_name,
+					       utf16le_len_chars(strm->stream_name));
 		path_modified = true;
 		ret = supersede_file_or_stream(ctx, &h);
 		if (ret)
@@ -1425,7 +1423,7 @@ create_directories(struct list_head *dentry_list,
 		ret = create_directory(dentry, ctx);
 
 		if (!ret)
-			ret = create_any_empty_ads(dentry, ctx);
+			ret = create_empty_named_data_streams(dentry, ctx);
 
 		ret = check_apply_error(dentry, ctx, ret);
 		if (ret)
@@ -1462,7 +1460,7 @@ create_nondirectory_inode(HANDLE *h_ret, const struct wim_dentry *dentry,
 	if (ret)
 		goto out_close;
 
-	ret = create_any_empty_ads(dentry, ctx);
+	ret = create_empty_named_data_streams(dentry, ctx);
 	if (ret)
 		goto out_close;
 
@@ -1620,21 +1618,21 @@ close_handles(struct win32_apply_ctx *ctx)
 		(*func_NtClose)(ctx->open_handles[i]);
 }
 
-/* Prepare to read the next stream, which has size @stream_size, into an
- * in-memory buffer.  */
+/* Prepare to read the next blob, which has size @blob_size, into an in-memory
+ * buffer.  */
 static bool
-prepare_data_buffer(struct win32_apply_ctx *ctx, u64 stream_size)
+prepare_data_buffer(struct win32_apply_ctx *ctx, u64 blob_size)
 {
-	if (stream_size > ctx->data_buffer_size) {
+	if (blob_size > ctx->data_buffer_size) {
 		/* Larger buffer needed.  */
 		void *new_buffer;
-		if ((size_t)stream_size != stream_size)
+		if ((size_t)blob_size != blob_size)
 			return false;
-		new_buffer = REALLOC(ctx->data_buffer, stream_size);
+		new_buffer = REALLOC(ctx->data_buffer, blob_size);
 		if (!new_buffer)
 			return false;
 		ctx->data_buffer = new_buffer;
-		ctx->data_buffer_size = stream_size;
+		ctx->data_buffer_size = blob_size;
 	}
 	/* On the first call this changes data_buffer_ptr from NULL, which tells
 	 * extract_chunk() that the data buffer needs to be filled while reading
@@ -1644,81 +1642,63 @@ prepare_data_buffer(struct win32_apply_ctx *ctx, u64 stream_size)
 }
 
 static int
-begin_extract_stream_instance(const struct wim_lookup_table_entry *stream,
-			      struct wim_dentry *dentry,
-			      const wchar_t *stream_name,
-			      struct win32_apply_ctx *ctx)
+begin_extract_blob_instance(const struct blob_descriptor *blob,
+			    struct wim_dentry *dentry,
+			    const struct wim_inode_stream *strm,
+			    struct win32_apply_ctx *ctx)
 {
-	const struct wim_inode *inode = dentry->d_inode;
-	size_t stream_name_nchars = 0;
 	FILE_ALLOCATION_INFORMATION alloc_info;
 	HANDLE h;
 	NTSTATUS status;
 
-	if (unlikely(stream_name))
-		stream_name_nchars = wcslen(stream_name);
-
-	if (unlikely(stream_name_nchars)) {
-		build_extraction_path_with_ads(dentry, ctx,
-					       stream_name, stream_name_nchars);
-	} else {
-		build_extraction_path(dentry, ctx);
-	}
-
-
-	/* Encrypted file?  */
-	if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED)
-	    && (stream_name_nchars == 0))
-	{
-		if (!ctx->common.supported_features.encrypted_files)
-			return 0;
-
-		/* We can't write encrypted file streams directly; we must use
-		 * WriteEncryptedFileRaw(), which requires providing the data
-		 * through a callback function.  This can't easily be combined
-		 * with our own callback-based approach.
-		 *
-		 * The current workaround is to simply read the stream into
-		 * memory and write the encrypted file from that.
-		 *
-		 * TODO: This isn't sufficient for extremely large encrypted
-		 * files.  Perhaps we should create an extra thread to write
-		 * such files...  */
-		if (!prepare_data_buffer(ctx, stream->size))
-			return WIMLIB_ERR_NOMEM;
-		list_add_tail(&dentry->tmp_list, &ctx->encrypted_dentries);
-		return 0;
-	}
-
-	/* Reparse point?
-	 *
-	 * Note: FILE_ATTRIBUTE_REPARSE_POINT is tested *after*
-	 * FILE_ATTRIBUTE_ENCRYPTED since the WIM format does not store both EFS
-	 * data and reparse data for the same file, and the EFS data takes
-	 * precedence.  */
-	if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)
-	    && (stream_name_nchars == 0))
-	{
-		if (!ctx->common.supported_features.reparse_points)
-			return 0;
-
-		/* We can't write the reparse stream directly; we must set it
-		 * with FSCTL_SET_REPARSE_POINT, which requires that all the
+	if (unlikely(strm->stream_type == STREAM_TYPE_REPARSE_POINT)) {
+		/* We can't write the reparse point stream directly; we must set
+		 * it with FSCTL_SET_REPARSE_POINT, which requires that all the
 		 * data be available.  So, stage the data in a buffer.  */
-
-		if (!prepare_data_buffer(ctx, stream->size))
+		if (!prepare_data_buffer(ctx, blob->size))
 			return WIMLIB_ERR_NOMEM;
 		list_add_tail(&dentry->tmp_list, &ctx->reparse_dentries);
 		return 0;
 	}
 
-	if (ctx->num_open_handles == MAX_OPEN_STREAMS) {
+	if (unlikely(strm->stream_type == STREAM_TYPE_EFSRPC_RAW_DATA)) {
+		/* We can't write encrypted files directly; we must use
+		 * WriteEncryptedFileRaw(), which requires providing the data
+		 * through a callback function.  This can't easily be combined
+		 * with our own callback-based approach.
+		 *
+		 * The current workaround is to simply read the blob into memory
+		 * and write the encrypted file from that.
+		 *
+		 * TODO: This isn't sufficient for extremely large encrypted
+		 * files.  Perhaps we should create an extra thread to write
+		 * such files...  */
+		if (!prepare_data_buffer(ctx, blob->size))
+			return WIMLIB_ERR_NOMEM;
+		list_add_tail(&dentry->tmp_list, &ctx->encrypted_dentries);
+		return 0;
+	}
+
+	/* It's a data stream (may be unnamed or named).  */
+	wimlib_assert(strm->stream_type == STREAM_TYPE_DATA);
+
+	if (ctx->num_open_handles == MAX_OPEN_FILES) {
 		/* XXX: Fix this.  But because of the checks in
-		 * extract_stream_list(), this can now only happen on a
-		 * filesystem that does not support hard links.  */
+		 * extract_blob_list(), this can now only happen on a filesystem
+		 * that does not support hard links.  */
 		ERROR("Can't extract data: too many open files!");
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
+
+
+	if (unlikely(stream_is_named(strm))) {
+		build_extraction_path_with_ads(dentry, ctx,
+					       strm->stream_name,
+					       utf16le_len_chars(strm->stream_name));
+	} else {
+		build_extraction_path(dentry, ctx);
+	}
+
 
 	/* Open a new handle  */
 	status = do_create_file(&h,
@@ -1736,7 +1716,7 @@ begin_extract_stream_instance(const struct wim_lookup_table_entry *stream,
 	ctx->open_handles[ctx->num_open_handles++] = h;
 
 	/* Allocate space for the data.  */
-	alloc_info.AllocationSize.QuadPart = stream->size;
+	alloc_info.AllocationSize.QuadPart = blob->size;
 	(*func_NtSetInformationFile)(h, &ctx->iosb,
 				     &alloc_info, sizeof(alloc_info),
 				     FileAllocationInformation);
@@ -2018,12 +1998,12 @@ retry:
 	return 0;
 }
 
-/* Called when starting to read a stream for extraction on Windows  */
+/* Called when starting to read a blob for extraction on Windows  */
 static int
-begin_extract_stream(struct wim_lookup_table_entry *stream, void *_ctx)
+begin_extract_blob(struct blob_descriptor *blob, void *_ctx)
 {
 	struct win32_apply_ctx *ctx = _ctx;
-	const struct stream_owner *owners = stream_owners(stream);
+	const struct blob_extraction_target *targets = blob_extraction_targets(blob);
 	int ret;
 
 	ctx->num_open_handles = 0;
@@ -2031,22 +2011,21 @@ begin_extract_stream(struct wim_lookup_table_entry *stream, void *_ctx)
 	INIT_LIST_HEAD(&ctx->reparse_dentries);
 	INIT_LIST_HEAD(&ctx->encrypted_dentries);
 
-	for (u32 i = 0; i < stream->out_refcnt; i++) {
-		const struct wim_inode *inode = owners[i].inode;
-		const wchar_t *stream_name = owners[i].stream_name;
+	for (u32 i = 0; i < blob->out_refcnt; i++) {
+		const struct wim_inode *inode = targets[i].inode;
+		const struct wim_inode_stream *strm = targets[i].stream;
 		struct wim_dentry *dentry;
 
-		/* A copy of the stream needs to be extracted to @inode.  */
+		/* A copy of the blob needs to be extracted to @inode.  */
 
 		if (ctx->common.supported_features.hard_links) {
 			dentry = inode_first_extraction_dentry(inode);
-			ret = begin_extract_stream_instance(stream, dentry,
-							    stream_name, ctx);
+			ret = begin_extract_blob_instance(blob, dentry, strm, ctx);
 			ret = check_apply_error(dentry, ctx, ret);
 			if (ret)
 				goto fail;
 		} else {
-			/* Hard links not supported.  Extract the stream
+			/* Hard links not supported.  Extract the blob
 			 * separately to each alias of the inode.  */
 			struct list_head *next;
 
@@ -2054,10 +2033,7 @@ begin_extract_stream(struct wim_lookup_table_entry *stream, void *_ctx)
 			do {
 				dentry = list_entry(next, struct wim_dentry,
 						    d_extraction_alias_node);
-				ret = begin_extract_stream_instance(stream,
-								    dentry,
-								    stream_name,
-								    ctx);
+				ret = begin_extract_blob_instance(blob, dentry, strm, ctx);
 				ret = check_apply_error(dentry, ctx, ret);
 				if (ret)
 					goto fail;
@@ -2073,8 +2049,8 @@ fail:
 	return ret;
 }
 
-/* Called when the next chunk of a stream has been read for extraction on
- * Windows  */
+/* Called when the next chunk of a blob has been read for extraction on Windows
+ */
 static int
 extract_chunk(const void *chunk, size_t size, void *_ctx)
 {
@@ -2108,9 +2084,9 @@ extract_chunk(const void *chunk, size_t size, void *_ctx)
 	return 0;
 }
 
-/* Called when a stream has been fully read for extraction on Windows  */
+/* Called when a blob has been fully read for extraction on Windows  */
 static int
-end_extract_stream(struct wim_lookup_table_entry *stream, int status, void *_ctx)
+end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
 {
 	struct win32_apply_ctx *ctx = _ctx;
 	int ret;
@@ -2125,26 +2101,27 @@ end_extract_stream(struct wim_lookup_table_entry *stream, int status, void *_ctx
 		return 0;
 
 	if (!list_empty(&ctx->reparse_dentries)) {
-		if (stream->size > REPARSE_DATA_MAX_SIZE) {
+		if (blob->size > REPARSE_DATA_MAX_SIZE) {
 			dentry = list_first_entry(&ctx->reparse_dentries,
 						  struct wim_dentry, tmp_list);
 			build_extraction_path(dentry, ctx);
 			ERROR("Reparse data of \"%ls\" has size "
 			      "%"PRIu64" bytes (exceeds %u bytes)",
-			      current_path(ctx), stream->size,
+			      current_path(ctx), blob->size,
 			      REPARSE_DATA_MAX_SIZE);
 			ret = WIMLIB_ERR_INVALID_REPARSE_DATA;
 			return check_apply_error(dentry, ctx, ret);
 		}
-		/* In the WIM format, reparse streams are just the reparse data
-		 * and omit the header.  But we can reconstruct the header.  */
-		memcpy(ctx->rpbuf.rpdata, ctx->data_buffer, stream->size);
-		ctx->rpbuf.rpdatalen = stream->size;
+		/* In the WIM format, reparse point streams are just the reparse
+		 * data and omit the header.  But we can reconstruct the header.
+		 */
+		memcpy(ctx->rpbuf.rpdata, ctx->data_buffer, blob->size);
+		ctx->rpbuf.rpdatalen = blob->size;
 		ctx->rpbuf.rpreserved = 0;
 		list_for_each_entry(dentry, &ctx->reparse_dentries, tmp_list) {
 			ctx->rpbuf.rptag = dentry->d_inode->i_reparse_tag;
 			ret = set_reparse_data(dentry, &ctx->rpbuf,
-					       stream->size + REPARSE_DATA_OFFSET,
+					       blob->size + REPARSE_DATA_OFFSET,
 					       ctx);
 			ret = check_apply_error(dentry, ctx, ret);
 			if (ret)
@@ -2153,7 +2130,7 @@ end_extract_stream(struct wim_lookup_table_entry *stream, int status, void *_ctx
 	}
 
 	if (!list_empty(&ctx->encrypted_dentries)) {
-		ctx->encrypted_size = stream->size;
+		ctx->encrypted_size = blob->size;
 		list_for_each_entry(dentry, &ctx->encrypted_dentries, tmp_list) {
 			ret = extract_encrypted_file(dentry, ctx);
 			ret = check_apply_error(dentry, ctx, ret);
@@ -2536,15 +2513,15 @@ win32_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	if (ret)
 		goto out;
 
-	struct read_stream_list_callbacks cbs = {
-		.begin_stream      = begin_extract_stream,
-		.begin_stream_ctx  = ctx,
+	struct read_blob_list_callbacks cbs = {
+		.begin_blob        = begin_extract_blob,
+		.begin_blob_ctx    = ctx,
 		.consume_chunk     = extract_chunk,
 		.consume_chunk_ctx = ctx,
-		.end_stream        = end_extract_stream,
-		.end_stream_ctx    = ctx,
+		.end_blob          = end_extract_blob,
+		.end_blob_ctx      = ctx,
 	};
-	ret = extract_stream_list(&ctx->common, &cbs);
+	ret = extract_blob_list(&ctx->common, &cbs);
 	if (ret)
 		goto out;
 

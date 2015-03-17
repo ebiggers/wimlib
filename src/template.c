@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2013 Eric Biggers
+ * Copyright (C) 2013, 2015 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -26,10 +26,10 @@
 #endif
 
 #include "wimlib.h"
+#include "wimlib/blob_table.h"
 #include "wimlib/assert.h"
 #include "wimlib/dentry.h"
 #include "wimlib/error.h"
-#include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
 #include "wimlib/util.h"
 
@@ -38,7 +38,7 @@
 static bool
 inode_metadata_consistent(const struct wim_inode *inode,
 			  const struct wim_inode *template_inode,
-			  const struct wim_lookup_table *template_lookup_table)
+			  const struct blob_table *template_blob_table)
 {
 	/* Must have exact same creation time and last write time.  */
 	if (inode->i_creation_time != template_inode->i_creation_time ||
@@ -50,37 +50,36 @@ inode_metadata_consistent(const struct wim_inode *inode,
 	if (inode->i_last_access_time < template_inode->i_last_access_time)
 		return false;
 
-	/* Must have same number of alternate data stream entries.  */
-	if (inode->i_num_ads != template_inode->i_num_ads)
+	/* Must have same number of streams.  */
+	if (inode->i_num_streams != template_inode->i_num_streams)
 		return false;
 
-	/* If the stream entries for the inode are for some reason not resolved,
-	 * then the hashes are already available and the point of this function
-	 * is defeated.  */
-	if (!inode->i_resolved)
-		return false;
+	for (unsigned i = 0; i < inode->i_num_streams; i++) {
+		const struct blob_descriptor *blob, *template_blob;
 
-	/* Iterate through each stream and do some more checks.  */
-	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-		const struct wim_lookup_table_entry *lte, *template_lte;
+		/* If the streams for the inode are for some reason not
+		 * resolved, then the hashes are already available and the point
+		 * of this function is defeated.  */
+		if (!inode->i_streams[i].stream_resolved)
+			return false;
 
-		lte = inode_stream_lte_resolved(inode, i);
-		template_lte = inode_stream_lte(template_inode, i,
-						template_lookup_table);
+		blob = stream_blob_resolved(&inode->i_streams[i]);
+		template_blob = stream_blob(&template_inode->i_streams[i],
+					    template_blob_table);
 
-		/* Compare stream sizes.  */
-		if (lte && template_lte) {
-			if (lte->size != template_lte->size)
+		/* Compare blob sizes.  */
+		if (blob && template_blob) {
+			if (blob->size != template_blob->size)
 				return false;
 
 			/* If hash happens to be available, compare with template.  */
-			if (!lte->unhashed && !template_lte->unhashed &&
-			    !hashes_equal(lte->hash, template_lte->hash))
+			if (!blob->unhashed && !template_blob->unhashed &&
+			    !hashes_equal(blob->hash, template_blob->hash))
 				return false;
 
-		} else if (lte && lte->size) {
+		} else if (blob && blob->size) {
 			return false;
-		} else if (template_lte && template_lte->size) {
+		} else if (template_blob && template_blob->size) {
 			return false;
 		}
 	}
@@ -94,11 +93,11 @@ inode_metadata_consistent(const struct wim_inode *inode,
 /**
  * Given an inode @inode that has been determined to be "the same" as another
  * inode @template_inode in either the same WIM or another WIM, retrieve some
- * useful stream information (e.g. checksums) from @template_inode.
+ * useful information (e.g. checksums) from @template_inode.
  *
  * This assumes that the streams for @inode have been resolved (to point
- * directly to the appropriate `struct wim_lookup_table_entry's)  but do not
- * necessarily have checksum information filled in.
+ * directly to the appropriate `struct blob_descriptor's) but do not necessarily
+ * have checksum information filled in.
  */
 static int
 inode_copy_checksums(struct wim_inode *inode,
@@ -106,53 +105,49 @@ inode_copy_checksums(struct wim_inode *inode,
 		     WIMStruct *wim,
 		     WIMStruct *template_wim)
 {
-	for (unsigned i = 0; i <= inode->i_num_ads; i++) {
-		struct wim_lookup_table_entry *lte, *template_lte;
-		struct wim_lookup_table_entry *replace_lte;
+	for (unsigned i = 0; i < inode->i_num_streams; i++) {
+		struct blob_descriptor *blob, *template_blob;
+		struct blob_descriptor *replace_blob;
 
-		lte = inode_stream_lte_resolved(inode, i);
-		template_lte = inode_stream_lte(template_inode, i,
-						template_wim->lookup_table);
+		blob = stream_blob_resolved(&inode->i_streams[i]);
+		template_blob = stream_blob(&template_inode->i_streams[i],
+					       template_wim->blob_table);
 
 		/* Only take action if both entries exist, the entry for @inode
 		 * has no checksum calculated, but the entry for @template_inode
 		 * does.  */
-		if (lte == NULL || template_lte == NULL ||
-		    !lte->unhashed || template_lte->unhashed)
+		if (blob == NULL || template_blob == NULL ||
+		    !blob->unhashed || template_blob->unhashed)
 			continue;
 
-		wimlib_assert(lte->refcnt == inode->i_nlink);
+		wimlib_assert(blob->refcnt == inode->i_nlink);
 
 		/* If the WIM of the template image is the same as the WIM of
-		 * the new image, then @template_lte can be used directly.
+		 * the new image, then @template_blob can be used directly.
 		 *
-		 * Otherwise, look for a stream with the same hash in the WIM of
-		 * the new image.  If found, use it; otherwise re-use the entry
-		 * being discarded, filling in the hash.  */
+		 * Otherwise, look for a blob with the same hash in the WIM of
+		 * the new image.  If found, use it; otherwise re-use the
+		 * blob descriptor being discarded, filling in the hash.  */
 
 		if (wim == template_wim)
-			replace_lte = template_lte;
+			replace_blob = template_blob;
 		else
-			replace_lte = lookup_stream(wim->lookup_table,
-						    template_lte->hash);
+			replace_blob = lookup_blob(wim->blob_table,
+						   template_blob->hash);
 
-		list_del(&lte->unhashed_list);
-		if (replace_lte) {
-			free_lookup_table_entry(lte);
+		list_del(&blob->unhashed_list);
+		if (replace_blob) {
+			free_blob_descriptor(blob);
 		} else {
-			copy_hash(lte->hash, template_lte->hash);
-			lte->unhashed = 0;
-			lookup_table_insert(wim->lookup_table, lte);
-			lte->refcnt = 0;
-			replace_lte = lte;
+			copy_hash(blob->hash, template_blob->hash);
+			blob->unhashed = 0;
+			blob_table_insert(wim->blob_table, blob);
+			blob->refcnt = 0;
+			replace_blob = blob;
 		}
 
-		if (i == 0)
-			inode->i_lte = replace_lte;
-		else
-			inode->i_ads_entries[i - 1].lte = replace_lte;
-
-		replace_lte->refcnt += inode->i_nlink;
+		stream_set_blob(&inode->i_streams[i], replace_blob);
+		replace_blob->refcnt += inode->i_nlink;
 	}
 	return 0;
 }
@@ -190,7 +185,7 @@ dentry_reference_template(struct wim_dentry *dentry, void *_args)
 	template_inode = template_dentry->d_inode;
 
 	if (inode_metadata_consistent(inode, template_inode,
-				      template_wim->lookup_table)) {
+				      template_wim->blob_table)) {
 		/*DEBUG("\"%"TS"\": No change detected", dentry->_full_path);*/
 		ret = inode_copy_checksums(inode, template_inode,
 					   wim, template_wim);

@@ -37,6 +37,15 @@ varname1##_to_##varname2##_buf(const chartype1 *in, size_t in_nbytes,	\
 extern utf16lechar *
 utf16le_dupz(const void *ustr, size_t usize);
 
+extern utf16lechar *
+utf16le_dup(const utf16lechar *ustr);
+
+extern size_t
+utf16le_len_bytes(const utf16lechar *s);
+
+extern size_t
+utf16le_len_chars(const utf16lechar *s);
+
 #if !TCHAR_IS_UTF16LE
 DECLARE_CHAR_CONVERSION_FUNCTIONS(utf16le, tstr, utf16lechar, tchar);
 DECLARE_CHAR_CONVERSION_FUNCTIONS(tstr, utf16le, tchar, utf16lechar);
@@ -71,6 +80,10 @@ extern int
 cmp_utf16le_strings(const utf16lechar *s1, size_t n1,
 		    const utf16lechar *s2, size_t n2,
 		    bool ignore_case);
+
+extern int
+cmp_utf16le_strings_z(const utf16lechar *s1, const utf16lechar *s2,
+		      bool ignore_case);
 
 /* Convert a string in the platform-dependent encoding to UTF-16LE, but if both
  * encodings are UTF-16LE, simply re-use the string.  Release with

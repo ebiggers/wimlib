@@ -16,7 +16,7 @@
 /* Default WIM version number.  Streams are always compressed independently.  */
 #define WIM_VERSION_DEFAULT 0x10d00
 
-/* Version number used for WIMs that allow multiple streams combined into one
+/* Version number used for WIMs that allow multiple blobs combined into one
  * resource ("solid resources", marked by WIM_RESHDR_FLAG_SOLID) and also a new
  * compression format (LZMS).  This version is new as of Windows 8 WIMGAPI.
  * Although it is used by Windows 8 web downloader, it is not yet documented by
@@ -87,8 +87,8 @@ struct wim_header_disk {
 	 * least 1.  wimlib allows 0.  */
 	u32 image_count;
 
-	/* +0x30: Location and size of the WIM's lookup table.  */
-	struct wim_reshdr_disk lookup_table_reshdr;
+	/* +0x30: Location and size of the WIM's blob table.  */
+	struct wim_reshdr_disk blob_table_reshdr;
 
 	/* +0x48: Location and size of the WIM's XML data.  */
 	struct wim_reshdr_disk xml_data_reshdr;
@@ -128,7 +128,7 @@ struct wim_header {
 	u16 part_number;
 	u16 total_parts;
 	u32 image_count;
-	struct wim_reshdr lookup_table_reshdr;
+	struct wim_reshdr blob_table_reshdr;
 	struct wim_reshdr xml_data_reshdr;
 	struct wim_reshdr boot_metadata_reshdr;
 	u32 boot_idx;
@@ -153,14 +153,14 @@ struct wim_header {
 /* The WIM is part of a split WIM.  */
 #define WIM_HDR_FLAG_SPANNED            0x00000008
 
-/* All streams included in the WIM's lookup table are non-metadata (do not have
+/* All blobs included in the WIM's blob table are non-metadata (do not have
  * WIM_RESHDR_FLAG_METADATA set).  wimlib ignores this flag and clears it on new
  * WIM files it writes.  */
 #define WIM_HDR_FLAG_RESOURCE_ONLY      0x00000010
 
-/* All streams included in the WIM's lookup table are metadata (have
- * WIM_RESHDR_FLAG_METADATA set).  wimlib ignores this flag and clears it on
- * new WIM files it writes.  */
+/* All blobs included in the WIM's blob table are metadata (have
+ * WIM_RESHDR_FLAG_METADATA set).  wimlib ignores this flag and clears it on new
+ * WIM files it writes.  */
 #define WIM_HDR_FLAG_METADATA_ONLY      0x00000020
 
 /* The WIM is currently being written or appended to.  */

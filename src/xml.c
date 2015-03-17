@@ -32,11 +32,11 @@
 #include <string.h>
 
 #include "wimlib/assert.h"
+#include "wimlib/blob_table.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
-#include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
 #include "wimlib/resource.h"
 #include "wimlib/timestamp.h"
@@ -90,7 +90,7 @@ struct image_info {
 
 	/* Note: must update clone_image_info() if adding new fields here  */
 
-	struct wim_lookup_table *lookup_table; /* temporary field */
+	struct blob_table *blob_table; /* temporary field */
 };
 
 /* A struct wim_info structure corresponds to the entire XML data for a WIM file. */
@@ -1214,22 +1214,24 @@ calculate_dentry_statistics(struct wim_dentry *dentry, void *arg)
 	if (!(inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
 				     FILE_ATTRIBUTE_REPARSE_POINT)))
 	{
-		struct wim_lookup_table_entry *lte;
+		struct blob_descriptor *blob;
 
-		lte = inode_unnamed_lte(inode, info->lookup_table);
-		if (lte) {
-			info->total_bytes += lte->size;
+		blob = inode_get_blob_for_unnamed_data_stream(inode,
+							      info->blob_table);
+		if (blob) {
+			info->total_bytes += blob->size;
 			if (!dentry_is_first_in_inode(dentry))
-				info->hard_link_bytes += lte->size;
+				info->hard_link_bytes += blob->size;
 		}
 
 		if (inode->i_nlink >= 2 && dentry_is_first_in_inode(dentry)) {
-			for (unsigned i = 0; i < inode->i_num_ads; i++) {
-				if (inode->i_ads_entries[i].stream_name_nbytes) {
-					lte = inode_stream_lte(inode, i + 1, info->lookup_table);
-					if (lte) {
+			for (unsigned i = 0; i < inode->i_num_streams; i++) {
+				if (stream_is_named_data_stream(&inode->i_streams[i])) {
+					blob = stream_blob(&inode->i_streams[i],
+							   info->blob_table);
+					if (blob) {
 						info->hard_link_bytes += inode->i_nlink *
-									 lte->size;
+									 blob->size;
 					}
 				}
 			}
@@ -1255,7 +1257,7 @@ xml_update_image_info(WIMStruct *wim, int image)
 	image_info->dir_count       = 0;
 	image_info->total_bytes     = 0;
 	image_info->hard_link_bytes = 0;
-	image_info->lookup_table = wim->lookup_table;
+	image_info->blob_table = wim->blob_table;
 
 	for_dentry_in_tree(wim->image_metadata[image - 1]->root_dentry,
 			   calculate_dentry_statistics,

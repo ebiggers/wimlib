@@ -1,47 +1,108 @@
 #ifndef _WIMLIB_INODE_H
 #define _WIMLIB_INODE_H
 
+#include "wimlib/assert.h"
 #include "wimlib/list.h"
 #include "wimlib/sha1.h"
 #include "wimlib/types.h"
 
 struct avl_tree_node;
-struct wim_ads_entry;
+struct blob_descriptor;
+struct blob_table;
 struct wim_dentry;
-struct wim_lookup_table;
-struct wim_lookup_table_entry;
 struct wim_security_data;
 struct wimfs_fd;
 
+/* Valid values for the 'stream_type' field of a 'struct wim_inode_stream'  */
+enum wim_inode_stream_type {
+
+	/* Data stream, may be unnamed (usual case) or named  */
+	STREAM_TYPE_DATA,
+
+	/* Reparse point stream.  This is the same as the data of the on-disk
+	 * reparse point attribute, except that the first 8 bytes of the on-disk
+	 * attribute are omitted.  The omitted bytes contain the reparse tag
+	 * (which is instead stored in the on-disk WIM dentry), the reparse data
+	 * size (which is redundant with the stream size), and a reserved field
+	 * that is always zero.  */
+	STREAM_TYPE_REPARSE_POINT,
+
+	/* Encrypted data in the "EFSRPC raw data format" specified by [MS-EFSR]
+	 * section 2.2.3.  This contains metadata for the Encrypting File System
+	 * as well as the encrypted data of all the file's data streams.  */
+	STREAM_TYPE_EFSRPC_RAW_DATA,
+
+	/* Stream type could not be determined  */
+	STREAM_TYPE_UNKNOWN,
+};
+
+extern const utf16lechar NO_STREAM_NAME[1];
+
 /*
- * WIM inode.
+ * 'struct wim_inode_stream' describes a "stream", which associates a blob of
+ * data with an inode.  Each stream has a type and optionally a name.
  *
- * As mentioned in the comment above `struct wim_dentry', in WIM files there
- * is no on-disk analogue of a real inode, as most of these fields are
- * duplicated in the dentries.  Instead, a `struct wim_inode' is something we
- * create ourselves to simplify the handling of hard links.
+ * The most frequently seen kind of stream is the "unnamed data stream"
+ * (stream_type == STREAM_TYPE_DATA && stream_name == NO_STREAM_NAME), which is
+ * the "default file contents".  Many inodes just have an unnamed data stream
+ * and no other streams.  However, files on NTFS filesystems may have
+ * additional, "named" data streams, and this is supported by the WIM format.
+ *
+ * A "reparse point" is an inode with reparse data set.  The reparse data is
+ * stored in a stream of type STREAM_TYPE_REPARSE_POINT.  There should be only
+ * one such stream, and it should be unnamed.  However, it is possible for an
+ * inode to have both a reparse point stream and an unnamed data stream, and
+ * even named data streams as well.
  */
-struct wim_inode {
-	/* If i_resolved == 0:
-	 *	SHA1 message digest of the contents of the unnamed-data stream
-	 *	of this inode.
+struct wim_inode_stream {
+
+	/* The name of the stream or NO_STREAM_NAME.  */
+	utf16lechar *stream_name;
+
+	/*
+	 * If 'stream_resolved' = 0, then 'stream_hash' is the SHA-1 message
+	 * digest of the uncompressed data of this stream, or all zeroes if this
+	 * stream is empty.
 	 *
-	 * If i_resolved == 1:
-	 *	Pointer to the lookup table entry for the unnamed data stream
-	 *	of this inode, or NULL.
-	 *
-	 * i_hash corresponds to the 'unnamed_stream_hash' field of the `struct
-	 * wim_dentry_on_disk' and the additional caveats documented about that
-	 * field apply here (for example, the quirks regarding all-zero hashes).
+	 * If 'stream_resolved' = 1, then 'stream_blob' is a pointer directly to
+	 * a descriptor for this stream's blob, or NULL if this stream is empty.
 	 */
 	union {
-		u8 i_hash[SHA1_HASH_SIZE];
-		struct wim_lookup_table_entry *i_lte;
+		u8 _stream_hash[SHA1_HASH_SIZE];
+		struct blob_descriptor *_stream_blob;
 	};
 
-	/* Corresponds to the 'attributes' field of `struct wim_dentry_on_disk';
-	 * bitwise OR of the FILE_ATTRIBUTE_* flags that give the attributes of
-	 * this inode. */
+	/* 'stream_resolved' determines whether 'stream_hash' or 'stream_blob'
+	 * is valid as described above.  */
+	u32 stream_resolved : 1;
+
+	/* A unique identifier for this stream within the context of its inode.
+	 * This stays constant even if the streams array is reallocated.  */
+	u32 stream_id : 28;
+
+	/* The type of this stream as one of the STREAM_TYPE_* values  */
+	u32 stream_type : 3;
+};
+
+/*
+ * WIM inode - a "file" in an image which may be accessible via multiple paths
+ *
+ * Note: in WIM files there is no true on-disk analogue of an inode; there are
+ * only directory entries, and some fields are duplicated among all links to a
+ * file.  However, wimlib uses inode structures internally to simplify handling
+ * of hard links.
+ */
+struct wim_inode {
+
+	/*
+	 * The collection of streams for this inode.  'i_streams' points to
+	 * either 'i_embedded_streams' or an allocated array.
+	 */
+	struct wim_inode_stream *i_streams;
+	struct wim_inode_stream i_embedded_streams[1];
+	unsigned i_num_streams;
+
+	/* Windows file attribute flags (FILE_ATTRIBUTE_*).  */
 	u32 i_attributes;
 
 	/* Root of a balanced binary search tree storing the child directory
@@ -77,35 +138,14 @@ struct wim_inode {
 	/* Number of dentries that are aliases for this inode.  */
 	u32 i_nlink;
 
-	/* Number of alternate data streams (ADS) associated with this inode */
-	u16 i_num_ads;
-
-	/* Flag that indicates whether this inode's streams have been
-	 * "resolved".  By default, the inode starts as "unresolved", meaning
-	 * that the i_hash field, along with the hash field of any associated
-	 * wim_ads_entry's, are valid and should be used as keys in the WIM
-	 * lookup table to find the associated `struct wim_lookup_table_entry'.
-	 * But if the inode has been resolved, then each of these fields is
-	 * replaced with a pointer directly to the appropriate `struct
-	 * wim_lookup_table_entry', or NULL if the stream is empty.  */
-	u8 i_resolved : 1;
-
 	/* Flag used to mark this inode as visited; this is used when visiting
 	 * all the inodes in a dentry tree exactly once.  It will be 0 by
 	 * default and must be cleared following the tree traversal, even in
 	 * error paths.  */
 	u8 i_visited : 1;
 
-	/* 1 iff all ADS entries of this inode are named or if this inode
-	 * has no ADS entries  */
-	u8 i_canonical_streams : 1;
-
 	/* Cached value  */
 	u8 i_can_externally_back : 1;
-
-	/* Pointer to a malloc()ed array of i_num_ads alternate data stream
-	 * entries for this inode.  */
-	struct wim_ads_entry *i_ads_entries;
 
 	/* If not NULL, a pointer to the extra data that was read from the
 	 * dentry.  This should be a series of tagged items, each of which
@@ -180,8 +220,8 @@ struct wim_inode {
 
 		/* Used during WIM writing with
 		 * WIMLIB_WRITE_FLAG_SEND_DONE_WITH_FILE_MESSAGES:  the number
-		 * of data streams this inode has that have not yet been fully
-		 * read.  */
+		 * of streams this inode has that have not yet been fully read.
+		 * */
 		u32 num_remaining_streams;
 
 #ifdef WITH_FUSE
@@ -204,67 +244,9 @@ struct wim_inode {
 	u16 i_num_allocated_fds;
 #endif
 
-	/* Next alternate data stream ID to be assigned */
+	/* Next stream ID to be assigned  */
 	u32 i_next_stream_id;
 };
-
-/* Alternate data stream entry.
- *
- * We read this from disk in the read_ads_entries() function; see that function
- * for more explanation. */
-struct wim_ads_entry {
-	union {
-		/* SHA-1 message digest of stream contents */
-		u8 hash[SHA1_HASH_SIZE];
-
-		/* The corresponding lookup table entry (only for resolved
-		 * streams) */
-		struct wim_lookup_table_entry *lte;
-	};
-
-	/* Length of UTF16-encoded stream name, in bytes, not including the
-	 * terminating null character; or 0 if the stream is unnamed. */
-	u16 stream_name_nbytes;
-
-	/* Number to identify an alternate data stream even after it's possibly
-	 * been moved or renamed. */
-	u32 stream_id;
-
-	/* Stream name (UTF-16LE), null-terminated, or NULL if the stream is
-	 * unnamed.  */
-	utf16lechar *stream_name;
-
-	/* Reserved field.  We read it into memory so we can write it out
-	 * unchanged. */
-	u64 reserved;
-};
-
-/* WIM alternate data stream entry (on-disk format) */
-struct wim_ads_entry_on_disk {
-	/* Length of the entry, in bytes.  This includes all fixed-length
-	 * fields, plus the stream name and null terminator if present, and the
-	 * padding up to an 8 byte boundary.  wimlib is a little less strict
-	 * when reading the entries, and only requires that the number of bytes
-	 * from this field is at least as large as the size of the fixed length
-	 * fields and stream name without null terminator.  */
-	le64 length;
-
-	le64 reserved;
-
-	/* SHA1 message digest of the uncompressed stream; or, alternatively,
-	 * can be all zeroes if the stream has zero length.  */
-	u8 hash[SHA1_HASH_SIZE];
-
-	/* Length of the stream name, in bytes.  0 if the stream is unnamed.  */
-	le16 stream_name_nbytes;
-
-	/* Stream name in UTF-16LE.  It is @stream_name_nbytes bytes long,
-	 * excluding the null terminator.  There is a null terminator character
-	 * if @stream_name_nbytes != 0; i.e., if this stream is named.  */
-	utf16lechar stream_name[];
-} _packed_attribute;
-
-#define WIM_ADS_ENTRY_DISK_SIZE 38
 
 /*
  * Reparse tags documented at
@@ -340,17 +322,6 @@ inode_is_directory(const struct wim_inode *inode)
 			== FILE_ATTRIBUTE_DIRECTORY;
 }
 
-/* Is the inode a directory with the encrypted attribute set?
- * This returns true for encrypted directories even if they have reparse data
- * (I'm not sure if such files can even exist!).  */
-static inline bool
-inode_is_encrypted_directory(const struct wim_inode *inode)
-{
-	return ((inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
-					FILE_ATTRIBUTE_ENCRYPTED))
-		== (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_ENCRYPTED));
-}
-
 /* Is the inode a symbolic link?
  * This returns true iff the inode is a reparse point that is either a "real"
  * symbolic link or a junction point.  */
@@ -362,114 +333,102 @@ inode_is_symlink(const struct wim_inode *inode)
 		    inode->i_reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT);
 }
 
-/* Does the inode have children?
- * Currently (based on read_dentry_tree()), this can only return true for inodes
- * for which inode_is_directory() returns true.  (This also returns false on
- * empty directories.)  */
+/* Does the inode have children?  Currently (based on read_dentry_tree() as well
+ * as the various build-dentry-tree implementations), this can only return true
+ * for inodes for which inode_is_directory() returns true.  */
 static inline bool
 inode_has_children(const struct wim_inode *inode)
 {
 	return inode->i_children != NULL;
 }
 
-extern struct wim_ads_entry *
-inode_get_ads_entry(struct wim_inode *inode, const tchar *stream_name);
+extern struct wim_inode_stream *
+inode_get_stream(const struct wim_inode *inode, int stream_type,
+		 const utf16lechar *stream_name);
 
-extern struct wim_ads_entry *
-inode_add_ads_utf16le(struct wim_inode *inode, const utf16lechar *stream_name,
-		      size_t stream_name_nbytes);
+extern struct wim_inode_stream *
+inode_get_unnamed_stream(const struct wim_inode *inode, int stream_type);
 
-extern struct wim_ads_entry *
-inode_add_ads(struct wim_inode *dentry, const tchar *stream_name);
+extern struct wim_inode_stream *
+inode_add_stream(struct wim_inode *inode, int stream_type,
+		 const utf16lechar *stream_name, struct blob_descriptor *blob);
 
-extern struct wim_ads_entry *
-inode_add_ads_with_data(struct wim_inode *inode, const tchar *name,
-			const void *value, size_t size,
-			struct wim_lookup_table *lookup_table);
+extern struct wim_inode_stream *
+inode_add_stream_with_data(struct wim_inode *inode, int stream_type,
+			   const utf16lechar *stream_name,
+			   const void *data, size_t size,
+			   struct blob_table *blob_table);
 
 extern void
-inode_remove_ads(struct wim_inode *inode, struct wim_ads_entry *entry,
-		 struct wim_lookup_table *lookup_table);
+inode_remove_stream(struct wim_inode *inode, struct wim_inode_stream *strm,
+		    struct blob_table *blob_table);
+
+static inline struct blob_descriptor *
+stream_blob_resolved(const struct wim_inode_stream *strm)
+{
+	wimlib_assert(strm->stream_resolved);
+	return strm->_stream_blob;
+}
+
+static inline void
+stream_set_blob(struct wim_inode_stream *strm, struct blob_descriptor *blob)
+{
+	strm->_stream_blob = blob;
+	strm->stream_resolved = 1;
+}
+
+static inline bool
+stream_is_named(const struct wim_inode_stream *strm)
+{
+	return strm->stream_name != NO_STREAM_NAME;
+}
+
+static inline bool
+stream_is_unnamed_data_stream(const struct wim_inode_stream *strm)
+{
+	return strm->stream_type == STREAM_TYPE_DATA && !stream_is_named(strm);
+}
+
+static inline bool
+stream_is_named_data_stream(const struct wim_inode_stream *strm)
+{
+	return strm->stream_type == STREAM_TYPE_DATA && stream_is_named(strm);
+}
 
 extern bool
-inode_has_named_stream(const struct wim_inode *inode);
+inode_has_named_data_stream(const struct wim_inode *inode);
 
 extern int
-inode_set_unnamed_stream(struct wim_inode *inode, const void *data, size_t len,
-			 struct wim_lookup_table *lookup_table);
-
-extern int
-inode_resolve_streams(struct wim_inode *inode, struct wim_lookup_table *table,
-		      bool force);
+inode_resolve_streams(struct wim_inode *inode,
+		      struct blob_table *table, bool force);
 
 extern void
 inode_unresolve_streams(struct wim_inode *inode);
 
 extern int
-stream_not_found_error(const struct wim_inode *inode, const u8 *hash);
+blob_not_found_error(const struct wim_inode *inode, const u8 *hash);
 
-static inline struct wim_lookup_table_entry *
-inode_stream_lte_resolved(const struct wim_inode *inode, unsigned stream_idx)
-{
-	if (stream_idx == 0)
-		return inode->i_lte;
-	return inode->i_ads_entries[stream_idx - 1].lte;
-}
+extern struct blob_descriptor *
+stream_blob(const struct wim_inode_stream *strm, const struct blob_table *table);
 
-extern struct wim_lookup_table_entry *
-inode_stream_lte(const struct wim_inode *inode, unsigned stream_idx,
-		 const struct wim_lookup_table *table);
+extern struct blob_descriptor *
+inode_get_blob_for_unnamed_data_stream(const struct wim_inode *inode,
+				       const struct blob_table *blob_table);
 
-extern struct wim_lookup_table_entry *
-inode_unnamed_stream_resolved(const struct wim_inode *inode,
-			      unsigned *stream_idx_ret);
-
-static inline struct wim_lookup_table_entry *
-inode_unnamed_lte_resolved(const struct wim_inode *inode)
-{
-	unsigned stream_idx;
-	return inode_unnamed_stream_resolved(inode, &stream_idx);
-}
-
-extern struct wim_lookup_table_entry *
-inode_unnamed_lte(const struct wim_inode *inode,
-		  const struct wim_lookup_table *table);
+extern struct blob_descriptor *
+inode_get_blob_for_unnamed_data_stream_resolved(const struct wim_inode *inode);
 
 extern const u8 *
-inode_stream_hash(const struct wim_inode *inode, unsigned stream_idx);
+stream_hash(const struct wim_inode_stream *strm);
 
 extern const u8 *
-inode_unnamed_stream_hash(const struct wim_inode *inode);
-
-static inline unsigned
-inode_stream_name_nbytes(const struct wim_inode *inode, unsigned stream_idx)
-{
-	if (stream_idx == 0)
-		return 0;
-	return inode->i_ads_entries[stream_idx - 1].stream_name_nbytes;
-}
-
-static inline u32
-inode_stream_idx_to_id(const struct wim_inode *inode, unsigned stream_idx)
-{
-	if (stream_idx == 0)
-		return 0;
-	return inode->i_ads_entries[stream_idx - 1].stream_id;
-}
+inode_get_hash_of_unnamed_data_stream(const struct wim_inode *inode);
 
 extern void
-inode_ref_streams(struct wim_inode *inode);
+inode_ref_blobs(struct wim_inode *inode);
 
 extern void
-inode_unref_streams(struct wim_inode *inode,
-		    struct wim_lookup_table *lookup_table);
-
-extern int
-read_ads_entries(const u8 * restrict p, struct wim_inode * restrict inode,
-		 size_t *nbytes_remaining_p);
-
-extern void
-check_inode(struct wim_inode *inode, const struct wim_security_data *sd);
+inode_unref_blobs(struct wim_inode *inode, struct blob_table *blob_table);
 
 /* inode_fixup.c  */
 extern int

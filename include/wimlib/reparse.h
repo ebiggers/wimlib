@@ -6,8 +6,8 @@
 #include "wimlib/types.h"
 
 struct wim_inode;
-struct wim_lookup_table;
-struct wim_lookup_table_entry;
+struct blob_table;
+struct blob_descriptor;
 
 #define REPARSE_POINT_MAX_SIZE (16 * 1024)
 
@@ -86,20 +86,14 @@ make_reparse_buffer(const struct reparse_data * restrict rpdata,
 		    u8 * restrict rpbuf,
 		    u16 * restrict rpbuflen_ret);
 
-extern int
-wim_inode_get_reparse_data(const struct wim_inode * restrict inode,
-			   u8 * restrict rpbuf,
-			   u16 * restrict rpbuflen_ret,
-			   struct wim_lookup_table_entry *lte_override);
-
 #ifndef __WIN32__
 ssize_t
 wim_inode_readlink(const struct wim_inode * restrict inode, char * restrict buf,
-		   size_t buf_len, struct wim_lookup_table_entry *lte);
+		   size_t buf_len, struct blob_descriptor *blob);
 
 extern int
 wim_inode_set_symlink(struct wim_inode *inode, const char *target,
-		      struct wim_lookup_table *lookup_table);
+		      struct blob_table *blob_table);
 #endif
 
 #endif /* _WIMLIB_REPARSE_H */

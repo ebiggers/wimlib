@@ -143,7 +143,7 @@ read_wim_header(WIMStruct *wim, struct wim_header *hdr)
 		return WIMLIB_ERR_IMAGE_COUNT;
 	}
 
-	get_wim_reshdr(&disk_hdr.lookup_table_reshdr, &hdr->lookup_table_reshdr);
+	get_wim_reshdr(&disk_hdr.blob_table_reshdr, &hdr->blob_table_reshdr);
 	get_wim_reshdr(&disk_hdr.xml_data_reshdr, &hdr->xml_data_reshdr);
 	get_wim_reshdr(&disk_hdr.boot_metadata_reshdr, &hdr->boot_metadata_reshdr);
 	hdr->boot_idx = le32_to_cpu(disk_hdr.boot_idx);
@@ -182,7 +182,7 @@ write_wim_header_at_offset(const struct wim_header *hdr, struct filedes *out_fd,
 	disk_hdr.part_number = cpu_to_le16(hdr->part_number);
 	disk_hdr.total_parts = cpu_to_le16(hdr->total_parts);
 	disk_hdr.image_count = cpu_to_le32(hdr->image_count);
-	put_wim_reshdr(&hdr->lookup_table_reshdr, &disk_hdr.lookup_table_reshdr);
+	put_wim_reshdr(&hdr->blob_table_reshdr, &disk_hdr.blob_table_reshdr);
 	put_wim_reshdr(&hdr->xml_data_reshdr, &disk_hdr.xml_data_reshdr);
 	put_wim_reshdr(&hdr->boot_metadata_reshdr, &disk_hdr.boot_metadata_reshdr);
 	disk_hdr.boot_idx = cpu_to_le32(hdr->boot_idx);
@@ -313,14 +313,14 @@ wimlib_print_header(const WIMStruct *wim)
 	tprintf(T("Part Number                 = %hu\n"), hdr->part_number);
 	tprintf(T("Total Parts                 = %hu\n"), hdr->total_parts);
 	tprintf(T("Image Count                 = %u\n"), hdr->image_count);
-	tprintf(T("Lookup Table Size           = %"PRIu64"\n"),
-				(u64)hdr->lookup_table_reshdr.size_in_wim);
-	tprintf(T("Lookup Table Flags          = 0x%hhx\n"),
-				(u8)hdr->lookup_table_reshdr.flags);
-	tprintf(T("Lookup Table Offset         = %"PRIu64"\n"),
-				hdr->lookup_table_reshdr.offset_in_wim);
-	tprintf(T("Lookup Table Original_size  = %"PRIu64"\n"),
-				hdr->lookup_table_reshdr.uncompressed_size);
+	tprintf(T("Blob Table Size           = %"PRIu64"\n"),
+				(u64)hdr->blob_table_reshdr.size_in_wim);
+	tprintf(T("Blob Table Flags          = 0x%hhx\n"),
+				(u8)hdr->blob_table_reshdr.flags);
+	tprintf(T("Blob Table Offset         = %"PRIu64"\n"),
+				hdr->blob_table_reshdr.offset_in_wim);
+	tprintf(T("Blob Table Original_size  = %"PRIu64"\n"),
+				hdr->blob_table_reshdr.uncompressed_size);
 	tprintf(T("XML Data Size               = %"PRIu64"\n"),
 				(u64)hdr->xml_data_reshdr.size_in_wim);
 	tprintf(T("XML Data Flags              = 0x%hhx\n"),

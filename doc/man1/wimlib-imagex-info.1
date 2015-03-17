@@ -52,8 +52,9 @@ byte-order mark.
 \fB--header\fR
 Shows detailed information from the WIM header.
 .TP
-\fB--lookup-table\fR
-Prints all the entries in the stream lookup table of the WIM.
+\fB--blobs\fR
+Prints information about all the blobs ("file data") in the WIM.  A WIM file
+stores only one copy of each unique blob.
 .TP
 \fB--xml\fR
 Prints the raw XML data from the WIM.  Note: the XML data will be encoded using

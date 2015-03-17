@@ -9,7 +9,7 @@
 #include "wimlib/textfile.h"
 #include "wimlib/util.h"
 
-struct wim_lookup_table;
+struct blob_table;
 struct wim_dentry;
 struct wim_inode;
 
@@ -22,12 +22,12 @@ struct capture_config {
 /* Common parameters to implementations of building an in-memory dentry tree
  * from an on-disk directory structure. */
 struct capture_params {
-	/* Pointer to the lookup table of the WIM.  */
-	struct wim_lookup_table *lookup_table;
+	/* Pointer to the blob table of the WIM.  */
+	struct blob_table *blob_table;
 
-	/* List of streams that have been added so far, but without their SHA1
+	/* List of blobs that have been added so far, but without their SHA-1
 	 * message digests being calculated (as a shortcut).  */
-	struct list_head *unhashed_streams;
+	struct list_head *unhashed_blobs;
 
 	/* Hash table of inodes that have been captured for this tree so far. */
 	struct wim_inode_table *inode_table;

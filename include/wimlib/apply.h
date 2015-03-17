@@ -31,8 +31,8 @@ struct wim_features {
 	unsigned long case_sensitive_filenames;
 };
 
-struct wim_lookup_table_entry;
-struct read_stream_list_callbacks;
+struct blob_descriptor;
+struct read_blob_list_callbacks;
 struct apply_operations;
 struct wim_dentry;
 
@@ -67,20 +67,20 @@ struct apply_ctx {
 	const struct apply_operations *apply_ops;
 	u64 next_progress;
 	unsigned long invalid_sequence;
-	unsigned long num_streams_remaining;
-	struct list_head stream_list;
-	const struct read_stream_list_callbacks *saved_cbs;
-	struct wim_lookup_table_entry *cur_stream;
-	u64 cur_stream_offset;
+	unsigned long num_blobs_remaining;
+	struct list_head blob_list;
+	const struct read_blob_list_callbacks *saved_cbs;
+	struct blob_descriptor *cur_blob;
+	u64 cur_blob_offset;
 	struct filedes tmpfile_fd;
 	tchar *tmpfile_name;
 	unsigned int count_until_file_progress;
 };
 
 /* Maximum number of UNIX file descriptors, NTFS attributes, or Windows file
- * handles that can be opened simultaneously to extract a single-instance
- * stream to multiple destinations.  */
-#define MAX_OPEN_STREAMS 512
+ * handles that can be opened simultaneously to extract a blob to multiple
+ * destinations.  */
+#define MAX_OPEN_FILES 512
 
 static inline int
 extract_progress(struct apply_ctx *ctx, enum wimlib_progress_msg msg)
@@ -108,14 +108,14 @@ start_file_structure_phase(struct apply_ctx *ctx, uint64_t end_file_count);
 extern int
 start_file_metadata_phase(struct apply_ctx *ctx, uint64_t end_file_count);
 
-/* Report that a file was created, prior to stream extraction.  */
+/* Report that a file was created, prior to blob extraction.  */
 static inline int
 report_file_created(struct apply_ctx *ctx)
 {
 	return maybe_do_file_progress(ctx, WIMLIB_PROGRESS_MSG_EXTRACT_FILE_STRUCTURE);
 }
 
-/* Report that file metadata was applied, after stream extraction.  */
+/* Report that file metadata was applied, after blob extraction.  */
 static inline int
 report_file_metadata_applied(struct apply_ctx *ctx)
 {
@@ -140,8 +140,8 @@ report_apply_error(struct apply_ctx *ctx, int error_code, const tchar *path)
 			 struct wim_dentry, d_extraction_alias_node)
 
 extern int
-extract_stream_list(struct apply_ctx *ctx,
-		    const struct read_stream_list_callbacks *cbs);
+extract_blob_list(struct apply_ctx *ctx,
+		    const struct read_blob_list_callbacks *cbs);
 
 /*
  * Represents an extraction backend.
@@ -205,9 +205,9 @@ struct apply_operations {
 	 * dentries of that inode being extracted.  This will be a (possibly
 	 * nonproper) subset of the 'd_inode->i_dentry' list.
 	 *
-	 * The streams required to be extracted will already be prepared in
-	 * 'apply_ctx'.  The extraction backend should call
-	 * extract_stream_list() to extract them.
+	 * The blobs required to be extracted will already be prepared in
+	 * 'apply_ctx'.  The extraction backend should call extract_blob_list()
+	 * to extract them.
 	 *
 	 * The will_extract_dentry() utility function, given an arbitrary dentry
 	 * in the WIM image (which may not be in the extraction list), can be
@@ -221,7 +221,7 @@ struct apply_operations {
 	 * Query whether the unnamed data stream of the specified file will be
 	 * extracted as "externally backed".  If so, the extraction backend is
 	 * assumed to handle this separately, and the common extraction code
-	 * will not register a usage of that stream.
+	 * will not register a usage of the unnamed data stream's blob.
 	 *
 	 * This routine is optional.
 	 *

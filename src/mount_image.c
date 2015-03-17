@@ -8,7 +8,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014 Eric Biggers
+ * Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -54,9 +54,9 @@
 #include <unistd.h>
 #include <utime.h>
 
+#include "wimlib/blob_table.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
-#include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
 #include "wimlib/paths.h"
 #include "wimlib/progress.h"
@@ -97,12 +97,12 @@ struct wimfs_fd {
 	 * that reference it.  */
 	struct wim_inode *f_inode;
 
-	/* Pointer to the lookup table entry for the data stream that has been
-	 * opened.  'num_opened_fds' of the lookup table entry tracks the number
-	 * of file descriptors that reference it.  Or, this value may be NULL,
+	/* Pointer to the blob descriptor for the data stream that has been
+	 * opened.  'num_opened_fds' of the blob descriptor tracks the number of
+	 * file descriptors that reference it.  Or, this value may be NULL,
 	 * which indicates that the opened stream is empty and consequently does
-	 * not have a lookup table entry.  */
-	struct wim_lookup_table_entry *f_lte;
+	 * not have a blob descriptor.  */
+	struct blob_descriptor *f_blob;
 
 	/* If valid (filedes_valid(&f_staging_fd)), this contains the
 	 * corresponding native file descriptor for the staging file that has
@@ -121,8 +121,8 @@ struct wimfs_fd {
 	u16 f_idx;
 
 	/* Unique ID of the opened stream in the inode.  This will stay the same
-	 * even if the indices of the inode's alternate data streams are changed
-	 * by a deletion.  */
+	 * even if the indices of the inode's streams are changed by a deletion.
+	 */
 	u32 f_stream_id;
 };
 
@@ -158,9 +158,9 @@ struct wimfs_context {
 	/* Number of file descriptors open to the mounted WIM image.  */
 	unsigned long num_open_fds;
 
-	/* Original list of single-instance streams in the mounted image, linked
-	 * by 'struct wim_lookup_table_entry'.orig_stream_list.  */
-	struct list_head orig_stream_list;
+	/* Original list of blobs in the mounted image, linked by
+	 * 'struct blob_descriptor'.orig_blob_list.  */
+	struct list_head orig_blob_list;
 
 	/* Parameters for unmounting the image (can be set via extended
 	 * attribute "wimfs.unmount_info").  */
@@ -220,12 +220,9 @@ fuse_mask_mode(mode_t mode, const struct fuse_context *fuse_ctx)
  * Allocate a file descriptor to a data stream in the mounted WIM image.
  *
  * @inode
- *	A pointer to the inode containing the stream being opened.
- * @stream_id
- *	The ID of the data stream being opened within the inode.
- * @lte
- *	A pointer to the lookup table entry for the stream data.  Or, for a
- *	0-byte stream, this may be NULL.
+ *	The inode containing the stream being opened
+ * @strm
+ *	The stream of the inode being opened
  * @fd_ret
  *	On success, a pointer to the new file descriptor will be stored here.
  *
@@ -233,8 +230,7 @@ fuse_mask_mode(mode_t mode, const struct fuse_context *fuse_ctx)
  */
 static int
 alloc_wimfs_fd(struct wim_inode *inode,
-	       u32 stream_id,
-	       struct wim_lookup_table_entry *lte,
+	       struct wim_inode_stream *strm,
 	       struct wimfs_fd **fd_ret)
 {
 	static const u16 min_fds_per_alloc = 8;
@@ -282,15 +278,15 @@ alloc_wimfs_fd(struct wim_inode *inode,
 		return -ENOMEM;
 
 	fd->f_inode     = inode;
-	fd->f_lte       = lte;
+	fd->f_blob      = stream_blob_resolved(strm);
 	filedes_invalidate(&fd->f_staging_fd);
 	fd->f_idx       = i;
-	fd->f_stream_id = stream_id;
+	fd->f_stream_id	= strm->stream_id;
 	*fd_ret         = fd;
 	inode->i_fds[i] = fd;
 	inode->i_num_opened_fds++;
-	if (lte)
-		lte->num_opened_fds++;
+	if (fd->f_blob)
+		fd->f_blob->num_opened_fds++;
 	wimfs_inc_num_open_fds();
 	inode->i_next_fd = i + 1;
 	return 0;
@@ -312,9 +308,9 @@ close_wimfs_fd(struct wimfs_fd *fd)
 		 if (filedes_close(&fd->f_staging_fd))
 			 ret = -errno;
 
-	/* Release this file descriptor from its lookup table entry.  */
-	if (fd->f_lte)
-		lte_decrement_num_opened_fds(fd->f_lte);
+	/* Release this file descriptor from its blob descriptor.  */
+	if (fd->f_blob)
+		blob_decrement_num_opened_fds(fd->f_blob);
 
 	wimfs_dec_num_open_fds();
 
@@ -352,26 +348,47 @@ wim_pathname_to_inode(WIMStruct *wim, const char *path)
 /* Can look up directory (otherwise get -ENOTDIR)  */
 #define LOOKUP_FLAG_DIRECTORY_OK	0x02
 
+/* Get the data stream of the specified name from the specified inode.  Returns
+ * NULL with errno set if not found.  */
+static struct wim_inode_stream *
+inode_get_data_stream_tstr(const struct wim_inode *inode,
+			   const char *stream_name)
+{
+	struct wim_inode_stream *strm;
+
+	if (!stream_name || !*stream_name) {
+		strm = inode_get_unnamed_stream(inode, STREAM_TYPE_DATA);
+	} else {
+		const utf16lechar *uname;
+
+		if (tstr_get_utf16le(stream_name, &uname))
+			return NULL;
+		strm = inode_get_stream(inode, STREAM_TYPE_DATA, uname);
+		tstr_put_utf16le(uname);
+	}
+	if (!strm)
+		errno = ENOENT;
+	return strm;
+}
+
 /*
- * Translate a path into the corresponding dentry, lookup table entry, and
- * stream index in the mounted WIM image.
+ * Translate a path into the corresponding dentry and stream in the mounted WIM
+ * image.
  *
- * Returns 0 or a -errno code.  All of @dentry_ret, @lte_ret, and
- * @stream_idx_ret are optional.
+ * Returns 0 or a -errno code.  @dentry_ret and @strm_ret are both optional.
  */
 static int
-wim_pathname_to_stream(const struct wimfs_context *ctx, const char *path,
+wim_pathname_to_stream(const struct wimfs_context *ctx,
+		       const char *path,
 		       int lookup_flags,
 		       struct wim_dentry **dentry_ret,
-		       struct wim_lookup_table_entry **lte_ret,
-		       unsigned *stream_idx_ret)
+		       struct wim_inode_stream **strm_ret)
 {
 	WIMStruct *wim = ctx->wim;
 	struct wim_dentry *dentry;
-	struct wim_lookup_table_entry *lte;
-	unsigned stream_idx;
-	const char *stream_name = NULL;
 	struct wim_inode *inode;
+	struct wim_inode_stream *strm;
+	const char *stream_name = NULL;
 	char *p = NULL;
 
 	lookup_flags |= ctx->default_lookup_flags;
@@ -392,31 +409,27 @@ wim_pathname_to_stream(const struct wimfs_context *ctx, const char *path,
 
 	inode = dentry->d_inode;
 
-	if (inode_resolve_streams(inode, wim->lookup_table, false))
+	if (inode_resolve_streams(inode, wim->blob_table, false))
 		return -EIO;
 
 	if (!(lookup_flags & LOOKUP_FLAG_DIRECTORY_OK)
 	      && inode_is_directory(inode))
 		return -EISDIR;
 
-	if (stream_name) {
-		struct wim_ads_entry *ads_entry;
-
-		ads_entry = inode_get_ads_entry(inode, stream_name);
-		if (!ads_entry)
+	strm = inode_get_data_stream_tstr(inode, stream_name);
+	if (!strm) {
+		/* Force creation of an unnamed data stream  */
+		if (!stream_name)
+			strm = inode_add_stream(inode, STREAM_TYPE_DATA,
+						NO_STREAM_NAME, NULL);
+		if (!strm)
 			return -errno;
-
-		stream_idx = ads_entry - inode->i_ads_entries + 1;
-		lte = ads_entry->lte;
-	} else {
-		lte = inode_unnamed_stream_resolved(inode, &stream_idx);
 	}
+
 	if (dentry_ret)
 		*dentry_ret = dentry;
-	if (lte_ret)
-		*lte_ret = lte;
-	if (stream_idx_ret)
-		*stream_idx_ret = stream_idx;
+	if (strm_ret)
+		*strm_ret = strm;
 	return 0;
 }
 
@@ -472,7 +485,6 @@ create_dentry(struct fuse_context *fuse_ctx, const char *path,
 
 	new_inode = new_dentry->d_inode;
 
-	new_inode->i_resolved = 1;
 	new_inode->i_ino = wimfs_ctx->next_ino++;
 	new_inode->i_attributes = attributes;
 
@@ -504,11 +516,10 @@ create_dentry(struct fuse_context *fuse_ctx, const char *path,
  * inode.
  */
 static void
-remove_dentry(struct wim_dentry *dentry,
-	      struct wim_lookup_table *lookup_table)
+remove_dentry(struct wim_dentry *dentry, struct blob_table *blob_table)
 {
-	/* Drop the reference to each stream the inode contains.  */
-	inode_unref_streams(dentry->d_inode, lookup_table);
+	/* Drop blob references.  */
+	inode_unref_blobs(dentry->d_inode, blob_table);
 
 	/* Unlink the dentry from the image's dentry tree.  */
 	unlink_dentry(dentry);
@@ -541,16 +552,15 @@ inode_default_unix_mode(const struct wim_inode *inode)
 /*
  * Retrieve standard UNIX metadata ('struct stat') for a WIM inode.
  *
- * @lte specifies the stream of the inode that is being queried.  We mostly
- * return the same information for all streams, but st_size and st_blocks may be
- * different for different streams.
+ * @blob is the blob descriptor for the stream of the inode that is being
+ * queried, or NULL.  We mostly return the same information for all streams, but
+ * st_size and st_blocks may be different for different streams.
  *
  * This always returns 0.
  */
 static int
 inode_to_stbuf(const struct wim_inode *inode,
-	       const struct wim_lookup_table_entry *lte,
-	       struct stat *stbuf)
+	       const struct blob_descriptor *blob, struct stat *stbuf)
 {
 	const struct wimfs_context *ctx = wimfs_get_context();
 	struct wimlib_unix_data unix_data;
@@ -576,8 +586,8 @@ inode_to_stbuf(const struct wim_inode *inode,
 	}
 	stbuf->st_ino = inode->i_ino;
 	stbuf->st_nlink = inode->i_nlink;
-	if (lte)
-		stbuf->st_size = lte->size;
+	if (blob)
+		stbuf->st_size = blob->size;
 #ifdef HAVE_STAT_NANOSECOND_PRECISION
 	stbuf->st_atim = wim_timestamp_to_timespec(inode->i_last_access_time);
 	stbuf->st_mtim = wim_timestamp_to_timespec(inode->i_last_write_time);
@@ -644,49 +654,37 @@ retry:
 }
 
 /*
- * Extract a WIM resource to the staging directory.
- * This is necessary if a stream using the resource is being opened for writing.
+ * Extract a blob to the staging directory.  This is necessary when a stream
+ * using the blob is being opened for writing and the blob has not already been
+ * extracted to the staging directory.
  *
  * @inode
  *	The inode containing the stream being opened for writing.
- *
- * @stream_idx
- *	The index of the stream in @inode being opened for writing.
- *
- * @lte_ptr
- *	*lte_ptr is the lookup table entry for the stream being extracted, or
- *	NULL if the stream does not have a lookup table entry (which is possible
- *	if the stream is empty).  On success, *lte_ptr will be set to point to a
- *	lookup table entry that represents the resource in its new location in a
- *	staging file.  This may be the same as the old entry in the case that it
- *	was reused, or it may be a new entry.
- *
+ * @strm
+ *	The stream being opened for writing.  The blob descriptor to which the
+ *	stream refers will be changed by this function.
  * @size
- *	Number of bytes of the stream to extract and include in the staging file
- *	resource.  It may be less than the actual stream length, in which case
- *	only a prefix of the resource will be extracted.  It may also be more
- *	than the actual stream length, in which case the extra space will be
- *	zero-filled.
+ *	Number of bytes of the blob to extract and include in the staging file.
+ *	It may be less than the actual blob length, in which case only a prefix
+ *	of the blob will be extracted.  It may also be more than the actual blob
+ *	length, in which case the extra space will be zero-filled.
  *
  * Returns 0 or a -errno code.
  */
 static int
-extract_resource_to_staging_dir(struct wim_inode *inode,
-				unsigned stream_idx,
-				struct wim_lookup_table_entry **lte_ptr,
-				off_t size,
-				const struct wimfs_context *ctx)
+extract_blob_to_staging_dir(struct wim_inode *inode,
+			    struct wim_inode_stream *strm,
+			    off_t size, const struct wimfs_context *ctx)
 {
-	struct wim_lookup_table_entry *old_lte;
-	struct wim_lookup_table_entry *new_lte;
+	struct blob_descriptor *old_blob;
+	struct blob_descriptor *new_blob;
 	char *staging_file_name;
 	int staging_fd;
 	off_t extract_size;
 	int result;
-	u32 stream_id;
 	int ret;
 
-	old_lte = *lte_ptr;
+	old_blob = stream_blob_resolved(strm);
 
 	/* Create the staging file.  */
 	staging_fd = create_staging_file(ctx, &staging_file_name);
@@ -694,13 +692,13 @@ extract_resource_to_staging_dir(struct wim_inode *inode,
 		return -errno;
 
 	/* Extract the stream to the staging file (possibly truncated).  */
-	if (old_lte) {
+	if (old_blob) {
 		struct filedes fd;
 
 		filedes_init(&fd, staging_fd);
 		errno = 0;
-		extract_size = min(old_lte->size, size);
-		result = extract_stream_to_fd(old_lte, &fd, extract_size);
+		extract_size = min(old_blob->size, size);
+		result = extract_blob_to_fd(old_blob, &fd, extract_size);
 	} else {
 		extract_size = 0;
 		result = 0;
@@ -717,106 +715,80 @@ extract_resource_to_staging_dir(struct wim_inode *inode,
 
 	/* If an error occurred, unlink the staging file.  */
 	if (unlikely(result)) {
-		/* extract_stream_to_fd() should set errno, but if it didn't,
+		/* extract_blob_to_fd() should set errno, but if it didn't,
 		 * set a default value.  */
 		ret = errno ? -errno : -EIO;
 		goto out_delete_staging_file;
 	}
 
-	/* Now deal with the lookup table entries.  We may be able to re-use the
-	 * existing entry, but we may have to create a new one instead.  */
-
-	stream_id = inode_stream_idx_to_id(inode, stream_idx);
-
-	if (old_lte && inode->i_nlink == old_lte->refcnt) {
-		/* The reference count of the existing lookup table entry is the
-		 * same as the link count of the inode that contains the stream
-		 * we're opening.  Therefore, all the references to the lookup
-		 * table entry correspond to the stream we're trying to extract,
-		 * so the lookup table entry can be re-used.  */
-		lookup_table_unlink(ctx->wim->lookup_table, old_lte);
-		lte_put_resource(old_lte);
-		new_lte = old_lte;
-	} else {
-		/* We need to split the old lookup table entry because it also
-		 * has other references.  Or, there was no old lookup table
-		 * entry, so we need to create a new one anyway.  */
-
-		new_lte = new_lookup_table_entry();
-		if (unlikely(!new_lte)) {
-			ret = -ENOMEM;
-			goto out_delete_staging_file;
-		}
-
-		/* There may already be open file descriptors to this stream if
-		 * it's previously been opened read-only, but just now we're
-		 * opening it read-write.  Identify those file descriptors and
-		 * change their lookup table entry pointers to point to the new
-		 * lookup table entry, and open staging file descriptors for
-		 * them.
-		 *
-		 * At the same time, we need to count the number of these opened
-		 * file descriptors to the new lookup table entry.  If there's
-		 * an old lookup table entry, this number needs to be subtracted
-		 * from the fd's opened to the old entry.  */
-		for (u16 i = 0, j = 0; j < inode->i_num_opened_fds; i++) {
-			struct wimfs_fd *fd;
-			int raw_fd;
-
-			fd = inode->i_fds[i];
-			if (!fd)
-				continue;
-
-			j++;
-
-			if (fd->f_stream_id != stream_id)
-				continue;
-
-			/* This is a readonly fd for the same stream.  */
-			fd->f_lte = new_lte;
-			new_lte->num_opened_fds++;
-			raw_fd = openat(ctx->staging_dir_fd, staging_file_name,
-					O_RDONLY | O_NOFOLLOW);
-			if (unlikely(raw_fd < 0)) {
-				ret = -errno;
-				goto out_revert_fd_changes;
-			}
-			filedes_init(&fd->f_staging_fd, raw_fd);
-		}
-		if (old_lte) {
-			old_lte->num_opened_fds -= new_lte->num_opened_fds;
-			old_lte->refcnt -= inode->i_nlink;
-		}
+	/* Create a blob descriptor for the staging file.  */
+	new_blob = new_blob_descriptor();
+	if (unlikely(!new_blob)) {
+		ret = -ENOMEM;
+		goto out_delete_staging_file;
 	}
 
-	new_lte->refcnt		   = inode->i_nlink;
-	new_lte->resource_location = RESOURCE_IN_STAGING_FILE;
-	new_lte->staging_file_name = staging_file_name;
-	new_lte->staging_dir_fd	   = ctx->staging_dir_fd;
-	new_lte->size		   = size;
+	/* There may already be open file descriptors to this stream if it's
+	 * previously been opened read-only, but just now we're opening it
+	 * read-write.  Identify those file descriptors, update them to use the
+	 * new blob descriptor, and open staging file descriptors for them.  */
+	for (u16 i = 0, j = 0; j < inode->i_num_opened_fds; i++) {
+		struct wimfs_fd *fd;
+		int raw_fd;
 
-	add_unhashed_stream(new_lte, inode, stream_id,
-			    &wim_get_current_image_metadata(ctx->wim)->unhashed_streams);
-	if (stream_idx == 0)
-		inode->i_lte = new_lte;
-	else
-		inode->i_ads_entries[stream_idx - 1].lte = new_lte;
-	*lte_ptr = new_lte;
+		fd = inode->i_fds[i];
+		if (!fd)
+			continue;
+
+		j++;
+
+		if (fd->f_stream_id != strm->stream_id)
+			continue;
+
+		/* This is a readonly fd for the same stream.  */
+		fd->f_blob = new_blob;
+		new_blob->num_opened_fds++;
+		raw_fd = openat(ctx->staging_dir_fd, staging_file_name,
+				O_RDONLY | O_NOFOLLOW);
+		if (unlikely(raw_fd < 0)) {
+			ret = -errno;
+			goto out_revert_fd_changes;
+		}
+		filedes_init(&fd->f_staging_fd, raw_fd);
+	}
+
+	/* Remove the appropriate count of file descriptors and stream
+	 * references from the old blob.  */
+	if (old_blob) {
+		old_blob->num_opened_fds -= new_blob->num_opened_fds;
+		for (u32 i = 0; i < inode->i_nlink; i++)
+			blob_decrement_refcnt(old_blob, ctx->wim->blob_table);
+	}
+
+	new_blob->refcnt            = inode->i_nlink;
+	new_blob->blob_location     = BLOB_IN_STAGING_FILE;
+	new_blob->staging_file_name = staging_file_name;
+	new_blob->staging_dir_fd    = ctx->staging_dir_fd;
+	new_blob->size              = size;
+
+	prepare_unhashed_blob(new_blob, inode, strm->stream_id,
+			      &wim_get_current_image_metadata(ctx->wim)->unhashed_blobs);
+	stream_set_blob(strm, new_blob);
 	return 0;
 
 out_revert_fd_changes:
-	for (u16 i = 0; new_lte->num_opened_fds; i++) {
+	for (u16 i = 0; new_blob->num_opened_fds; i++) {
 		struct wimfs_fd *fd = inode->i_fds[i];
-		if (fd && fd->f_stream_id == stream_id) {
-			fd->f_lte = old_lte;
+		if (fd && fd->f_stream_id == strm->stream_id) {
+			fd->f_blob = old_blob;
 			if (filedes_valid(&fd->f_staging_fd)) {
 				filedes_close(&fd->f_staging_fd);
 				filedes_invalidate(&fd->f_staging_fd);
 			}
-			new_lte->num_opened_fds--;
+			new_blob->num_opened_fds--;
 		}
 	}
-	free_lookup_table_entry(new_lte);
+	free_blob_descriptor(new_blob);
 out_delete_staging_file:
 	unlinkat(ctx->staging_dir_fd, staging_file_name, 0);
 	FREE(staging_file_name);
@@ -971,34 +943,34 @@ reassign_inode_numbers(struct wimfs_context *ctx)
 static void
 release_extra_refcnts(struct wimfs_context *ctx)
 {
-	struct list_head *list = &ctx->orig_stream_list;
-	struct wim_lookup_table *lookup_table = ctx->wim->lookup_table;
-	struct wim_lookup_table_entry *lte, *tmp;
+	struct list_head *list = &ctx->orig_blob_list;
+	struct blob_table *blob_table = ctx->wim->blob_table;
+	struct blob_descriptor *blob, *tmp;
 
-	list_for_each_entry_safe(lte, tmp, list, orig_stream_list) {
-		u32 n = lte->out_refcnt;
+	list_for_each_entry_safe(blob, tmp, list, orig_blob_list) {
+		u32 n = blob->out_refcnt;
 		while (n--)
-			lte_decrement_refcnt(lte, lookup_table);
+			blob_decrement_refcnt(blob, blob_table);
 	}
 }
 
-/* Delete the 'struct wim_lookup_table_entry' for any stream that was modified
+/* Delete the 'struct blob_descriptor' for any stream that was modified
  * or created in the read-write mounted image and had a final size of 0.  */
 static void
-delete_empty_streams(struct wimfs_context *ctx)
+delete_empty_blobs(struct wimfs_context *ctx)
 {
-	struct wim_lookup_table_entry *lte, *tmp;
+	struct blob_descriptor *blob, *tmp;
 	struct wim_image_metadata *imd;
 
 	imd = wim_get_current_image_metadata(ctx->wim);
 
-        image_for_each_unhashed_stream_safe(lte, tmp, imd) {
-                if (!lte->size) {
-                        *retrieve_lte_pointer(lte) = NULL;
-                        list_del(&lte->unhashed_list);
-                        free_lookup_table_entry(lte);
-                }
-        }
+	image_for_each_unhashed_blob_safe(blob, tmp, imd) {
+		if (!blob->size) {
+			*retrieve_pointer_to_unhashed_blob(blob) = NULL;
+			list_del(&blob->unhashed_list);
+			free_blob_descriptor(blob);
+		}
+	}
 }
 
 /* Close all file descriptors open to the specified inode.
@@ -1039,7 +1011,7 @@ renew_current_image(struct wimfs_context *ctx)
 	int idx = wim->current_image - 1;
 	struct wim_image_metadata *imd = wim->image_metadata[idx];
 	struct wim_image_metadata *replace_imd;
-	struct wim_lookup_table_entry *new_lte;
+	struct blob_descriptor *new_blob;
 	int ret;
 
 	/* Create 'replace_imd' structure to use for the reset original,
@@ -1049,36 +1021,36 @@ renew_current_image(struct wimfs_context *ctx)
 	if (!replace_imd)
 		goto err;
 
-	/* Create new stream reference for the modified image's metadata
+	/* Create new blob descriptor for the modified image's metadata
 	 * resource, which doesn't exist yet.  */
 	ret = WIMLIB_ERR_NOMEM;
-	new_lte = new_lookup_table_entry();
-	if (!new_lte)
+	new_blob = new_blob_descriptor();
+	if (!new_blob)
 		goto err_put_replace_imd;
-	new_lte->flags = WIM_RESHDR_FLAG_METADATA;
-	new_lte->unhashed = 1;
+	new_blob->flags = WIM_RESHDR_FLAG_METADATA;
+	new_blob->unhashed = 1;
 
 	/* Make the image being moved available at a new index.  Increments the
 	 * WIM's image count, but does not increment the reference count of the
 	 * 'struct image_metadata'.  */
 	ret = append_image_metadata(wim, imd);
 	if (ret)
-		goto err_free_new_lte;
+		goto err_free_new_blob;
 
 	ret = xml_add_image(wim, "");
 	if (ret)
 		goto err_undo_append;
 
-	replace_imd->metadata_lte = imd->metadata_lte;
-	imd->metadata_lte = new_lte;
+	replace_imd->metadata_blob = imd->metadata_blob;
+	imd->metadata_blob = new_blob;
 	wim->image_metadata[idx] = replace_imd;
 	wim->current_image = wim->hdr.image_count;
 	return 0;
 
 err_undo_append:
 	wim->hdr.image_count--;
-err_free_new_lte:
-	free_lookup_table_entry(new_lte);
+err_free_new_blob:
+	free_blob_descriptor(new_blob);
 err_put_replace_imd:
 	put_image_metadata(replace_imd, NULL);
 err:
@@ -1119,8 +1091,8 @@ commit_image(struct wimfs_context *ctx, int unmount_flags, mqd_t mq)
 	} else {
 		release_extra_refcnts(ctx);
 	}
-	INIT_LIST_HEAD(&ctx->orig_stream_list);
-	delete_empty_streams(ctx);
+	INIT_LIST_HEAD(&ctx->orig_blob_list);
+	delete_empty_blobs(ctx);
 	xml_update_image_info(ctx->wim, ctx->wim->current_image);
 
 	write_flags = 0;
@@ -1276,7 +1248,7 @@ static int
 wimfs_fgetattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi)
 {
 	struct wimfs_fd *fd = WIMFS_FD(fi);
-	return inode_to_stbuf(fd->f_inode, fd->f_lte, stbuf);
+	return inode_to_stbuf(fd->f_inode, fd->f_blob, stbuf);
 }
 
 static int
@@ -1286,7 +1258,7 @@ wimfs_ftruncate(const char *path, off_t size, struct fuse_file_info *fi)
 	if (ftruncate(fd->f_staging_fd.fd, size))
 		return -errno;
 	touch_inode(fd->f_inode);
-	fd->f_lte->size = size;
+	fd->f_blob->size = size;
 	return 0;
 }
 
@@ -1295,14 +1267,16 @@ wimfs_getattr(const char *path, struct stat *stbuf)
 {
 	const struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_dentry *dentry;
-	struct wim_lookup_table_entry *lte;
+	struct wim_inode_stream *strm;
 	int ret;
 
 	ret = wim_pathname_to_stream(ctx, path, LOOKUP_FLAG_DIRECTORY_OK,
-				     &dentry, &lte, NULL);
+				     &dentry, &strm);
 	if (ret)
 		return ret;
-	return inode_to_stbuf(dentry->d_inode, lte, stbuf);
+
+	return inode_to_stbuf(dentry->d_inode,
+			      stream_blob_resolved(strm), stbuf);
 }
 
 static int
@@ -1322,8 +1296,8 @@ wimfs_getxattr(const char *path, const char *name, char *value,
 {
 	const struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_inode *inode;
-	struct wim_ads_entry *ads_entry;
-	struct wim_lookup_table_entry *lte;
+	struct wim_inode_stream *strm;
+	struct blob_descriptor *blob;
 
 	if (!strncmp(name, "wimfs.", 6)) {
 		/* Handle some magical extended attributes.  These really should
@@ -1372,31 +1346,34 @@ wimfs_getxattr(const char *path, const char *name, char *value,
 		return -ENOATTR;
 	name += 5;
 
+	if (!*name)
+		return -ENOATTR;
+
 	/* Querying a named data stream  */
 
 	inode = wim_pathname_to_inode(ctx->wim, path);
 	if (!inode)
 		return -errno;
 
-	ads_entry = inode_get_ads_entry(inode, name);
-	if (!ads_entry)
+	strm = inode_get_data_stream_tstr(inode, name);
+	if (!strm)
 		return (errno == ENOENT) ? -ENOATTR : -errno;
 
-	lte = ads_entry->lte;
-	if (!lte)
+	blob = stream_blob_resolved(strm);
+	if (!blob)
 		return 0;
 
-	if (unlikely(lte->size > INT_MAX))
+	if (unlikely(blob->size > INT_MAX))
 		return -EFBIG;
 
 	if (size) {
-		if (size < lte->size)
+		if (size < blob->size)
 			return -ERANGE;
 
-		if (read_full_stream_into_buf(lte, value))
+		if (read_full_blob_into_buf(blob, value))
 			return errno ? -errno : -EIO;
 	}
-	return lte->size;
+	return blob->size;
 }
 
 static int
@@ -1431,7 +1408,7 @@ wimfs_link(const char *existing_path, const char *new_path)
 	if (new_dentry(new_name, &new_alias))
 		return -ENOMEM;
 
-	inode_ref_streams(inode);
+	inode_ref_blobs(inode);
 	d_associate(new_alias, inode);
 	dentry_add_child(dir, new_alias);
 	touch_inode(dir->d_inode);
@@ -1457,18 +1434,18 @@ wimfs_listxattr(const char *path, char *list, size_t size)
 	if (!inode)
 		return -errno;
 
-	for (u16 i = 0; i < inode->i_num_ads; i++) {
-		const struct wim_ads_entry *entry;
+	for (unsigned i = 0; i < inode->i_num_streams; i++) {
+		const struct wim_inode_stream *strm;
 		char *stream_name_mbs;
 		size_t stream_name_mbs_nbytes;
 
-		entry = &inode->i_ads_entries[i];
+		strm = &inode->i_streams[i];
 
-		if (!entry->stream_name_nbytes)
+		if (!stream_is_named_data_stream(strm))
 			continue;
 
-		if (utf16le_to_tstr(entry->stream_name,
-				    entry->stream_name_nbytes,
+		if (utf16le_to_tstr(strm->stream_name,
+				    utf16le_len_bytes(strm->stream_name),
 				    &stream_name_mbs,
 				    &stream_name_mbs_nbytes))
 			return -errno;
@@ -1518,10 +1495,11 @@ wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 	if ((wimfs_ctx->mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)
 	     && (stream_name = path_stream_name(path)))
 	{
-		struct wim_ads_entry *old_entry;
-		struct wim_ads_entry *new_entry;
 		struct wim_inode *inode;
+		struct wim_inode_stream *existing_strm;
+		struct wim_inode_stream *new_strm;
 		char *p;
+		const utf16lechar *uname;
 
 		/* Create a named data stream.  */
 
@@ -1536,14 +1514,20 @@ wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 		if (!inode)
 			return -errno;
 
-		old_entry = inode_get_ads_entry(inode, stream_name);
-		if (old_entry)
-			return -EEXIST;
-		if (errno != ENOENT)
+		if (tstr_get_utf16le(stream_name, &uname))
 			return -errno;
 
-		new_entry = inode_add_ads(inode, stream_name);
-		if (!new_entry)
+		existing_strm = inode_get_stream(inode, STREAM_TYPE_DATA, uname);
+		if (existing_strm) {
+			tstr_put_utf16le(uname);
+			return -EEXIST;
+		}
+
+		new_strm = inode_add_stream(inode, STREAM_TYPE_DATA, uname, NULL);
+
+		tstr_put_utf16le(uname);
+
+		if (!new_strm)
 			return -errno;
 		return 0;
 	} else {
@@ -1574,44 +1558,45 @@ wimfs_open(const char *path, struct fuse_file_info *fi)
 	struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_dentry *dentry;
 	struct wim_inode *inode;
-	struct wim_lookup_table_entry *lte;
-	unsigned stream_idx;
+	struct wim_inode_stream *strm;
+	struct blob_descriptor *blob;
 	struct wimfs_fd *fd;
 	int ret;
 
-	ret = wim_pathname_to_stream(ctx, path, 0, &dentry, &lte, &stream_idx);
+	ret = wim_pathname_to_stream(ctx, path, 0, &dentry, &strm);
 	if (ret)
 		return ret;
 
 	inode = dentry->d_inode;
+	blob = stream_blob_resolved(strm);
 
-	/* The file resource may be in the staging directory (read-write mounts
-	 * only) or in the WIM.  If it's in the staging directory, we need to
-	 * open a native file descriptor for the corresponding file.  Otherwise,
-	 * we can read the file resource directly from the WIM file if we are
-	 * opening it read-only, but we need to extract the resource to the
-	 * staging directory if we are opening it writable.  */
+	/* The data of the file being opened may be in the staging directory
+	 * (read-write mounts only) or in the WIM.  If it's in the staging
+	 * directory, we need to open a native file descriptor for the
+	 * corresponding file.  Otherwise, we can read the file data directly
+	 * from the WIM file if we are opening it read-only, but we need to
+	 * extract the data to the staging directory if we are opening it
+	 * writable.  */
 
 	if (flags_writable(fi->flags) &&
-            (!lte || lte->resource_location != RESOURCE_IN_STAGING_FILE)) {
-		ret = extract_resource_to_staging_dir(inode,
-						      stream_idx,
-						      &lte,
-						      lte ? lte->size : 0,
-						      ctx);
+            (!blob || blob->blob_location != BLOB_IN_STAGING_FILE)) {
+		ret = extract_blob_to_staging_dir(inode,
+						  strm,
+						  blob ? blob->size : 0,
+						  ctx);
 		if (ret)
 			return ret;
+		blob = stream_blob_resolved(strm);
 	}
 
-	ret = alloc_wimfs_fd(inode, inode_stream_idx_to_id(inode, stream_idx),
-			     lte, &fd);
+	ret = alloc_wimfs_fd(inode, strm, &fd);
 	if (ret)
 		return ret;
 
-	if (lte && lte->resource_location == RESOURCE_IN_STAGING_FILE) {
+	if (blob && blob->blob_location == BLOB_IN_STAGING_FILE) {
 		int raw_fd;
 
-		raw_fd = openat(lte->staging_dir_fd, lte->staging_file_name,
+		raw_fd = openat(blob->staging_dir_fd, blob->staging_file_name,
 				(fi->flags & O_ACCMODE) | O_NOFOLLOW);
 		if (raw_fd < 0) {
 			close_wimfs_fd(fd);
@@ -1628,6 +1613,7 @@ wimfs_opendir(const char *path, struct fuse_file_info *fi)
 {
 	WIMStruct *wim = wimfs_get_WIMStruct();
 	struct wim_inode *inode;
+	struct wim_inode_stream *strm;
 	struct wimfs_fd *fd;
 	int ret;
 
@@ -1636,7 +1622,10 @@ wimfs_opendir(const char *path, struct fuse_file_info *fi)
 		return -errno;
 	if (!inode_is_directory(inode))
 		return -ENOTDIR;
-	ret = alloc_wimfs_fd(inode, 0, NULL, &fd);
+	strm = inode_get_unnamed_stream(inode, STREAM_TYPE_DATA);
+	if (!strm)
+		return -ENOTDIR;
+	ret = alloc_wimfs_fd(inode, strm, &fd);
 	if (ret)
 		return ret;
 	fi->fh = (uintptr_t)fd;
@@ -1648,36 +1637,36 @@ wimfs_read(const char *path, char *buf, size_t size,
 	   off_t offset, struct fuse_file_info *fi)
 {
 	struct wimfs_fd *fd = WIMFS_FD(fi);
-	const struct wim_lookup_table_entry *lte;
+	const struct blob_descriptor *blob;
 	ssize_t ret;
 
-	lte = fd->f_lte;
-	if (!lte)
+	blob = fd->f_blob;
+	if (!blob)
 		return 0;
 
-	if (offset >= lte->size)
+	if (offset >= blob->size)
 		return 0;
 
-	if (size > lte->size - offset)
-		size = lte->size - offset;
+	if (size > blob->size - offset)
+		size = blob->size - offset;
 
 	if (!size)
 		return 0;
 
-	switch (lte->resource_location) {
-	case RESOURCE_IN_WIM:
-		if (read_partial_wim_stream_into_buf(lte, size, offset, buf))
+	switch (blob->blob_location) {
+	case BLOB_IN_WIM:
+		if (read_partial_wim_blob_into_buf(blob, size, offset, buf))
 			ret = errno ? -errno : -EIO;
 		else
 			ret = size;
 		break;
-	case RESOURCE_IN_STAGING_FILE:
+	case BLOB_IN_STAGING_FILE:
 		ret = raw_pread(&fd->f_staging_fd, buf, size, offset);
 		if (ret < 0)
 			ret = -errno;
 		break;
-	case RESOURCE_IN_ATTACHED_BUFFER:
-		memcpy(buf, lte->attached_buffer + offset, size);
+	case BLOB_IN_ATTACHED_BUFFER:
+		memcpy(buf, blob->attached_buffer + offset, size);
 		ret = size;
 		break;
 	default:
@@ -1761,7 +1750,7 @@ wimfs_removexattr(const char *path, const char *name)
 {
 	struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_inode *inode;
-	struct wim_ads_entry *ads_entry;
+	struct wim_inode_stream *strm;
 
 	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
 		return -ENOTSUP;
@@ -1770,17 +1759,20 @@ wimfs_removexattr(const char *path, const char *name)
 		return -ENOATTR;
 	name += 5;
 
+	if (!*name)
+		return -ENOATTR;
+
 	/* Removing a named data stream.  */
 
 	inode = wim_pathname_to_inode(ctx->wim, path);
 	if (!inode)
 		return -errno;
 
-	ads_entry = inode_get_ads_entry(inode, name);
-	if (!ads_entry)
+	strm = inode_get_data_stream_tstr(inode, name);
+	if (!strm)
 		return (errno == ENOENT) ? -ENOATTR : -errno;
 
-	inode_remove_ads(inode, ads_entry, ctx->wim->lookup_table);
+	inode_remove_stream(inode, strm, ctx->wim->blob_table);
 	return 0;
 }
 
@@ -1808,7 +1800,7 @@ wimfs_rmdir(const char *path)
 		return -ENOTEMPTY;
 
 	touch_parent(dentry);
-	remove_dentry(dentry, wim->lookup_table);
+	remove_dentry(dentry, wim->blob_table);
 	return 0;
 }
 
@@ -1818,7 +1810,9 @@ wimfs_setxattr(const char *path, const char *name,
 {
 	struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_inode *inode;
-	struct wim_ads_entry *existing_entry;
+	struct wim_inode_stream *existing_strm;
+	const utf16lechar *uname;
+	int ret;
 
 	if (!strncmp(name, "wimfs.", 6)) {
 		/* Handle some magical extended attributes.  These really should
@@ -1845,29 +1839,42 @@ wimfs_setxattr(const char *path, const char *name,
 		return -ENOATTR;
 	name += 5;
 
+	if (!*name)
+		return -ENOATTR;
+
 	/* Setting the contents of a named data stream.  */
 
 	inode = wim_pathname_to_inode(ctx->wim, path);
 	if (!inode)
 		return -errno;
 
-	existing_entry = inode_get_ads_entry(inode, name);
-	if (existing_entry) {
+	ret = tstr_get_utf16le(name, &uname);
+	if (ret)
+		return -errno;
+
+	existing_strm = inode_get_stream(inode, STREAM_TYPE_DATA, uname);
+	if (existing_strm) {
+		ret = -EEXIST;
 		if (flags & XATTR_CREATE)
-			return -EEXIST;
+			goto out_put_uname;
 	} else {
-		if (errno != ENOENT)
-			return -errno;
+		ret = -ENOATTR;
 		if (flags & XATTR_REPLACE)
-			return -ENOATTR;
+			goto out_put_uname;
 	}
 
-	if (!inode_add_ads_with_data(inode, name, value,
-				     size, ctx->wim->lookup_table))
-		return -errno;
-	if (existing_entry)
-		inode_remove_ads(inode, existing_entry, ctx->wim->lookup_table);
-	return 0;
+	if (!inode_add_stream_with_data(inode, STREAM_TYPE_DATA, uname,
+					value, size, ctx->wim->blob_table))
+	{
+		ret = -errno;
+		goto out_put_uname;
+	}
+	if (existing_strm)
+		inode_remove_stream(inode, existing_strm, ctx->wim->blob_table);
+	ret = 0;
+out_put_uname:
+	tstr_put_utf16le(uname);
+	return ret;
 }
 
 static int
@@ -1884,9 +1891,9 @@ wimfs_symlink(const char *to, const char *from)
 		return ret;
 	dentry->d_inode->i_reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
 	ret = wim_inode_set_symlink(dentry->d_inode, to,
-				    wimfs_ctx->wim->lookup_table);
+				    wimfs_ctx->wim->blob_table);
 	if (ret) {
-		remove_dentry(dentry, wimfs_ctx->wim->lookup_table);
+		remove_dentry(dentry, wimfs_ctx->wim->blob_table);
 		if (ret == WIMLIB_ERR_NOMEM)
 			ret = -ENOMEM;
 		else
@@ -1902,33 +1909,35 @@ wimfs_truncate(const char *path, off_t size)
 {
 	const struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_dentry *dentry;
-	struct wim_lookup_table_entry *lte;
-	unsigned stream_idx;
+	struct wim_inode_stream *strm;
+	struct blob_descriptor *blob;
 	int ret;
 	int fd;
 
-	ret = wim_pathname_to_stream(ctx, path, 0, &dentry, &lte, &stream_idx);
+	ret = wim_pathname_to_stream(ctx, path, 0, &dentry, &strm);
 	if (ret)
 		return ret;
 
-	if (!lte && !size)
+	blob = stream_blob_resolved(strm);
+
+	if (!blob && !size)
 		return 0;
 
-	if (!lte || lte->resource_location != RESOURCE_IN_STAGING_FILE) {
-		return extract_resource_to_staging_dir(dentry->d_inode,
-						       stream_idx, &lte,
-						       size, ctx);
+	if (!blob || blob->blob_location != BLOB_IN_STAGING_FILE) {
+		return extract_blob_to_staging_dir(dentry->d_inode,
+						   strm, size, ctx);
 	}
 
 	/* Truncate the staging file.  */
-	fd = openat(lte->staging_dir_fd, lte->staging_file_name,
+	fd = openat(blob->staging_dir_fd, blob->staging_file_name,
 		    O_WRONLY | O_NOFOLLOW);
 	if (fd < 0)
 		return -errno;
 	ret = ftruncate(fd, size);
 	if (close(fd) || ret)
 		return -errno;
-	lte->size = size;
+	blob->size = size;
+	touch_inode(dentry->d_inode);
 	return 0;
 }
 
@@ -1937,20 +1946,19 @@ wimfs_unlink(const char *path)
 {
 	const struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_dentry *dentry;
-	unsigned stream_idx;
+	struct wim_inode_stream *strm;
 	int ret;
 
-	ret = wim_pathname_to_stream(ctx, path, 0, &dentry, NULL, &stream_idx);
+	ret = wim_pathname_to_stream(ctx, path, 0, &dentry, &strm);
 	if (ret)
 		return ret;
 
-	if (inode_stream_name_nbytes(dentry->d_inode, stream_idx) == 0) {
-		touch_parent(dentry);
-		remove_dentry(dentry, ctx->wim->lookup_table);
+	if (stream_is_named(strm)) {
+		inode_remove_stream(dentry->d_inode, strm,
+				    ctx->wim->blob_table);
 	} else {
-		inode_remove_ads(dentry->d_inode,
-				 &dentry->d_inode->i_ads_entries[stream_idx - 1],
-				 ctx->wim->lookup_table);
+		touch_parent(dentry);
+		remove_dentry(dentry, ctx->wim->blob_table);
 	}
 	return 0;
 }
@@ -2013,8 +2021,8 @@ wimfs_write(const char *path, const char *buf, size_t size,
 	if (ret < 0)
 		return -errno;
 
-	if (offset + size > fd->f_lte->size)
-		fd->f_lte->size = offset + size;
+	if (offset + size > fd->f_blob->size)
+		fd->f_blob->size = offset + size;
 
 	touch_inode(fd->f_inode);
 	return ret;
@@ -2140,35 +2148,35 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	ctx.owner_uid = getuid();
 	ctx.owner_gid = getgid();
 
-	/* Add each stream referenced by files in the image to a list and
+	/* Add each blob referenced by files in the image to a list and
 	 * preemptively double the number of references to each.  This is done
 	 * to allow implementing the WIMLIB_UNMOUNT_FLAG_NEW_IMAGE semantics.
 	 */
-	INIT_LIST_HEAD(&ctx.orig_stream_list);
+	INIT_LIST_HEAD(&ctx.orig_blob_list);
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 		unsigned i;
 		struct wim_inode *inode;
-		struct wim_lookup_table_entry *lte;
+		struct blob_descriptor *blob;
 
 		image_for_each_inode(inode, imd) {
-			for (i = 0; i <= inode->i_num_ads; i++) {
-				lte = inode_stream_lte(inode, i,
-						       wim->lookup_table);
-				if (lte)
-					lte->out_refcnt = 0;
+			for (i = 0; i < inode->i_num_streams; i++) {
+				blob = stream_blob(&inode->i_streams[i],
+						   wim->blob_table);
+				if (blob)
+					blob->out_refcnt = 0;
 			}
 		}
 
 		image_for_each_inode(inode, imd) {
-			for (i = 0; i <= inode->i_num_ads; i++) {
-				lte = inode_stream_lte(inode, i,
-						       wim->lookup_table);
-				if (lte) {
-					if (lte->out_refcnt == 0)
-						list_add(&lte->orig_stream_list,
-							 &ctx.orig_stream_list);
-					lte->out_refcnt += inode->i_nlink;
-					lte->refcnt += inode->i_nlink;
+			for (i = 0; i < inode->i_num_streams; i++) {
+				blob = stream_blob(&inode->i_streams[i],
+						   wim->blob_table);
+				if (blob) {
+					if (blob->out_refcnt == 0)
+						list_add(&blob->orig_blob_list,
+							 &ctx.orig_blob_list);
+					blob->out_refcnt += inode->i_nlink;
+					blob->refcnt += inode->i_nlink;
 				}
 			}
 		}

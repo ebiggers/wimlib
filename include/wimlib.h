@@ -1449,7 +1449,11 @@ struct wimlib_resource_entry {
 	 * solid resource in the WIM.  */
 	uint64_t raw_resource_compressed_size;
 
-	uint64_t reserved[2];
+	/** If @p packed is 1, then this will specify the uncompressed size of
+	 * the solid resource in the WIM.  */
+	uint64_t raw_resource_uncompressed_size;
+
+	uint64_t reserved[1];
 };
 
 /**

@@ -53,8 +53,8 @@ inodes_consistent(const struct wim_inode *inode_1,
 	 * doesn't link the dentries.)
 	 *
 	 * For non-buggy WIMs this function will always return true.  */
-	return hashes_equal(inode_unnamed_stream_hash(inode_1),
-			    inode_unnamed_stream_hash(inode_2));
+	return hashes_equal(inode_get_hash_of_unnamed_data_stream(inode_1),
+			    inode_get_hash_of_unnamed_data_stream(inode_2));
 }
 
 static int

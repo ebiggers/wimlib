@@ -33,10 +33,10 @@
 
 #include "wimlib/apply.h"
 #include "wimlib/assert.h"
+#include "wimlib/blob_table.h"
 #include "wimlib/dentry.h"
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
-#include "wimlib/lookup_table.h"
 #include "wimlib/reparse.h"
 #include "wimlib/timestamp.h"
 #include "wimlib/unix_data.h"
@@ -75,13 +75,13 @@ struct unix_apply_ctx {
 	unsigned which_pathbuf;
 
 	/* Currently open file descriptors for extraction  */
-	struct filedes open_fds[MAX_OPEN_STREAMS];
+	struct filedes open_fds[MAX_OPEN_FILES];
 
 	/* Number of currently open file descriptors in open_fds, starting from
 	 * the beginning of the array.  */
 	unsigned num_open_fds;
 
-	/* Buffer for reading reparse data streams into memory  */
+	/* Buffer for reading reparse point data into memory  */
 	u8 reparse_data[REPARSE_DATA_MAX_SIZE];
 
 	/* Pointer to the next byte in @reparse_data to fill  */
@@ -394,7 +394,7 @@ unix_extract_if_empty_file(const struct wim_dentry *dentry,
 	/* Is this a directory, a symbolic link, or any type of nonempty file?
 	 */
 	if (inode_is_directory(inode) || inode_is_symlink(inode) ||
-	    inode_unnamed_lte_resolved(inode))
+	    inode_get_blob_for_unnamed_data_stream_resolved(inode))
 		return 0;
 
 	/* Recognize special files in UNIX_DATA mode  */
@@ -485,7 +485,8 @@ unix_count_dentries(const struct list_head *dentry_list,
 		if (inode_is_directory(inode))
 			dir_count++;
 		else if ((dentry == inode_first_extraction_dentry(inode)) &&
-			 !inode_unnamed_lte_resolved(inode))
+			 !inode_is_symlink(inode) &&
+			 !inode_get_blob_for_unnamed_data_stream_resolved(inode))
 			empty_file_count++;
 	}
 
@@ -500,14 +501,14 @@ unix_create_symlink(const struct wim_inode *inode, const char *path,
 {
 	char link_target[REPARSE_DATA_MAX_SIZE];
 	int ret;
-	struct wim_lookup_table_entry lte_override;
+	struct blob_descriptor blob_override;
 
-	lte_override.resource_location = RESOURCE_IN_ATTACHED_BUFFER;
-	lte_override.attached_buffer = (void *)rpdata;
-	lte_override.size = rpdatalen;
+	blob_override.blob_location = BLOB_IN_ATTACHED_BUFFER;
+	blob_override.attached_buffer = (void *)rpdata;
+	blob_override.size = rpdatalen;
 
 	ret = wim_inode_readlink(inode, link_target,
-				 sizeof(link_target) - 1, &lte_override);
+				 sizeof(link_target) - 1, &blob_override);
 	if (ret < 0) {
 		errno = -ret;
 		return WIMLIB_ERR_READLINK;
@@ -546,30 +547,35 @@ unix_cleanup_open_fds(struct unix_apply_ctx *ctx, unsigned offset)
 }
 
 static int
-unix_begin_extract_stream_instance(const struct wim_lookup_table_entry *stream,
-				   const struct wim_inode *inode,
-				   struct unix_apply_ctx *ctx)
+unix_begin_extract_blob_instance(const struct blob_descriptor *blob,
+				 const struct wim_inode *inode,
+				 const struct wim_inode_stream *strm,
+				 struct unix_apply_ctx *ctx)
 {
 	const struct wim_dentry *first_dentry;
 	const char *first_path;
 	int fd;
 
-	if (inode_is_symlink(inode)) {
+	if (unlikely(strm->stream_type == STREAM_TYPE_REPARSE_POINT)) {
 		/* On UNIX, symbolic links must be created with symlink(), which
 		 * requires that the full link target be available.  */
-		if (stream->size > REPARSE_DATA_MAX_SIZE) {
+		if (blob->size > REPARSE_DATA_MAX_SIZE) {
 			ERROR_WITH_ERRNO("Reparse data of \"%s\" has size "
 					 "%"PRIu64" bytes (exceeds %u bytes)",
 					 inode_first_full_path(inode),
-					 stream->size, REPARSE_DATA_MAX_SIZE);
+					 blob->size, REPARSE_DATA_MAX_SIZE);
 			return WIMLIB_ERR_INVALID_REPARSE_DATA;
 		}
 		ctx->reparse_ptr = ctx->reparse_data;
 		return 0;
 	}
 
-	/* This should be ensured by extract_stream_list()  */
-	wimlib_assert(ctx->num_open_fds < MAX_OPEN_STREAMS);
+	wimlib_assert(stream_is_unnamed_data_stream(strm));
+
+	/* Unnamed data stream of "regular" file  */
+
+	/* This should be ensured by extract_blob_list()  */
+	wimlib_assert(ctx->num_open_fds < MAX_OPEN_FILES);
 
 	first_dentry = inode_first_extraction_dentry(inode);
 	first_path = unix_build_extraction_path(first_dentry, ctx);
@@ -585,18 +591,18 @@ retry_create:
 	return unix_create_hardlinks(inode, first_dentry, first_path, ctx);
 }
 
-/* Called when starting to read a single-instance stream for extraction  */
+/* Called when starting to read a blob for extraction  */
 static int
-unix_begin_extract_stream(struct wim_lookup_table_entry *stream, void *_ctx)
+unix_begin_extract_blob(struct blob_descriptor *blob, void *_ctx)
 {
 	struct unix_apply_ctx *ctx = _ctx;
-	const struct stream_owner *owners = stream_owners(stream);
-	int ret;
+	const struct blob_extraction_target *targets = blob_extraction_targets(blob);
 
-	for (u32 i = 0; i < stream->out_refcnt; i++) {
-		const struct wim_inode *inode = owners[i].inode;
-
-		ret = unix_begin_extract_stream_instance(stream, inode, ctx);
+	for (u32 i = 0; i < blob->out_refcnt; i++) {
+		int ret = unix_begin_extract_blob_instance(blob,
+							   targets[i].inode,
+							   targets[i].stream,
+							   ctx);
 		if (ret) {
 			ctx->reparse_ptr = NULL;
 			unix_cleanup_open_fds(ctx, 0);
@@ -606,8 +612,7 @@ unix_begin_extract_stream(struct wim_lookup_table_entry *stream, void *_ctx)
 	return 0;
 }
 
-/* Called when the next chunk of a single-instance stream has been read for
- * extraction  */
+/* Called when the next chunk of a blob has been read for extraction  */
 static int
 unix_extract_chunk(const void *chunk, size_t size, void *_ctx)
 {
@@ -626,15 +631,14 @@ unix_extract_chunk(const void *chunk, size_t size, void *_ctx)
 	return 0;
 }
 
-/* Called when a single-instance stream has been fully read for extraction  */
+/* Called when a blob has been fully read for extraction  */
 static int
-unix_end_extract_stream(struct wim_lookup_table_entry *stream, int status,
-			void *_ctx)
+unix_end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
 {
 	struct unix_apply_ctx *ctx = _ctx;
 	int ret;
 	unsigned j;
-	const struct stream_owner *owners = stream_owners(stream);
+	const struct blob_extraction_target *targets = blob_extraction_targets(blob);
 
 	ctx->reparse_ptr = NULL;
 
@@ -645,8 +649,8 @@ unix_end_extract_stream(struct wim_lookup_table_entry *stream, int status,
 
 	j = 0;
 	ret = 0;
-	for (u32 i = 0; i < stream->out_refcnt; i++) {
-		struct wim_inode *inode = owners[i].inode;
+	for (u32 i = 0; i < blob->out_refcnt; i++) {
+		struct wim_inode *inode = targets[i].inode;
 
 		if (inode_is_symlink(inode)) {
 			/* We finally have the symlink data, so we can create
@@ -661,7 +665,7 @@ unix_end_extract_stream(struct wim_lookup_table_entry *stream, int status,
 			path = unix_build_inode_extraction_path(inode, ctx);
 			ret = unix_create_symlink(inode, path,
 						  ctx->reparse_data,
-						  stream->size,
+						  blob->size,
 						  rpfix,
 						  ctx->target_abspath,
 						  ctx->target_abspath_nchars);
@@ -742,7 +746,7 @@ unix_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	/* Extract directories and empty regular files.  Directories are needed
 	 * because we can't extract any other files until their directories
 	 * exist.  Empty files are needed because they don't have
-	 * representatives in the stream list.  */
+	 * representatives in the blob list.  */
 
 	unix_count_dentries(dentry_list, &dir_count, &empty_file_count);
 
@@ -772,15 +776,15 @@ unix_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 
 	/* Extract nonempty regular files and symbolic links.  */
 
-	struct read_stream_list_callbacks cbs = {
-		.begin_stream      = unix_begin_extract_stream,
-		.begin_stream_ctx  = ctx,
+	struct read_blob_list_callbacks cbs = {
+		.begin_blob        = unix_begin_extract_blob,
+		.begin_blob_ctx    = ctx,
 		.consume_chunk     = unix_extract_chunk,
 		.consume_chunk_ctx = ctx,
-		.end_stream        = unix_end_extract_stream,
-		.end_stream_ctx    = ctx,
+		.end_blob          = unix_end_extract_blob,
+		.end_blob_ctx      = ctx,
 	};
-	ret = extract_stream_list(&ctx->common, &cbs);
+	ret = extract_blob_list(&ctx->common, &cbs);
 	if (ret)
 		goto out;
 

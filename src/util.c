@@ -170,15 +170,6 @@ void *mempcpy(void *dst, const void *src, size_t n)
 }
 #endif
 
-size_t
-utf16le_strlen(const utf16lechar *s)
-{
-	const utf16lechar *p = s;
-	while (*p)
-		p++;
-	return (p - s) * sizeof(utf16lechar);
-}
-
 static bool seeded = false;
 
 static void

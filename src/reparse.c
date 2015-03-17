@@ -27,12 +27,12 @@
 
 #include "wimlib/alloca.h"
 #include "wimlib/assert.h"
+#include "wimlib/blob_table.h"
 #include "wimlib/compiler.h"
 #include "wimlib/endianness.h"
 #include "wimlib/encoding.h"
 #include "wimlib/error.h"
 #include "wimlib/inode.h"
-#include "wimlib/lookup_table.h"
 #include "wimlib/reparse.h"
 #include "wimlib/resource.h"
 
@@ -157,41 +157,48 @@ make_reparse_buffer(const struct reparse_data * restrict rpdata,
  *
  * Note: in the WIM format, the first 8 bytes of the reparse point data buffer
  * are omitted, presumably because we already know the reparse tag from the
- * dentry, and we already know the reparse tag length from the lookup table
- * entry resource length.  However, we reconstruct the first 8 bytes in the
- * buffer returned by this function.
+ * dentry, and we already know the reparse tag length from the blob length.
+ * However, we reconstruct the first 8 bytes in the buffer returned by this
+ * function.
  */
-int
+static int
 wim_inode_get_reparse_data(const struct wim_inode * restrict inode,
 			   u8 * restrict rpbuf,
 			   u16 * restrict rpbuflen_ret,
-			   struct wim_lookup_table_entry *lte_override)
+			   struct blob_descriptor *blob_override)
 {
-	struct wim_lookup_table_entry *lte;
+	struct blob_descriptor *blob;
 	int ret;
 	struct reparse_buffer_disk *rpbuf_disk;
 	u16 rpdatalen;
 
 	wimlib_assert(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT);
 
-	if (!lte_override) {
-		lte = inode_unnamed_lte_resolved(inode);
-		if (!lte) {
+	if (blob_override) {
+		blob = blob_override;
+	} else {
+		struct wim_inode_stream *strm;
+
+		strm = inode_get_stream(inode, STREAM_TYPE_REPARSE_POINT,
+					NO_STREAM_NAME);
+		if (strm)
+			blob = stream_blob_resolved(strm);
+		else
+			blob = NULL;
+		if (!blob) {
 			ERROR("Reparse point has no reparse data!");
 			return WIMLIB_ERR_INVALID_REPARSE_DATA;
 		}
-	} else {
-		lte = lte_override;
 	}
 
-	if (lte->size > REPARSE_POINT_MAX_SIZE - 8) {
+	if (blob->size > REPARSE_DATA_MAX_SIZE) {
 		ERROR("Reparse data is too long!");
 		return WIMLIB_ERR_INVALID_REPARSE_DATA;
 	}
-	rpdatalen = lte->size;
+	rpdatalen = blob->size;
 
-	/* Read the data from the WIM file */
-	ret = read_full_stream_into_buf(lte, rpbuf + 8);
+	/* Read the reparse data from blob  */
+	ret = read_full_blob_into_buf(blob, rpbuf + REPARSE_DATA_OFFSET);
 	if (ret)
 		return ret;
 
@@ -318,9 +325,9 @@ parse_substitute_name(const utf16lechar *substitute_name,
  * @bufsize
  *	Available space in @buf, in bytes.
  *
- * @lte_override
- *	If not NULL, the stream from which to read the reparse data.  Otherwise,
- *	the reparse data will be read from the unnamed stream of @inode.
+ * @blob_override
+ *	If not NULL, the blob from which to read the reparse data.  Otherwise,
+ *	the reparse data will be read from the reparse point stream of @inode.
  *
  * If the entire symbolic link target was placed in the buffer, returns the
  * number of bytes written.  The resulting string is not null-terminated.  If
@@ -332,7 +339,7 @@ parse_substitute_name(const utf16lechar *substitute_name,
 ssize_t
 wim_inode_readlink(const struct wim_inode * restrict inode,
 		   char * restrict buf, size_t bufsize,
-		   struct wim_lookup_table_entry *lte_override)
+		   struct blob_descriptor *blob_override)
 {
 	int ret;
 	struct reparse_buffer_disk rpbuf_disk _aligned_attribute(8);
@@ -345,7 +352,7 @@ wim_inode_readlink(const struct wim_inode * restrict inode,
 	wimlib_assert(inode_is_symlink(inode));
 
 	if (wim_inode_get_reparse_data(inode, (u8*)&rpbuf_disk, &rpbuflen,
-				       lte_override))
+				       blob_override))
 		return -EIO;
 
 	if (parse_reparse_data((const u8*)&rpbuf_disk, rpbuflen, &rpdata))
@@ -394,10 +401,11 @@ out_free_link_target:
 	return ret;
 }
 
+/* Given a UNIX-style symbolic link target, create a Windows-style reparse point
+ * buffer and assign it to the specified inode.  */
 int
-wim_inode_set_symlink(struct wim_inode *inode,
-		      const char *target,
-		      struct wim_lookup_table *lookup_table)
+wim_inode_set_symlink(struct wim_inode *inode, const char *target,
+		      struct blob_table *blob_table)
 
 {
 	struct reparse_buffer_disk rpbuf_disk _aligned_attribute(8);
@@ -492,10 +500,13 @@ wim_inode_set_symlink(struct wim_inode *inode,
 
 	ret = make_reparse_buffer(&rpdata, (u8*)&rpbuf_disk, &rpbuflen);
 	if (ret == 0) {
-		ret = inode_set_unnamed_stream(inode,
-					       (u8*)&rpbuf_disk + 8,
-					       rpbuflen - 8,
-					       lookup_table);
+		if (!inode_add_stream_with_data(inode,
+						STREAM_TYPE_REPARSE_POINT,
+						NO_STREAM_NAME,
+						(u8*)&rpbuf_disk + 8,
+						rpbuflen - 8,
+						blob_table))
+			ret = WIMLIB_ERR_NOMEM;
 	}
 	FREE(name_utf16le);
 	return ret;

@@ -6,22 +6,19 @@
 #include "wimlib/sha1.h"
 #include "wimlib/types.h"
 
+struct blob_descriptor;
 struct filedes;
-struct wim_lookup_table_entry;
 struct wim_image_metadata;
 
 /*
- * Specification of a resource in a WIM file.
- *
- * If a `struct wim_lookup_table_entry' lte has (lte->resource_location ==
- * RESOURCE_IN_WIM), then lte->rspec points to an instance of this structure.
- *
- * Normally, there is a one-to-one correspondence between lookup table entries
- * ("streams", each of which may be the contents of a file, for example) and
- * resources.  However, a resource with the WIM_RESHDR_FLAG_SOLID flag set is a
- * "solid" resource that may contain multiple streams compressed together.
+ * Description of a "resource" in a WIM file.  A "resource" is a standalone,
+ * possibly compressed region of data.  Normally, there is a one-to-one
+ * correspondence between "blobs" (each of which may be the contents of a file,
+ * for example) and resources.  However, a resource with the
+ * WIM_RESHDR_FLAG_SOLID flag set is a "solid" resource that contains multiple
+ * blobs compressed together.
  */
-struct wim_resource_spec {
+struct wim_resource_descriptor {
 	/* The WIM containing this resource.  @wim->in_fd is expected to be a
 	 * file descriptor to the underlying WIM file, opened for reading.  */
 	WIMStruct *wim;
@@ -39,8 +36,8 @@ struct wim_resource_spec {
 	 * to.  */
 	u64 uncompressed_size;
 
-	/* The list of streams this resource contains.  */
-	struct list_head stream_list;
+	/* The list of blobs this resource contains.  */
+	struct list_head blob_list;
 
 	/* Flags for this resource (WIM_RESHDR_FLAG_*).  */
 	u32 flags : 8;
@@ -89,25 +86,22 @@ struct wim_reshdr {
 /* Flags for the `flags' field of WIM resource headers (`struct wim_reshdr').
  */
 
-/* Unknown meaning; may be intended to indicate spaces in the WIM that are free
- * to overwrite.  Currently ignored by wimlib.  */
+/* Unknown meaning; currently ignored by wimlib.  */
 #define WIM_RESHDR_FLAG_FREE            0x01
 
-/* The resource is a metadata resource for a WIM image, or is the lookup table
- * or XML data for the WIM.  */
+/* The resource is a metadata resource for a WIM image, or is the blob table or
+ * XML data for the WIM.  */
 #define WIM_RESHDR_FLAG_METADATA        0x02
 
 /* The resource is a non-solid resource compressed using the WIM's default
  * compression type.  */
 #define WIM_RESHDR_FLAG_COMPRESSED	0x04
 
-/* Unknown meaning; may be intended to indicate a partial stream.  Currently
- * ignored by wimlib.  */
+/* Unknown meaning; currently ignored by wimlib.  */
 #define WIM_RESHDR_FLAG_SPANNED         0x08
 
-/* The resource is a solid compressed resource which may contain multiple
- * streams.  This flag is only allowed if the WIM version number is
- * WIM_VERSION_SOLID.  */
+/* The resource is a solid compressed resource which may contain multiple blobs.
+ * This flag is only allowed if the WIM version number is WIM_VERSION_SOLID.  */
 #define WIM_RESHDR_FLAG_SOLID		0x10
 
 /* Magic number in the 'uncompressed_size' field of the resource header that
@@ -117,9 +111,9 @@ struct wim_reshdr {
 /* Returns true if the specified WIM resource is compressed (may be either solid
  * or non-solid)  */
 static inline bool
-resource_is_compressed(const struct wim_resource_spec *rspec)
+resource_is_compressed(const struct wim_resource_descriptor *rdesc)
 {
-	return (rspec->flags & (WIM_RESHDR_FLAG_COMPRESSED |
+	return (rdesc->flags & (WIM_RESHDR_FLAG_COMPRESSED |
 				WIM_RESHDR_FLAG_SOLID));
 }
 
@@ -136,11 +130,11 @@ zero_reshdr(struct wim_reshdr *reshdr)
 }
 
 extern void
-wim_res_hdr_to_spec(const struct wim_reshdr *reshdr, WIMStruct *wim,
-		    struct wim_resource_spec *rspec);
+wim_res_hdr_to_desc(const struct wim_reshdr *reshdr, WIMStruct *wim,
+		    struct wim_resource_descriptor *rdesc);
 
 extern void
-wim_res_spec_to_hdr(const struct wim_resource_spec *rspec,
+wim_res_desc_to_hdr(const struct wim_resource_descriptor *rdesc,
 		    struct wim_reshdr *reshdr);
 
 extern void
@@ -184,18 +178,17 @@ get_chunk_entry_size(u64 res_size, bool is_alt)
 		return 8;
 }
 
-/* Functions to read streams  */
+/* Functions to read blobs  */
 
 extern int
-read_partial_wim_stream_into_buf(const struct wim_lookup_table_entry *lte,
-				 size_t size, u64 offset, void *buf);
+read_partial_wim_blob_into_buf(const struct blob_descriptor *blob,
+			       size_t size, u64 offset, void *buf);
 
 extern int
-read_full_stream_into_buf(const struct wim_lookup_table_entry *lte, void *buf);
+read_full_blob_into_buf(const struct blob_descriptor *blob, void *buf);
 
 extern int
-read_full_stream_into_alloc_buf(const struct wim_lookup_table_entry *lte,
-				void **buf_ret);
+read_full_blob_into_alloc_buf(const struct blob_descriptor *blob, void **buf_ret);
 
 extern int
 wim_reshdr_to_data(const struct wim_reshdr *reshdr,
@@ -206,100 +199,93 @@ wim_reshdr_to_hash(const struct wim_reshdr *reshdr, WIMStruct *wim,
 		   u8 hash[SHA1_HASH_SIZE]);
 
 extern int
-skip_wim_stream(struct wim_lookup_table_entry *lte);
+skip_wim_resource(struct wim_resource_descriptor *rdesc);
 
 /*
- * Type of callback function for beginning to read a stream.
+ * Type of callback function for beginning to read a blob.
  *
- * @lte:
- *	Stream that is about to be read.
+ * @blob:
+ *	Blob that is about to be read.
  *
  * @ctx:
  *	User-provided context.
  *
  * Must return 0 on success, a positive error code on failure, or the special
- * value BEGIN_STREAM_STATUS_SKIP_STREAM to indicate that the stream should not
- * be read, and read_stream_list() should continue on to the next stream
- * (without calling @consume_chunk or @end_stream).
+ * value BEGIN_BLOB_STATUS_SKIP_BLOB to indicate that the blob should not be
+ * read, and read_blob_list() should continue on to the next blob (without
+ * calling @consume_chunk or @end_blob).
  */
-typedef int (*read_stream_list_begin_stream_t)(struct wim_lookup_table_entry *lte,
-					       void *ctx);
+typedef int (*read_blob_list_begin_blob_t)(struct blob_descriptor *blob, void *ctx);
 
-#define BEGIN_STREAM_STATUS_SKIP_STREAM	-1
+#define BEGIN_BLOB_STATUS_SKIP_BLOB	-1
 
 /*
- * Type of callback function for finishing reading a stream.
+ * Type of callback function for finishing reading a blob.
  *
- * @lte:
- *	Stream that has been fully read, or stream that started being read but
- *	could not be fully read due to a read error.
+ * @blob:
+ *	Blob that has been fully read, or blob that started being read but could
+ *	not be fully read due to a read error.
  *
  * @status:
- *	0 if reading the stream was successful; otherwise a nonzero error code
+ *	0 if reading the blob was successful; otherwise a nonzero error code
  *	that specifies the return status.
  *
  * @ctx:
  *	User-provided context.
  */
-typedef int (*read_stream_list_end_stream_t)(struct wim_lookup_table_entry *lte,
-					     int status,
-					     void *ctx);
+typedef int (*read_blob_list_end_blob_t)(struct blob_descriptor *blob,
+					 int status,
+					 void *ctx);
 
 
-/* Callback functions and contexts for read_stream_list().  */
-struct read_stream_list_callbacks {
+/* Callback functions and contexts for read_blob_list().  */
+struct read_blob_list_callbacks {
 
-	/* Called when a stream is about to be read.  */
-	read_stream_list_begin_stream_t begin_stream;
+	/* Called when a blob is about to be read.  */
+	read_blob_list_begin_blob_t begin_blob;
 
 	/* Called when a chunk of data has been read.  */
 	consume_data_callback_t consume_chunk;
 
-	/* Called when a stream has been fully read.  A successful call to
-	 * @begin_stream will always be matched by a call to @end_stream.  */
-	read_stream_list_end_stream_t end_stream;
+	/* Called when a blob has been fully read.  A successful call to
+	 * @begin_blob will always be matched by a call to @end_blob.  */
+	read_blob_list_end_blob_t end_blob;
 
-	/* Parameter passed to @begin_stream.  */
-	void *begin_stream_ctx;
+	/* Parameter passed to @begin_blob.  */
+	void *begin_blob_ctx;
 
 	/* Parameter passed to @consume_chunk.  */
 	void *consume_chunk_ctx;
 
-	/* Parameter passed to @end_stream.  */
-	void *end_stream_ctx;
+	/* Parameter passed to @end_blob.  */
+	void *end_blob_ctx;
 };
 
-/* Flags for read_stream_list()  */
-#define VERIFY_STREAM_HASHES		0x1
-#define COMPUTE_MISSING_STREAM_HASHES	0x2
-#define STREAM_LIST_ALREADY_SORTED	0x4
+/* Flags for read_blob_list()  */
+#define VERIFY_BLOB_HASHES		0x1
+#define COMPUTE_MISSING_BLOB_HASHES	0x2
+#define BLOB_LIST_ALREADY_SORTED	0x4
 
 extern int
-read_stream_list(struct list_head *stream_list,
-		 size_t list_head_offset,
-		 const struct read_stream_list_callbacks *cbs,
-		 int flags);
+read_blob_list(struct list_head *blob_list, size_t list_head_offset,
+	       const struct read_blob_list_callbacks *cbs, int flags);
 
-/* Functions to extract streams.  */
+/* Functions to extract blobs.  */
 
 extern int
-extract_stream(struct wim_lookup_table_entry *lte,
-	       u64 size,
-	       consume_data_callback_t extract_chunk,
-	       void *extract_chunk_arg);
+extract_blob(struct blob_descriptor *blob, u64 size,
+	     consume_data_callback_t extract_chunk, void *extract_chunk_arg);
 
 extern int
-extract_stream_to_fd(struct wim_lookup_table_entry *lte,
-		     struct filedes *fd, u64 size);
+extract_blob_to_fd(struct blob_descriptor *blob, struct filedes *fd, u64 size);
 
 extern int
-extract_full_stream_to_fd(struct wim_lookup_table_entry *lte,
-			  struct filedes *fd);
+extract_full_blob_to_fd(struct blob_descriptor *blob, struct filedes *fd);
 
-/* Miscellaneous stream functions.  */
+/* Miscellaneous blob functions.  */
 
 extern int
-sha1_stream(struct wim_lookup_table_entry *lte);
+sha1_blob(struct blob_descriptor *blob);
 
 /* Functions to read/write metadata resources.  */
 
@@ -311,12 +297,12 @@ write_metadata_resource(WIMStruct *wim, int image, int write_resource_flags);
 
 /* Definitions specific to pipable WIM resources.  */
 
-/* Arbitrary number to begin each stream in the pipable WIM, used for sanity
+/* Arbitrary number to begin each blob in the pipable WIM, used for sanity
  * checking.  */
-#define PWM_STREAM_MAGIC 0x2b9b9ba2443db9d8ULL
+#define PWM_BLOB_MAGIC 0x2b9b9ba2443db9d8ULL
 
 /* Header that precedes each resource in a pipable WIM.  */
-struct pwm_stream_hdr {
+struct pwm_blob_hdr {
 	le64 magic;			/* +0   */
 	le64 uncompressed_size;		/* +8   */
 	u8 hash[SHA1_HASH_SIZE];	/* +16  */
@@ -324,9 +310,9 @@ struct pwm_stream_hdr {
 					/* +40  */
 } _packed_attribute;
 
-/* Extra flag for the @flags field in `struct pipable_wim_stream_hdr': Indicates
- * that the SHA1 message digest of the stream has not been calculated.
- * Currently only used for the XML data.  */
+/* Extra flag for the @flags field in `struct pwm_blob_hdr': Indicates that the
+ * SHA-1 message digest of the stream has not been calculated.  Currently only
+ * used for the XML data.  */
 #define PWM_RESHDR_FLAG_UNHASHED         0x100
 
 /* Header that precedes each chunk of a compressed resource in a pipable WIM.

@@ -63,22 +63,22 @@ struct wim_provider_rpdata {
 	/* Integer ID that identifies the WIM.  */
 	le64 data_source_id;
 
-	/* SHA1 message digest of the file's unnamed data stream.  */
-	u8 resource_hash[20];
+	/* SHA-1 message digest of the file's unnamed data stream.  */
+	u8 unnamed_data_stream_hash[20];
 
-	/* SHA1 message digest of the WIM's lookup table.  */
-	u8 wim_lookup_table_hash[20];
+	/* SHA-1 message digest of the WIM's blob table as stored on disk.  */
+	u8 blob_table_hash[20];
 
 	/* Uncompressed size of the file's unnamed data stream, in bytes.  */
-	le64 stream_uncompressed_size;
+	le64 unnamed_data_stream_uncompressed_size;
 
-	/* Compressed size of the file's unnamed data stream, in bytes.  If
+	/* Compressed size of the file's unnamed data stream, in bytes.  If the
 	 * stream is stored uncompressed, set this the same as the uncompressed
 	 * size.  */
-	le64 stream_compressed_size;
+	le64 unnamed_data_stream_compressed_size;
 
 	/* Byte offset of the file's unnamed data stream in the WIM.  */
-	le64 stream_offset_in_wim;
+	le64 unnamed_data_stream_offset_in_wim;
 } _packed_attribute;
 
 /* WIM-specific information about a WIM data source  */
@@ -102,8 +102,8 @@ struct WimOverlay_dat_entry_1 {
 	le32 wim_type;
 
 	/* Index of the image in the WIM to use??? (This doesn't really make
-	 * sense, since WIM files combine streams for all images into a single
-	 * table.  Set to 1 if unsure...)  */
+	 * sense, since WIM files combine file data "blobs" for all images into
+	 * a single table.  Set to 1 if unsure...)  */
 	le32 wim_index;
 
 	/* GUID of the WIM file (copied from the WIM header, offset +0x18).  */
@@ -292,8 +292,8 @@ struct wim_provider_external_info {
 	 * FSCTL_ADD_OVERLAY ioctl.  */
 	u64 data_source_id;
 
-	/* SHA1 message digest of the file's unnamed data stream.  */
-	u8 resource_hash[20];
+	/* SHA-1 message digest of the file's unnamed data stream.  */
+	u8 unnamed_data_stream_hash[20];
 };
 
 /*****************************************************************************
@@ -394,9 +394,9 @@ struct wim_provider_overlay_entry {
 	/* Type of WIM file: WIM_BOOT_OS_WIM or WIM_BOOT_NOT_OS_WIM.  */
 	uint32_t wim_type;
 
-	/* Index of the backing image in the WIM??? (This doesn't really make
-	 * sense, since WIM files combine streams for all images into a single
-	 * table.)  */
+	/* Index of the image in the WIM to use??? (This doesn't really make
+	 * sense, since WIM files combine file data "blobs" for all images into
+	 * a single table.  Set to 1 if unsure...)  */
 	uint32_t wim_index;
 
 	/* 0 when WIM provider active, otherwise
@@ -441,8 +441,8 @@ struct wim_provider_add_overlay_input {
 #define WIM_BOOT_NOT_OS_WIM	1
 
 	/* Index of the image in the WIM to use??? (This doesn't really make
-	 * sense, since WIM files combine streams for all images into a single
-	 * table.  Set to 1 if unsure...)  */
+	 * sense, since WIM files combine file data "blobs" for all images into
+	 * a single table.  Set to 1 if unsure...)  */
 	u32 wim_index;
 
 	/* Byte offset of wim_file_name in this buffer, not including the

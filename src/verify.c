@@ -25,21 +25,21 @@
 #  include "config.h"
 #endif
 
+#include "wimlib/blob_table.h"
 #include "wimlib/dentry.h"
 #include "wimlib/error.h"
-#include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
 #include "wimlib/progress.h"
 #include "wimlib/security.h"
 
 static int
-append_lte_to_list(struct wim_lookup_table_entry *lte, void *_list)
+append_blob_to_list(struct blob_descriptor *blob, void *_list)
 {
-	list_add(&lte->extraction_list, (struct list_head *)_list);
+	list_add(&blob->extraction_list, (struct list_head *)_list);
 	return 0;
 }
 
-struct verify_stream_list_ctx {
+struct verify_blob_list_ctx {
 	wimlib_progress_func_t progfunc;
 	void *progctx;
 	union wimlib_progress_info *progress;
@@ -47,16 +47,16 @@ struct verify_stream_list_ctx {
 };
 
 static int
-end_verify_stream(struct wim_lookup_table_entry *lte, int status, void *_ctx)
+end_verify_blob(struct blob_descriptor *blob, int status, void *_ctx)
 {
-	struct verify_stream_list_ctx *ctx = _ctx;
+	struct verify_blob_list_ctx *ctx = _ctx;
 	union wimlib_progress_info *progress = ctx->progress;
 
 	if (status)
 		return status;
 
 	progress->verify_streams.completed_streams++;
-	progress->verify_streams.completed_bytes += lte->size;
+	progress->verify_streams.completed_bytes += blob->size;
 
 	/* Handle rate-limiting of progress messages  */
 
@@ -93,14 +93,14 @@ end_verify_stream(struct wim_lookup_table_entry *lte, int status, void *_ctx)
 }
 
 static int
-verify_image_streams_present(struct wim_image_metadata *imd,
-			     struct wim_lookup_table *lookup_table)
+verify_image_blobs_present(struct wim_image_metadata *imd,
+			   struct blob_table *blob_table)
 {
 	struct wim_inode *inode;
 	int ret;
 
 	image_for_each_inode(inode, imd) {
-		ret = inode_resolve_streams(inode, lookup_table, false);
+		ret = inode_resolve_streams(inode, blob_table, false);
 		if (ret)
 			return ret;
 	}
@@ -112,13 +112,13 @@ WIMLIBAPI int
 wimlib_verify_wim(WIMStruct *wim, int verify_flags)
 {
 	int ret;
-	LIST_HEAD(stream_list);
+	LIST_HEAD(blob_list);
 	union wimlib_progress_info progress;
-	struct verify_stream_list_ctx ctx;
-	struct wim_lookup_table_entry *lte;
-	struct read_stream_list_callbacks cbs = {
-		.end_stream = end_verify_stream,
-		.end_stream_ctx = &ctx,
+	struct verify_blob_list_ctx ctx;
+	struct blob_descriptor *blob;
+	struct read_blob_list_callbacks cbs = {
+		.end_blob = end_verify_blob,
+		.end_blob_ctx = &ctx,
 	};
 
 	/* Check parameters  */
@@ -150,8 +150,8 @@ wimlib_verify_wim(WIMStruct *wim, int verify_flags)
 			if (ret)
 				return ret;
 
-			ret = verify_image_streams_present(wim_get_current_image_metadata(wim),
-							   wim->lookup_table);
+			ret = verify_image_blobs_present(wim_get_current_image_metadata(wim),
+							 wim->blob_table);
 			if (ret)
 				return ret;
 
@@ -165,16 +165,16 @@ wimlib_verify_wim(WIMStruct *wim, int verify_flags)
 			wim->filename);
 	}
 
-	/* Verify the streams  */
+	/* Verify the blobs: SHA-1 message digests must match  */
 
-	for_lookup_table_entry(wim->lookup_table, append_lte_to_list, &stream_list);
+	for_blob_in_table(wim->blob_table, append_blob_to_list, &blob_list);
 
 	memset(&progress, 0, sizeof(progress));
 
 	progress.verify_streams.wimfile = wim->filename;
-	list_for_each_entry(lte, &stream_list, extraction_list) {
+	list_for_each_entry(blob, &blob_list, extraction_list) {
 		progress.verify_streams.total_streams++;
-		progress.verify_streams.total_bytes += lte->size;
+		progress.verify_streams.total_bytes += blob->size;
 	}
 
 	ctx.progfunc = wim->progfunc;
@@ -187,8 +187,7 @@ wimlib_verify_wim(WIMStruct *wim, int verify_flags)
 	if (ret)
 		return ret;
 
-	return read_stream_list(&stream_list,
-				offsetof(struct wim_lookup_table_entry,
-					 extraction_list),
-				&cbs, VERIFY_STREAM_HASHES);
+	return read_blob_list(&blob_list,
+			      offsetof(struct blob_descriptor, extraction_list),
+			      &cbs, VERIFY_BLOB_HASHES);
 }

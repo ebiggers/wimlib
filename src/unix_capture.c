@@ -32,10 +32,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "wimlib/blob_table.h"
 #include "wimlib/capture.h"
 #include "wimlib/dentry.h"
 #include "wimlib/error.h"
-#include "wimlib/lookup_table.h"
 #include "wimlib/reparse.h"
 #include "wimlib/timestamp.h"
 #include "wimlib/unix_data.h"
@@ -101,31 +101,36 @@ my_fdopendir(int *dirfd_p)
 
 static int
 unix_scan_regular_file(const char *path, u64 size, struct wim_inode *inode,
-		       struct list_head *unhashed_streams)
+		       struct list_head *unhashed_blobs)
 {
-	struct wim_lookup_table_entry *lte;
-	char *file_on_disk;
+	struct blob_descriptor *blob;
+	struct wim_inode_stream *strm;
 
 	inode->i_attributes = FILE_ATTRIBUTE_NORMAL;
 
-	/* Empty files do not have to have a lookup table entry. */
-	if (!size)
-		return 0;
+	if (size) {
+		char *file_on_disk = STRDUP(path);
+		if (!file_on_disk)
+			return WIMLIB_ERR_NOMEM;
+		blob = new_blob_descriptor();
+		if (!blob) {
+			FREE(file_on_disk);
+			return WIMLIB_ERR_NOMEM;
+		}
+		blob->file_on_disk = file_on_disk;
+		blob->file_inode = inode;
+		blob->blob_location = BLOB_IN_FILE_ON_DISK;
+		blob->size = size;
+	} else {
+		blob = NULL;
+	}
 
-	file_on_disk = STRDUP(path);
-	if (!file_on_disk)
-		return WIMLIB_ERR_NOMEM;
-	lte = new_lookup_table_entry();
-	if (!lte) {
-		FREE(file_on_disk);
+	strm = inode_add_stream(inode, STREAM_TYPE_DATA, NO_STREAM_NAME, blob);
+	if (!strm) {
+		free_blob_descriptor(blob);
 		return WIMLIB_ERR_NOMEM;
 	}
-	lte->file_on_disk = file_on_disk;
-	lte->file_inode = inode;
-	lte->resource_location = RESOURCE_IN_FILE_ON_DISK;
-	lte->size = size;
-	add_unhashed_stream(lte, inode, 0, unhashed_streams);
-	inode->i_lte = lte;
+	prepare_unhashed_blob(blob, inode, strm->stream_id, unhashed_blobs);
 	return 0;
 }
 
@@ -307,7 +312,7 @@ unix_scan_symlink(const char *full_path, int dirfd, const char *relpath,
 		if (ret)
 			return ret;
 	}
-	ret = wim_inode_set_symlink(inode, dest, params->lookup_table);
+	ret = wim_inode_set_symlink(inode, dest, params->blob_table);
 	if (ret)
 		return ret;
 
@@ -396,7 +401,6 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 	inode->i_last_write_time = time_t_to_wim_timestamp(stbuf.st_mtime);
 	inode->i_last_access_time = time_t_to_wim_timestamp(stbuf.st_atime);
 #endif
-	inode->i_resolved = 1;
 	if (params->add_flags & WIMLIB_ADD_FLAG_UNIX_DATA) {
 		struct wimlib_unix_data unix_data;
 
@@ -418,7 +422,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 
 	if (S_ISREG(stbuf.st_mode)) {
 		ret = unix_scan_regular_file(full_path, stbuf.st_size,
-					     inode, params->unhashed_streams);
+					     inode, params->unhashed_blobs);
 	} else if (S_ISDIR(stbuf.st_mode)) {
 		ret = unix_scan_directory(tree, full_path, full_path_len,
 					  dirfd, relpath, params);
@@ -438,7 +442,7 @@ out_progress:
 		ret = do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
 out:
 	if (unlikely(ret)) {
-		free_dentry_tree(tree, params->lookup_table);
+		free_dentry_tree(tree, params->blob_table);
 		tree = NULL;
 		ret = report_capture_error(params, ret, full_path);
 	}

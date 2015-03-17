@@ -117,7 +117,7 @@ inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
 		hlist_for_each_entry(inode, cur, &table->array[pos], i_hlist) {
 			if (inode->i_ino == ino && inode->i_devno == devno) {
 				/* Found; use the existing inode.  */
-				inode_ref_streams(inode);
+				inode_ref_blobs(inode);
 				goto have_inode;
 			}
 		}

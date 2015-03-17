@@ -12,7 +12,7 @@
 
 struct wim_image_metadata;
 struct wim_info;
-struct wim_lookup_table;
+struct blob_table;
 
 /*
  * WIMStruct - represents a WIM, or a part of a non-standalone WIM
@@ -57,11 +57,11 @@ struct WIMStruct {
 	 * also maintained for a WIMStruct not backed by a file.  */
 	struct wim_info *wim_info;
 
-	/* The lookup table for this WIMStruct.  If this WIMStruct has a backing
-	 * file, then this table will index the streams contained in that file.
-	 * In addition, this table may index streams that were added by updates
-	 * or referenced from other WIMStructs.  */
-	struct wim_lookup_table *lookup_table;
+	/* The blob table for this WIMStruct.  If this WIMStruct has a backing
+	 * file, then this table will index the blobs contained in that file.
+	 * In addition, this table may index blobs that were added by updates or
+	 * referenced from other WIMStructs.  */
+	struct blob_table *blob_table;
 
 	/*
 	 * The 1-based index of the currently selected image in this WIMStruct,
@@ -211,7 +211,7 @@ extern int
 for_image(WIMStruct *wim, int image, int (*visitor)(WIMStruct *));
 
 extern int
-wim_checksum_unhashed_streams(WIMStruct *wim);
+wim_checksum_unhashed_blobs(WIMStruct *wim);
 
 extern int
 delete_wim_image(WIMStruct *wim, int image);

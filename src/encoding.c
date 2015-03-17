@@ -136,7 +136,7 @@ varname1##_to_##varname2##_nbytes(const chartype1 *in, size_t in_nbytes,\
 	bool buf_onheap;						\
 	bufsize = (worst_case_len_expr) * sizeof(chartype2);		\
 	/* Worst case length */						\
-	if (bufsize <= STACK_MAX) { 					\
+	if (bufsize <= STACK_MAX) {					\
 		buf = alloca(bufsize);					\
 		buf_onheap = false;					\
 	} else {							\
@@ -558,7 +558,31 @@ cmp_utf16le_strings(const utf16lechar *s1, size_t n1,
 	return (n1 < n2) ? -1 : 1;
 }
 
-/* Duplicate a UTF16-LE string.  The input string might not be null terminated
+/* Like cmp_utf16le_strings(), but assumes the strings are null terminated.  */
+int
+cmp_utf16le_strings_z(const utf16lechar *s1, const utf16lechar *s2,
+		      bool ignore_case)
+{
+	if (ignore_case) {
+		for (;;) {
+			u16 c1 = upcase[le16_to_cpu(*s1)];
+			u16 c2 = upcase[le16_to_cpu(*s2)];
+			if (c1 != c2)
+				return (c1 < c2) ? -1 : 1;
+			if (c1 == 0)
+				return 0;
+			s1++, s2++;
+		}
+	} else {
+		while (*s1 && *s1 == *s2)
+			s1++, s2++;
+		if (*s1 == *s2)
+			return 0;
+		return (le16_to_cpu(*s1) < le16_to_cpu(*s2)) ? -1 : 1;
+	}
+}
+
+/* Duplicate a UTF-16LE string.  The input string might not be null terminated
  * and might be misaligned, but the returned string is guaranteed to be null
  * terminated and properly aligned.  */
 utf16lechar *
@@ -570,4 +594,33 @@ utf16le_dupz(const void *ustr, size_t usize)
 		dup[usize / sizeof(utf16lechar)] = 0;
 	}
 	return dup;
+}
+
+/* Duplicate a null-terminated UTF-16LE string.  */
+utf16lechar *
+utf16le_dup(const utf16lechar *ustr)
+{
+	const utf16lechar *p = ustr;
+	while (*p++)
+		;
+	return memdup(ustr, (const u8 *)p - (const u8 *)ustr);
+}
+
+/* Return the length, in bytes, of a UTF-null terminated UTF-16 string,
+ * excluding the null terminator.  */
+size_t
+utf16le_len_bytes(const utf16lechar *s)
+{
+	const utf16lechar *p = s;
+	while (*p)
+		p++;
+	return (p - s) * sizeof(utf16lechar);
+}
+
+/* Return the length, in UTF-16 coding units, of a UTF-null terminated UTF-16
+ * string, excluding the null terminator.  */
+size_t
+utf16le_len_chars(const utf16lechar *s)
+{
+	return utf16le_len_bytes(s) / sizeof(utf16lechar);
 }

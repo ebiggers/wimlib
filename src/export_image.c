@@ -24,84 +24,83 @@
 #endif
 
 #include "wimlib.h"
+#include "wimlib/blob_table.h"
 #include "wimlib/error.h"
 #include "wimlib/inode.h"
-#include "wimlib/lookup_table.h"
 #include "wimlib/metadata.h"
 #include "wimlib/xml.h"
 
 static int
-lte_set_not_exported(struct wim_lookup_table_entry *lte, void *_ignore)
+blob_set_not_exported(struct blob_descriptor *blob, void *_ignore)
 {
-	lte->out_refcnt = 0;
-	lte->was_exported = 0;
+	blob->out_refcnt = 0;
+	blob->was_exported = 0;
 	return 0;
 }
 
 static int
-lte_rollback_export(struct wim_lookup_table_entry *lte, void *_lookup_table)
+blob_rollback_export(struct blob_descriptor *blob, void *_blob_table)
 {
-	struct wim_lookup_table *lookup_table = _lookup_table;
+	struct blob_table *blob_table = _blob_table;
 
-	lte->refcnt -= lte->out_refcnt;
-	if (lte->was_exported) {
-		lookup_table_unlink(lookup_table, lte);
-		free_lookup_table_entry(lte);
+	blob->refcnt -= blob->out_refcnt;
+	if (blob->was_exported) {
+		blob_table_unlink(blob_table, blob);
+		free_blob_descriptor(blob);
 	}
 	return 0;
 }
 
 static int
-inode_export_streams(struct wim_inode *inode,
-		     struct wim_lookup_table *src_lookup_table,
-		     struct wim_lookup_table *dest_lookup_table,
-		     bool gift)
+inode_export_blobs(struct wim_inode *inode, struct blob_table *src_blob_table,
+		   struct blob_table *dest_blob_table, bool gift)
 {
 	unsigned i;
 	const u8 *hash;
-	struct wim_lookup_table_entry *src_lte, *dest_lte;
+	struct blob_descriptor *src_blob, *dest_blob;
 
 	inode_unresolve_streams(inode);
-	for (i = 0; i <= inode->i_num_ads; i++) {
 
-		/* Retrieve SHA1 message digest of stream to export.  */
-		hash = inode_stream_hash(inode, i);
-		if (is_zero_hash(hash))  /* Empty stream?  */
+	for (i = 0; i < inode->i_num_streams; i++) {
+
+		/* Retrieve SHA-1 message digest of blob to export.  */
+		hash = stream_hash(&inode->i_streams[i]);
+		if (is_zero_hash(hash))  /* Empty blob?  */
 			continue;
 
-		/* Search for the stream (via SHA1 message digest) in the
+		/* Search for the blob (via SHA-1 message digest) in the
 		 * destination WIM.  */
-		dest_lte = lookup_stream(dest_lookup_table, hash);
-		if (!dest_lte) {
-			/* Stream not yet present in destination WIM.  Search
-			 * for it in the source WIM, then export it into the
+		dest_blob = lookup_blob(dest_blob_table, hash);
+		if (!dest_blob) {
+			/* Blob not yet present in destination WIM.  Search for
+			 * it in the source WIM, then export it into the
 			 * destination WIM.  */
-			src_lte = lookup_stream(src_lookup_table, hash);
-			if (!src_lte)
-				return stream_not_found_error(inode, hash);
+			src_blob = lookup_blob(src_blob_table, hash);
+			if (!src_blob)
+				return blob_not_found_error(inode, hash);
 
 			if (gift) {
-				dest_lte = src_lte;
-				lookup_table_unlink(src_lookup_table, src_lte);
+				dest_blob = src_blob;
+				blob_table_unlink(src_blob_table, src_blob);
 			} else {
-				dest_lte = clone_lookup_table_entry(src_lte);
-				if (!dest_lte)
+				dest_blob = clone_blob_descriptor(src_blob);
+				if (!dest_blob)
 					return WIMLIB_ERR_NOMEM;
 			}
-			dest_lte->refcnt = 0;
-			dest_lte->out_refcnt = 0;
-			dest_lte->was_exported = 1;
-			lookup_table_insert(dest_lookup_table, dest_lte);
+			dest_blob->refcnt = 0;
+			dest_blob->out_refcnt = 0;
+			dest_blob->was_exported = 1;
+			blob_table_insert(dest_blob_table, dest_blob);
 		}
 
-		/* Stream is present in destination WIM (either pre-existing,
+		/* Blob is present in destination WIM (either pre-existing,
 		 * already exported, or just exported above).  Increment its
 		 * reference count appropriately.   Note: we use 'refcnt' for
 		 * the raw reference count, but 'out_refcnt' for references
 		 * arising just from the export operation; this is used to roll
 		 * back a failed export if needed.  */
-		dest_lte->refcnt += inode->i_nlink;
-		dest_lte->out_refcnt += inode->i_nlink;
+		dest_blob->refcnt += inode->i_nlink;
+		dest_blob->out_refcnt += inode->i_nlink;
 	}
 	return 0;
 }
@@ -155,16 +154,16 @@ wimlib_export_image(WIMStruct *src_wim,
 	}
 	orig_dest_image_count = dest_wim->hdr.image_count;
 
-	/* Stream checksums must be known before proceeding.  */
-	ret = wim_checksum_unhashed_streams(src_wim);
+	/* Blob checksums must be known before proceeding.  */
+	ret = wim_checksum_unhashed_blobs(src_wim);
 	if (ret)
 		return ret;
-	ret = wim_checksum_unhashed_streams(dest_wim);
+	ret = wim_checksum_unhashed_blobs(dest_wim);
 	if (ret)
 		return ret;
 
 	/* Enable rollbacks  */
-	for_lookup_table_entry(dest_wim->lookup_table, lte_set_not_exported, NULL);
+	for_blob_in_table(dest_wim->blob_table, blob_set_not_exported, NULL);
 
 	/* Export each requested image.  */
 	for (src_image = start_src_image;
@@ -207,12 +206,12 @@ wimlib_export_image(WIMStruct *src_wim,
 		src_imd = wim_get_current_image_metadata(src_wim);
 
 		/* Iterate through inodes in the source image and export their
-		 * streams into the destination WIM.  */
+		 * blobs into the destination WIM.  */
 		image_for_each_inode(inode, src_imd) {
-			ret = inode_export_streams(inode,
-						   src_wim->lookup_table,
-						   dest_wim->lookup_table,
-						   export_flags & WIMLIB_EXPORT_FLAG_GIFT);
+			ret = inode_export_blobs(inode,
+						 src_wim->blob_table,
+						 dest_wim->blob_table,
+						 export_flags & WIMLIB_EXPORT_FLAG_GIFT);
 			if (ret)
 				goto out_rollback;
 		}
@@ -259,8 +258,8 @@ wimlib_export_image(WIMStruct *src_wim,
 	}
 
 	if (export_flags & WIMLIB_EXPORT_FLAG_GIFT) {
-		free_lookup_table(src_wim->lookup_table);
-		src_wim->lookup_table = NULL;
+		free_blob_table(src_wim->blob_table);
+		src_wim->blob_table = NULL;
 	}
 	return 0;
 
@@ -275,7 +274,7 @@ out_rollback:
 		put_image_metadata(dest_wim->image_metadata[
 					--dest_wim->hdr.image_count], NULL);
 	}
-	for_lookup_table_entry(dest_wim->lookup_table, lte_rollback_export,
-			       dest_wim->lookup_table);
+	for_blob_in_table(dest_wim->blob_table, blob_rollback_export,
+			  dest_wim->blob_table);
 	return ret;
 }

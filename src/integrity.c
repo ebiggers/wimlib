@@ -279,7 +279,7 @@ out_free_new_table:
  * chunks of the file).
  *
  * This function can optionally re-use entries from an older integrity table.
- * To do this, specify old_lookup_table_end and old_table.
+ * To do this, specify old_blob_table_end and old_table.
  *
  * @wim:
  *	WIMStruct for the WIM file.  @wim->out_fd must be a seekable descriptor
@@ -287,17 +287,17 @@ out_free_new_table:
  *	which the integrity table is to be written.  Furthermore,
  *	@wim->hdr.integrity is expected to be a resource entry which will be set
  *	to the integrity table information on success.  In addition, if
- *	@old_lookup_table_end != 0, @wim->hdr.integrity must initially contain
+ *	@old_blob_table_end != 0, @wim->hdr.integrity must initially contain
  *	information about the old integrity table, and @wim->in_fd must be a
  *	seekable descriptor to the original WIM file opened for reading.
  *
- * @new_lookup_table_end:
- *	The offset of the byte directly following the lookup table in the WIM
+ * @new_blob_table_end:
+ *	The offset of the byte directly following the blob table in the WIM
  *	being written.
  *
- * @old_lookup_table_end:
- *	If nonzero, the offset of the byte directly following the old lookup
- *	table in the WIM.
+ * @old_blob_table_end:
+ *	If nonzero, the offset of the byte directly following the old blob table
+ *	in the WIM.
  *
  * @old_table
  *	Pointer to the old integrity table read into memory, or NULL if not
@@ -305,8 +305,8 @@ out_free_new_table:
  */
 int
 write_integrity_table(WIMStruct *wim,
-		      off_t new_lookup_table_end,
-		      off_t old_lookup_table_end,
+		      off_t new_blob_table_end,
+		      off_t old_blob_table_end,
 		      struct integrity_table *old_table)
 {
 	struct integrity_table *new_table;
@@ -314,13 +314,13 @@ write_integrity_table(WIMStruct *wim,
 	u32 new_table_size;
 
 	DEBUG("Writing integrity table "
-	      "(new_lookup_table_end=%"PRIu64", old_lookup_table_end=%"PRIu64")",
-	      new_lookup_table_end, old_lookup_table_end);
+	      "(new_blob_table_end=%"PRIu64", old_blob_table_end=%"PRIu64")",
+	      new_blob_table_end, old_blob_table_end);
 
-	wimlib_assert(old_lookup_table_end <= new_lookup_table_end);
+	wimlib_assert(old_blob_table_end <= new_blob_table_end);
 
-	ret = calculate_integrity_table(&wim->out_fd, new_lookup_table_end,
-					old_table, old_lookup_table_end,
+	ret = calculate_integrity_table(&wim->out_fd, new_blob_table_end,
+					old_table, old_blob_table_end,
 					&new_table, wim->progfunc, wim->progctx);
 	if (ret)
 		return ret;
@@ -358,7 +358,7 @@ write_integrity_table(WIMStruct *wim,
  *
  * @bytes_to_check:
  *	Number of bytes in the WIM that need to be checked (offset of end of the
- *	lookup table minus offset of end of the header).
+ *	blob table minus offset of end of the header).
  *
  * Returns:
  *	> 0 (WIMLIB_ERR_READ, WIMLIB_ERR_UNEXPECTED_END_OF_FILE) on error
@@ -442,22 +442,22 @@ check_wim_integrity(WIMStruct *wim)
 	int ret;
 	u64 bytes_to_check;
 	struct integrity_table *table;
-	u64 end_lookup_table_offset;
+	u64 end_blob_table_offset;
 
 	if (!wim_has_integrity_table(wim)) {
 		DEBUG("No integrity information.");
 		return WIM_INTEGRITY_NONEXISTENT;
 	}
 
-	end_lookup_table_offset = wim->hdr.lookup_table_reshdr.offset_in_wim +
-				  wim->hdr.lookup_table_reshdr.size_in_wim;
+	end_blob_table_offset = wim->hdr.blob_table_reshdr.offset_in_wim +
+				wim->hdr.blob_table_reshdr.size_in_wim;
 
-	if (end_lookup_table_offset < WIM_HEADER_DISK_SIZE) {
-		ERROR("WIM lookup table ends before WIM header ends!");
+	if (end_blob_table_offset < WIM_HEADER_DISK_SIZE) {
+		ERROR("WIM blob table ends before WIM header ends!");
 		return WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
 	}
 
-	bytes_to_check = end_lookup_table_offset - WIM_HEADER_DISK_SIZE;
+	bytes_to_check = end_blob_table_offset - WIM_HEADER_DISK_SIZE;
 
 	ret = read_integrity_table(wim, bytes_to_check, &table);
 	if (ret)
