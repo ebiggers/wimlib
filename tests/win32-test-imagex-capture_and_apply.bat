@@ -10,8 +10,9 @@ REM Administrator privileges.  wimlib-imagex and win32-tree-cmp must be
 REM executable using the paths set below.
 
 setlocal EnableDelayedExpansion
-set WIN32_TREE_CMP=win32-tree-cmp
 set WIMLIB_IMAGEX=wimlib-imagex
+set WIN32_TREE_CMP=win32-tree-cmp
+set SET_REPARSE_POINT=set_reparse_point
 
 if exist in.dir rd /S /Q in.dir
 if exist out.dir rd /S /Q out.dir
@@ -175,6 +176,48 @@ md subdir2\s
 md subdir2\s\s
 md subdir2\s\s\s
 echo "hello world!!!!" > subdir2\otherfile
+call :do_test
+if %errorlevel% neq 0 goto :fail
+
+call :msg "reparse point that is neither a symlink nor a junction"
+type nul > file
+%SET_REPARSE_POINT% file
+call :do_test
+if %errorlevel% neq 0 goto :fail
+
+call :msg "reparse point with named data streams"
+type nul > file
+echo 11 > file:a
+echo 1 > file:aa
+%SET_REPARSE_POINT% file
+call :do_test
+if %errorlevel% neq 0 goto :fail
+
+call :msg "reparse point with unnamed data stream"
+echo "test" > file
+%SET_REPARSE_POINT% file
+call :do_test
+if %errorlevel% neq 0 goto :fail
+
+call :msg "reparse point with unnamed data stream and named data streams"
+echo "test" > file
+echo 11 > file:a
+echo 1 > file:aa
+%SET_REPARSE_POINT% file
+call :do_test
+if %errorlevel% neq 0 goto :fail
+
+call :msg "directory reparse point that is neither a symlink nor a junction"
+md subdir
+%SET_REPARSE_POINT% subdir
+call :do_test
+if %errorlevel% neq 0 goto :fail
+
+call :msg "directory reparse point with named data streams"
+md subdir
+echo 11 > subdir:a
+echo 1 > subdir:aa
+%SET_REPARSE_POINT% subdir
 call :do_test
 if %errorlevel% neq 0 goto :fail
 
