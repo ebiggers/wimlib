@@ -149,19 +149,18 @@ clone_blob_descriptor(const struct blob_descriptor *old)
 #ifdef WITH_NTFS_3G
 	case BLOB_IN_NTFS_VOLUME:
 		if (old->ntfs_loc) {
-			struct ntfs_location *loc;
-			loc = memdup(old->ntfs_loc, sizeof(struct ntfs_location));
-			if (loc == NULL)
+			new->ntfs_loc = memdup(old->ntfs_loc,
+					       sizeof(struct ntfs_location));
+			if (new->ntfs_loc == NULL)
 				goto out_free;
-			loc->path = NULL;
-			loc->attr_name = NULL;
-			new->ntfs_loc = loc;
-			loc->path = STRDUP(old->ntfs_loc->path);
-			if (loc->path == NULL)
+			new->ntfs_loc->path = STRDUP(old->ntfs_loc->path);
+			new->ntfs_loc->attr_name = NULL;
+			if (new->ntfs_loc->path == NULL)
 				goto out_free;
-			if (loc->attr_name_nchars != 0) {
-				loc->attr_name = utf16le_dup(old->ntfs_loc->attr_name);
-				if (loc->attr_name == NULL)
+			if (new->ntfs_loc->attr_name_nchars != 0) {
+				new->ntfs_loc->attr_name =
+					utf16le_dup(old->ntfs_loc->attr_name);
+				if (new->ntfs_loc->attr_name == NULL)
 					goto out_free;
 			}
 		}
