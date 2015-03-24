@@ -877,8 +877,7 @@ out_replace:
 
 		utf16le_put_tstr(tchar_name);
 
-		dentry->d_extraction_name = memdup(fixed_name,
-						   2 * fixed_name_num_chars + 2);
+		dentry->d_extraction_name = TSTRDUP(fixed_name);
 		if (!dentry->d_extraction_name)
 			return WIMLIB_ERR_NOMEM;
 		dentry->d_extraction_name_nchars = fixed_name_num_chars;
