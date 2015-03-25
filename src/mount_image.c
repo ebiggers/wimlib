@@ -757,15 +757,9 @@ extract_blob_to_staging_dir(struct wim_inode *inode,
 		filedes_init(&fd->f_staging_fd, raw_fd);
 	}
 
-	/* Remove the appropriate count of file descriptors and stream
-	 * references from the old blob.  */
-	if (old_blob) {
+	if (old_blob)
 		old_blob->num_opened_fds -= new_blob->num_opened_fds;
-		for (u32 i = 0; i < inode->i_nlink; i++)
-			blob_decrement_refcnt(old_blob, ctx->wim->blob_table);
-	}
 
-	new_blob->refcnt            = inode->i_nlink;
 	new_blob->blob_location     = BLOB_IN_STAGING_FILE;
 	new_blob->staging_file_name = staging_file_name;
 	new_blob->staging_dir_fd    = ctx->staging_dir_fd;
@@ -773,7 +767,7 @@ extract_blob_to_staging_dir(struct wim_inode *inode,
 
 	prepare_unhashed_blob(new_blob, inode, strm->stream_id,
 			      &wim_get_current_image_metadata(ctx->wim)->unhashed_blobs);
-	stream_set_blob(strm, new_blob);
+	inode_replace_stream_blob(inode, strm, new_blob, ctx->wim->blob_table);
 	return 0;
 
 out_revert_fd_changes:
@@ -947,11 +941,8 @@ release_extra_refcnts(struct wimfs_context *ctx)
 	struct blob_table *blob_table = ctx->wim->blob_table;
 	struct blob_descriptor *blob, *tmp;
 
-	list_for_each_entry_safe(blob, tmp, list, orig_blob_list) {
-		u32 n = blob->out_refcnt;
-		while (n--)
-			blob_decrement_refcnt(blob, blob_table);
-	}
+	list_for_each_entry_safe(blob, tmp, list, orig_blob_list)
+		blob_subtract_refcnt(blob, blob_table, blob->out_refcnt);
 }
 
 /* Delete the 'struct blob_descriptor' for any stream that was modified
@@ -1027,6 +1018,7 @@ renew_current_image(struct wimfs_context *ctx)
 	new_blob = new_blob_descriptor();
 	if (!new_blob)
 		goto err_put_replace_imd;
+	new_blob->refcnt = 1;
 	new_blob->flags = WIM_RESHDR_FLAG_METADATA;
 	new_blob->unhashed = 1;
 
@@ -1808,7 +1800,7 @@ wimfs_setxattr(const char *path, const char *name,
 {
 	struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_inode *inode;
-	struct wim_inode_stream *existing_strm;
+	struct wim_inode_stream *strm;
 	const utf16lechar *uname;
 	int ret;
 
@@ -1850,8 +1842,8 @@ wimfs_setxattr(const char *path, const char *name,
 	if (ret)
 		return -errno;
 
-	existing_strm = inode_get_stream(inode, STREAM_TYPE_DATA, uname);
-	if (existing_strm) {
+	strm = inode_get_stream(inode, STREAM_TYPE_DATA, uname);
+	if (strm) {
 		ret = -EEXIST;
 		if (flags & XATTR_CREATE)
 			goto out_put_uname;
@@ -1861,14 +1853,22 @@ wimfs_setxattr(const char *path, const char *name,
 			goto out_put_uname;
 	}
 
-	if (!inode_add_stream_with_data(inode, STREAM_TYPE_DATA, uname,
-					value, size, ctx->wim->blob_table))
-	{
-		ret = -errno;
-		goto out_put_uname;
+	if (strm) {
+		if (!inode_replace_stream_data(inode, strm, value, size,
+					       ctx->wim->blob_table))
+		{
+			ret = -errno;
+			goto out_put_uname;
+		}
+	} else {
+		if (!inode_add_stream_with_data(inode, STREAM_TYPE_DATA, uname,
+						value, size, ctx->wim->blob_table))
+		{
+			ret = -errno;
+			goto out_put_uname;
+		}
 	}
-	if (existing_strm)
-		inode_remove_stream(inode, existing_strm, ctx->wim->blob_table);
+
 	ret = 0;
 out_put_uname:
 	tstr_put_utf16le(uname);

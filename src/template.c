@@ -33,11 +33,24 @@
 #include "wimlib/metadata.h"
 #include "wimlib/util.h"
 
+static u64
+stream_size(const struct wim_inode_stream *strm,
+	    const struct blob_table *blob_table)
+{
+	const struct blob_descriptor *blob;
+
+	blob = stream_blob(strm, blob_table);
+	if (!blob)
+		return 0;
+	return blob->size;
+}
+
 /* Returns %true iff the metadata of @inode and @template_inode are reasonably
  * consistent with them being the same, unmodified file.  */
 static bool
 inode_metadata_consistent(const struct wim_inode *inode,
 			  const struct wim_inode *template_inode,
+			  const struct blob_table *blob_table,
 			  const struct blob_table *template_blob_table)
 {
 	/* Must have exact same creation time and last write time.  */
@@ -50,106 +63,60 @@ inode_metadata_consistent(const struct wim_inode *inode,
 	if (inode->i_last_access_time < template_inode->i_last_access_time)
 		return false;
 
-	/* Must have same number of streams.  */
-	if (inode->i_num_streams != template_inode->i_num_streams)
-		return false;
-
+	/* All stream sizes must match.  */
 	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-		const struct blob_descriptor *blob, *template_blob;
+		const struct wim_inode_stream *strm, *template_strm;
 
-		/* If the streams for the inode are for some reason not
-		 * resolved, then the hashes are already available and the point
-		 * of this function is defeated.  */
-		if (!inode->i_streams[i].stream_resolved)
+		strm = &inode->i_streams[i];
+		template_strm = inode_get_stream(template_inode,
+						 strm->stream_type,
+						 strm->stream_name);
+		if (!template_strm)
 			return false;
 
-		blob = stream_blob_resolved(&inode->i_streams[i]);
-		template_blob = stream_blob(&template_inode->i_streams[i],
-					    template_blob_table);
-
-		/* Compare blob sizes.  */
-		if (blob && template_blob) {
-			if (blob->size != template_blob->size)
-				return false;
-
-			/* If hash happens to be available, compare with template.  */
-			if (!blob->unhashed && !template_blob->unhashed &&
-			    !hashes_equal(blob->hash, template_blob->hash))
-				return false;
-
-		} else if (blob && blob->size) {
+		if (stream_size(strm, blob_table) !=
+		    stream_size(template_strm, template_blob_table))
 			return false;
-		} else if (template_blob && template_blob->size) {
-			return false;
-		}
 	}
 
-	/* All right, barring a full checksum and given that the inodes share a
-	 * path and the user isn't trying to trick us, these inodes most likely
-	 * refer to the same file.  */
 	return true;
 }
 
 /**
  * Given an inode @inode that has been determined to be "the same" as another
- * inode @template_inode in either the same WIM or another WIM, retrieve some
- * useful information (e.g. checksums) from @template_inode.
- *
- * This assumes that the streams for @inode have been resolved (to point
- * directly to the appropriate `struct blob_descriptor's) but do not necessarily
- * have checksum information filled in.
+ * inode @template_inode in either the same WIM or another WIM, copy stream
+ * checksums from @template_inode to @inode.
  */
-static int
+static void
 inode_copy_checksums(struct wim_inode *inode,
 		     struct wim_inode *template_inode,
-		     WIMStruct *wim,
-		     WIMStruct *template_wim)
+		     struct blob_table *blob_table,
+		     struct blob_table *template_blob_table)
 {
 	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-		struct blob_descriptor *blob, *template_blob;
-		struct blob_descriptor *replace_blob;
+		const struct wim_inode_stream *strm, *template_strm;
+		struct blob_descriptor *blob, *template_blob, **back_ptr;
 
-		blob = stream_blob_resolved(&inode->i_streams[i]);
-		template_blob = stream_blob(&template_inode->i_streams[i],
-					       template_wim->blob_table);
+		strm = &inode->i_streams[i];
+		template_strm = inode_get_stream(template_inode,
+						 strm->stream_type,
+						 strm->stream_name);
 
-		/* Only take action if both entries exist, the entry for @inode
-		 * has no checksum calculated, but the entry for @template_inode
-		 * does.  */
-		if (blob == NULL || template_blob == NULL ||
+		blob = stream_blob(strm, blob_table);
+		template_blob = stream_blob(template_strm, template_blob_table);
+
+		/* To copy hashes: both blobs must exist, the blob for @inode
+		 * must be unhashed, and the blob for @template_inode must be
+		 * hashed.  */
+		if (!blob || !template_blob ||
 		    !blob->unhashed || template_blob->unhashed)
 			continue;
 
-		wimlib_assert(blob->refcnt == inode->i_nlink);
-
-		/* If the WIM of the template image is the same as the WIM of
-		 * the new image, then @template_blob can be used directly.
-		 *
-		 * Otherwise, look for a blob with the same hash in the WIM of
-		 * the new image.  If found, use it; otherwise re-use the
-		 * blob descriptor being discarded, filling in the hash.  */
-
-		if (wim == template_wim)
-			replace_blob = template_blob;
-		else
-			replace_blob = lookup_blob(wim->blob_table,
-						   template_blob->hash);
-
-		list_del(&blob->unhashed_list);
-		if (replace_blob) {
+		back_ptr = retrieve_pointer_to_unhashed_blob(blob);
+		copy_hash(blob->hash, template_blob->hash);
+		if (after_blob_hashed(blob, back_ptr, blob_table) != blob)
 			free_blob_descriptor(blob);
-		} else {
-			copy_hash(blob->hash, template_blob->hash);
-			blob->unhashed = 0;
-			blob_table_insert(wim->blob_table, blob);
-			blob->refcnt = 0;
-			replace_blob = blob;
-		}
-
-		stream_set_blob(&inode->i_streams[i], replace_blob);
-		replace_blob->refcnt += inode->i_nlink;
 	}
-	return 0;
 }
 
 struct reference_template_args {
@@ -184,17 +151,17 @@ dentry_reference_template(struct wim_dentry *dentry, void *_args)
 	inode = dentry->d_inode;
 	template_inode = template_dentry->d_inode;
 
-	if (inode_metadata_consistent(inode, template_inode,
-				      template_wim->blob_table)) {
-		/*DEBUG("\"%"TS"\": No change detected", dentry->_full_path);*/
-		ret = inode_copy_checksums(inode, template_inode,
-					   wim, template_wim);
+	if (inode_metadata_consistent(inode, template_inode, wim->blob_table,
+				      template_wim->blob_table))
+	{
+		DEBUG("\"%"TS"\": No change detected", dentry->_full_path);
+		inode_copy_checksums(inode, template_inode, wim->blob_table,
+				     template_wim->blob_table);
 		inode->i_visited = 1;
 	} else {
 		DEBUG("\"%"TS"\": change detected!", dentry->_full_path);
-		ret = 0;
 	}
-	return ret;
+	return 0;
 }
 
 /* API function documented in wimlib.h  */

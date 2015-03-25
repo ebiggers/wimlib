@@ -48,6 +48,7 @@ add_empty_image_metadata(WIMStruct *wim)
 	if (!metadata_blob)
 		goto out;
 
+	metadata_blob->refcnt = 1;
 	metadata_blob->flags = WIM_RESHDR_FLAG_METADATA;
 	metadata_blob->unhashed = 1;
 

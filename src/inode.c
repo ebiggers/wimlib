@@ -201,6 +201,52 @@ inode_get_unnamed_stream(const struct wim_inode *inode, int stream_type)
 	return NULL;
 }
 
+
+static void
+inode_set_stream_blob(struct wim_inode *inode, struct wim_inode_stream *strm,
+		      struct blob_descriptor *new_blob)
+{
+	strm->_stream_blob = new_blob;
+	strm->stream_resolved = 1;
+	if (new_blob)
+		new_blob->refcnt += inode->i_nlink;
+}
+
+static void
+inode_unset_stream_blob(struct wim_inode *inode, struct wim_inode_stream *strm,
+			struct blob_table *blob_table)
+{
+	struct blob_descriptor *old_blob;
+
+	old_blob = stream_blob(strm, blob_table);
+	if (old_blob)
+		blob_subtract_refcnt(old_blob, blob_table, inode->i_nlink);
+	strm->_stream_blob = NULL;
+	strm->stream_resolved = 1;
+}
+
+/*
+ * Replace the blob associated with the specified stream.
+ *
+ * @inode
+ *	The inode containing @strm
+ * @strm
+ *	The stream whose data needs to be replaced
+ * @new_blob
+ *	The new blob descriptor to assign
+ * @blob_table
+ *	Pointer to the blob table in which data blobs are being indexed
+ */
+void
+inode_replace_stream_blob(struct wim_inode *inode,
+			  struct wim_inode_stream *strm,
+			  struct blob_descriptor *new_blob,
+			  struct blob_table *blob_table)
+{
+	inode_unset_stream_blob(inode, strm, blob_table);
+	inode_set_stream_blob(inode, strm, new_blob);
+}
+
 /*
  * Add a new stream to the specified inode.
  *
@@ -266,9 +312,10 @@ inode_add_stream(struct wim_inode *inode, int stream_type,
 		if (!new_strm->stream_name)
 			return NULL;
 	}
+
 	new_strm->stream_id = inode->i_next_stream_id++;
 
-	stream_set_blob(new_strm, blob);
+	inode_set_stream_blob(inode, new_strm, blob);
 
 	inode->i_num_streams++;
 
@@ -276,10 +323,39 @@ inode_add_stream(struct wim_inode *inode, int stream_type,
 }
 
 /*
- * Create a new blob descriptor for the specified data buffer or use an existing
- * blob descriptor in @blob_table for an identical blob, then add a stream of
- * the specified type and name to the specified inode and set it to initially
- * reference the blob.
+ * Replace the data of the specified stream.
+ *
+ * @inode
+ *	The inode containing @strm
+ * @strm
+ *	The stream whose data needs to be replaced
+ * @data
+ *	The buffer of data to assign to the stream
+ * @size
+ *	Size of the @data buffer, in bytes
+ * @blob_table
+ *	Pointer to the blob table in which data blobs are being indexed
+ *
+ * Returns true if successful; false with errno set if unsuccessful.
+ */
+bool
+inode_replace_stream_data(struct wim_inode *inode,
+			  struct wim_inode_stream *strm,
+			  const void *data, size_t size,
+			  struct blob_table *blob_table)
+{
+	struct blob_descriptor *new_blob;
+
+	new_blob = new_blob_from_data_buffer(data, size, blob_table);
+	if (!new_blob)
+		return false;
+
+	inode_replace_stream_blob(inode, strm, new_blob, blob_table);
+	return true;
+}
+
+/*
+ * Add a new stream to the specified inode and assign it the specified data.
  *
  * @inode
  *	The inode to which to add the stream
@@ -289,54 +365,55 @@ inode_add_stream(struct wim_inode *inode, int stream_type,
  *	The name of the stream being added as a null-terminated UTF-16LE string,
  *	or NO_STREAM_NAME if the stream is unnamed
  * @data
- *	The uncompressed data of the blob
+ *	The buffer of data to assign to the new stream
  * @size
- *	The size, in bytes, of the blob data
+ *	Size of the @data buffer, in bytes
  * @blob_table
- *	Pointer to the blob table in which the blob needs to be indexed.
+ *	Pointer to the blob table in which data blobs are being indexed
  *
- * Returns a pointer to the new stream if successfully added, otherwise NULL
- * with errno set.
+ * Returns true if successful; false with errno set if unsuccessful.
  */
-struct wim_inode_stream *
+bool
 inode_add_stream_with_data(struct wim_inode *inode,
 			   int stream_type, const utf16lechar *stream_name,
 			   const void *data, size_t size,
 			   struct blob_table *blob_table)
 {
-	struct blob_descriptor *blob;
 	struct wim_inode_stream *strm;
+	struct blob_descriptor *blob;
+
+	strm = inode_add_stream(inode, stream_type, stream_name, NULL);
+	if (!strm)
+		return false;
 
 	blob = new_blob_from_data_buffer(data, size, blob_table);
-	if (!blob)
-		return NULL;
-	strm = inode_add_stream(inode, stream_type, stream_name, blob);
-	if (!strm)
-		blob_decrement_refcnt(blob, blob_table);
-	return strm;
+	if (!blob) {
+		inode_remove_stream(inode, strm, blob_table);
+		return false;
+	}
+
+	inode_set_stream_blob(inode, strm, blob);
+	return true;
 }
 
 /*
- * Remove a stream from the specified inode and release the reference to the
- * blob descriptor, if any.
+ * Remove a stream from the specified inode.
+ *
+ * This handles releasing the references to the blob descriptor, if any.
  */
 void
 inode_remove_stream(struct wim_inode *inode, struct wim_inode_stream *strm,
 		    struct blob_table *blob_table)
 {
-	struct blob_descriptor *blob;
 	unsigned idx = strm - inode->i_streams;
 
 	wimlib_assert(idx < inode->i_num_streams);
 
-	blob = stream_blob(strm, blob_table);
-	if (blob)
-		blob_decrement_refcnt(blob, blob_table);
+	inode_unset_stream_blob(inode, strm, blob_table);
 
 	destroy_stream(strm);
 
-	memmove(&inode->i_streams[idx],
-		&inode->i_streams[idx + 1],
+	memmove(strm, strm + 1,
 		(inode->i_num_streams - idx - 1) * sizeof(inode->i_streams[0]));
 	inode->i_num_streams--;
 }
@@ -400,9 +477,12 @@ inode_resolve_streams(struct wim_inode *inode, struct blob_table *table,
 		blobs[i] = blob;
 	}
 
-	for (unsigned i = 0; i < inode->i_num_streams; i++)
-		if (!inode->i_streams[i].stream_resolved)
-			stream_set_blob(&inode->i_streams[i], blobs[i]);
+	for (unsigned i = 0; i < inode->i_num_streams; i++) {
+		if (!inode->i_streams[i].stream_resolved) {
+			inode->i_streams[i]._stream_blob = blobs[i];
+			inode->i_streams[i].stream_resolved = 1;
+		}
+	}
 	return 0;
 }
 

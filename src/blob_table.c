@@ -105,8 +105,7 @@ new_blob_descriptor(void)
 	if (blob == NULL)
 		return NULL;
 
-	blob->refcnt = 1;
-
+	/* blob->refcnt = 0  */
 	/* blob->blob_location = BLOB_NONEXISTENT  */
 	BUILD_BUG_ON(BLOB_NONEXISTENT != 0);
 
@@ -263,10 +262,21 @@ finalize_blob(struct blob_descriptor *blob)
 void
 blob_decrement_refcnt(struct blob_descriptor *blob, struct blob_table *table)
 {
-	if (unlikely(blob->refcnt == 0))  /* See comment above  */
-		return;
+	blob_subtract_refcnt(blob, table, 1);
+}
 
-	if (--blob->refcnt != 0)
+void
+blob_subtract_refcnt(struct blob_descriptor *blob, struct blob_table *table,
+		     u32 count)
+{
+	if (unlikely(blob->refcnt < count)) {
+		blob->refcnt = 0; /* See comment above  */
+		return;
+	}
+
+	blob->refcnt -= count;
+
+	if (blob->refcnt != 0)
 		return;
 
 	if (blob->unhashed) {
@@ -1255,7 +1265,6 @@ new_blob_from_data_buffer(const void *buffer, size_t size,
 	if (existing_blob) {
 		wimlib_assert(existing_blob->size == size);
 		blob = existing_blob;
-		blob->refcnt++;
 	} else {
 		void *buffer_copy;
 		blob = new_blob_descriptor();
@@ -1273,6 +1282,36 @@ new_blob_from_data_buffer(const void *buffer, size_t size,
 		blob_table_insert(blob_table, blob);
 	}
 	return blob;
+}
+
+struct blob_descriptor *
+after_blob_hashed(struct blob_descriptor *blob,
+		  struct blob_descriptor **back_ptr,
+		  struct blob_table *blob_table)
+{
+	struct blob_descriptor *duplicate_blob;
+
+	list_del(&blob->unhashed_list);
+	blob->unhashed = 0;
+
+	/* Look for a duplicate blob  */
+	duplicate_blob = lookup_blob(blob_table, blob->hash);
+	if (duplicate_blob) {
+		/* We have a duplicate blob.  Transfer the reference counts from
+		 * this blob to the duplicate and update the reference to this
+		 * blob (from a stream) to point to the duplicate.  The caller
+		 * is responsible for freeing @blob if needed.  */
+		wimlib_assert(duplicate_blob->size == blob->size);
+		duplicate_blob->refcnt += blob->refcnt;
+		blob->refcnt = 0;
+		*back_ptr = duplicate_blob;
+		return duplicate_blob;
+	} else {
+		/* No duplicate blob, so we need to insert this blob into the
+		 * blob table and treat it as a hashed blob.  */
+		blob_table_insert(blob_table, blob);
+		return blob;
+	}
 }
 
 /*
@@ -1295,42 +1334,16 @@ int
 hash_unhashed_blob(struct blob_descriptor *blob, struct blob_table *blob_table,
 		   struct blob_descriptor **blob_ret)
 {
-	int ret;
-	struct blob_descriptor *duplicate_blob;
 	struct blob_descriptor **back_ptr;
+	int ret;
 
-	wimlib_assert(blob->unhashed);
-
-	/* back_ptr must be saved because @back_inode and @back_stream_id are in
-	 * union with the SHA-1 message digest and will no longer be valid once
-	 * the SHA-1 has been calculated. */
 	back_ptr = retrieve_pointer_to_unhashed_blob(blob);
 
 	ret = sha1_blob(blob);
 	if (ret)
 		return ret;
 
-	list_del(&blob->unhashed_list);
-	blob->unhashed = 0;
-
-	/* Look for a duplicate blob  */
-	duplicate_blob = lookup_blob(blob_table, blob->hash);
-	if (duplicate_blob) {
-		/* We have a duplicate blob.  Transfer the reference counts from
-		 * this blob to the duplicate and update the reference to this
-		 * blob (from an stream) to point to the duplicate.  The caller
-		 * is responsible for freeing @blob if needed.  */
-		wimlib_assert(duplicate_blob->size == blob->size);
-		duplicate_blob->refcnt += blob->refcnt;
-		blob->refcnt = 0;
-		*back_ptr = duplicate_blob;
-		blob = duplicate_blob;
-	} else {
-		/* No duplicate blob, so we need to insert this blob into the
-		 * blob table and treat it as a hashed blob. */
-		blob_table_insert(blob_table, blob);
-	}
-	*blob_ret = blob;
+	*blob_ret = after_blob_hashed(blob, back_ptr, blob_table);
 	return 0;
 }
 

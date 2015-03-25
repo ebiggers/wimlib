@@ -350,7 +350,19 @@ extern struct wim_inode_stream *
 inode_add_stream(struct wim_inode *inode, int stream_type,
 		 const utf16lechar *stream_name, struct blob_descriptor *blob);
 
-extern struct wim_inode_stream *
+extern void
+inode_replace_stream_blob(struct wim_inode *inode,
+			  struct wim_inode_stream *strm,
+			  struct blob_descriptor *new_blob,
+			  struct blob_table *blob_table);
+
+extern bool
+inode_replace_stream_data(struct wim_inode *inode,
+			  struct wim_inode_stream *strm,
+			  const void *data, size_t size,
+			  struct blob_table *blob_table);
+
+extern bool
 inode_add_stream_with_data(struct wim_inode *inode, int stream_type,
 			   const utf16lechar *stream_name,
 			   const void *data, size_t size,
@@ -365,13 +377,6 @@ stream_blob_resolved(const struct wim_inode_stream *strm)
 {
 	wimlib_assert(strm->stream_resolved);
 	return strm->_stream_blob;
-}
-
-static inline void
-stream_set_blob(struct wim_inode_stream *strm, struct blob_descriptor *blob)
-{
-	strm->_stream_blob = blob;
-	strm->stream_resolved = 1;
 }
 
 static inline bool

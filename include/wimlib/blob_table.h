@@ -279,12 +279,15 @@ extern struct blob_descriptor *
 new_blob_descriptor(void) _malloc_attribute;
 
 extern struct blob_descriptor *
-clone_blob_descriptor(const struct blob_descriptor *blob)
-			_malloc_attribute;
+clone_blob_descriptor(const struct blob_descriptor *blob) _malloc_attribute;
 
 extern void
-blob_decrement_refcnt(struct blob_descriptor *blob,
-		      struct blob_table *table);
+blob_decrement_refcnt(struct blob_descriptor *blob, struct blob_table *table);
+
+extern void
+blob_subtract_refcnt(struct blob_descriptor *blob, struct blob_table *table,
+		     u32 count);
+
 #ifdef WITH_FUSE
 extern void
 blob_decrement_num_opened_fds(struct blob_descriptor *blob);
@@ -375,6 +378,11 @@ blob_unset_is_located_in_wim_resource(struct blob_descriptor *blob)
 extern struct blob_descriptor *
 new_blob_from_data_buffer(const void *buffer, size_t size,
 			  struct blob_table *blob_table);
+
+extern struct blob_descriptor *
+after_blob_hashed(struct blob_descriptor *blob,
+		  struct blob_descriptor **back_ptr,
+		  struct blob_table *blob_table);
 
 extern int
 hash_unhashed_blob(struct blob_descriptor *blob,
