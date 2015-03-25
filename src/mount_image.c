@@ -458,9 +458,9 @@ wim_pathname_to_stream(const struct wimfs_context *ctx,
  * Returns 0 or a -errno code.
  */
 static int
-create_dentry(struct fuse_context *fuse_ctx, const char *path,
-	      mode_t mode, dev_t rdev, u32 attributes,
-	      struct wim_dentry **dentry_ret)
+create_file(struct fuse_context *fuse_ctx, const char *path,
+	    mode_t mode, dev_t rdev, u32 attributes,
+	    struct wim_dentry **dentry_ret)
 {
 	struct wimfs_context *wimfs_ctx = WIMFS_CTX(fuse_ctx);
 	struct wim_dentry *parent;
@@ -1475,8 +1475,8 @@ wimfs_mkdir(const char *path, mode_t mode)
 	int ret;
 
 	/* Note: according to fuse.h, mode may not include S_IFDIR  */
-	ret = create_dentry(fuse_get_context(), path, mode | S_IFDIR, 0,
-			    FILE_ATTRIBUTE_DIRECTORY, &dentry);
+	ret = create_file(fuse_get_context(), path, mode | S_IFDIR, 0,
+			  FILE_ATTRIBUTE_DIRECTORY, &dentry);
 	if (ret)
 		return ret;
 	touch_parent(dentry);
@@ -1541,8 +1541,8 @@ wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 		/* Note: we still use FILE_ATTRIBUTE_NORMAL for device nodes,
 		 * named pipes, and sockets.  The real mode is in the UNIX
 		 * metadata.  */
-		ret = create_dentry(fuse_ctx, path, mode, rdev,
-				    FILE_ATTRIBUTE_NORMAL, &dentry);
+		ret = create_file(fuse_ctx, path, mode, rdev,
+				  FILE_ATTRIBUTE_NORMAL, &dentry);
 		if (ret)
 			return ret;
 		touch_parent(dentry);
@@ -1883,8 +1883,8 @@ wimfs_symlink(const char *to, const char *from)
 	struct wim_dentry *dentry;
 	int ret;
 
-	ret = create_dentry(fuse_ctx, from, S_IFLNK | 0777, 0,
-			    FILE_ATTRIBUTE_REPARSE_POINT, &dentry);
+	ret = create_file(fuse_ctx, from, S_IFLNK | 0777, 0,
+			  FILE_ATTRIBUTE_REPARSE_POINT, &dentry);
 	if (ret)
 		return ret;
 	dentry->d_inode->i_reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
