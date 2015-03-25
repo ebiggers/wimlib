@@ -914,7 +914,7 @@ get_parent_dentry(WIMStruct *wim, const tchar *path,
  * *dentry_ret.  On failure, returns WIMLIB_ERR_NOMEM or an error code resulting
  * from a failed string conversion.
  */
-int
+static int
 new_dentry(const tchar *name, struct wim_dentry **dentry_ret)
 {
 	struct wim_dentry *dentry;
@@ -936,9 +936,12 @@ new_dentry(const tchar *name, struct wim_dentry **dentry_ret)
 	return 0;
 }
 
-static int
-_new_dentry_with_inode(const tchar *name, struct wim_dentry **dentry_ret,
-		       bool timeless)
+/* Like new_dentry(), but also allocate an inode and associate it with the
+ * dentry.  If set_timestamps=true, the timestamps for the inode will be set to
+ * the current time; otherwise, they will be left 0.  */
+int
+new_dentry_with_new_inode(const tchar *name, bool set_timestamps,
+			  struct wim_dentry **dentry_ret)
 {
 	struct wim_dentry *dentry;
 	struct wim_inode *inode;
@@ -948,36 +951,28 @@ _new_dentry_with_inode(const tchar *name, struct wim_dentry **dentry_ret,
 	if (ret)
 		return ret;
 
-	if (timeless)
-		inode = new_timeless_inode();
-	else
-		inode = new_inode();
+	inode = new_inode(dentry, set_timestamps);
 	if (!inode) {
 		free_dentry(dentry);
 		return WIMLIB_ERR_NOMEM;
 	}
 
-	d_associate(dentry, inode);
-
 	*dentry_ret = dentry;
 	return 0;
 }
 
-/* Like new_dentry(), but also allocate an inode and associate it with the
- * dentry.  The timestamps for the inode will be set to the current time.  */
+/* Like new_dentry(), but also associate the new dentry with the specified inode
+ * and acquire a reference to each of the inode's blobs.  */
 int
-new_dentry_with_inode(const tchar *name, struct wim_dentry **dentry_ret)
+new_dentry_with_existing_inode(const tchar *name, struct wim_inode *inode,
+			       struct wim_dentry **dentry_ret)
 {
-	return _new_dentry_with_inode(name, dentry_ret, false);
-}
-
-/* Like new_dentry_with_inode(), but don't bother setting the timestamps for the
- * new inode; instead, just leave them as 0, under the presumption that the
- * caller will set them itself.  */
-int
-new_dentry_with_timeless_inode(const tchar *name, struct wim_dentry **dentry_ret)
-{
-	return _new_dentry_with_inode(name, dentry_ret, true);
+	int ret = new_dentry(name, dentry_ret);
+	if (ret)
+		return ret;
+	d_associate(*dentry_ret, inode);
+	inode_ref_blobs(inode);
+	return 0;
 }
 
 /* Create an unnamed dentry with a new inode for a directory with the default
@@ -988,7 +983,7 @@ new_filler_directory(struct wim_dentry **dentry_ret)
 	int ret;
 	struct wim_dentry *dentry;
 
-	ret = new_dentry_with_inode(NULL, &dentry);
+	ret = new_dentry_with_new_inode(NULL, true, &dentry);
 	if (ret)
 		return ret;
 	/* Leave the inode number as 0; this is allowed for non
@@ -1449,7 +1444,7 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 		return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 
 	/* Allocate new dentry structure, along with a preliminary inode.  */
-	ret = new_dentry_with_timeless_inode(NULL, &dentry);
+	ret = new_dentry_with_new_inode(NULL, false, &dentry);
 	if (ret)
 		return ret;
 

@@ -480,7 +480,7 @@ create_dentry(struct fuse_context *fuse_ctx, const char *path,
 	if (get_dentry_child_with_name(parent, basename, WIMLIB_CASE_SENSITIVE))
 		return -EEXIST;
 
-	if (new_dentry_with_inode(basename, &new_dentry))
+	if (new_dentry_with_new_inode(basename, true, &new_dentry))
 		return -ENOMEM;
 
 	new_inode = new_dentry->d_inode;
@@ -1405,11 +1405,9 @@ wimfs_link(const char *existing_path, const char *new_path)
 	if (get_dentry_child_with_name(dir, new_name, WIMLIB_CASE_SENSITIVE))
 		return -EEXIST;
 
-	if (new_dentry(new_name, &new_alias))
+	if (new_dentry_with_existing_inode(new_name, inode, &new_alias))
 		return -ENOMEM;
 
-	inode_ref_blobs(inode);
-	d_associate(new_alias, inode);
 	dentry_add_child(dir, new_alias);
 	touch_inode(dir->d_inode);
 	return 0;

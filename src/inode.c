@@ -44,32 +44,28 @@
  */
 const utf16lechar NO_STREAM_NAME[1];
 
-/* Allocate a new inode.  Set the timestamps to the current time.  */
+/* Allocate a new inode and associate the specified dentry with it.  */
 struct wim_inode *
-new_inode(void)
+new_inode(struct wim_dentry *dentry, bool set_timestamps)
 {
-	struct wim_inode *inode = new_timeless_inode();
-	if (inode) {
+	struct wim_inode *inode;
+
+	inode = CALLOC(1, sizeof(struct wim_inode));
+	if (!inode)
+		return NULL;
+
+	inode->i_security_id = -1;
+	/*inode->i_nlink = 0;*/
+	inode->i_not_rpfixed = 1;
+	INIT_LIST_HEAD(&inode->i_list);
+	INIT_LIST_HEAD(&inode->i_dentry);
+	if (set_timestamps) {
 		u64 now = now_as_wim_timestamp();
 		inode->i_creation_time = now;
 		inode->i_last_access_time = now;
 		inode->i_last_write_time = now;
 	}
-	return inode;
-}
-
-/* Allocate a new inode.  Leave the timestamps zeroed out.  */
-struct wim_inode *
-new_timeless_inode(void)
-{
-	struct wim_inode *inode = CALLOC(1, sizeof(struct wim_inode));
-	if (inode) {
-		inode->i_security_id = -1;
-		/*inode->i_nlink = 0;*/
-		inode->i_not_rpfixed = 1;
-		INIT_LIST_HEAD(&inode->i_list);
-		INIT_LIST_HEAD(&inode->i_dentry);
-	}
+	d_associate(dentry, inode);
 	return inode;
 }
 

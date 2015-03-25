@@ -281,10 +281,7 @@ struct wim_inode {
 #define FILE_ATTRIBUTE_VIRTUAL             0x00010000
 
 extern struct wim_inode *
-new_inode(void) _malloc_attribute;
-
-extern struct wim_inode *
-new_timeless_inode(void) _malloc_attribute;
+new_inode(struct wim_dentry *dentry, bool set_timestamps);
 
 /* Iterate through each alias of the specified inode.  */
 #define inode_for_each_dentry(dentry, inode) \

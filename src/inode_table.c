@@ -96,7 +96,7 @@ inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
 	if (noshare) {
 		/* File that cannot be hardlinked--- Return a new inode with its
 		 * inode and device numbers left at 0. */
-		ret = new_dentry_with_timeless_inode(name, &dentry);
+		ret = new_dentry_with_new_inode(name, false, &dentry);
 		if (ret)
 			return ret;
 		list_add_tail(&dentry->d_inode->i_list, &table->extra_inodes);
@@ -105,35 +105,25 @@ inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
 		struct hlist_node *cur;
 
 		/* File that can be hardlinked--- search the table for an
-		 * existing inode matching the inode number and device;
-		 * otherwise create a new inode. */
-		ret = new_dentry(name, &dentry);
-		if (ret)
-			return ret;
-
-		/* Search for an existing inode having the same inode number and
-		 * device number.  */
+		 * existing inode matching the inode number and device.  */
 		pos = hash_u64(hash_u64(ino) + hash_u64(devno)) % table->capacity;
 		hlist_for_each_entry(inode, cur, &table->array[pos], i_hlist) {
 			if (inode->i_ino == ino && inode->i_devno == devno) {
 				/* Found; use the existing inode.  */
-				inode_ref_blobs(inode);
-				goto have_inode;
+				return new_dentry_with_existing_inode(name, inode,
+								      dentry_ret);
 			}
 		}
 
-		/* Create a new inode and insert it into the table.  */
-		inode = new_timeless_inode();
-		if (!inode) {
-			free_dentry(dentry);
-			return WIMLIB_ERR_NOMEM;
-		}
+		/* Not found; create a new inode and add it to the table.  */
+		ret = new_dentry_with_new_inode(name, false, &dentry);
+		if (ret)
+			return ret;
+		inode = dentry->d_inode;
 		inode->i_ino = ino;
 		inode->i_devno = devno;
 		hlist_add_head(&inode->i_hlist, &table->array[pos]);
 		table->num_entries++;
-	have_inode:
-		d_associate(dentry, inode);
 	}
 	*dentry_ret = dentry;
 	return 0;
