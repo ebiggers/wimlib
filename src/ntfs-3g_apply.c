@@ -124,7 +124,10 @@ sid_size(const wimlib_SID *sid)
 static u8 *
 sd_fixup(const u8 *_desc, size_t *size_p)
 {
-	u32 owner_offset, group_offset, dacl_offset, sacl_offset;
+	u32 owner_offset, group_offset, dacl_offset;
+#if !defined(HAVE_NTFS_MNT_RDONLY)
+	u32 sacl_offset;
+#endif
 	bool owner_valid, group_valid;
 	size_t size = *size_p;
 	const wimlib_SECURITY_DESCRIPTOR_RELATIVE *desc =
@@ -141,10 +144,12 @@ sd_fixup(const u8 *_desc, size_t *size_p)
 	else
 		dacl_offset = 0;
 
+#if !defined(HAVE_NTFS_MNT_RDONLY)
 	if (le16_to_cpu(desc->control) & wimlib_SE_SACL_PRESENT)
 		sacl_offset = le32_to_cpu(desc->sacl_offset);
 	else
 		sacl_offset = 0;
+#endif
 
 	/* Check if the security descriptor will be affected by one of the bugs.
 	 * If not, do nothing and return.
