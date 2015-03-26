@@ -59,6 +59,7 @@ new_inode(struct wim_dentry *dentry, bool set_timestamps)
 	inode->i_not_rpfixed = 1;
 	INIT_LIST_HEAD(&inode->i_list);
 	INIT_LIST_HEAD(&inode->i_dentry);
+	inode->i_streams = inode->i_embedded_streams;
 	if (set_timestamps) {
 		u64 now = now_as_wim_timestamp();
 		inode->i_creation_time = now;

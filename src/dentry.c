@@ -1299,9 +1299,7 @@ setup_inode_streams(const u8 *p, const u8 *end, struct wim_inode *inode,
 
 	inode->i_num_streams = 1 + num_extra_streams;
 
-	if (likely(inode->i_num_streams <= ARRAY_LEN(inode->i_embedded_streams))) {
-		inode->i_streams = inode->i_embedded_streams;
-	} else {
+	if (unlikely(inode->i_num_streams > ARRAY_LEN(inode->i_embedded_streams))) {
 		inode->i_streams = CALLOC(inode->i_num_streams,
 					  sizeof(inode->i_streams[0]));
 		if (!inode->i_streams)
