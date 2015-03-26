@@ -63,6 +63,7 @@ AC_CHECK_FUNCS([futimens utimensat flock mempcpy	\
 # Header checks, most of which are only here to satisfy conditional includes
 # made by the libntfs-3g headers.
 AC_CHECK_HEADERS([alloca.h		\
+		  attr/xattr.h		\
 		  byteswap.h		\
 		  endian.h		\
 		  errno.h		\
