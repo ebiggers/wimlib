@@ -228,6 +228,8 @@ lzx_read_codeword_lens(struct input_bitstream *istream, u8 *lens, unsigned num_l
 				run_len = 4 + bitstream_read_bits(istream, 1);
 				presym = read_huffsym_using_precode(istream,
 								    precode_decode_table);
+				if (unlikely(presym > 17))
+					return -1;
 				len = *len_ptr - presym;
 				if ((s8)len < 0)
 					len += 17;
