@@ -195,15 +195,15 @@ do_test 'echo -n > file;
 
 msg "file with empty named data stream and non-empty unnamed data stream"
 do_test 'echo 1 > file;
-	 setfattr -n user.ads -v "" file;'
+	 setfattr -n user.ads -v 0x file;'
 
 msg "file with empty named data stream and empty unnamed data stream"
 do_test 'echo -n > file;
-	 setfattr -n user.ads -v "" file;'
+	 setfattr -n user.ads -v 0x file;'
 
 msg "file with named data stream with hardlink"
 do_test 'echo 999 > file;
-	 setfattr -n user.ads -v "888" file;
+	 setfattr -n user.ads -v 0x123456 file;
 	 ln file link;'
 
 msg "C source code of wimlib"
