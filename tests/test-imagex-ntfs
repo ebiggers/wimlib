@@ -154,20 +154,6 @@ do_test "dd if=/dev/zero of=file bs=4096 count=10 &> /dev/null"
 msg "file with DOS name"
 do_test "echo 1 > file; setfattr -v file -n system.ntfs_dos_name file"
 
-# To be replaced/removed: files with DOS names can no longer be hard linked as
-# of NTFS-3g 2013.1.13.
-
-#msg "file with DOS name with alphabetically smaller hardlink in same directory"
-#do_test "echo 1 > file; setfattr -v file -n system.ntfs_dos_name file; ln file aaa_link"
-
-#msg "file with DOS name with alphabetically larger hardlink in same directory"
-#do_test "echo 1 > file; setfattr -v file -n system.ntfs_dos_name file; ln file zzz_link"
-
-#msg "file with long name and with DOS name with alphabetically smaller hardlink in same directory"
-#do_test 'echo 1 > file_with_a_long_name;
-	 #setfattr -v "file~1" -n system.ntfs_dos_name file_with_a_long_name;
-	 #ln file_with_a_long_name aaa_link'
-
 msg "many nested directories"
 do_test 'mkdir dir; mkdir dir/subdir; mkdir dir/subdir/subdir2; mkdir dir/subdir/subdir3'
 
@@ -219,15 +205,6 @@ msg "file with named data stream with hardlink"
 do_test 'echo 999 > file;
 	 setfattr -n user.ads -v "888" file;
 	 ln file link;'
-
-# To be replaced/removed: files with DOS names can no longer be hard linked as
-# of NTFS-3g 2013.1.13.
-
-#msg "file with named data stream with hardlink and DOS name"
-#do_test 'echo 999 > file;
-	 #setfattr -n user.ads -v "888" file;
-	 #ln file link;
-	 #setfattr -v DOSNAME -n system.ntfs_dos_name file;'
 
 msg "C source code of wimlib"
 do_test 'cp $srcdir/src/*.c .'
