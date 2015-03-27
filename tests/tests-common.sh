@@ -31,24 +31,94 @@ get_file_size()
 	fi
 }
 
-imagex()
-{
-	echo "imagex $@"
-	if [[ $1 == info || $1 == mountrw ]]; then
-		../../wimlib-imagex "$@"
-	else
-		../../wimlib-imagex "$@" > /dev/null
-	fi
-}
-
-imagex_raw()
+wimlib_imagex()
 {
 	../../wimlib-imagex "$@"
 }
 
+wimappend()
+{
+	wimlib_imagex append "$@" > null
+}
+
+wimapply()
+{
+	wimlib_imagex apply "$@" > null
+}
+
+wimcapture()
+{
+	wimlib_imagex capture "$@" > null
+}
+
+wimdelete()
+{
+	wimlib_imagex delete "$@" > null
+}
+
+wimdir()
+{
+	wimlib_imagex dir "$@"
+}
+
+wimexport()
+{
+	wimlib_imagex export "$@" > null
+}
+
+wimextract()
+{
+	wimlib_imagex extract "$@" > null
+}
+
+wiminfo()
+{
+	wimlib_imagex info "$@"
+}
+
+wimjoin()
+{
+	wimlib_imagex join "$@" > null
+}
+
+wimmount()
+{
+	wimlib_imagex mount "$@" > null
+}
+
+wimmountrw()
+{
+	wimlib_imagex mountrw "$@" > null
+}
+
+wimoptimize()
+{
+	wimlib_imagex optimize "$@" > null
+}
+
+wimsplit()
+{
+	wimlib_imagex split "$@" > null
+}
+
+wimunmount()
+{
+	wimlib_imagex unmount "$@" > null
+}
+
+wimupdate()
+{
+	wimlib_imagex update "$@" > null
+}
+
+wimverify()
+{
+	wimlib_imagex verify "$@" > null
+}
+
 wim_ctype()
 {
-	imagex info $1 | grep Compression | awk '{print $2}'
+	wiminfo $1 | grep Compression | awk '{print $2}'
 }
 
 default_cleanup()

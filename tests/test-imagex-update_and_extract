@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Test `imagex update' and `imagex extract'.
+# Test `wimupdate' and `wimextract'.
 
 set -e
 cd tests
@@ -29,12 +29,12 @@ trap fail exit
 prepare_empty_wim() {
 	rm -rf in.dir
 	mkdir in.dir
-	imagex capture in.dir test.wim --compress=none
+	wimcapture in.dir test.wim --compress=none
 }
 
 do_apply() {
 	rm -rf out.dir
-	imagex apply test.wim out.dir
+	wimapply test.wim out.dir
 }
 
 prepare_empty_wim
@@ -43,42 +43,42 @@ echo 1 > 1
 echo 2 > 2
 
 msg "Testing deleting nonexisting file from WIM image, without --force (errors expected)"
-! imagex update test.wim << EOF
+! wimupdate test.wim << EOF
 delete /nonexistent
 EOF
 
 msg "Testing deleting nonexisting file from WIM image, with --force"
-! imagex update test.wim << EOF
+! wimupdate test.wim << EOF
 delete --force /nonexistent
 EOF
 
 msg "Testing deleting root directory from WIM image, without --recursive (errors expected)"
-! imagex update test.wim << EOF
+! wimupdate test.wim << EOF
 delete /
 EOF
 
 msg "Testing deleting root directory from WIM image, with --recursive"
-imagex update test.wim << EOF
+wimupdate test.wim << EOF
 delete --recursive /
 EOF
 
 msg "Testing update command with invalid option (errors expected)"
-! imagex update test.wim << EOF
+! wimupdate test.wim << EOF
 delete --invalid-option --recursive /
 EOF
 
 msg "Testing update command with too many arguments (errors expected)"
-! imagex update test.wim << EOF
+! wimupdate test.wim << EOF
 delete --recursive --force / /anotherdir
 EOF
 
 msg "Testing invalid update command (errors expected)"
-! imagex update test.wim << EOF
+! wimupdate test.wim << EOF
 invalid /
 EOF
 
 msg "Testing update command file with comments and empty lines"
-imagex update test.wim << EOF
+wimupdate test.wim << EOF
 # this is a comment
 	# comment
 			
@@ -90,18 +90,18 @@ imagex update test.wim << EOF
 EOF
 
 msg "Testing update with --rebuild"
-imagex update --rebuild test.wim < /dev/null
+wimupdate --rebuild test.wim < /dev/null
 
 for flag in "" "--rebuild"; do
 	msg "Testing adding file to WIM image with flag \"$flag\""
-	imagex update test.wim $flag << EOF
+	wimupdate test.wim $flag << EOF
 add file /file
 EOF
 	do_apply
 	../tree-cmp file out.dir/file
 
 	msg "Testing deleting file from WIM image"
-	imagex update test.wim << EOF
+	wimupdate test.wim << EOF
 delete /file
 EOF
 	do_apply
@@ -109,10 +109,10 @@ EOF
 done
 
 msg "Testing renaming file in WIM image"
-imagex update test.wim << EOF
+wimupdate test.wim << EOF
 add file /file
 EOF
-imagex update test.wim << EOF
+wimupdate test.wim << EOF
 rename file newname
 EOF
 do_apply
@@ -120,7 +120,7 @@ do_apply
 
 prepare_empty_wim
 msg "Testing adding, then renaming file in WIM image in one command"
-imagex update test.wim << EOF
+wimupdate test.wim << EOF
 add file /file
 rename /file /newname
 EOF
@@ -129,10 +129,10 @@ do_apply
 
 msg "Testing adding additional file to WIM image"
 prepare_empty_wim
-imagex update test.wim << EOF
+wimupdate test.wim << EOF
 add 1 /1
 EOF
-imagex update test.wim << EOF
+wimupdate test.wim << EOF
 add file /file
 EOF
 do_apply
@@ -140,12 +140,12 @@ do_apply
 
 msg "Testing extracting file from WIM image"
 rm -rf out.dir && mkdir out.dir
-imagex extract test.wim 1 /file --dest-dir=out.dir
+wimextract test.wim 1 /file --dest-dir=out.dir
 ../tree-cmp file out.dir/file && [ ! -e out.dir/1 ]
 
 msg "Testing extracting file from WIM image to stdout"
 rm -rf out.dir && mkdir out.dir
-imagex_raw extract test.wim 1 /file --to-stdout > out.dir/file
+wimlib_imagex extract test.wim 1 /file --to-stdout > out.dir/file
 ../tree-cmp file out.dir/file && [ ! -e out.dir/1 ]
 
 msg "Testing adding directories and files to WIM image"
@@ -160,37 +160,37 @@ mkdir dir1/subdir
 ln dir1/5 dir1/5link
 ln dir2/6 dir2/6link
 prepare_empty_wim
-imagex update test.wim 1 << EOF
+wimupdate test.wim 1 << EOF
 add dir1 /dir1
 add dir2 /prefix/dir2
 EOF
 rm -rf out.dir && mkdir out.dir
-imagex extract test.wim 1 dir1 --dest-dir=out.dir
-imagex extract test.wim 1 prefix/dir2 --dest-dir=out.dir
+wimextract test.wim 1 dir1 --dest-dir=out.dir
+wimextract test.wim 1 prefix/dir2 --dest-dir=out.dir
 ../tree-cmp dir1 out.dir/dir1
 ../tree-cmp dir2 out.dir/dir2
 
 msg "Testing adding files to WIM image"
 rm -rf in.dir && mkdir in.dir
-imagex append in.dir test.wim "2"
+wimappend in.dir test.wim "2"
 cp $srcdir/src/*.c in.dir
-imagex update test.wim 2 << EOF
+wimupdate test.wim 2 << EOF
 add in.dir /
 add file /file
 EOF
 cp file in.dir/file
 rm -rf out.dir
-imagex apply test.wim 2 out.dir
+wimapply test.wim 2 out.dir
 ../tree-cmp in.dir out.dir
 
 msg "Testing adding file with space in it"
 echo hello > "Some File"
 prepare_empty_wim
-imagex update test.wim 1 << EOF
+wimupdate test.wim 1 << EOF
 	add 	"Some File" 	'Some Destination'
 EOF
 rm -rf out.dir
-imagex apply test.wim 1 out.dir
+wimapply test.wim 1 out.dir
 ../tree-cmp "Some File" out.dir/"Some Destination"
 
 msg "Testing path list extract"
@@ -198,7 +198,7 @@ echo hello1 > hello1
 echo hello2 > hello2
 echo otherfile > otherfile
 prepare_empty_wim
-imagex update test.wim 1 << EOF
+wimupdate test.wim 1 << EOF
 	add hello1 /hello1
 	add hello2 /hello2
 	add otherfile /otherfile
@@ -208,7 +208,7 @@ hello1
 hello2
 EOF
 rm -rf out.dir
-imagex extract test.wim 1 @pathlist --dest-dir=out.dir
+wimextract test.wim 1 @pathlist --dest-dir=out.dir
 ../tree-cmp hello1 out.dir/hello1
 ../tree-cmp hello2 out.dir/hello2
 [ ! -e out.dir/otherfile ]
@@ -218,7 +218,7 @@ cat > pathlist << EOF
 hello*
 EOF
 rm -rf out.dir
-imagex extract test.wim 1 @pathlist --dest-dir=out.dir
+wimextract test.wim 1 @pathlist --dest-dir=out.dir
 ../tree-cmp hello1 out.dir/hello1
 ../tree-cmp hello2 out.dir/hello2
 [ ! -e out.dir/otherfile ]
@@ -228,30 +228,30 @@ hello*
 EOF
 rm -rf out.dir
 msg "Testing path list extract (no wildcard, no match; error expected)"
-! imagex extract test.wim 1 @pathlist --dest-dir=out.dir --no-wildcards
+! wimextract test.wim 1 @pathlist --dest-dir=out.dir --no-wildcards
 
 cat > pathlist << EOF
 foobar*
 EOF
 rm -rf out.dir
 msg "Testing path list extract (wildcard, no match; error expected)"
-! imagex extract test.wim 1 @pathlist --dest-dir=out.dir
+! wimextract test.wim 1 @pathlist --dest-dir=out.dir
 msg "Testing path list extract (wildcard, no match, nullglob; no error expected)"
-imagex extract test.wim 1 @pathlist --dest-dir=out.dir --nullglob
+wimextract test.wim 1 @pathlist --dest-dir=out.dir --nullglob
 
 msg "Testing path list extract (w/ wildcard)"
 cat > pathlist << EOF
 *
 EOF
 rm -rf out.dir
-imagex extract test.wim 1 @pathlist --dest-dir=out.dir
+wimextract test.wim 1 @pathlist --dest-dir=out.dir
 ../tree-cmp hello1 out.dir/hello1
 ../tree-cmp hello2 out.dir/hello2
 ../tree-cmp otherfile out.dir/otherfile
 
 msg "Testing path list extract (subdir files)"
 prepare_empty_wim
-imagex update test.wim 1 << EOF
+wimupdate test.wim 1 << EOF
 	add hello1 /topdir/subdir1/hello1
 	add hello2 /topdir/subdir2/hello2
 	add hello1 /topdir/hello1
@@ -260,30 +260,30 @@ cat > pathlist << EOF
 /topdir/subdir?/hello*
 EOF
 rm -rf out.dir
-imagex extract test.wim 1 @pathlist --dest-dir=out.dir
+wimextract test.wim 1 @pathlist --dest-dir=out.dir
 ../tree-cmp hello1 out.dir/topdir/subdir1/hello1
 ../tree-cmp hello2 out.dir/topdir/subdir2/hello2
 [ ! -e out.dir/topdir/hello1 ]
 
 msg "Testing case insensitivity"
 prepare_empty_wim
-imagex update test.wim 1 << EOF
+wimupdate test.wim 1 << EOF
 	add hello1 /HELLO1
 EOF
 cat > pathlist << EOF
 hello1
 EOF
 rm -rf out.dir
-! WIMLIB_IMAGEX_IGNORE_CASE=0 imagex extract test.wim 1 @pathlist --dest-dir=out.dir
-! WIMLIB_IMAGEX_IGNORE_CASE=0 imagex extract test.wim 1 @pathlist --dest-dir=out.dir --no-wildcards
-WIMLIB_IMAGEX_IGNORE_CASE=1 imagex extract test.wim 1 @pathlist --dest-dir=out.dir
-WIMLIB_IMAGEX_IGNORE_CASE=1 imagex extract test.wim 1 @pathlist --dest-dir=out.dir --no-wildcards
+! WIMLIB_IMAGEX_IGNORE_CASE=0 wimextract test.wim 1 @pathlist --dest-dir=out.dir
+! WIMLIB_IMAGEX_IGNORE_CASE=0 wimextract test.wim 1 @pathlist --dest-dir=out.dir --no-wildcards
+WIMLIB_IMAGEX_IGNORE_CASE=1 wimextract test.wim 1 @pathlist --dest-dir=out.dir
+WIMLIB_IMAGEX_IGNORE_CASE=1 wimextract test.wim 1 @pathlist --dest-dir=out.dir --no-wildcards
 ../tree-cmp hello1 out.dir/HELLO1
 [ ! -e out.dir/topdir/hello1 ]
 
 
 echo "**********************************************************"
-echo "          imagex update/extract tests passed              "
+echo "          wimupdate/extract tests passed              "
 echo "**********************************************************"
 trap exit
 

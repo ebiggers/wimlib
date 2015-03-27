@@ -85,10 +85,10 @@ do_test() {
 	eval "$1"
 	cd ..
 	__do_unmount in.mnt
-	if ! imagex capture in.ntfs ntfs.wim; then
+	if ! wimcapture in.ntfs ntfs.wim; then
 		error "Failed to capture NTFS volume into a WIM"
 	fi
-	if ! imagex apply ntfs.wim 1 out.ntfs; then
+	if ! wimapply ntfs.wim 1 out.ntfs; then
 		error "Failed to apply WIM to NTFS volume"
 	fi
 	__do_mount in.ntfs in.mnt noatime

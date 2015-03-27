@@ -22,7 +22,7 @@ imagex_unmount() {
 	# "gvfs-gdu-volume-monitor" that apparently likes to randomly read
 	# filesystems that get mounted, thereby stopping them from being
 	# unmounted.
-	imagex unmount "$@" --lazy
+	wimunmount "$@" --lazy
 }
 
 cleanup() {
@@ -44,7 +44,7 @@ init() {
 	echo 'testing' > dir2/file
 	dd if=/dev/zero of=dir2/zeroes bs=4096 count=5
 	mkdir tmp.empty tmp.mnt tmp.apply tmp.orig
-	imagex capture tmp.empty empty.wim --norpfix
+	wimcapture tmp.empty empty.wim --norpfix
 }
 
 if [ ! -r /dev/fuse ] || [ ! -w /dev/fuse ]; then
@@ -58,15 +58,15 @@ mkdir $TEST_SUBDIR
 cd $TEST_SUBDIR
 init
 
-# imagex mount
+# wimmount
 
 for flag in "--compress=none" "--compress=maximum" "--compress=fast"; do
 	echo "Using flag $flag"
 	echo "Testing mounting WIM read-only"
-	if ! imagex capture dir dir.wim $flag; then
+	if ! wimcapture dir dir.wim $flag; then
 		error "Failed to capture WIM"
 	fi
-	if ! imagex mount dir.wim dir tmp.mnt; then
+	if ! wimmount dir.wim dir tmp.mnt; then
 		error "Failed to mount test WIM read-only. " \
 		      "Please read any error messages above before reporting this test failure. "\
 		      "Perhaps you don't have FUSE installed, or the FUSE kernel module isn't" \
@@ -102,7 +102,7 @@ for flag in "--compress=none" "--compress=maximum" "--compress=fast"; do
 		error "Unmounting read-only WIM failed"
 	fi
 	echo "Testing unmount of read-only filesystem with --commit given"
-	if ! imagex mount dir.wim dir tmp.mnt; then
+	if ! wimmount dir.wim dir tmp.mnt; then
 		error "Failed to re-mount WIM read-only"
 	fi
 	if ! imagex_unmount tmp.mnt --commit; then
@@ -111,12 +111,12 @@ for flag in "--compress=none" "--compress=maximum" "--compress=fast"; do
 	rm -rf dir.wim
 done
 
-# imagex mountrw
+# wimmountrw
 echo "Testing mounting WIM read-write"
-if ! imagex capture dir dir.wim; then
+if ! wimcapture dir dir.wim; then
 	error "Failed to capture WIM"
 fi
-if ! imagex mountrw dir.wim dir tmp.mnt; then
+if ! wimmountrw dir.wim dir tmp.mnt; then
 	error "Failed to mount test WIM read-write"
 fi
 echo "Testing unmounting WIM unmodified"
@@ -124,14 +124,14 @@ if ! imagex_unmount tmp.mnt; then
 	error "Failed to unmount test WIM unmodified"
 fi
 echo "Testing unmounting WIM unmodified with --commit and --check"
-if ! imagex mountrw dir.wim dir tmp.mnt; then
+if ! wimmountrw dir.wim dir tmp.mnt; then
 	error "Failed to re-mount test WIM read-write"
 fi
 if ! imagex_unmount tmp.mnt --commit --check; then
 	error "Failed to unmount read-write mounted WIM with changes commited (no changes made)"
 fi
 echo "Testing removing file from mounted WIM"
-if ! imagex mountrw dir.wim dir tmp.mnt; then
+if ! wimmountrw dir.wim dir tmp.mnt; then
 	error "Failed to re-mount test WIM read-write"
 fi
 if ! rm tmp.mnt/write.c; then
@@ -171,10 +171,10 @@ echo "Unmounting WIM with changes committed and --check"
 if ! imagex_unmount tmp.mnt --commit --check; then
 	error "Failed to unmount read-write mounted WIM"
 fi
-if test "`imagex info dir.wim | grep Integrity | awk '{print $3}'`" != "yes"; then
+if test "`wiminfo dir.wim | grep Integrity | awk '{print $3}'`" != "yes"; then
 	error "Integrity information was not included"
 fi
-if ! imagex apply dir.wim tmp.apply; then
+if ! wimapply dir.wim tmp.apply; then
 	error "Failed to apply WIM we had previously mounted read-write"
 fi
 if ! diff -q tmp.apply/newdir/zeroes1 tmp.apply/newdir/zeroes2; then
@@ -221,7 +221,7 @@ do_test() {
 	tar cf ../test.tar .
 	cd ..
 
-	if ! imagex mountrw test.wim tmp.mnt --unix-data; then
+	if ! wimmountrw test.wim tmp.mnt --unix-data; then
 		error "Failed to mount WIM read-write"
 	fi
 
@@ -254,7 +254,7 @@ do_test() {
 	if ! imagex_unmount tmp.mnt --commit; then
 		error "Failed to unmount WIM mounted read-write"
 	fi
-	if ! imagex apply test.wim tmp.apply; then
+	if ! wimapply test.wim tmp.apply; then
 		error "Failed to apply WIM we previously had mounted read-write"
 	fi
 	do_tree_cmp tmp.orig tmp.apply

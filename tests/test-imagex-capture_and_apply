@@ -39,14 +39,14 @@ do_test() {
 		if [ -x /usr/bin/tree -a "$ctype" = "None" ]; then
 			tree in.dir --inodes -F -s --noreport
 		fi
-		if ! imagex capture in.dir test.wim --compress=$ctype --norpfix; then
+		if ! wimcapture in.dir test.wim --compress=$ctype --norpfix; then
 			error "Failed to capture directory tree into a WIM"
 		fi
-		if ! imagex apply test.wim 1 out.dir; then
+		if ! wimapply test.wim 1 out.dir; then
 			error "Failed to apply WIM to directory"
 		fi
 		if [ `wim_ctype test.wim` != $ctype ]; then
-			error "'imagex info' didn't report the compression type on the captured WIM correctly"
+			error "'wiminfo' didn't report the compression type on the captured WIM correctly"
 		fi
 		do_tree_cmp
 		rm -rf out.dir/*
@@ -56,18 +56,18 @@ do_test() {
 		#
 		# LC_ALL=C avoids locale-dependent floating point number
 		# parsing.
-		if ! LC_ALL=C imagex split test.wim test.swm 0.01; then
+		if ! LC_ALL=C wimsplit test.wim test.swm 0.01; then
 			error "Failed to split WIM"
 		fi
-		if ! imagex apply test.swm 1 out.dir --ref "test*.swm" ; then
+		if ! wimapply test.swm 1 out.dir --ref "test*.swm" ; then
 			error "Failed to apply split WIM"
 		fi
 		do_tree_cmp
 		rm -rf out.dir/* test.wim
-		if ! imagex join test.wim test*.swm; then
+		if ! wimjoin test.wim test*.swm; then
 			error "Failed to join split WIM"
 		fi
-		if ! imagex apply test.wim out.dir; then
+		if ! wimapply test.wim out.dir; then
 			error "Failed to apply joined WIM"
 		fi
 		do_tree_cmp
@@ -76,11 +76,11 @@ do_test() {
 		# Can we export the image to another WIM, apply it, and get the
 		# same results?
 		(( image_name++ )) || true
-		if ! imagex export test.wim 1 test2.wim "$image_name"; then
+		if ! wimexport test.wim 1 test2.wim "$image_name"; then
 			error "Failed to export WIM image"
 		fi
 
-		if ! imagex apply test2.wim "$image_name" out.dir; then
+		if ! wimapply test2.wim "$image_name" out.dir; then
 			error "Failed to apply exported WIM image"
 		fi
 		do_tree_cmp
@@ -90,20 +90,20 @@ do_test() {
 		# though, it shouldn't make a difference).
 		if [ "$ctype" = "None" ]; then
 			# Capture pipable WIM (not writing to pipe)
-			if ! imagex capture in.dir test.wim \
+			if ! wimcapture in.dir test.wim \
 					--compress=$ctype --norpfix --pipable; then
 				error "Failed to capture directory tree into a pipable WIM"
 			fi
 
 			# Apply pipable WIM (reading from pipe)
-			if ! cat test.wim | imagex apply - 1 out.dir; then
+			if ! cat test.wim | wimapply - 1 out.dir; then
 				error "Failed to apply pipable WIM to directory (from pipe)"
 			fi
 			do_tree_cmp
 			rm -rf out.dir/*
 
 			# Apply pipable WIM (not reading from pipe)
-			if ! imagex apply test.wim 1 out.dir; then
+			if ! wimapply test.wim 1 out.dir; then
 				error "Failed to apply pipable WIM to directory (not from pipe)"
 			fi
 			do_tree_cmp
@@ -111,9 +111,9 @@ do_test() {
 
 			# Capture pipable WIM (writing to pipe) and read pipable
 			# WIM (reading from pipe)
-			if ! imagex_raw capture --pipable --compress=$ctype \
+			if ! wimlib_imagex capture --pipable --compress=$ctype \
 						--norpfix --pipable         \
-					    in.dir - | imagex apply - 1 out.dir; then
+					    in.dir - | wimapply - 1 out.dir; then
 				error "Failed to capture directory tree into a pipable WIM"
 			fi
 			do_tree_cmp
@@ -146,8 +146,8 @@ mkdir in.dir out.dir
 __msg "Testing default capture configuration file"
 touch in.dir/hiberfil.sys
 mkdir -p "in.dir/System Volume Information/subdir"
-imagex capture in.dir test.wim
-imagex apply test.wim out.dir
+wimcapture in.dir test.wim
+wimapply test.wim out.dir
 if [ -e out.dir/hiberfil.sys -o -e "out.dir/System Volume Information" ]; then
 	error "Files were not excluded from capture as expected"
 fi
@@ -163,31 +163,31 @@ ln -s /usr/bin/env         in.dir/absoutoftree
 ln -s file                 in.dir/relalink
 ln -s $PWD/in.dir/file     in.dir/abslink
 ln -s $PWD/in.dir/file///  in.dir/abslinkslashes
-imagex capture --rpfix in.dir test.wim
-imagex apply --norpfix test.wim out.dir
+wimcapture --rpfix in.dir test.wim
+wimapply --norpfix test.wim out.dir
 if [[ `readlink out.dir/absrootlink` != "/" ]] ||
    [[ `readlink out.dir/absrootlinkslashes` != "////" ]]; then
-	error "imagex capture --rpfix failed to fix absolute link to capture root"
+	error "wimcapture --rpfix failed to fix absolute link to capture root"
 fi
 
 if [[ ! -L out.dir/absnonexistent ]] ||
    [[ ! -L out.dir/absoutoftree ]]; then
-	error "imagex capture --rpfix failed to also capture out of tree absolute links"
+	error "wimcapture --rpfix failed to also capture out of tree absolute links"
 fi
 if [[ `readlink out.dir/relalink` != "file" ]]; then
-	error "imagex capture --rpfix failed to capture relative symlink"
+	error "wimcapture --rpfix failed to capture relative symlink"
 fi
 if [[ `readlink out.dir/abslink` != "/file" ]] ||
    [[ `readlink out.dir/abslinkslashes` != "/file///" ]]; then
-	error "imagex capture --rpfix did fix absolute link properly"
+	error "wimcapture --rpfix did fix absolute link properly"
 fi
 rm -rf out.dir
 
-imagex apply test.wim out.dir
+wimapply test.wim out.dir
 if [[ $(get_inode_number $(readlink out.dir/absrootlink)) != \
 	$(get_inode_number out.dir) ]];
 then
-	error "imagex apply failed to apply fixed absolute symlinks"
+	error "wimapply failed to apply fixed absolute symlinks"
 fi
 
 # Make sure source list mode is working as expected
@@ -204,8 +204,8 @@ in.dir /
 5      /5
 otherdir /otherdir
 EOF
-imagex capture srclist --source-list test.wim
-imagex apply test.wim out.dir
+wimcapture srclist --source-list test.wim
+wimapply test.wim out.dir
 if [[ ! -f out.dir/5 || ! -f out.dir/1 || ! -f out.dir/1link || \
       ! -d out.dir/otherdir ]]; then
 	error "source list capture failed to work as expected"
@@ -224,8 +224,8 @@ mkdir "overlay dir 1"
 mkdir "overlay dir 2"
 echo A > "overlay dir 1"/A
 echo B > "overlay dir 2"/B
-imagex capture srclist --source-list test.wim
-imagex apply test.wim out.dir
+wimcapture srclist --source-list test.wim
+wimapply test.wim out.dir
 if [[ ! -f out.dir/5 || ! -f out.dir/1 || ! -f out.dir/1link || \
       ! -f out.dir/otherdir/A || ! -f out.dir/otherdir/B ]]; then
 	error "source list capture (with quoted names and basic overlay) failed to work as expected"
@@ -242,8 +242,8 @@ echo 1 > in.dir.1/subdir/1
 echo 2 > in.dir.2/subdir/2
 echo 3 > in.dir.1/subdir/subdir2/3
 echo 4 > in.dir.2/subdir/subdir2/4
-imagex capture srclist --source-list test.wim
-imagex apply test.wim out.dir
+wimcapture srclist --source-list test.wim
+wimapply test.wim out.dir
 if [[ ! -f out.dir/subdir/1 || ! -f out.dir/subdir/2 ||	\
 	! -f out.dir/subdir/subdir2/3 || ! -f out.dir/subdir/subdir2/4 ]]; then
 	error "source list capture (with deep overlay) failed to work as expected"
@@ -258,12 +258,12 @@ in.dir.1	/
 in.dir.2	/
 5		/subdir
 EOF
-if imagex capture srclist --source-list test.wim; then
+if wimcapture srclist --source-list test.wim; then
 	error "unexpected success in bad overlay with --source-list!"
 fi
 
 echo "**********************************************************"
-echo "          imagex capture/apply tests passed               "
+echo "          wimcapture/apply tests passed               "
 echo "**********************************************************"
 
 cd ..
