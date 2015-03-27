@@ -179,6 +179,7 @@ load_ntfs_attrs_with_type(struct wim_inode *inode,
 	struct ntfs_location *ntfs_loc;
 	int ret;
 	struct blob_descriptor *blob;
+	utf16lechar *stream_name;
 
 	DEBUG("Loading NTFS attributes from \"%s\"", path);
 
@@ -197,7 +198,17 @@ load_ntfs_attrs_with_type(struct wim_inode *inode,
 		u64 data_size = ntfs_get_attribute_value_length(actx->attr);
 		size_t name_nchars = actx->attr->name_length;
 		struct wim_inode_stream *strm;
-		const utf16lechar *stream_name = NO_STREAM_NAME;
+
+		if (name_nchars) {
+			stream_name = utf16le_dupz(attr_record_name(actx->attr),
+						   name_nchars * sizeof(ntfschar));
+			if (!stream_name) {
+				ret = WIMLIB_ERR_NOMEM;
+				goto out_put_actx;
+			}
+		} else {
+			stream_name = NULL;
+		}
 
 		if (data_size == 0) {
 			/* Empty attribute.  No blob is needed. */
@@ -207,7 +218,7 @@ load_ntfs_attrs_with_type(struct wim_inode *inode,
 			ntfs_loc = CALLOC(1, sizeof(*ntfs_loc));
 			if (!ntfs_loc) {
 				ret = WIMLIB_ERR_NOMEM;
-				goto out_put_actx;
+				goto out_free_stream_name;
 			}
 			ntfs_loc->ntfs_vol = vol;
 			ntfs_loc->attr_type = type;
@@ -217,15 +228,12 @@ load_ntfs_attrs_with_type(struct wim_inode *inode,
 				goto out_free_ntfs_loc;
 			}
 			if (name_nchars) {
-				ntfs_loc->attr_name =
-					utf16le_dupz(attr_record_name(actx->attr),
-						     name_nchars * sizeof(ntfschar));
+				ntfs_loc->attr_name = utf16le_dup(stream_name);
 				if (!ntfs_loc->attr_name) {
 					ret = WIMLIB_ERR_NOMEM;
 					goto out_free_ntfs_loc;
 				}
 				ntfs_loc->attr_name_nchars = name_nchars;
-				stream_name = ntfs_loc->attr_name;
 			}
 
 			blob = new_blob_descriptor();
@@ -255,13 +263,16 @@ load_ntfs_attrs_with_type(struct wim_inode *inode,
 
 		strm = inode_add_stream(inode,
 					attr_type_to_wimlib_stream_type(type),
-					stream_name,
+					stream_name ? stream_name : NO_STREAM_NAME,
 					blob);
 		if (!strm) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto out_free_blob;
 		}
 		prepare_unhashed_blob(blob, inode, strm->stream_id, unhashed_blobs);
+
+		FREE(stream_name);
+		stream_name = NULL;
 	}
 	if (errno == ENOENT) {
 		ret = 0;
@@ -278,6 +289,8 @@ out_free_ntfs_loc:
 		FREE(ntfs_loc->attr_name);
 		FREE(ntfs_loc);
 	}
+out_free_stream_name:
+	FREE(stream_name);
 out_put_actx:
 	ntfs_attr_put_search_ctx(actx);
 	if (ret == 0)
