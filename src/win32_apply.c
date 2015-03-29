@@ -634,12 +634,12 @@ inode_longest_named_data_stream_spec(const struct wim_inode *inode)
 		const struct wim_inode_stream *strm = &inode->i_streams[i];
 		if (!stream_is_named_data_stream(strm))
 			continue;
-		size_t len = utf16le_len_bytes(strm->stream_name);
+		size_t len = utf16le_len_chars(strm->stream_name);
 		if (len > max)
 			max = len;
 	}
 	if (max)
-		max = 1 + (max / sizeof(wchar_t));
+		max += 1;
 	return max;
 }
 
