@@ -912,10 +912,7 @@ wim_reshdr_to_data(const struct wim_reshdr *reshdr, WIMStruct *wim, void **buf_r
 	struct blob_descriptor blob;
 
 	wim_res_hdr_to_desc(reshdr, wim, &rdesc);
-	blob_set_is_located_in_wim_resource(&blob, &rdesc);
-
-	blob.size = rdesc.uncompressed_size;
-	blob.offset_in_res = 0;
+	blob_set_is_located_in_nonsolid_wim_resource(&blob, &rdesc);
 
 	return read_full_blob_into_alloc_buf(&blob, buf_ret);
 }
@@ -929,10 +926,7 @@ wim_reshdr_to_hash(const struct wim_reshdr *reshdr, WIMStruct *wim,
 	int ret;
 
 	wim_res_hdr_to_desc(reshdr, wim, &rdesc);
-	blob_set_is_located_in_wim_resource(&blob, &rdesc);
-
-	blob.size = rdesc.uncompressed_size;
-	blob.offset_in_res = 0;
+	blob_set_is_located_in_nonsolid_wim_resource(&blob, &rdesc);
 	blob.unhashed = 1;
 
 	ret = sha1_blob(&blob);

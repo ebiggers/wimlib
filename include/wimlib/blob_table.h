@@ -345,13 +345,31 @@ blob_extraction_targets(struct blob_descriptor *blob)
 		return blob->blob_extraction_targets;
 }
 
+/*
+ * Declare that the specified blob is located in the specified WIM resource at
+ * the specified offset.  The caller is expected to set blob->size if required.
+ */
 static inline void
 blob_set_is_located_in_wim_resource(struct blob_descriptor *blob,
-				    struct wim_resource_descriptor *rdesc)
+				    struct wim_resource_descriptor *rdesc,
+				    u64 offset_in_res)
 {
 	blob->blob_location = BLOB_IN_WIM;
 	blob->rdesc = rdesc;
 	list_add_tail(&blob->rdesc_node, &rdesc->blob_list);
+	blob->offset_in_res = offset_in_res;
+}
+
+/*
+ * Declare that the specified blob is located in the specified non-solid WIM
+ * resource.  In this case, the blob data is the entire uncompressed resource.
+ */
+static inline void
+blob_set_is_located_in_nonsolid_wim_resource(struct blob_descriptor *blob,
+					     struct wim_resource_descriptor *rdesc)
+{
+	blob_set_is_located_in_wim_resource(blob, rdesc, 0);
+	blob->size = rdesc->uncompressed_size;
 }
 
 static inline void
@@ -359,6 +377,15 @@ blob_unset_is_located_in_wim_resource(struct blob_descriptor *blob)
 {
 	list_del(&blob->rdesc_node);
 	blob->blob_location = BLOB_NONEXISTENT;
+}
+
+static inline void
+blob_set_is_located_in_attached_buffer(struct blob_descriptor *blob,
+				       void *buffer, size_t size)
+{
+	blob->blob_location = BLOB_IN_ATTACHED_BUFFER;
+	blob->attached_buffer = buffer;
+	blob->size = size;
 }
 
 extern struct blob_descriptor *

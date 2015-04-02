@@ -503,9 +503,8 @@ unix_create_symlink(const struct wim_inode *inode, const char *path,
 	int ret;
 	struct blob_descriptor blob_override;
 
-	blob_override.blob_location = BLOB_IN_ATTACHED_BUFFER;
-	blob_override.attached_buffer = (void *)rpdata;
-	blob_override.size = rpdatalen;
+	blob_set_is_located_in_attached_buffer(&blob_override,
+					       (void *)rpdata, rpdatalen);
 
 	ret = wim_inode_readlink(inode, link_target,
 				 sizeof(link_target) - 1, &blob_override);

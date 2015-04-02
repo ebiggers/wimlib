@@ -1788,9 +1788,7 @@ write_wim_resource_from_buffer(const void *buf,
 	int ret;
 	struct blob_descriptor blob;
 
-	blob.blob_location = BLOB_IN_ATTACHED_BUFFER;
-	blob.attached_buffer = (void*)buf;
-	blob.size = buf_size;
+	blob_set_is_located_in_attached_buffer(&blob, (void *)buf, buf_size);
 	sha1_buffer(buf, buf_size, blob.hash);
 	blob.unhashed = 0;
 	blob.is_metadata = is_metadata;
