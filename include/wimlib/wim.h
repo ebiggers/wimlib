@@ -29,7 +29,7 @@ struct blob_table;
  *
  * Note 2: although this is the top-level data structure in wimlib, there do
  * exist cases in which a WIMStruct is not standalone:
- *	- streams have been referenced from another WIMStruct
+ *	- blobs have been referenced from another WIMStruct
  *	- an image has been imported into this WIMStruct from another
  *	  (as this references the metadata rather than copies it)
  *
@@ -154,7 +154,7 @@ struct WIMStruct {
 
 /*
  * Return true if and only if the WIM contains image metadata (actual directory
- * trees, not just a collection of streams and their checksums).
+ * trees, not just a collection of blobs and their checksums).
  *
  * See the description of the 'image_metadata' field.  Note that we return true
  * when the image count is 0 because it could be a WIM with 0 images.  It's only

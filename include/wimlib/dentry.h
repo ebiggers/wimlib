@@ -21,28 +21,18 @@ struct blob_table;
  * tree for each image in the WIM.
  *
  * Note that this is a directory entry and not an inode.  Since NTFS allows hard
- * links, it's possible for an NTFS inode to correspond to multiple WIM dentries.
- * The hard link group ID field of the on-disk WIM dentry tells us the number of
- * the NTFS inode that the dentry corresponds to (and this gets placed in
- * d_inode->i_ino).
+ * links, it's possible for an NTFS inode to correspond to multiple WIM
+ * dentries.  The hard link group ID field of the on-disk WIM dentry tells us
+ * the number of the NTFS inode that the dentry corresponds to (and this gets
+ * placed in d_inode->i_ino).
  *
  * Unfortunately, WIM files do not have an analogue to an inode; instead certain
- * information, such as file attributes, the security descriptor, and file
- * streams is replicated in each hard-linked dentry, even though this
- * information really is associated with an inode.  In-memory, we fix up this
- * flaw by allocating a `struct wim_inode' for each dentry that contains some of
- * this duplicated information, then combining the inodes for each hard link
- * group together.
- *
- * Confusingly, it's possible for stream information to be missing from a dentry
- * in a hard link set, in which case the stream information needs to be gotten
- * from one of the other dentries in the hard link set.  In addition, it is
- * possible for dentries to have inconsistent security IDs, file attributes, or
- * file streams when they share the same hard link ID (don't even ask.  I hope
- * that Microsoft may have fixed this problem, since I've only noticed it in the
- * 'install.wim' for Windows 7).  For those dentries, we have to use the
- * conflicting fields to split up the hard link groups.  (See
- * dentry_tree_fix_inodes() in inode_fixup.c.)
+ * information, such as file attributes, the security descriptor, and streams is
+ * replicated in each hard-linked dentry, even though this information really is
+ * associated with an inode.  In-memory, we fix up this flaw by allocating a
+ * `struct wim_inode' for each dentry that contains some of this duplicated
+ * information, then combining the inodes for each hard link group together.
+ * (See dentry_tree_fix_inodes().)
  */
 struct wim_dentry {
 	/* Pointer to the inode for this dentry.  This will contain some

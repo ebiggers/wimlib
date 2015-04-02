@@ -99,17 +99,8 @@ free_blob_table(struct blob_table *table)
 struct blob_descriptor *
 new_blob_descriptor(void)
 {
-	struct blob_descriptor *blob;
-
-	blob = CALLOC(1, sizeof(struct blob_descriptor));
-	if (blob == NULL)
-		return NULL;
-
-	/* blob->refcnt = 0  */
-	/* blob->blob_location = BLOB_NONEXISTENT  */
 	BUILD_BUG_ON(BLOB_NONEXISTENT != 0);
-
-	return blob;
+	return CALLOC(1, sizeof(struct blob_descriptor));
 }
 
 struct blob_descriptor *
@@ -1254,27 +1245,27 @@ new_blob_from_data_buffer(const void *buffer, size_t size,
 			  struct blob_table *blob_table)
 {
 	u8 hash[SHA1_HASH_SIZE];
-	struct blob_descriptor *blob, *existing_blob;
+	struct blob_descriptor *blob;
+	void *buffer_copy;
 
 	sha1_buffer(buffer, size, hash);
-	existing_blob = lookup_blob(blob_table, hash);
-	if (existing_blob) {
-		wimlib_assert(existing_blob->size == size);
-		blob = existing_blob;
-	} else {
-		void *buffer_copy;
-		blob = new_blob_descriptor();
-		if (blob == NULL)
-			return NULL;
-		buffer_copy = memdup(buffer, size);
-		if (buffer_copy == NULL) {
-			free_blob_descriptor(blob);
-			return NULL;
-		}
-		blob_set_is_located_in_attached_buffer(blob, buffer_copy, size);
-		copy_hash(blob->hash, hash);
-		blob_table_insert(blob_table, blob);
+
+	blob = lookup_blob(blob_table, hash);
+	if (blob)
+		return blob;
+
+	blob = new_blob_descriptor();
+	if (!blob)
+		return NULL;
+
+	buffer_copy = memdup(buffer, size);
+	if (!buffer_copy) {
+		free_blob_descriptor(blob);
+		return NULL;
 	}
+	blob_set_is_located_in_attached_buffer(blob, buffer_copy, size);
+	copy_hash(blob->hash, hash);
+	blob_table_insert(blob_table, blob);
 	return blob;
 }
 

@@ -55,16 +55,17 @@ enum blob_location {
 #endif
 };
 
-/* A "blob target" is a stream, and the inode to which that stream belongs, to
- * which a blob needs to be extracted as part of an extraction operation.  Since
- * blobs are single-instanced, a blob may have multiple targets.  */
+/* A "blob extraction target" is a stream, and the inode to which that stream
+ * belongs, to which a blob needs to be extracted as part of an extraction
+ * operation.  Since blobs are single-instanced, a blob may have multiple
+ * extraction targets.  */
 struct blob_extraction_target {
 	struct wim_inode *inode;
 	struct wim_inode_stream *stream;
 };
 
 /*
- * Descriptor for a blob, which is a known length sequence of binary data.
+ * Descriptor for a "blob", which is a known length sequence of binary data.
  *
  * Within a WIM file, blobs are single instanced and are identified by SHA-1
  * message digest.

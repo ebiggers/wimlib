@@ -13,7 +13,7 @@
  * be exactly this size.  */
 #define WIM_HEADER_DISK_SIZE 208
 
-/* Default WIM version number.  Streams are always compressed independently.  */
+/* Default WIM version number.  Blobs are always compressed independently.  */
 #define WIM_VERSION_DEFAULT 0x10d00
 
 /* Version number used for WIMs that allow multiple blobs combined into one

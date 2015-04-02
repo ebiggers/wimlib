@@ -313,13 +313,13 @@ wimlib_print_header(const WIMStruct *wim)
 	tprintf(T("Part Number                 = %hu\n"), hdr->part_number);
 	tprintf(T("Total Parts                 = %hu\n"), hdr->total_parts);
 	tprintf(T("Image Count                 = %u\n"), hdr->image_count);
-	tprintf(T("Blob Table Size           = %"PRIu64"\n"),
+	tprintf(T("Blob Table Size             = %"PRIu64"\n"),
 				(u64)hdr->blob_table_reshdr.size_in_wim);
-	tprintf(T("Blob Table Flags          = 0x%hhx\n"),
+	tprintf(T("Blob Table Flags            = 0x%hhx\n"),
 				(u8)hdr->blob_table_reshdr.flags);
-	tprintf(T("Blob Table Offset         = %"PRIu64"\n"),
+	tprintf(T("Blob Table Offset           = %"PRIu64"\n"),
 				hdr->blob_table_reshdr.offset_in_wim);
-	tprintf(T("Blob Table Original_size  = %"PRIu64"\n"),
+	tprintf(T("Blob Table Original_size    = %"PRIu64"\n"),
 				hdr->blob_table_reshdr.uncompressed_size);
 	tprintf(T("XML Data Size               = %"PRIu64"\n"),
 				(u64)hdr->xml_data_reshdr.size_in_wim);

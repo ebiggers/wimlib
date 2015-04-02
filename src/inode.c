@@ -438,7 +438,7 @@ inode_has_named_data_stream(const struct wim_inode *inode)
  *
  * If @force is %false:
  *	If any of the needed blobs do not exist in @table, return
- *	WIMLIB_ERR_RESOURCE_NOT_FOUND and leave the inode unmodified.
+ *	WIMLIB_ERR_RESOURCE_NOT_FOUND.
  * If @force is %true:
  *	If any of the needed blobs do not exist in @table, allocate new blob
  *	descriptors for them and insert them into @table.  This does not, of
@@ -453,14 +453,13 @@ int
 inode_resolve_streams(struct wim_inode *inode, struct blob_table *table,
 		      bool force)
 {
-	struct blob_descriptor *blobs[inode->i_num_streams];
-
 	for (unsigned i = 0; i < inode->i_num_streams; i++) {
+		struct wim_inode_stream *strm = &inode->i_streams[i];
 
-		if (inode->i_streams[i].stream_resolved)
+		if (strm->stream_resolved)
 			continue;
 
-		const u8 *hash = stream_hash(&inode->i_streams[i]);
+		const u8 *hash = stream_hash(strm);
 		struct blob_descriptor *blob = NULL;
 
 		if (!is_zero_hash(hash)) {
@@ -475,14 +474,8 @@ inode_resolve_streams(struct wim_inode *inode, struct blob_table *table,
 				blob_table_insert(table, blob);
 			}
 		}
-		blobs[i] = blob;
-	}
-
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-		if (!inode->i_streams[i].stream_resolved) {
-			inode->i_streams[i]._stream_blob = blobs[i];
-			inode->i_streams[i].stream_resolved = 1;
-		}
+		strm->_stream_blob = blob;
+		strm->stream_resolved = 1;
 	}
 	return 0;
 }
