@@ -77,32 +77,6 @@ struct blob_descriptor {
 	/* Uncompressed size of this blob  */
 	u64 size;
 
-	/* One of the `enum blob_location' values documented above.  */
-	u32 blob_location : 4;
-
-	/* 1 iff this blob contains "metadata" as opposed to data.  */
-	u32 is_metadata : 1;
-
-	/* 1 iff the SHA-1 message digest of this blob is unknown.  */
-	u32 unhashed : 1;
-
-	/* Temporary fields used when writing blobs; set as documented for
-	 * prepare_blob_list_for_write().  */
-	u32 unique_size : 1;
-	u32 will_be_in_output_wim : 1;
-
-	/* Set to 1 if this blob represents a metadata resource that has been
-	 * changed.  In such cases, the hash cannot be used to verify the data
-	 * if the metadata resource is read again.  (This could be avoided if we
-	 * used separate fields for input/output checksum, but most blobs
-	 * wouldn't need this.)  */
-	u32 dont_check_metadata_hash : 1;
-
-	u32 may_send_done_with_file : 1;
-
-	/* Only used by wimlib_export_image() */
-	u32 was_exported : 1;
-
 	union {
 		/*
 		 * For unhashed == 0: 'hash' is the SHA-1 message digest of the
@@ -151,6 +125,32 @@ struct blob_descriptor {
 	u16 num_opened_fds;
 #endif
 
+	/* One of the `enum blob_location' values documented above.  */
+	u16 blob_location : 4;
+
+	/* 1 iff this blob contains "metadata" as opposed to data.  */
+	u16 is_metadata : 1;
+
+	/* 1 iff the SHA-1 message digest of this blob is unknown.  */
+	u16 unhashed : 1;
+
+	/* Temporary fields used when writing blobs; set as documented for
+	 * prepare_blob_list_for_write().  */
+	u16 unique_size : 1;
+	u16 will_be_in_output_wim : 1;
+
+	/* Set to 1 if this blob represents a metadata resource that has been
+	 * changed.  In such cases, the hash cannot be used to verify the data
+	 * if the metadata resource is read again.  (This could be avoided if we
+	 * used separate fields for input/output checksum, but most blobs
+	 * wouldn't need this.)  */
+	u16 dont_check_metadata_hash : 1;
+
+	u16 may_send_done_with_file : 1;
+
+	/* Only used by wimlib_export_image() */
+	u16 was_exported : 1;
+
 	/* Specification of where this blob's data is located.  Which member of
 	 * this union is valid is determined by the @blob_location field.  */
 	union {
@@ -158,37 +158,45 @@ struct blob_descriptor {
 		struct {
 			struct wim_resource_descriptor *rdesc;
 			u64 offset_in_res;
+
+			/* Links together blobs that share the same underlying
+			 * WIM resource.  The head is rdesc->blob_list.  */
+			struct list_head rdesc_node;
 		};
 
-		/* BLOB_IN_FILE_ON_DISK
-		 * BLOB_IN_WINNT_FILE_ON_DISK
-		 * BLOB_WIN32_ENCRYPTED  */
 		struct {
-			tchar *file_on_disk;
-			struct wim_inode *file_inode;
+
+			union {
+
+				/* BLOB_IN_FILE_ON_DISK
+				 * BLOB_IN_WINNT_FILE_ON_DISK
+				 * BLOB_WIN32_ENCRYPTED  */
+				struct {
+					tchar *file_on_disk;
+					struct wim_inode *file_inode;
+				};
+
+				/* BLOB_IN_ATTACHED_BUFFER */
+				void *attached_buffer;
+
+			#ifdef WITH_FUSE
+				/* BLOB_IN_STAGING_FILE  */
+				struct {
+					char *staging_file_name;
+					int staging_dir_fd;
+				};
+			#endif
+
+			#ifdef WITH_NTFS_3G
+				/* BLOB_IN_NTFS_VOLUME  */
+				struct ntfs_location *ntfs_loc;
+			#endif
+			};
+
+			/* List link for per-WIM-image list of unhashed blobs */
+			struct list_head unhashed_list;
 		};
-
-		/* BLOB_IN_ATTACHED_BUFFER */
-		void *attached_buffer;
-
-#ifdef WITH_FUSE
-		/* BLOB_IN_STAGING_FILE  */
-		struct {
-			char *staging_file_name;
-			int staging_dir_fd;
-		};
-#endif
-
-#ifdef WITH_NTFS_3G
-		/* BLOB_IN_NTFS_VOLUME  */
-		struct ntfs_location *ntfs_loc;
-#endif
 	};
-
-	/* Links together blobs that share the same underlying WIM resource.
-	 * The head is the 'blob_list' member of
-	 * 'struct wim_resource_descriptor'.  */
-	struct list_head rdesc_node;
 
 	/* Temporary fields  */
 	union {
@@ -253,10 +261,6 @@ struct blob_descriptor {
 		/* Links original list of blobs in the read-write mounted image.  */
 		struct list_head orig_blob_list;
 	};
-
-	/* Links blobs that are still unhashed after being been added to a WIM.
-	 */
-	struct list_head unhashed_list;
 };
 
 extern struct blob_table *
