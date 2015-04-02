@@ -738,7 +738,6 @@ assign_blob_to_solid_resource(const struct wim_reshdr *reshdr,
 	/* XXX: This linear search will be slow in the degenerate case where the
 	 * number of solid resources in the run is huge.  */
 	blob->size = reshdr->size_in_wim;
-	blob->flags = reshdr->flags;
 	for (size_t i = 0; i < num_rdescs; i++) {
 		if (offset + blob->size <= rdescs[i]->uncompressed_size) {
 			blob->offset_in_res = offset;
@@ -1014,7 +1013,6 @@ read_blob_table(WIMStruct *wim)
 
 			cur_blob->offset_in_res = 0;
 			cur_blob->size = reshdr.uncompressed_size;
-			cur_blob->flags = reshdr.flags;
 
 			blob_set_is_located_in_wim_resource(cur_blob, rdesc);
 		}
@@ -1033,6 +1031,8 @@ read_blob_table(WIMStruct *wim)
 		}
 
 		if (reshdr.flags & WIM_RESHDR_FLAG_METADATA) {
+
+			cur_blob->is_metadata = 1;
 
 			/* Blob table entry for a metadata resource.  */
 
@@ -1155,9 +1155,9 @@ write_blob_descriptor(struct blob_descriptor_disk *disk_entry,
 }
 
 /* Note: the list of blob descriptors must be sorted so that all entries for the
- * same solid resource are consecutive.  In addition, blob descriptors with
- * WIM_RESHDR_FLAG_METADATA set must be in the same order as the indices of the
- * underlying images.  */
+ * same solid resource are consecutive.  In addition, blob descriptors for
+ * metadata resources must be in the same order as the indices of the underlying
+ * images.  */
 int
 write_blob_table_from_blob_list(struct list_head *blob_list,
 				struct filedes *out_fd,
@@ -1239,7 +1239,7 @@ write_blob_table_from_blob_list(struct list_head *blob_list,
 	 * compressed blob table, MS software cannot.  */
 	ret = write_wim_resource_from_buffer(table_buf,
 					     table_size,
-					     WIM_RESHDR_FLAG_METADATA,
+					     true,
 					     out_fd,
 					     WIMLIB_COMPRESSION_TYPE_NONE,
 					     0,
@@ -1355,8 +1355,10 @@ blob_to_wimlib_resource_entry(const struct blob_descriptor *blob,
 
 	wentry->uncompressed_size = blob->size;
 	if (blob->blob_location == BLOB_IN_WIM) {
+		unsigned res_flags = blob->rdesc->flags;
+
 		wentry->part_number = blob->rdesc->wim->hdr.part_number;
-		if (blob->flags & WIM_RESHDR_FLAG_SOLID) {
+		if (res_flags & WIM_RESHDR_FLAG_SOLID) {
 			wentry->offset = blob->offset_in_res;
 		} else {
 			wentry->compressed_size = blob->rdesc->size_in_wim;
@@ -1365,14 +1367,15 @@ blob_to_wimlib_resource_entry(const struct blob_descriptor *blob,
 		wentry->raw_resource_offset_in_wim = blob->rdesc->offset_in_wim;
 		wentry->raw_resource_compressed_size = blob->rdesc->size_in_wim;
 		wentry->raw_resource_uncompressed_size = blob->rdesc->uncompressed_size;
+
+		wentry->is_compressed = (res_flags & WIM_RESHDR_FLAG_COMPRESSED) != 0;
+		wentry->is_free = (res_flags & WIM_RESHDR_FLAG_FREE) != 0;
+		wentry->is_spanned = (res_flags & WIM_RESHDR_FLAG_SPANNED) != 0;
+		wentry->packed = (res_flags & WIM_RESHDR_FLAG_SOLID) != 0;
 	}
 	copy_hash(wentry->sha1_hash, blob->hash);
 	wentry->reference_count = blob->refcnt;
-	wentry->is_compressed = (blob->flags & WIM_RESHDR_FLAG_COMPRESSED) != 0;
-	wentry->is_metadata = (blob->flags & WIM_RESHDR_FLAG_METADATA) != 0;
-	wentry->is_free = (blob->flags & WIM_RESHDR_FLAG_FREE) != 0;
-	wentry->is_spanned = (blob->flags & WIM_RESHDR_FLAG_SPANNED) != 0;
-	wentry->packed = (blob->flags & WIM_RESHDR_FLAG_SOLID) != 0;
+	wentry->is_metadata = blob->is_metadata;
 }
 
 struct iterate_blob_context {

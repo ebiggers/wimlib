@@ -1018,9 +1018,10 @@ renew_current_image(struct wimfs_context *ctx)
 	new_blob = new_blob_descriptor();
 	if (!new_blob)
 		goto err_put_replace_imd;
+
 	new_blob->refcnt = 1;
-	new_blob->flags = WIM_RESHDR_FLAG_METADATA;
 	new_blob->unhashed = 1;
+	new_blob->is_metadata = 1;
 
 	/* Make the image being moved available at a new index.  Increments the
 	 * WIM's image count, but does not increment the reference count of the

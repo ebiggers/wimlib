@@ -1581,7 +1581,7 @@ write_wim_xml_data(WIMStruct *wim, int image, u64 total_bytes,
 	 * compressed XML data, MS software cannot.  */
 	ret = write_wim_resource_from_buffer(xml_data,
 					     xml_len,
-					     WIM_RESHDR_FLAG_METADATA,
+					     true,
 					     &wim->out_fd,
 					     WIMLIB_COMPRESSION_TYPE_NONE,
 					     0,

@@ -64,12 +64,14 @@ write_wim_part(WIMStruct *wim,
 	       const u8 *guid);
 
 int
-write_wim_resource_from_buffer(const void *buf, size_t buf_size,
-			       int reshdr_flags, struct filedes *out_fd,
+write_wim_resource_from_buffer(const void *buf,
+			       size_t buf_size,
+			       bool is_metadata,
+			       struct filedes *out_fd,
 			       int out_ctype,
 			       u32 out_chunk_size,
 			       struct wim_reshdr *out_reshdr,
-			       u8 *hash,
+			       u8 *hash_ret,
 			       int write_resource_flags);
 
 #endif /* _WIMLIB_WRITE_H */

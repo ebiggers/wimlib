@@ -182,6 +182,9 @@ static inline bool wim_is_pipable(const WIMStruct *wim)
 	return (wim->hdr.magic == PWM_MAGIC);
 }
 
+extern bool
+wim_has_solid_resources(const WIMStruct *wim);
+
 extern int
 set_wim_hdr_cflags(int ctype, struct wim_header *hdr);
 

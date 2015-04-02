@@ -150,11 +150,6 @@ add_blob_to_swm(struct blob_descriptor *blob, void *_swm_info)
 	struct swm_info *swm_info = _swm_info;
 	u64 blob_stored_size;
 
-	if (blob_is_in_solid_wim_resource(blob)) {
-		ERROR("Splitting of WIM containing solid resources is not supported.\n"
-		      "        Export it in non-solid format first.");
-		return WIMLIB_ERR_UNSUPPORTED;
-	}
 	if (blob->blob_location == BLOB_IN_WIM)
 		blob_stored_size = blob->rdesc->size_in_wim;
 	else
@@ -168,8 +163,8 @@ add_blob_to_swm(struct blob_descriptor *blob, void *_swm_info)
 	if (swm_info->num_parts == 0 ||
 	    ((swm_info->parts[swm_info->num_parts - 1].size +
 			blob_stored_size >= swm_info->max_part_size)
-	     && !((blob->flags & WIM_RESHDR_FLAG_METADATA) ||
-		   swm_info->parts[swm_info->num_parts - 1].size == 0)))
+	     && !(blob->is_metadata ||
+		  swm_info->parts[swm_info->num_parts - 1].size == 0)))
 	{
 		if (swm_info->num_parts == swm_info->num_alloc_parts) {
 			struct swm_part_info *parts;
@@ -192,7 +187,7 @@ add_blob_to_swm(struct blob_descriptor *blob, void *_swm_info)
 		swm_info->parts[swm_info->num_parts - 1].size = 0;
 	}
 	swm_info->parts[swm_info->num_parts - 1].size += blob_stored_size;
-	if (!(blob->flags & WIM_RESHDR_FLAG_METADATA)) {
+	if (!blob->is_metadata) {
 		list_add_tail(&blob->write_blobs_list,
 			      &swm_info->parts[swm_info->num_parts - 1].blob_list);
 	}
@@ -217,6 +212,12 @@ wimlib_split(WIMStruct *wim, const tchar *swm_name,
 
 	if (!wim_has_metadata(wim))
 		return WIMLIB_ERR_METADATA_NOT_FOUND;
+
+	if (wim_has_solid_resources(wim)) {
+		ERROR("Splitting of WIM containing solid resources is not supported.\n"
+		      "        Export it in non-solid format first.");
+		return WIMLIB_ERR_UNSUPPORTED;
+	}
 
 	memset(&swm_info, 0, sizeof(swm_info));
 	swm_info.max_part_size = part_size;

@@ -143,6 +143,19 @@ wim_default_chunk_size(int ctype)
 	}
 }
 
+static int
+is_blob_in_solid_resource(struct blob_descriptor *blob, void *_ignore)
+{
+	return blob->blob_location == BLOB_IN_WIM &&
+		(blob->rdesc->flags & WIM_RESHDR_FLAG_SOLID);
+}
+
+bool
+wim_has_solid_resources(const WIMStruct *wim)
+{
+	return for_blob_in_table(wim->blob_table, is_blob_in_solid_resource, NULL);
+}
+
 /*
  * Calls a function on images in the WIM.  If @image is WIMLIB_ALL_IMAGES,
  * @visitor is called on the WIM once for each image, with each image selected

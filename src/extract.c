@@ -182,9 +182,9 @@ read_pwm_blob_header(WIMStruct *pwm, struct blob_descriptor *blob,
 	reshdr.uncompressed_size = le64_to_cpu(buf.blob_hdr.uncompressed_size);
 	wim_res_hdr_to_desc(&reshdr, pwm, rdesc);
 	blob_set_is_located_in_wim_resource(blob, rdesc);
-	blob->flags = rdesc->flags;
 	blob->size = rdesc->uncompressed_size;
 	blob->offset_in_res = 0;
+	blob->is_metadata = (rdesc->flags & WIM_RESHDR_FLAG_METADATA) != 0;
 	return 0;
 
 read_error:
@@ -230,12 +230,11 @@ read_blobs_from_pipe(struct apply_ctx *ctx,
 			goto out;
 
 		if ((found_blob->blob_location != BLOB_NONEXISTENT)
-		    && !(found_blob->flags & WIM_RESHDR_FLAG_METADATA)
+		    && !found_blob->is_metadata
 		    && (needed_blob = lookup_blob(blob_table, found_blob->hash))
 		    && (needed_blob->out_refcnt))
 		{
 			needed_blob->offset_in_res = found_blob->offset_in_res;
-			needed_blob->flags = found_blob->flags;
 			needed_blob->size = found_blob->size;
 
 			blob_unset_is_located_in_wim_resource(found_blob);
@@ -1926,8 +1925,7 @@ wimlib_extract_image_from_pipe_with_progress(int pipe_fd,
 		if (ret)
 			goto out_wimlib_free;
 
-		if (!(xml_blob.flags & WIM_RESHDR_FLAG_METADATA))
-		{
+		if (!xml_blob.is_metadata) {
 			ERROR("Expected XML data, but found non-metadata resource.");
 			ret = WIMLIB_ERR_INVALID_PIPABLE_WIM;
 			goto out_wimlib_free;
@@ -1996,7 +1994,7 @@ wimlib_extract_image_from_pipe_with_progress(int pipe_fd,
 			goto out_wimlib_free;
 		}
 
-		if (!(metadata_blob->flags & WIM_RESHDR_FLAG_METADATA)) {
+		if (!metadata_blob->is_metadata) {
 			ERROR("Expected metadata resource, but found "
 			      "non-metadata resource.");
 			ret = WIMLIB_ERR_INVALID_PIPABLE_WIM;

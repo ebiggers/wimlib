@@ -310,11 +310,6 @@ struct pwm_blob_hdr {
 					/* +40  */
 } _packed_attribute;
 
-/* Extra flag for the @flags field in `struct pwm_blob_hdr': Indicates that the
- * SHA-1 message digest of the stream has not been calculated.  Currently only
- * used for the XML data.  */
-#define PWM_RESHDR_FLAG_UNHASHED         0x100
-
 /* Header that precedes each chunk of a compressed resource in a pipable WIM.
  */
 struct pwm_chunk_hdr {

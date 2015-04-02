@@ -80,8 +80,8 @@ struct blob_descriptor {
 	/* One of the `enum blob_location' values documented above.  */
 	u32 blob_location : 4;
 
-	/* Blob flags (WIM_RESHDR_FLAG_*)  */
-	u32 flags : 8;
+	/* 1 iff this blob contains "metadata" as opposed to data.  */
+	u32 is_metadata : 1;
 
 	/* 1 iff the SHA-1 message digest of this blob is unknown.  */
 	u32 unhashed : 1;
@@ -331,24 +331,6 @@ sort_blob_list_by_sequential_order(struct list_head *blob_list,
 
 extern int
 cmp_blobs_by_sequential_order(const void *p1, const void *p2);
-
-static inline bool
-blob_is_in_solid_wim_resource(const struct blob_descriptor *blob)
-{
-	return blob->blob_location == BLOB_IN_WIM &&
-	       blob->size != blob->rdesc->uncompressed_size;
-}
-
-static inline bool
-blob_is_in_file(const struct blob_descriptor *blob)
-{
-	return blob->blob_location == BLOB_IN_FILE_ON_DISK
-#ifdef __WIN32__
-	    || blob->blob_location == BLOB_IN_WINNT_FILE_ON_DISK
-	    || blob->blob_location == BLOB_WIN32_ENCRYPTED
-#endif
-	   ;
-}
 
 static inline const struct blob_extraction_target *
 blob_extraction_targets(struct blob_descriptor *blob)

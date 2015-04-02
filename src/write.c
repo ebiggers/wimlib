@@ -212,13 +212,13 @@ can_raw_copy(const struct blob_descriptor *blob,
 	return false;
 }
 
-static u8
-filter_resource_flags(u8 flags)
+static u32
+reshdr_flags_for_blob(const struct blob_descriptor *blob)
 {
-	return (flags & ~(WIM_RESHDR_FLAG_SOLID |
-			  WIM_RESHDR_FLAG_COMPRESSED |
-			  WIM_RESHDR_FLAG_SPANNED |
-			  WIM_RESHDR_FLAG_FREE));
+	u32 reshdr_flags = 0;
+	if (blob->is_metadata)
+		reshdr_flags |= WIM_RESHDR_FLAG_METADATA;
+	return reshdr_flags;
 }
 
 static void
@@ -230,9 +230,6 @@ blob_set_out_reshdr_for_reuse(struct blob_descriptor *blob)
 	rdesc = blob->rdesc;
 
 	if (rdesc->flags & WIM_RESHDR_FLAG_SOLID) {
-
-		wimlib_assert(blob->flags & WIM_RESHDR_FLAG_SOLID);
-
 		blob->out_reshdr.offset_in_wim = blob->offset_in_res;
 		blob->out_reshdr.uncompressed_size = 0;
 		blob->out_reshdr.size_in_wim = blob->size;
@@ -241,36 +238,31 @@ blob_set_out_reshdr_for_reuse(struct blob_descriptor *blob)
 		blob->out_res_size_in_wim = rdesc->size_in_wim;
 		blob->out_res_uncompressed_size = rdesc->uncompressed_size;
 	} else {
-		wimlib_assert(!(blob->flags & WIM_RESHDR_FLAG_SOLID));
-
 		blob->out_reshdr.offset_in_wim = rdesc->offset_in_wim;
 		blob->out_reshdr.uncompressed_size = rdesc->uncompressed_size;
 		blob->out_reshdr.size_in_wim = rdesc->size_in_wim;
 	}
-	blob->out_reshdr.flags = blob->flags;
+	blob->out_reshdr.flags = rdesc->flags;
 }
 
 
 /* Write the header for a blob in a pipable WIM.  */
 static int
 write_pwm_blob_header(const struct blob_descriptor *blob,
-		      struct filedes *out_fd, int additional_reshdr_flags)
+		      struct filedes *out_fd, bool compressed)
 {
 	struct pwm_blob_hdr blob_hdr;
 	u32 reshdr_flags;
 	int ret;
 
+	wimlib_assert(!blob->unhashed);
+
 	blob_hdr.magic = cpu_to_le64(PWM_BLOB_MAGIC);
 	blob_hdr.uncompressed_size = cpu_to_le64(blob->size);
-	if (additional_reshdr_flags & PWM_RESHDR_FLAG_UNHASHED) {
-		zero_out_hash(blob_hdr.hash);
-	} else {
-		wimlib_assert(!blob->unhashed);
-		copy_hash(blob_hdr.hash, blob->hash);
-	}
-
-	reshdr_flags = filter_resource_flags(blob->flags);
-	reshdr_flags |= additional_reshdr_flags;
+	copy_hash(blob_hdr.hash, blob->hash);
+	reshdr_flags = reshdr_flags_for_blob(blob);
+	if (compressed)
+		reshdr_flags |= WIM_RESHDR_FLAG_COMPRESSED;
 	blob_hdr.flags = cpu_to_le32(reshdr_flags);
 	ret = full_write(out_fd, &blob_hdr, sizeof(blob_hdr));
 	if (ret)
@@ -877,8 +869,9 @@ should_rewrite_blob_uncompressed(const struct write_blobs_ctx *ctx,
 	 * uncompressed data by decompressing the compressed data we wrote to
 	 * the output file.
 	 */
-	if ((blob->flags & WIM_RESHDR_FLAG_SOLID) &&
-	    (blob->out_reshdr.size_in_wim != blob->out_reshdr.uncompressed_size))
+	if (blob->blob_location == BLOB_IN_WIM &&
+	    blob->size != blob->rdesc->uncompressed_size &&
+	    blob->size != blob->out_reshdr.size_in_wim)
 		return false;
 
 	return true;
@@ -926,15 +919,10 @@ write_chunk(struct write_blobs_ctx *ctx, const void *cchunk,
 		/* Starting to write a new blob in non-solid mode.  */
 
 		if (ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PIPABLE) {
-			int additional_reshdr_flags = 0;
-			if (ctx->compressor != NULL)
-				additional_reshdr_flags |= WIM_RESHDR_FLAG_COMPRESSED;
-
 			DEBUG("Writing pipable WIM blob header "
 			      "(offset=%"PRIu64")", ctx->out_fd->offset);
-
 			ret = write_pwm_blob_header(blob, ctx->out_fd,
-						    additional_reshdr_flags);
+						    ctx->compressor != NULL);
 			if (ret)
 				return ret;
 		}
@@ -1007,7 +995,7 @@ write_chunk(struct write_blobs_ctx *ctx, const void *cchunk,
 			if (ret)
 				return ret;
 
-			blob->out_reshdr.flags = filter_resource_flags(blob->flags);
+			blob->out_reshdr.flags = reshdr_flags_for_blob(blob);
 			if (ctx->compressor != NULL)
 				blob->out_reshdr.flags |= WIM_RESHDR_FLAG_COMPRESSED;
 
@@ -1365,9 +1353,20 @@ remove_empty_blobs(struct list_head *blob_list)
 			blob->out_reshdr.offset_in_wim = 0;
 			blob->out_reshdr.size_in_wim = 0;
 			blob->out_reshdr.uncompressed_size = 0;
-			blob->out_reshdr.flags = filter_resource_flags(blob->flags);
+			blob->out_reshdr.flags = reshdr_flags_for_blob(blob);
 		}
 	}
+}
+
+static inline bool
+blob_is_in_file(const struct blob_descriptor *blob)
+{
+	return blob->blob_location == BLOB_IN_FILE_ON_DISK
+#ifdef __WIN32__
+	    || blob->blob_location == BLOB_IN_WINNT_FILE_ON_DISK
+	    || blob->blob_location == BLOB_WIN32_ENCRYPTED
+#endif
+	   ;
 }
 
 static void
@@ -1681,8 +1680,8 @@ write_blob_list(struct list_head *blob_list,
 		offset_in_res = 0;
 		list_for_each_entry(blob, &ctx.blobs_in_solid_resource, write_blobs_list) {
 			blob->out_reshdr.size_in_wim = blob->size;
-			blob->out_reshdr.flags = filter_resource_flags(blob->flags);
-			blob->out_reshdr.flags |= WIM_RESHDR_FLAG_SOLID;
+			blob->out_reshdr.flags = reshdr_flags_for_blob(blob) |
+						 WIM_RESHDR_FLAG_SOLID;
 			blob->out_reshdr.uncompressed_size = 0;
 			blob->out_reshdr.offset_in_wim = offset_in_res;
 			blob->out_res_offset_in_wim = reshdr.offset_in_wim;
@@ -1707,17 +1706,6 @@ out_destroy_context:
 	return ret;
 }
 
-static int
-is_blob_in_solid_resource(struct blob_descriptor *blob, void *_ignore)
-{
-	return blob_is_in_solid_wim_resource(blob);
-}
-
-static bool
-wim_has_solid_resources(WIMStruct *wim)
-{
-	return for_blob_in_table(wim->blob_table, is_blob_in_solid_resource, NULL);
-}
 
 static int
 wim_write_blob_list(WIMStruct *wim,
@@ -1762,6 +1750,7 @@ wim_write_blob_list(WIMStruct *wim,
 			       wim->progctx);
 }
 
+/* Write the contents of the specified blob as a WIM resource.  */
 static int
 write_wim_resource(struct blob_descriptor *blob,
 		   struct filedes *out_fd,
@@ -1784,51 +1773,38 @@ write_wim_resource(struct blob_descriptor *blob,
 			       NULL);
 }
 
+/* Write the contents of the specified buffer as a WIM resource.  */
 int
-write_wim_resource_from_buffer(const void *buf, size_t buf_size,
-			       int reshdr_flags, struct filedes *out_fd,
+write_wim_resource_from_buffer(const void *buf,
+			       size_t buf_size,
+			       bool is_metadata,
+			       struct filedes *out_fd,
 			       int out_ctype,
 			       u32 out_chunk_size,
 			       struct wim_reshdr *out_reshdr,
-			       u8 *hash,
+			       u8 *hash_ret,
 			       int write_resource_flags)
 {
 	int ret;
-	struct blob_descriptor *blob;
+	struct blob_descriptor blob;
 
-	/* Set up a temporary blob descriptor to provide to
-	 * write_wim_resource().  */
+	blob.blob_location = BLOB_IN_ATTACHED_BUFFER;
+	blob.attached_buffer = (void*)buf;
+	blob.size = buf_size;
+	sha1_buffer(buf, buf_size, blob.hash);
+	blob.unhashed = 0;
+	blob.is_metadata = is_metadata;
 
-	blob = new_blob_descriptor();
-	if (blob == NULL)
-		return WIMLIB_ERR_NOMEM;
-
-	blob->blob_location = BLOB_IN_ATTACHED_BUFFER;
-	blob->attached_buffer = (void*)buf;
-	blob->size = buf_size;
-	blob->flags = reshdr_flags;
-
-	if (write_resource_flags & WRITE_RESOURCE_FLAG_PIPABLE) {
-		sha1_buffer(buf, buf_size, blob->hash);
-		blob->unhashed = 0;
-	} else {
-		blob->unhashed = 1;
-	}
-
-	ret = write_wim_resource(blob, out_fd, out_ctype, out_chunk_size,
+	ret = write_wim_resource(&blob, out_fd, out_ctype, out_chunk_size,
 				 write_resource_flags);
 	if (ret)
-		goto out_free_blob;
+		return ret;
 
-	copy_reshdr(out_reshdr, &blob->out_reshdr);
+	copy_reshdr(out_reshdr, &blob.out_reshdr);
 
-	if (hash)
-		copy_hash(hash, blob->hash);
-	ret = 0;
-out_free_blob:
-	blob->blob_location = BLOB_NONEXISTENT;
-	free_blob_descriptor(blob);
-	return ret;
+	if (hash_ret)
+		copy_hash(hash_ret, blob.hash);
+	return 0;
 }
 
 struct blob_size_table {
@@ -2215,7 +2191,7 @@ write_file_blobs(WIMStruct *wim, int image, int write_flags,
 }
 
 static int
-write_metadata_blobs(WIMStruct *wim, int image, int write_flags)
+write_metadata_resources(WIMStruct *wim, int image, int write_flags)
 {
 	int ret;
 	int start_image;
@@ -2719,7 +2695,7 @@ write_pipable_wim(WIMStruct *wim, int image, int write_flags,
 
 	/* Write metadata resources for the image(s) being included in the
 	 * output WIM.  */
-	ret = write_metadata_blobs(wim, image, write_flags);
+	ret = write_metadata_resources(wim, image, write_flags);
 	if (ret)
 		return ret;
 
@@ -2980,7 +2956,7 @@ write_wim_part(WIMStruct *wim,
 	if (ret)
 		goto out_restore_hdr;
 
-	/* Write metadata resources and blobs.  */
+	/* Write file blobs and metadata resources.  */
 	if (!(write_flags & WIMLIB_WRITE_FLAG_PIPABLE)) {
 		/* Default case: create a normal (non-pipable) WIM.  */
 		ret = write_file_blobs(wim, image, write_flags,
@@ -2990,7 +2966,7 @@ write_wim_part(WIMStruct *wim,
 		if (ret)
 			goto out_restore_hdr;
 
-		ret = write_metadata_blobs(wim, image, write_flags);
+		ret = write_metadata_resources(wim, image, write_flags);
 		if (ret)
 			goto out_restore_hdr;
 	} else {
@@ -3266,7 +3242,7 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 	if (ret)
 		goto out_truncate;
 
-	ret = write_metadata_blobs(wim, WIMLIB_ALL_IMAGES, write_flags);
+	ret = write_metadata_resources(wim, WIMLIB_ALL_IMAGES, write_flags);
 	if (ret)
 		goto out_truncate;
 

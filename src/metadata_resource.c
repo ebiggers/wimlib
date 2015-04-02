@@ -244,7 +244,9 @@ write_metadata_resource(WIMStruct *wim, int image, int write_resource_flags)
 	/* Write the metadata resource to the output WIM using the proper
 	 * compression type, in the process updating the blob descriptor for the
 	 * metadata resource.  */
-	ret = write_wim_resource_from_buffer(buf, len, WIM_RESHDR_FLAG_METADATA,
+	ret = write_wim_resource_from_buffer(buf,
+					     len,
+					     true,
 					     &wim->out_fd,
 					     wim->out_compression_type,
 					     wim->out_chunk_size,

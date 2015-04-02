@@ -909,25 +909,15 @@ int
 wim_reshdr_to_data(const struct wim_reshdr *reshdr, WIMStruct *wim, void **buf_ret)
 {
 	struct wim_resource_descriptor rdesc;
-	struct blob_descriptor *blob;
-	int ret;
+	struct blob_descriptor blob;
 
 	wim_res_hdr_to_desc(reshdr, wim, &rdesc);
+	blob_set_is_located_in_wim_resource(&blob, &rdesc);
 
-	blob = new_blob_descriptor();
-	if (!blob)
-		return WIMLIB_ERR_NOMEM;
+	blob.size = rdesc.uncompressed_size;
+	blob.offset_in_res = 0;
 
-	blob_set_is_located_in_wim_resource(blob, &rdesc);
-	blob->flags = rdesc.flags;
-	blob->size = rdesc.uncompressed_size;
-	blob->offset_in_res = 0;
-
-	ret = read_full_blob_into_alloc_buf(blob, buf_ret);
-
-	blob_unset_is_located_in_wim_resource(blob);
-	free_blob_descriptor(blob);
-	return ret;
+	return read_full_blob_into_alloc_buf(&blob, buf_ret);
 }
 
 int
@@ -935,27 +925,21 @@ wim_reshdr_to_hash(const struct wim_reshdr *reshdr, WIMStruct *wim,
 		   u8 hash[SHA1_HASH_SIZE])
 {
 	struct wim_resource_descriptor rdesc;
+	struct blob_descriptor blob;
 	int ret;
-	struct blob_descriptor *blob;
 
 	wim_res_hdr_to_desc(reshdr, wim, &rdesc);
+	blob_set_is_located_in_wim_resource(&blob, &rdesc);
 
-	blob = new_blob_descriptor();
-	if (blob == NULL)
-		return WIMLIB_ERR_NOMEM;
+	blob.size = rdesc.uncompressed_size;
+	blob.offset_in_res = 0;
+	blob.unhashed = 1;
 
-	blob_set_is_located_in_wim_resource(blob, &rdesc);
-	blob->flags = rdesc.flags;
-	blob->size = rdesc.uncompressed_size;
-	blob->offset_in_res = 0;
-	blob->unhashed = 1;
-
-	ret = sha1_blob(blob);
-
-	blob_unset_is_located_in_wim_resource(blob);
-	copy_hash(hash, blob->hash);
-	free_blob_descriptor(blob);
-	return ret;
+	ret = sha1_blob(&blob);
+	if (ret)
+		return ret;
+	copy_hash(hash, blob.hash);
+	return 0;
 }
 
 struct blobifier_context {
@@ -1282,9 +1266,9 @@ read_blobs_in_solid_resource(struct blob_descriptor *first_blob,
  */
 int
 read_blob_list(struct list_head *blob_list,
-		 size_t list_head_offset,
-		 const struct read_blob_list_callbacks *cbs,
-		 int flags)
+	       size_t list_head_offset,
+	       const struct read_blob_list_callbacks *cbs,
+	       int flags)
 {
 	int ret;
 	struct list_head *cur, *next;
@@ -1323,10 +1307,9 @@ read_blob_list(struct list_head *blob_list,
 	{
 		blob = (struct blob_descriptor*)((u8*)cur - list_head_offset);
 
-		if (blob->flags & WIM_RESHDR_FLAG_SOLID &&
+		if (blob->blob_location == BLOB_IN_WIM &&
 		    blob->size != blob->rdesc->uncompressed_size)
 		{
-
 			struct blob_descriptor *blob_next, *blob_last;
 			struct list_head *next2;
 			u64 blob_count;

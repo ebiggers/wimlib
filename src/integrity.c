@@ -333,7 +333,7 @@ write_integrity_table(WIMStruct *wim,
 
 	ret = write_wim_resource_from_buffer(new_table,
 					     new_table_size,
-					     0,
+					     false,
 					     &wim->out_fd,
 					     WIMLIB_COMPRESSION_TYPE_NONE,
 					     0,
