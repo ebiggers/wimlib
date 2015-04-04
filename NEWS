@@ -1,3 +1,23 @@
+Version 1.8.1-BETA:
+	Fixed a bug in the LZX decompressor: malicious input data could cause
+	out of bounds writes to memory (since wimlib v1.2.2).
+
+	A file can now have both an unnamed data stream ("file contents") and a
+	reparse point stream.  Such files can exist as a result of the use of
+	certain Windows features, such as offline storage, including "OneDrive".
+	wimlib will now store and restore both streams on Windows as well as in
+	NTFS-3g mode.  Microsoft's WIMGAPI also has this behavior.
+
+	On Windows, named data streams of encrypted files are no longer stored
+	twice in WIM archives.
+
+	On Windows, named data streams are now correctly extracted to existing
+	"readonly" directories.  Before, an error would be reported.
+
+	On Windows, when doing an extraction in "WIMBoot mode", files larger
+	than 4 gigabytes are now never extracted as externally backed.  This
+	works around a bug in Microsoft's "WOF" driver.
+
 Version 1.8.0:
 	Improved the LZX compressor.  It is now 15-20% faster than before and
 	provides a slightly better compression ratio.
