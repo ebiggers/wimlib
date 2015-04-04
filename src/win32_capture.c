@@ -1087,8 +1087,11 @@ unnamed_only:
 		goto out_free_buf;
 	}
 
-	ret = winnt_scan_data_stream(path, path_nchars, L"::$DATA", 7,
-				     file_size, inode, unhashed_blobs);
+	{
+		wchar_t stream_name[] = L"::$DATA";
+		ret = winnt_scan_data_stream(path, path_nchars, stream_name, 7,
+					     file_size, inode, unhashed_blobs);
+	}
 out_free_buf:
 	/* Free buffer if allocated on heap.  */
 	if (unlikely(buf != _buf))
