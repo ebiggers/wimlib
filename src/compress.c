@@ -26,9 +26,6 @@
 #  include "config.h"
 #endif
 
-#include <stdlib.h>
-#include <string.h>
-
 #include "wimlib.h"
 #include "wimlib/error.h"
 #include "wimlib/compressor_ops.h"
@@ -174,66 +171,12 @@ wimlib_compress(const void *uncompressed_data, size_t uncompressed_size,
 		void *compressed_data, size_t compressed_size_avail,
 		struct wimlib_compressor *c)
 {
-	size_t compressed_size;
-
 	if (unlikely(uncompressed_size == 0 || uncompressed_size > c->max_block_size))
 		return 0;
 
-	compressed_size = c->ops->compress(uncompressed_data,
-					   uncompressed_size,
-					   compressed_data,
-					   compressed_size_avail,
-					   c->private);
-
-	/* (Optional) Verify that we really get the same thing back when
-	 * decompressing.  Should always be the case, unless there's a bug.  */
-#ifdef ENABLE_VERIFY_COMPRESSION
-	if (compressed_size != 0) {
-		struct wimlib_decompressor *d;
-		int res;
-		u8 *buf;
-
-		buf = MALLOC(uncompressed_size);
-		if (!buf) {
-			WARNING("Unable to verify results of %s compression "
-				"(can't allocate buffer)",
-				wimlib_get_compression_type_string(c->ctype));
-			return 0;
-		}
-
-		res = wimlib_create_decompressor(c->ctype,
-						 c->max_block_size, &d);
-		if (res) {
-			WARNING("Unable to verify results of %s compression "
-				"(can't create decompressor)",
-				wimlib_get_compression_type_string(c->ctype));
-			FREE(buf);
-			return 0;
-		}
-
-		res = wimlib_decompress(compressed_data, compressed_size,
-					buf, uncompressed_size, d);
-		wimlib_free_decompressor(d);
-		if (res) {
-			ERROR("Failed to decompress our %s-compressed data",
-			      wimlib_get_compression_type_string(c->ctype));
-			FREE(buf);
-			abort();
-		}
-
-		res = memcmp(uncompressed_data, buf, uncompressed_size);
-		FREE(buf);
-
-		if (res) {
-			ERROR("Our %s-compressed data did not decompress "
-			      "to original",
-			      wimlib_get_compression_type_string(c->ctype));
-			abort();
-		}
-	}
-#endif /* ENABLE_VERIFY_COMPRESSION */
-
-	return compressed_size;
+	return c->ops->compress(uncompressed_data, uncompressed_size,
+				compressed_data, compressed_size_avail,
+				c->private);
 }
 
 WIMLIBAPI void

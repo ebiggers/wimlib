@@ -18,6 +18,9 @@ Version 1.8.1-BETA:
 	than 4 gigabytes are now never extracted as externally backed.  This
 	works around a bug in Microsoft's "WOF" driver.
 
+	The '--enable-verify-compression' configure option has been removed.  If
+	you want to verify a WIM file, use the 'wimverify' program.
+
 Version 1.8.0:
 	Improved the LZX compressor.  It is now 15-20% faster than before and
 	provides a slightly better compression ratio.

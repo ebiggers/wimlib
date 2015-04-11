@@ -272,18 +272,6 @@ if test "$ENABLE_ASSERTIONS" = "yes"; then
 	AC_DEFINE([ENABLE_ASSERTIONS], [1], [Define to 1 if including assertions])
 fi
 
-AC_MSG_CHECKING([whether to include automatic compression verification])
-AC_ARG_ENABLE([verify_compression],
-	AS_HELP_STRING([--enable-verify-compression],
-		       [verify all compression results (makes compression
-			slower; intended for debugging only)]),
-	[ENABLE_VERIFY_COMPRESSION=$enableval],
-	[ENABLE_VERIFY_COMPRESSION=no])
-AC_MSG_RESULT([$ENABLE_VERIFY_COMPRESSION])
-if test "$ENABLE_VERIFY_COMPRESSION" = "yes"; then
-	AC_DEFINE([ENABLE_VERIFY_COMPRESSION], [1], [Define to 1 to verify compression results])
-fi
-
 AC_MSG_CHECKING([whether to include support for multi-threaded compression])
 AC_ARG_ENABLE([multithreaded-compression],
 	AS_HELP_STRING([--disable-multithreaded-compression],
