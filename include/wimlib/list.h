@@ -9,35 +9,18 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+/* Simple doubly linked list implementation.  */
+
 struct list_head {
-	struct list_head *next, *prev;
-};
-struct hlist_head {
-	struct hlist_node *first;
+	struct list_head *next;
+	struct list_head *prev;
 };
 
-struct hlist_node {
-	struct hlist_node *next, **pprev;
-};
-
-/*
- * Simple doubly linked list implementation.
- *
- * Some of the internal functions ("__xxx") are useful when
- * manipulating whole lists rather than single entries, as
- * sometimes we already know the next/prev entries and we can
- * generate better code by using them directly rather than
- * using the generic single-entry routines.
- */
 
 #define LIST_HEAD_INIT(name) { &(name), &(name) }
 
-#ifdef LIST_HEAD /* BSD sys/queue.h defines this... */
-#  undef LIST_HEAD
-#endif
-
-#define LIST_HEAD(name) \
-	struct list_head name = LIST_HEAD_INIT(name)
+#undef LIST_HEAD /* BSD sys/queue.h defines this... */
+#define LIST_HEAD(name) struct list_head name = LIST_HEAD_INIT(name)
 
 static inline void
 INIT_LIST_HEAD(struct list_head *list)
@@ -133,8 +116,7 @@ list_empty(const struct list_head *head)
 
 static inline void
 __list_splice(const struct list_head *list,
-	      struct list_head *prev,
-	      struct list_head *next)
+	      struct list_head *prev, struct list_head *next)
 {
 	struct list_head *first = list->next;
 	struct list_head *last = list->prev;
@@ -310,7 +292,20 @@ list_splice_tail(struct list_head *list, struct list_head *head)
  * You lose the ability to access the tail in O(1).
  */
 
-#define INIT_HLIST_HEAD(ptr) ((ptr)->first = NULL)
+struct hlist_head {
+	struct hlist_node *first;
+};
+
+struct hlist_node {
+	struct hlist_node *next;
+	struct hlist_node **pprev;
+};
+
+static inline void
+INIT_HLIST_HEAD(struct hlist_head *h)
+{
+	h->first = NULL;
+}
 
 static inline bool
 hlist_unhashed(const struct hlist_node *h)
@@ -347,31 +342,32 @@ hlist_add_head(struct hlist_node *n, struct hlist_head *h)
 
 #define hlist_entry(ptr, type, member) container_of(ptr,type,member)
 
+#define hlist_entry_safe(ptr, type, member) \
+	({ typeof(ptr) ____ptr = (ptr); \
+	   ____ptr ? hlist_entry(____ptr, type, member) : NULL; \
+	})
+
 /**
  * hlist_for_each_entry	- iterate over list of given type
- * @tpos:	the type * to use as a loop cursor.
- * @pos:	the &struct hlist_node to use as a loop cursor.
+ * @pos:	the type * to use as a loop cursor.
  * @head:	the head for your list.
  * @member:	the name of the hlist_node within the struct.
  */
-#define hlist_for_each_entry(tpos, pos, head, member)			 \
-	for (pos = (head)->first;					 \
-	     pos &&							 \
-		({ tpos = hlist_entry(pos, typeof(*tpos), member); 1;}); \
-	     pos = pos->next)
+#define hlist_for_each_entry(pos, head, member)				\
+	for (pos = hlist_entry_safe((head)->first, typeof(*(pos)), member);\
+	     pos;							\
+	     pos = hlist_entry_safe((pos)->member.next, typeof(*(pos)), member))
 
 /**
  * hlist_for_each_entry_safe - iterate over list of given type safe against removal of list entry
- * @tpos:	the type * to use as a loop cursor.
- * @pos:	the &struct hlist_node to use as a loop cursor.
+ * @pos:	the type * to use as a loop cursor.
  * @n:		another &struct hlist_node to use as temporary storage
  * @head:	the head for your list.
  * @member:	the name of the hlist_node within the struct.
  */
-#define hlist_for_each_entry_safe(tpos, pos, n, head, member)		 \
-	for (pos = (head)->first;					 \
-	     pos && ({ n = pos->next; 1; }) &&				 \
-		({ tpos = hlist_entry(pos, typeof(*tpos), member); 1;}); \
-	     pos = n)
+#define hlist_for_each_entry_safe(pos, n, head, member) 		\
+	for (pos = hlist_entry_safe((head)->first, typeof(*pos), member);\
+	     pos && ({ n = pos->member.next; 1; });			\
+	     pos = hlist_entry_safe(n, typeof(*pos), member))
 
 #endif /* _WIMLIB_LIST_H */

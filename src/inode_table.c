@@ -102,12 +102,11 @@ inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
 		list_add_tail(&dentry->d_inode->i_list, &table->extra_inodes);
 	} else {
 		size_t pos;
-		struct hlist_node *cur;
 
 		/* File that can be hardlinked--- search the table for an
 		 * existing inode matching the inode number and device.  */
 		pos = hash_u64(hash_u64(ino) + hash_u64(devno)) % table->capacity;
-		hlist_for_each_entry(inode, cur, &table->array[pos], i_hlist) {
+		hlist_for_each_entry(inode, &table->array[pos], i_hlist) {
 			if (inode->i_ino == ino && inode->i_devno == devno) {
 				/* Found; use the existing inode.  */
 				return new_dentry_with_existing_inode(name, inode,
@@ -140,7 +139,7 @@ inode_table_prepare_inode_list(struct wim_inode_table *table,
 			       struct list_head *head)
 {
 	struct wim_inode *inode, *tmp_inode;
-	struct hlist_node *cur, *tmp;
+	struct hlist_node *tmp;
 	u64 cur_ino = 1;
 
 	/* Re-assign inode numbers in the existing list to avoid duplicates. */
@@ -150,8 +149,7 @@ inode_table_prepare_inode_list(struct wim_inode_table *table,
 	/* Assign inode numbers to the new inodes and move them to the image's
 	 * inode list. */
 	for (size_t i = 0; i < table->capacity; i++) {
-		hlist_for_each_entry_safe(inode, cur, tmp, &table->array[i], i_hlist)
-		{
+		hlist_for_each_entry_safe(inode, tmp, &table->array[i], i_hlist) {
 			inode->i_ino = cur_ino++;
 			inode->i_devno = 0;
 			list_add_tail(&inode->i_list, head);

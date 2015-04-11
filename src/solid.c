@@ -136,13 +136,12 @@ dentry_fill_in_solid_sort_names(struct wim_dentry *dentry, void *_blob_table)
 	const struct wim_inode *inode = dentry->d_inode;
 	const u8 *hash;
 	struct hlist_head *head;
-	struct hlist_node *cur;
 	struct blob_descriptor *blob;
 
 	hash = inode_get_hash_of_unnamed_data_stream(inode);
 	head = &blob_table->table[load_size_t_unaligned(hash) %
 				  blob_table->capacity];
-	hlist_for_each_entry(blob, cur, head, hash_list_2) {
+	hlist_for_each_entry(blob, head, hash_list_2) {
 		if (hashes_equal(hash, blob->hash)) {
 			blob_set_solid_sort_name_from_inode(blob, inode);
 			break;

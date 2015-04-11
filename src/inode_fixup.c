@@ -65,7 +65,6 @@ inode_table_insert(struct wim_dentry *dentry, void *_params)
 	struct wim_inode *d_inode = dentry->d_inode;
 	size_t pos;
 	struct wim_inode *inode;
-	struct hlist_node *cur;
 
 	if (d_inode->i_ino == 0) {
 		list_add_tail(&d_inode->i_list, &table->extra_inodes);
@@ -74,7 +73,7 @@ inode_table_insert(struct wim_dentry *dentry, void *_params)
 
 	/* Try adding this dentry to an existing inode.  */
 	pos = d_inode->i_ino % table->capacity;
-	hlist_for_each_entry(inode, cur, &table->array[pos], i_hlist) {
+	hlist_for_each_entry(inode, &table->array[pos], i_hlist) {
 		if (inode->i_ino != d_inode->i_ino) {
 			continue;
 		}

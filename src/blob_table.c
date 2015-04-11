@@ -318,7 +318,7 @@ enlarge_blob_table(struct blob_table *table)
 	size_t old_capacity, new_capacity;
 	struct hlist_head *old_array, *new_array;
 	struct blob_descriptor *blob;
-	struct hlist_node *cur, *tmp;
+	struct hlist_node *tmp;
 	size_t i;
 
 	old_capacity = table->capacity;
@@ -331,7 +331,7 @@ enlarge_blob_table(struct blob_table *table)
 	table->capacity = new_capacity;
 
 	for (i = 0; i < old_capacity; i++) {
-		hlist_for_each_entry_safe(blob, cur, tmp, &old_array[i], hash_list) {
+		hlist_for_each_entry_safe(blob, tmp, &old_array[i], hash_list) {
 			hlist_del(&blob->hash_list);
 			blob_table_insert_raw(table, blob);
 		}
@@ -366,10 +366,9 @@ lookup_blob(const struct blob_table *table, const u8 *hash)
 {
 	size_t i;
 	struct blob_descriptor *blob;
-	struct hlist_node *pos;
 
 	i = load_size_t_unaligned(hash) % table->capacity;
-	hlist_for_each_entry(blob, pos, &table->array[i], hash_list)
+	hlist_for_each_entry(blob, &table->array[i], hash_list)
 		if (hashes_equal(hash, blob->hash))
 			return blob;
 	return NULL;
@@ -382,11 +381,11 @@ for_blob_in_table(struct blob_table *table,
 		  int (*visitor)(struct blob_descriptor *, void *), void *arg)
 {
 	struct blob_descriptor *blob;
-	struct hlist_node *pos, *tmp;
+	struct hlist_node *tmp;
 	int ret;
 
 	for (size_t i = 0; i < table->capacity; i++) {
-		hlist_for_each_entry_safe(blob, pos, tmp, &table->array[i],
+		hlist_for_each_entry_safe(blob, tmp, &table->array[i],
 					  hash_list)
 		{
 			ret = visitor(blob, arg);

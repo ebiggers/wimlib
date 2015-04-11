@@ -1834,11 +1834,10 @@ blob_size_table_insert(struct blob_descriptor *blob, void *_tab)
 	struct blob_size_table *tab = _tab;
 	size_t pos;
 	struct blob_descriptor *same_size_blob;
-	struct hlist_node *tmp;
 
 	pos = hash_u64(blob->size) % tab->capacity;
 	blob->unique_size = 1;
-	hlist_for_each_entry(same_size_blob, tmp, &tab->array[pos], hash_list_2) {
+	hlist_for_each_entry(same_size_blob, &tab->array[pos], hash_list_2) {
 		if (same_size_blob->size == blob->size) {
 			blob->unique_size = 0;
 			same_size_blob->unique_size = 0;
