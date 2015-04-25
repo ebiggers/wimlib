@@ -28,6 +28,7 @@
 #ifndef __WIN32__
 #  include <langinfo.h>
 #endif
+#include <pthread.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -938,26 +939,36 @@ wimlib_get_version(void)
 }
 
 static bool lib_initialized = false;
+static pthread_mutex_t lib_initialization_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_global_init(int init_flags)
 {
+	int ret;
+
 	if (lib_initialized)
 		return 0;
+
+	pthread_mutex_lock(&lib_initialization_mutex);
+
+	ret = 0;
+	if (lib_initialized)
+		goto out;
 
 #ifdef ENABLE_ERROR_MESSAGES
 	if (!wimlib_error_file)
 		wimlib_error_file = stderr;
 #endif
 
+	ret = WIMLIB_ERR_INVALID_PARAM;
 	if (init_flags & ~(WIMLIB_INIT_FLAG_ASSUME_UTF8 |
 			   WIMLIB_INIT_FLAG_DONT_ACQUIRE_PRIVILEGES |
 			   WIMLIB_INIT_FLAG_STRICT_CAPTURE_PRIVILEGES |
 			   WIMLIB_INIT_FLAG_STRICT_APPLY_PRIVILEGES |
 			   WIMLIB_INIT_FLAG_DEFAULT_CASE_SENSITIVE |
 			   WIMLIB_INIT_FLAG_DEFAULT_CASE_INSENSITIVE))
-		return WIMLIB_ERR_INVALID_PARAM;
+		goto out;
 
 	libxml_global_init();
 	if (!(init_flags & WIMLIB_INIT_FLAG_ASSUME_UTF8)) {
@@ -968,11 +979,9 @@ wimlib_global_init(int init_flags)
 	#endif
 	}
 #ifdef __WIN32__
-	{
-		int ret = win32_global_init(init_flags);
-		if (ret)
-			return ret;
-	}
+	ret = win32_global_init(init_flags);
+	if (ret)
+		goto out;
 #endif
 	iconv_global_init();
 	init_upcase();
@@ -981,7 +990,10 @@ wimlib_global_init(int init_flags)
 	else if (init_flags & WIMLIB_INIT_FLAG_DEFAULT_CASE_INSENSITIVE)
 		default_ignore_case = true;
 	lib_initialized = true;
-	return 0;
+	ret = 0;
+out:
+	pthread_mutex_unlock(&lib_initialization_mutex);
+	return ret;
 }
 
 /* API function documented in wimlib.h  */
@@ -990,6 +1002,12 @@ wimlib_global_cleanup(void)
 {
 	if (!lib_initialized)
 		return;
+
+	pthread_mutex_lock(&lib_initialization_mutex);
+
+	if (!lib_initialized)
+		goto out;
+
 	libxml_global_cleanup();
 	iconv_global_cleanup();
 #ifdef __WIN32__
@@ -998,4 +1016,7 @@ wimlib_global_cleanup(void)
 
 	wimlib_set_error_file(NULL);
 	lib_initialized = false;
+
+out:
+	pthread_mutex_unlock(&lib_initialization_mutex);
 }
