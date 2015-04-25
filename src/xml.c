@@ -1631,7 +1631,7 @@ wimlib_get_xml_data(WIMStruct *wim, void **buf_ret, size_t *bufsize_ret)
 	const struct wim_reshdr *xml_reshdr;
 
 	if (wim->filename == NULL && filedes_is_seekable(&wim->in_fd))
-		return WIMLIB_ERR_INVALID_PARAM;
+		return WIMLIB_ERR_NO_FILENAME;
 
 	if (buf_ret == NULL || bufsize_ret == NULL)
 		return WIMLIB_ERR_INVALID_PARAM;
