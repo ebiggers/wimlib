@@ -202,6 +202,9 @@ wimlib_create_new_wim(int ctype, WIMStruct **wim_ret)
 	if (ret)
 		return ret;
 
+	if (!wim_ret)
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	wim = new_wim_struct();
 	if (!wim)
 		return WIMLIB_ERR_NOMEM;
