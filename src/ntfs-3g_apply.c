@@ -873,7 +873,7 @@ ntfs_3g_end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
 					 "data on \"%s\"",
 					 dentry_full_path(
 						inode_first_extraction_dentry(inode)));
-			ret = WIMLIB_ERR_NTFS_3G;
+			ret = WIMLIB_ERR_SET_REPARSE_DATA;
 			goto out;
 		}
 	}
