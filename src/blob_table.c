@@ -1357,7 +1357,8 @@ blob_to_wimlib_resource_entry(const struct blob_descriptor *blob,
 		wentry->is_spanned = (res_flags & WIM_RESHDR_FLAG_SPANNED) != 0;
 		wentry->packed = (res_flags & WIM_RESHDR_FLAG_SOLID) != 0;
 	}
-	copy_hash(wentry->sha1_hash, blob->hash);
+	if (!blob->unhashed)
+		copy_hash(wentry->sha1_hash, blob->hash);
 	wentry->reference_count = blob->refcnt;
 	wentry->is_metadata = blob->is_metadata;
 }
@@ -1393,10 +1394,17 @@ wimlib_iterate_lookup_table(WIMStruct *wim, int flags,
 	if (wim_has_metadata(wim)) {
 		int ret;
 		for (int i = 0; i < wim->hdr.image_count; i++) {
-			ret = do_iterate_blob(wim->image_metadata[i]->metadata_blob,
-					      &ctx);
+			struct blob_descriptor *blob;
+			struct wim_image_metadata *imd = wim->image_metadata[i];
+
+			ret = do_iterate_blob(imd->metadata_blob, &ctx);
 			if (ret)
 				return ret;
+			image_for_each_unhashed_blob(blob, imd) {
+				ret = do_iterate_blob(blob, &ctx);
+				if (ret)
+					return ret;
+			}
 		}
 	}
 	return for_blob_in_table(wim->blob_table, do_iterate_blob, &ctx);
