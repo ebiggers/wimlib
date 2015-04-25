@@ -185,11 +185,12 @@ static inline bool wim_is_pipable(const WIMStruct *wim)
 extern bool
 wim_has_solid_resources(const WIMStruct *wim);
 
-extern int
-set_wim_hdr_cflags(int ctype, struct wim_header *hdr);
+extern void
+set_wim_hdr_cflags(enum wimlib_compression_type ctype, struct wim_header *hdr);
 
-extern int
-init_wim_header(struct wim_header *hdr, int ctype, u32 chunk_size);
+extern void
+init_wim_header(struct wim_header *hdr,
+		enum wimlib_compression_type ctype, u32 chunk_size);
 
 extern int
 read_wim_header(WIMStruct *wim, struct wim_header *hdr);

@@ -2603,10 +2603,9 @@ wimlib_add_tree(WIMStruct *wim, int image,
  * an on-disk file.
  *
  * @param ctype
- * 	The "output compression type" to assign to the ::WIMStruct, given as one
- * 	of the ::wimlib_compression_type values.  This is the compression type
- * 	that will be used if the ::WIMStruct is later persisted to an on-disk
- * 	file using wimlib_write().
+ * 	The "output compression type" to assign to the ::WIMStruct.  This is the
+ * 	compression type that will be used if the ::WIMStruct is later persisted
+ * 	to an on-disk file using wimlib_write().
  * 	<br/>
  * 	This choice is not necessarily final.  If desired, it can still be
  * 	changed at any time before wimlib_write() is called, using
@@ -2626,7 +2625,7 @@ wimlib_add_tree(WIMStruct *wim, int image,
  * 	Insufficient memory to allocate a new ::WIMStruct.
  */
 extern int
-wimlib_create_new_wim(int ctype, WIMStruct **wim_ret);
+wimlib_create_new_wim(enum wimlib_compression_type ctype, WIMStruct **wim_ret);
 
 /**
  * @ingroup G_modifying_wims
@@ -3046,7 +3045,7 @@ wimlib_free(WIMStruct *wim);
  * Convert a ::wimlib_compression_type value into a string.
  *
  * @param ctype
- * 	The ::wimlib_compression_type value to convert.
+ * 	The compression type value to convert.
  *
  * @return
  * 	A statically allocated string naming the compression type, such as
@@ -3054,7 +3053,7 @@ wimlib_free(WIMStruct *wim);
  * 	the resulting string will be "Invalid".
  */
 extern const wimlib_tchar *
-wimlib_get_compression_type_string(int ctype);
+wimlib_get_compression_type_string(enum wimlib_compression_type ctype);
 
 /**
  * @ingroup G_general
@@ -4018,11 +4017,9 @@ wimlib_set_output_pack_chunk_size(WIMStruct *wim, uint32_t chunk_size);
  * @param wim
  *	The ::WIMStruct for which to set the output compression type.
  * @param ctype
- *	The compression type to set (one of ::wimlib_compression_type).  If this
- *	compression type is incompatible with the current output chunk size
- *	(either the default or as set with wimlib_set_output_chunk_size()), then
- *	the output chunk size will be reset to the default for that compression
- *	type.
+ *	The compression type to set.  If this compression type is incompatible
+ *	with the current output chunk size, then the output chunk size will be
+ *	reset to the default for the new compression type.
  *
  * @return 0 on success; a ::wimlib_error_code value on failure.
  *
@@ -4030,16 +4027,18 @@ wimlib_set_output_pack_chunk_size(WIMStruct *wim, uint32_t chunk_size);
  *	@p ctype did not specify a valid compression type.
  */
 extern int
-wimlib_set_output_compression_type(WIMStruct *wim, int ctype);
+wimlib_set_output_compression_type(WIMStruct *wim,
+				   enum wimlib_compression_type ctype);
 
 /**
  * @ingroup G_writing_and_overwriting_wims
  *
  * Similar to wimlib_set_output_compression_type(), but set the compression type
- * for writing solid resources.
+ * for writing solid resources.  This cannot be ::WIMLIB_COMPRESSION_TYPE_NONE.
  */
 extern int
-wimlib_set_output_pack_compression_type(WIMStruct *wim, int ctype);
+wimlib_set_output_pack_compression_type(WIMStruct *wim,
+					enum wimlib_compression_type ctype);
 
 /**
  * @ingroup G_general

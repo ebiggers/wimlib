@@ -2880,13 +2880,8 @@ write_wim_part(WIMStruct *wim,
 	wim->hdr.part_number = part_number;
 	wim->hdr.total_parts = total_parts;
 
-	/* Set compression type if different.  */
-	if (wim->compression_type != wim->out_compression_type) {
-		ret = set_wim_hdr_cflags(wim->out_compression_type, &wim->hdr);
-		wimlib_assert(ret == 0);
-	}
-
-	/* Set chunk size if different.  */
+	/* Set the compression type and chunk size.  */
+	set_wim_hdr_cflags(wim->out_compression_type, &wim->hdr);
 	wim->hdr.chunk_size = wim->out_chunk_size;
 
 	/* Set GUID.  */

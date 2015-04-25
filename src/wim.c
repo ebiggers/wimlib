@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014 Eric Biggers
+ * Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -35,7 +35,6 @@
 #include "wimlib.h"
 #include "wimlib/assert.h"
 #include "wimlib/blob_table.h"
-#include "wimlib/bitops.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/file_io.h"
@@ -51,20 +50,97 @@
 #  include "wimlib/win32.h" /* for realpath() replacement */
 #endif
 
-static int
+/* Information about the available compression types for the WIM format.  */
+static const struct {
+	const tchar *name;
+	u32 min_chunk_size;
+	u32 max_chunk_size;
+	u32 default_nonsolid_chunk_size;
+	u32 default_solid_chunk_size;
+} wim_ctype_info[] = {
+	[WIMLIB_COMPRESSION_TYPE_NONE] = {
+		.name = T("None"),
+		.min_chunk_size = 0,
+		.max_chunk_size = 0,
+		.default_nonsolid_chunk_size = 0,
+		.default_solid_chunk_size = 0,
+	},
+	[WIMLIB_COMPRESSION_TYPE_XPRESS] = {
+		.name = T("XPRESS"),
+		.min_chunk_size = 4096,
+		.max_chunk_size = 65536,
+		.default_nonsolid_chunk_size = 32768,
+		.default_solid_chunk_size = 32768,
+	},
+	[WIMLIB_COMPRESSION_TYPE_LZX] = {
+		.name = T("LZX"),
+		.min_chunk_size = 32768,
+		.max_chunk_size = 2097152,
+		.default_nonsolid_chunk_size = 32768,
+		.default_solid_chunk_size = 32768,
+	},
+	[WIMLIB_COMPRESSION_TYPE_LZMS] = {
+		.name = T("LZMS"),
+		.min_chunk_size = 32768,
+		.max_chunk_size = 1073741824,
+		.default_nonsolid_chunk_size = 131072,
+		.default_solid_chunk_size = 67108864,
+	},
+};
+
+/* Is the specified compression type valid?  */
+static bool
+wim_compression_type_valid(enum wimlib_compression_type ctype)
+{
+	return ctype >= 0 && ctype < ARRAY_LEN(wim_ctype_info) &&
+	       wim_ctype_info[ctype].name != NULL;
+}
+
+/* Is the specified chunk size valid for the compression type?  */
+static bool
+wim_chunk_size_valid(u32 chunk_size, enum wimlib_compression_type ctype)
+{
+	if (!(chunk_size == 0 || is_power_of_2(chunk_size)))
+		return false;
+
+	return chunk_size >= wim_ctype_info[ctype].min_chunk_size &&
+	       chunk_size <= wim_ctype_info[ctype].max_chunk_size;
+}
+
+/* Return the default chunk size to use for the specified compression type in
+ * non-solid resources.  */
+static u32
+wim_default_nonsolid_chunk_size(enum wimlib_compression_type ctype)
+{
+	return wim_ctype_info[ctype].default_nonsolid_chunk_size;
+}
+
+/* Return the default chunk size to use for the specified compression type in
+ * solid resources.  */
+static u32
+wim_default_solid_chunk_size(enum wimlib_compression_type ctype)
+{
+	return wim_ctype_info[ctype].default_solid_chunk_size;
+}
+
+/* Return the default compression type to use in solid resources.  */
+static enum wimlib_compression_type
 wim_default_solid_compression_type(void)
 {
 	return WIMLIB_COMPRESSION_TYPE_LZMS;
 }
 
-static u32
-wim_default_solid_chunk_size(int ctype) {
-	switch (ctype) {
-	case WIMLIB_COMPRESSION_TYPE_LZMS:
-		return (u32)1 << 26; /* 67108864  */
-	default:
-		return (u32)1 << 15; /* 32768     */
-	}
+static int
+is_blob_in_solid_resource(struct blob_descriptor *blob, void *_ignore)
+{
+	return blob->blob_location == BLOB_IN_WIM &&
+		(blob->rdesc->flags & WIM_RESHDR_FLAG_SOLID);
+}
+
+bool
+wim_has_solid_resources(const WIMStruct *wim)
+{
+	return for_blob_in_table(wim->blob_table, is_blob_in_solid_resource, NULL);
 }
 
 static WIMStruct *
@@ -83,120 +159,12 @@ new_wim_struct(void)
 	return wim;
 }
 
-/* Determine if the chunk size is valid for the specified compression type.  */
-static bool
-wim_chunk_size_valid(u32 chunk_size, int ctype)
-{
-	u32 order;
-
-	/* Chunk size is meaningless for uncompressed WIMs --- any value is
-	 * okay.  */
-	if (ctype == WIMLIB_COMPRESSION_TYPE_NONE)
-		return true;
-
-	/* Chunk size must be power of 2.  */
-	if (chunk_size == 0)
-		return false;
-	order = fls32(chunk_size);
-	if (chunk_size != 1U << order)
-		return false;
-
-	/* Order	Size
-	 * =====	====
-	 * 15		32768
-	 * 16		65536
-	 * 17		131072
-	 * 18		262144
-	 * 19		524288
-	 * 20		1048576
-	 * 21		2097152
-	 * 22		4194304
-	 * 23		8388608
-	 * 24		16777216
-	 * 25		33554432
-	 * 26		67108864
-	 */
-
-	/* See the documentation for the --chunk-size option of `wimlib-imagex
-	 * capture' for information about allowed chunk sizes.  */
-	switch (ctype) {
-	case WIMLIB_COMPRESSION_TYPE_LZX:
-		return order >= 15 && order <= 21;
-	case WIMLIB_COMPRESSION_TYPE_XPRESS:
-		return order >= 12 && order <= 16;
-	case WIMLIB_COMPRESSION_TYPE_LZMS:
-		return order >= 15 && order <= 30;
-	}
-	return false;
-}
-
-/* Return the default chunk size to use for the specified compression type.
- *
- * See notes above in wim_chunk_size_valid().  */
-static u32
-wim_default_chunk_size(int ctype)
-{
-	switch (ctype) {
-	case WIMLIB_COMPRESSION_TYPE_LZMS:
-		return 1U << 17; /* 131072  */
-	default:
-		return 1U << 15; /* 32768   */
-	}
-}
-
-static int
-is_blob_in_solid_resource(struct blob_descriptor *blob, void *_ignore)
-{
-	return blob->blob_location == BLOB_IN_WIM &&
-		(blob->rdesc->flags & WIM_RESHDR_FLAG_SOLID);
-}
-
-bool
-wim_has_solid_resources(const WIMStruct *wim)
-{
-	return for_blob_in_table(wim->blob_table, is_blob_in_solid_resource, NULL);
-}
-
-/*
- * Calls a function on images in the WIM.  If @image is WIMLIB_ALL_IMAGES,
- * @visitor is called on the WIM once for each image, with each image selected
- * as the current image in turn.  If @image is a certain image, @visitor is
- * called on the WIM only once, with that image selected.
- */
-int
-for_image(WIMStruct *wim, int image, int (*visitor)(WIMStruct *))
-{
-	int ret;
-	int start;
-	int end;
-	int i;
-
-	if (image == WIMLIB_ALL_IMAGES) {
-		start = 1;
-		end = wim->hdr.image_count;
-	} else if (image >= 1 && image <= wim->hdr.image_count) {
-		start = image;
-		end = image;
-	} else {
-		return WIMLIB_ERR_INVALID_IMAGE;
-	}
-	for (i = start; i <= end; i++) {
-		ret = select_wim_image(wim, i);
-		if (ret != 0)
-			return ret;
-		ret = visitor(wim);
-		if (ret != 0)
-			return ret;
-	}
-	return 0;
-}
-
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
-wimlib_create_new_wim(int ctype, WIMStruct **wim_ret)
+wimlib_create_new_wim(enum wimlib_compression_type ctype, WIMStruct **wim_ret)
 {
-	WIMStruct *wim;
 	int ret;
+	WIMStruct *wim;
 
 	ret = wimlib_global_init(WIMLIB_INIT_FLAG_ASSUME_UTF8);
 	if (ret)
@@ -205,29 +173,28 @@ wimlib_create_new_wim(int ctype, WIMStruct **wim_ret)
 	if (!wim_ret)
 		return WIMLIB_ERR_INVALID_PARAM;
 
+	if (!wim_compression_type_valid(ctype))
+		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
+
 	wim = new_wim_struct();
 	if (!wim)
 		return WIMLIB_ERR_NOMEM;
 
-	ret = init_wim_header(&wim->hdr, ctype, wim_default_chunk_size(ctype));
-	if (ret)
-		goto out_free_wim;
-
 	wim->blob_table = new_blob_table(9001);
 	if (!wim->blob_table) {
-		ret = WIMLIB_ERR_NOMEM;
-		goto out_free_wim;
+		wimlib_free(wim);
+		return WIMLIB_ERR_NOMEM;
 	}
+
+	init_wim_header(&wim->hdr, ctype,
+			wim_default_nonsolid_chunk_size(ctype));
 	wim->compression_type = ctype;
 	wim->out_compression_type = ctype;
 	wim->chunk_size = wim->hdr.chunk_size;
 	wim->out_chunk_size = wim->hdr.chunk_size;
+
 	*wim_ret = wim;
 	return 0;
-
-out_free_wim:
-	FREE(wim);
-	return ret;
 }
 
 static void
@@ -384,22 +351,38 @@ deselect_current_wim_image(WIMStruct *wim)
 	wim->current_image = WIMLIB_NO_IMAGE;
 }
 
-/* API function documented in wimlib.h  */
-WIMLIBAPI const tchar *
-wimlib_get_compression_type_string(int ctype)
+/*
+ * Calls a function on images in the WIM.  If @image is WIMLIB_ALL_IMAGES,
+ * @visitor is called on the WIM once for each image, with each image selected
+ * as the current image in turn.  If @image is a certain image, @visitor is
+ * called on the WIM only once, with that image selected.
+ */
+int
+for_image(WIMStruct *wim, int image, int (*visitor)(WIMStruct *))
 {
-	switch (ctype) {
-	case WIMLIB_COMPRESSION_TYPE_NONE:
-		return T("None");
-	case WIMLIB_COMPRESSION_TYPE_XPRESS:
-		return T("XPRESS");
-	case WIMLIB_COMPRESSION_TYPE_LZX:
-		return T("LZX");
-	case WIMLIB_COMPRESSION_TYPE_LZMS:
-		return T("LZMS");
-	default:
-		return T("Invalid");
+	int ret;
+	int start;
+	int end;
+	int i;
+
+	if (image == WIMLIB_ALL_IMAGES) {
+		start = 1;
+		end = wim->hdr.image_count;
+	} else if (image >= 1 && image <= wim->hdr.image_count) {
+		start = image;
+		end = image;
+	} else {
+		return WIMLIB_ERR_INVALID_IMAGE;
 	}
+	for (i = start; i <= end; i++) {
+		ret = select_wim_image(wim, i);
+		if (ret != 0)
+			return ret;
+		ret = visitor(wim);
+		if (ret != 0)
+			return ret;
+	}
+	return 0;
 }
 
 /* API function documented in wimlib.h  */
@@ -524,41 +507,35 @@ wimlib_set_wim_info(WIMStruct *wim, const struct wimlib_wim_info *info, int whic
 	return 0;
 }
 
-static int
-set_out_ctype(int ctype, u8 *out_ctype_p)
-{
-	switch (ctype) {
-	case WIMLIB_COMPRESSION_TYPE_NONE:
-	case WIMLIB_COMPRESSION_TYPE_LZX:
-	case WIMLIB_COMPRESSION_TYPE_XPRESS:
-	case WIMLIB_COMPRESSION_TYPE_LZMS:
-		*out_ctype_p = ctype;
-		return 0;
-	}
-	return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
-}
-
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
-wimlib_set_output_compression_type(WIMStruct *wim, int ctype)
+wimlib_set_output_compression_type(WIMStruct *wim,
+				   enum wimlib_compression_type ctype)
 {
-	int ret = set_out_ctype(ctype, &wim->out_compression_type);
-	if (ret)
-		return ret;
+	if (!wim_compression_type_valid(ctype))
+		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
+
+	wim->out_compression_type = ctype;
 
 	/* Reset the chunk size if it's no longer valid.  */
 	if (!wim_chunk_size_valid(wim->out_chunk_size, ctype))
-		wim->out_chunk_size = wim_default_chunk_size(ctype);
+		wim->out_chunk_size = wim_default_nonsolid_chunk_size(ctype);
 	return 0;
 }
 
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
-wimlib_set_output_pack_compression_type(WIMStruct *wim, int ctype)
+wimlib_set_output_pack_compression_type(WIMStruct *wim,
+					enum wimlib_compression_type ctype)
 {
-	int ret = set_out_ctype(ctype, &wim->out_solid_compression_type);
-	if (ret)
-		return ret;
+	if (!wim_compression_type_valid(ctype))
+		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
+
+	/* Solid resources can't be uncompressed.  */
+	if (ctype == WIMLIB_COMPRESSION_TYPE_NONE)
+		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
+
+	wim->out_solid_compression_type = ctype;
 
 	/* Reset the chunk size if it's no longer valid.  */
 	if (!wim_chunk_size_valid(wim->out_solid_chunk_size, ctype))
@@ -566,34 +543,26 @@ wimlib_set_output_pack_compression_type(WIMStruct *wim, int ctype)
 	return 0;
 }
 
-static int
-set_out_chunk_size(u32 chunk_size, int ctype, u32 *out_chunk_size_p)
+/* API function documented in wimlib.h  */
+WIMLIBAPI int
+wimlib_set_output_chunk_size(WIMStruct *wim, u32 chunk_size)
 {
-	if (!wim_chunk_size_valid(chunk_size, ctype))
+	if (chunk_size == 0) {
+		wim->out_chunk_size =
+			wim_default_nonsolid_chunk_size(wim->out_compression_type);
+		return 0;
+	}
+
+	if (!wim_chunk_size_valid(chunk_size, wim->out_compression_type))
 		return WIMLIB_ERR_INVALID_CHUNK_SIZE;
 
-	*out_chunk_size_p = chunk_size;
+	wim->out_chunk_size = chunk_size;
 	return 0;
 }
 
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
-wimlib_set_output_chunk_size(WIMStruct *wim, uint32_t chunk_size)
-{
-	if (chunk_size == 0) {
-		wim->out_chunk_size =
-			wim_default_chunk_size(wim->out_compression_type);
-		return 0;
-	}
-
-	return set_out_chunk_size(chunk_size,
-				  wim->out_compression_type,
-				  &wim->out_chunk_size);
-}
-
-/* API function documented in wimlib.h  */
-WIMLIBAPI int
-wimlib_set_output_pack_chunk_size(WIMStruct *wim, uint32_t chunk_size)
+wimlib_set_output_pack_chunk_size(WIMStruct *wim, u32 chunk_size)
 {
 	if (chunk_size == 0) {
 		wim->out_solid_chunk_size =
@@ -601,9 +570,21 @@ wimlib_set_output_pack_chunk_size(WIMStruct *wim, uint32_t chunk_size)
 		return 0;
 	}
 
-	return set_out_chunk_size(chunk_size,
-				  wim->out_solid_compression_type,
-				  &wim->out_solid_chunk_size);
+	if (!wim_chunk_size_valid(chunk_size, wim->out_solid_compression_type))
+		return WIMLIB_ERR_INVALID_CHUNK_SIZE;
+
+	wim->out_solid_chunk_size = chunk_size;
+	return 0;
+}
+
+/* API function documented in wimlib.h  */
+WIMLIBAPI const tchar *
+wimlib_get_compression_type_string(enum wimlib_compression_type ctype)
+{
+	if (!wim_compression_type_valid(ctype))
+		return T("Invalid");
+
+	return wim_ctype_info[ctype].name;
 }
 
 WIMLIBAPI void
