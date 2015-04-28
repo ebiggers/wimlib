@@ -954,6 +954,13 @@ wimlib_global_init(int init_flags)
 			   WIMLIB_INIT_FLAG_DEFAULT_CASE_INSENSITIVE))
 		goto out;
 
+	ret = WIMLIB_ERR_INVALID_PARAM;
+	if ((init_flags & (WIMLIB_INIT_FLAG_DEFAULT_CASE_SENSITIVE |
+			   WIMLIB_INIT_FLAG_DEFAULT_CASE_INSENSITIVE))
+			== (WIMLIB_INIT_FLAG_DEFAULT_CASE_SENSITIVE |
+			    WIMLIB_INIT_FLAG_DEFAULT_CASE_INSENSITIVE))
+		goto out;
+
 	libxml_global_init();
 	if (!(init_flags & WIMLIB_INIT_FLAG_ASSUME_UTF8)) {
 		wimlib_mbs_is_utf8 = test_locale_ctype_utf8();
