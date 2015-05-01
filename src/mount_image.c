@@ -549,6 +549,25 @@ inode_default_unix_mode(const struct wim_inode *inode)
 	return inode_unix_file_type(inode) | 0777;
 }
 
+static u64
+blob_size(const struct blob_descriptor *blob)
+{
+	if (!blob)
+		return 0;
+	return blob->size;
+}
+
+static u64
+blob_stored_size(const struct blob_descriptor *blob)
+{
+	if (!blob)
+		return 0;
+	if (blob->blob_location == BLOB_IN_WIM &&
+	    blob->size == blob->rdesc->uncompressed_size)
+		return blob->rdesc->size_in_wim;
+	return blob->size;
+}
+
 /*
  * Retrieve standard UNIX metadata ('struct stat') for a WIM inode.
  *
@@ -586,8 +605,7 @@ inode_to_stbuf(const struct wim_inode *inode,
 	}
 	stbuf->st_ino = inode->i_ino;
 	stbuf->st_nlink = inode->i_nlink;
-	if (blob)
-		stbuf->st_size = blob->size;
+	stbuf->st_size = blob_size(blob);
 #ifdef HAVE_STAT_NANOSECOND_PRECISION
 	stbuf->st_atim = wim_timestamp_to_timespec(inode->i_last_access_time);
 	stbuf->st_mtim = wim_timestamp_to_timespec(inode->i_last_write_time);
@@ -597,7 +615,7 @@ inode_to_stbuf(const struct wim_inode *inode,
 	stbuf->st_mtime = wim_timestamp_to_time_t(inode->i_last_write_time);
 	stbuf->st_ctime = stbuf->st_mtime;
 #endif
-	stbuf->st_blocks = DIV_ROUND_UP(stbuf->st_size, 512);
+	stbuf->st_blocks = DIV_ROUND_UP(blob_stored_size(blob), 512);
 	return 0;
 }
 
@@ -1573,7 +1591,7 @@ wimfs_open(const char *path, struct fuse_file_info *fi)
             (!blob || blob->blob_location != BLOB_IN_STAGING_FILE)) {
 		ret = extract_blob_to_staging_dir(inode,
 						  strm,
-						  blob ? blob->size : 0,
+						  blob_size(blob),
 						  ctx);
 		if (ret)
 			return ret;
