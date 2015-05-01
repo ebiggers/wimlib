@@ -357,7 +357,7 @@ inode_get_data_stream_tstr(const struct wim_inode *inode,
 	struct wim_inode_stream *strm;
 
 	if (!stream_name || !*stream_name) {
-		strm = inode_get_unnamed_stream(inode, STREAM_TYPE_DATA);
+		strm = inode_get_unnamed_data_stream(inode);
 	} else {
 		const utf16lechar *uname;
 
@@ -1631,7 +1631,7 @@ wimfs_opendir(const char *path, struct fuse_file_info *fi)
 		return -errno;
 	if (!inode_is_directory(inode))
 		return -ENOTDIR;
-	strm = inode_get_unnamed_stream(inode, STREAM_TYPE_DATA);
+	strm = inode_get_unnamed_data_stream(inode);
 	if (!strm)
 		return -ENOTDIR;
 	ret = alloc_wimfs_fd(inode, strm, &fd);

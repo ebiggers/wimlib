@@ -547,7 +547,7 @@ inode_get_blob_for_unnamed_data_stream(const struct wim_inode *inode,
 {
 	const struct wim_inode_stream *strm;
 
-	strm = inode_get_unnamed_stream(inode, STREAM_TYPE_DATA);
+	strm = inode_get_unnamed_data_stream(inode);
 	if (!strm)
 		return NULL;
 
@@ -561,7 +561,7 @@ inode_get_blob_for_unnamed_data_stream_resolved(const struct wim_inode *inode)
 {
 	const struct wim_inode_stream *strm;
 
-	strm = inode_get_unnamed_stream(inode, STREAM_TYPE_DATA);
+	strm = inode_get_unnamed_data_stream(inode);
 	if (!strm)
 		return NULL;
 
@@ -578,7 +578,7 @@ inode_get_hash_of_unnamed_data_stream(const struct wim_inode *inode)
 {
 	const struct wim_inode_stream *strm;
 
-	strm = inode_get_unnamed_stream(inode, STREAM_TYPE_DATA);
+	strm = inode_get_unnamed_data_stream(inode);
 	if (!strm)
 		return zero_hash;
 

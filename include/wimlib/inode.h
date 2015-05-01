@@ -346,6 +346,12 @@ inode_get_stream(const struct wim_inode *inode, int stream_type,
 extern struct wim_inode_stream *
 inode_get_unnamed_stream(const struct wim_inode *inode, int stream_type);
 
+static inline struct wim_inode_stream *
+inode_get_unnamed_data_stream(const struct wim_inode *inode)
+{
+	return inode_get_unnamed_stream(inode, STREAM_TYPE_DATA);
+}
+
 extern struct wim_inode_stream *
 inode_add_stream(struct wim_inode *inode, int stream_type,
 		 const utf16lechar *stream_name, struct blob_descriptor *blob);
