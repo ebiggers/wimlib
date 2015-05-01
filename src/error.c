@@ -250,7 +250,7 @@ static const tchar * const error_strings[] = {
 	[WIMLIB_ERR_INVALID_REPARSE_DATA]
 		= T("The reparse data of a reparse point was invalid"),
 	[WIMLIB_ERR_INVALID_RESOURCE_HASH]
-		= T("The SHA1 message digest of a WIM resource did not match the expected value"),
+		= T("The SHA-1 message digest of a WIM resource did not match the expected value"),
 	[WIMLIB_ERR_INVALID_UTF8_STRING]
 		= T("A string provided as input by the user was not a valid UTF-8 string"),
 	[WIMLIB_ERR_INVALID_UTF16_STRING]

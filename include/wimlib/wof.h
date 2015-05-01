@@ -70,12 +70,13 @@ struct wim_provider_rpdata {
 	u8 blob_table_hash[20];
 
 	/* Uncompressed size of the file's unnamed data stream, in bytes.  */
-	le64 unnamed_data_stream_uncompressed_size;
+	le64 unnamed_data_stream_size;
 
-	/* Compressed size of the file's unnamed data stream, in bytes.  If the
-	 * stream is stored uncompressed, set this the same as the uncompressed
-	 * size.  */
-	le64 unnamed_data_stream_compressed_size;
+	/* Size of the file's unnamed data stream as stored in the WIM file.
+	 * If this is the same as unnamed_data_stream_size, then the stream is
+	 * uncompressed.  If this is the *not* the same as
+	 * unnamed_data_stream_size, then the stream is compressed.  */
+	le64 unnamed_data_stream_size_in_wim;
 
 	/* Byte offset of the file's unnamed data stream in the WIM.  */
 	le64 unnamed_data_stream_offset_in_wim;

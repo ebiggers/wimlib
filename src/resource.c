@@ -769,8 +769,6 @@ read_file_on_disk_prefix(const struct blob_descriptor *blob, u64 size,
 	int raw_fd;
 	struct filedes fd;
 
-	wimlib_assert(size <= blob->size);
-
 	DEBUG("Reading %"PRIu64" bytes from \"%"TS"\"", size, blob->file_on_disk);
 
 	raw_fd = topen(blob->file_on_disk, O_BINARY | O_RDONLY);
@@ -792,8 +790,6 @@ read_staging_file_prefix(const struct blob_descriptor *blob, u64 size,
 	int raw_fd;
 	struct filedes fd;
 	int ret;
-
-	wimlib_assert(size <= blob->size);
 
 	DEBUG("Reading %"PRIu64" bytes from staging file \"%s\"",
 	      size, blob->staging_file_name);
@@ -818,7 +814,6 @@ static int
 read_buffer_prefix(const struct blob_descriptor *blob,
 		   u64 size, consume_data_callback_t cb, void *cb_ctx)
 {
-	wimlib_assert(size <= blob->size);
 	return (*cb)(blob->attached_buffer, size, cb_ctx);
 }
 
@@ -863,6 +858,7 @@ read_blob_prefix(const struct blob_descriptor *blob, u64 size,
 	};
 	wimlib_assert(blob->blob_location < ARRAY_LEN(handlers)
 		      && handlers[blob->blob_location] != NULL);
+	wimlib_assert(size <= blob->size);
 	return handlers[blob->blob_location](blob, size, cb, cb_ctx);
 }
 
@@ -1085,7 +1081,7 @@ hasher_end_blob(struct blob_descriptor *blob, int status, void *_ctx)
 					tchar actual_hashstr[SHA1_HASH_SIZE * 2 + 1];
 					sprint_hash(blob->hash, expected_hashstr);
 					sprint_hash(hash, actual_hashstr);
-					ERROR("The blob is corrupted!\n"
+					ERROR("The data is corrupted!\n"
 					      "        (Expected SHA-1=%"TS",\n"
 					      "              got SHA-1=%"TS")",
 					      expected_hashstr, actual_hashstr);

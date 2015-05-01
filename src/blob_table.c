@@ -156,8 +156,6 @@ clone_blob_descriptor(const struct blob_descriptor *old)
 		}
 		break;
 #endif
-	default:
-		break;
 	}
 	return new;
 

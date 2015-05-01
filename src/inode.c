@@ -480,21 +480,6 @@ inode_resolve_streams(struct wim_inode *inode, struct blob_table *table,
 	return 0;
 }
 
-/* Undo the effects of inode_resolve_streams().  */
-void
-inode_unresolve_streams(struct wim_inode *inode)
-{
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-
-		if (!inode->i_streams[i].stream_resolved)
-			continue;
-
-		copy_hash(inode->i_streams[i]._stream_hash,
-			  stream_hash(&inode->i_streams[i]));
-		inode->i_streams[i].stream_resolved = 0;
-	}
-}
-
 int
 blob_not_found_error(const struct wim_inode *inode, const u8 *hash)
 {

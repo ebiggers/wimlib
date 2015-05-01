@@ -824,7 +824,7 @@ win32_get_encrypted_file_size(const wchar_t *path, bool is_dir, u64 *size_ret)
 }
 
 static int
-winnt_load_efsrpc_raw_data(struct wim_inode *inode, const wchar_t *nt_path,
+winnt_scan_efsrpc_raw_data(struct wim_inode *inode, const wchar_t *nt_path,
 			   struct list_head *unhashed_blobs)
 {
 	struct blob_descriptor *blob;
@@ -900,12 +900,12 @@ get_data_stream_name(wchar_t *raw_stream_name, size_t raw_stream_name_nchars,
 	return true;
 }
 
-/* Build the path to the stream.  For unnamed streams, this is simply the path
- * to the file.  For named streams, this is the path to the file, followed by a
- * colon, followed by the stream name.  */
+/* Build the path to the data stream.  For unnamed streams, this is simply the
+ * path to the file.  For named streams, this is the path to the file, followed
+ * by a colon, followed by the stream name.  */
 static wchar_t *
-build_stream_path(const wchar_t *path, size_t path_nchars,
-		  const wchar_t *stream_name, size_t stream_name_nchars)
+build_data_stream_path(const wchar_t *path, size_t path_nchars,
+		       const wchar_t *stream_name, size_t stream_name_nchars)
 {
 	size_t stream_path_nchars;
 	wchar_t *stream_path;
@@ -952,10 +952,10 @@ winnt_scan_data_stream(const wchar_t *path, size_t path_nchars,
 		blob = new_blob_descriptor();
 		if (!blob)
 			goto err_nomem;
-		blob->file_on_disk = build_stream_path(path,
-						       path_nchars,
-						       stream_name,
-						       stream_name_nchars);
+		blob->file_on_disk = build_data_stream_path(path,
+							    path_nchars,
+							    stream_name,
+							    stream_name_nchars);
 		if (!blob->file_on_disk)
 			goto err_nomem;
 		blob->blob_location = BLOB_IN_WINNT_FILE_ON_DISK;
@@ -1352,7 +1352,7 @@ retry_open:
 		 * needed.  */
 		(*func_NtClose)(h);
 		h = NULL;
-		ret = winnt_load_efsrpc_raw_data(inode, full_path,
+		ret = winnt_scan_efsrpc_raw_data(inode, full_path,
 						 params->unhashed_blobs);
 		if (ret)
 			goto out;

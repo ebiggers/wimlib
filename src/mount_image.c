@@ -2143,6 +2143,11 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 			return ret;
 	}
 
+	if (wim_has_solid_resources(wim)) {
+		WARNING("Mounting a WIM file containing solid-compressed data; "
+			"file access may be slow.");
+	}
+
 	/* If the user did not specify an interface for accessing named
 	 * data streams, use the default (extended attributes).  */
 	if (!(mount_flags & (WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_NONE |

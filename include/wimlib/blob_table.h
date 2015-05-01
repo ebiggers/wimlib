@@ -12,7 +12,7 @@ enum blob_location {
 	/* The blob's data does not exist.  This is a temporary state only.  */
 	BLOB_NONEXISTENT = 0,
 
-	/* The blob's data is located in a WIM resource identified by the
+	/* The blob's data is available in the WIM resource identified by the
 	 * `struct wim_resource_descriptor' pointed to by @rdesc.
 	 * @offset_in_res identifies the offset at which this particular blob
 	 * begins in the uncompressed data of the resource.  */
@@ -122,7 +122,7 @@ struct blob_descriptor {
 
 #ifdef WITH_FUSE
 	/* Number of open file descriptors to this blob during a FUSE mount of
-	 * the containing image.  */
+	 * a WIM image.  */
 	u16 num_opened_fds;
 #endif
 

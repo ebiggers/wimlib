@@ -1002,7 +1002,7 @@ union wimlib_progress_info {
 		 * integrity checks.  */
 		uint64_t total_bytes;
 
-		/** The number of bytes that have been processed so far.  This
+		/** The number of bytes that have been checksummed so far.  This
 		 * starts at 0 and ends at @p total_bytes.  */
 		uint64_t completed_bytes;
 
@@ -1010,8 +1010,8 @@ union wimlib_progress_info {
 		 * integrity-checked region is divided into.  */
 		uint32_t total_chunks;
 
-		/** The number of chunks that have been processed so far.  This
-		 * starts at 0 and ends at @p total_chunks.  */
+		/** The number of chunks that have been checksummed so far.
+		 * This starts at 0 and ends at @p total_chunks.  */
 		uint32_t completed_chunks;
 
 		/** The size of each individually checksummed "chunk" in the
@@ -4073,9 +4073,9 @@ wimlib_set_print_errors(bool show_messages);
  * @param wim
  * 	Pointer to the ::WIMStruct for a WIM.
  * @param info
- *	A struct ::wimlib_wim_info that contains the information to set.  Only
- *	the information explicitly specified in the @p which flags need be
- *	valid.
+ *	Pointer to a ::wimlib_wim_info structure that contains the information
+ *	to set.  Only the information explicitly specified in the @p which flags
+ *	need be valid.
  * @param which
  *	Flags that specify which information to set.  This is a bitwise OR of
  *	::WIMLIB_CHANGE_READONLY_FLAG, ::WIMLIB_CHANGE_GUID,

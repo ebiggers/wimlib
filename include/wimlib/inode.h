@@ -410,9 +410,6 @@ extern int
 inode_resolve_streams(struct wim_inode *inode,
 		      struct blob_table *table, bool force);
 
-extern void
-inode_unresolve_streams(struct wim_inode *inode);
-
 extern int
 blob_not_found_error(const struct wim_inode *inode, const u8 *hash);
 

@@ -93,8 +93,8 @@ end_verify_blob(struct blob_descriptor *blob, int status, void *_ctx)
 }
 
 static int
-verify_image_blobs_present(struct wim_image_metadata *imd,
-			   struct blob_table *blob_table)
+verify_file_data_present(struct wim_image_metadata *imd,
+			 struct blob_table *blob_table)
 {
 	struct wim_inode *inode;
 	int ret;
@@ -150,8 +150,8 @@ wimlib_verify_wim(WIMStruct *wim, int verify_flags)
 			if (ret)
 				return ret;
 
-			ret = verify_image_blobs_present(wim_get_current_image_metadata(wim),
-							 wim->blob_table);
+			ret = verify_file_data_present(wim_get_current_image_metadata(wim),
+						       wim->blob_table);
 			if (ret)
 				return ret;
 

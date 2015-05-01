@@ -103,35 +103,33 @@ static int
 unix_scan_regular_file(const char *path, u64 size, struct wim_inode *inode,
 		       struct list_head *unhashed_blobs)
 {
-	struct blob_descriptor *blob;
+	struct blob_descriptor *blob = NULL;
 	struct wim_inode_stream *strm;
 
 	inode->i_attributes = FILE_ATTRIBUTE_NORMAL;
 
 	if (size) {
-		char *file_on_disk = STRDUP(path);
-		if (!file_on_disk)
-			return WIMLIB_ERR_NOMEM;
 		blob = new_blob_descriptor();
-		if (!blob) {
-			FREE(file_on_disk);
-			return WIMLIB_ERR_NOMEM;
-		}
-		blob->file_on_disk = file_on_disk;
-		blob->file_inode = inode;
+		if (unlikely(!blob))
+			goto err_nomem;
+		blob->file_on_disk = STRDUP(path);
+		if (unlikely(!blob->file_on_disk))
+			goto err_nomem;
 		blob->blob_location = BLOB_IN_FILE_ON_DISK;
 		blob->size = size;
-	} else {
-		blob = NULL;
+		blob->file_inode = inode;
 	}
 
 	strm = inode_add_stream(inode, STREAM_TYPE_DATA, NO_STREAM_NAME, blob);
-	if (!strm) {
-		free_blob_descriptor(blob);
-		return WIMLIB_ERR_NOMEM;
-	}
+	if (unlikely(!strm))
+		goto err_nomem;
+
 	prepare_unhashed_blob(blob, inode, strm->stream_id, unhashed_blobs);
 	return 0;
+
+err_nomem:
+	free_blob_descriptor(blob);
+	return WIMLIB_ERR_NOMEM;
 }
 
 static int

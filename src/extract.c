@@ -506,8 +506,8 @@ end_extract_blob_wrapper(struct blob_descriptor *blob, int status, void *_ctx)
  * MAX_OPEN_FILES locations, as measured by the 'out_refcnt' of each blob.
  * Therefore, the apply_operations implementation need not worry about running
  * out of file descriptors, unless it might open more than one file descriptor
- * per nominal destination (e.g. Win32 currently might because the destination
- * file system might not support hard links).
+ * per 'blob_extraction_target' (e.g. Win32 currently might because the
+ * destination file system might not support hard links).
  */
 int
 extract_blob_list(struct apply_ctx *ctx,

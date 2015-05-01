@@ -929,16 +929,15 @@ static pthread_mutex_t lib_initialization_mutex = PTHREAD_MUTEX_INITIALIZER;
 WIMLIBAPI int
 wimlib_global_init(int init_flags)
 {
-	int ret;
+	int ret = 0;
 
 	if (lib_initialized)
-		return 0;
+		goto out;
 
 	pthread_mutex_lock(&lib_initialization_mutex);
 
-	ret = 0;
 	if (lib_initialized)
-		goto out;
+		goto out_unlock;
 
 #ifdef ENABLE_ERROR_MESSAGES
 	if (!wimlib_error_file)
@@ -952,14 +951,14 @@ wimlib_global_init(int init_flags)
 			   WIMLIB_INIT_FLAG_STRICT_APPLY_PRIVILEGES |
 			   WIMLIB_INIT_FLAG_DEFAULT_CASE_SENSITIVE |
 			   WIMLIB_INIT_FLAG_DEFAULT_CASE_INSENSITIVE))
-		goto out;
+		goto out_unlock;
 
 	ret = WIMLIB_ERR_INVALID_PARAM;
 	if ((init_flags & (WIMLIB_INIT_FLAG_DEFAULT_CASE_SENSITIVE |
 			   WIMLIB_INIT_FLAG_DEFAULT_CASE_INSENSITIVE))
 			== (WIMLIB_INIT_FLAG_DEFAULT_CASE_SENSITIVE |
 			    WIMLIB_INIT_FLAG_DEFAULT_CASE_INSENSITIVE))
-		goto out;
+		goto out_unlock;
 
 	libxml_global_init();
 	if (!(init_flags & WIMLIB_INIT_FLAG_ASSUME_UTF8)) {
@@ -972,7 +971,7 @@ wimlib_global_init(int init_flags)
 #ifdef __WIN32__
 	ret = win32_global_init(init_flags);
 	if (ret)
-		goto out;
+		goto out_unlock;
 #endif
 	iconv_global_init();
 	init_upcase();
@@ -982,8 +981,9 @@ wimlib_global_init(int init_flags)
 		default_ignore_case = true;
 	lib_initialized = true;
 	ret = 0;
-out:
+out_unlock:
 	pthread_mutex_unlock(&lib_initialization_mutex);
+out:
 	return ret;
 }
 
@@ -997,7 +997,7 @@ wimlib_global_cleanup(void)
 	pthread_mutex_lock(&lib_initialization_mutex);
 
 	if (!lib_initialized)
-		goto out;
+		goto out_unlock;
 
 	libxml_global_cleanup();
 	iconv_global_cleanup();
@@ -1008,6 +1008,6 @@ wimlib_global_cleanup(void)
 	wimlib_set_error_file(NULL);
 	lib_initialized = false;
 
-out:
+out_unlock:
 	pthread_mutex_unlock(&lib_initialization_mutex);
 }

@@ -66,23 +66,28 @@
 #define WRITE_RESOURCE_FLAG_SEND_DONE_WITH_FILE	0x00000008
 #define WRITE_RESOURCE_FLAG_SOLID_SORT		0x00000010
 
-static inline int
+static int
 write_flags_to_resource_flags(int write_flags)
 {
 	int write_resource_flags = 0;
 
 	if (write_flags & WIMLIB_WRITE_FLAG_RECOMPRESS)
 		write_resource_flags |= WRITE_RESOURCE_FLAG_RECOMPRESS;
+
 	if (write_flags & WIMLIB_WRITE_FLAG_PIPABLE)
 		write_resource_flags |= WRITE_RESOURCE_FLAG_PIPABLE;
+
 	if (write_flags & WIMLIB_WRITE_FLAG_SOLID)
 		write_resource_flags |= WRITE_RESOURCE_FLAG_SOLID;
+
 	if (write_flags & WIMLIB_WRITE_FLAG_SEND_DONE_WITH_FILE_MESSAGES)
 		write_resource_flags |= WRITE_RESOURCE_FLAG_SEND_DONE_WITH_FILE;
+
 	if ((write_flags & (WIMLIB_WRITE_FLAG_SOLID |
 			    WIMLIB_WRITE_FLAG_NO_SOLID_SORT)) ==
 	    WIMLIB_WRITE_FLAG_SOLID)
 		write_resource_flags |= WRITE_RESOURCE_FLAG_SOLID_SORT;
+
 	return write_resource_flags;
 }
 
@@ -786,8 +791,8 @@ write_blob_begin_read(struct blob_descriptor *blob, void *_ctx)
 	return 0;
 }
 
-/* Rewrite a blob that was just written compressed as uncompressed instead.
- */
+/* Rewrite a blob that was just written compressed (as a non-solid WIM resource)
+ * as uncompressed instead.  */
 static int
 write_blob_uncompressed(struct blob_descriptor *blob, struct filedes *out_fd)
 {
@@ -808,7 +813,7 @@ write_blob_uncompressed(struct blob_descriptor *blob, struct filedes *out_fd)
 			 * seeked to the end of the compressed resource, so
 			 * don't issue a hard error; just keep the compressed
 			 * resource instead.  */
-			WARNING("Recovered compressed blob of "
+			WARNING("Recovered compressed resource of "
 				"size %"PRIu64", continuing on.", blob->size);
 			return 0;
 		}
@@ -1708,11 +1713,11 @@ out_destroy_context:
 
 
 static int
-wim_write_blob_list(WIMStruct *wim,
-		    struct list_head *blob_list,
-		    int write_flags,
-		    unsigned num_threads,
-		    struct filter_context *filter_ctx)
+write_file_data_blobs(WIMStruct *wim,
+		      struct list_head *blob_list,
+		      int write_flags,
+		      unsigned num_threads,
+		      struct filter_context *filter_ctx)
 {
 	int out_ctype;
 	u32 out_chunk_size;
@@ -1887,12 +1892,16 @@ inode_find_blobs_to_reference(const struct wim_inode *inode,
 
 	for (unsigned i = 0; i < inode->i_num_streams; i++) {
 		struct blob_descriptor *blob;
+		const u8 *hash;
 
 		blob = stream_blob(&inode->i_streams[i], table);
-		if (blob)
+		if (blob) {
 			reference_blob_for_write(blob, blob_list, inode->i_nlink);
-		else if (!is_zero_hash(stream_hash(&inode->i_streams[i])))
-			return WIMLIB_ERR_RESOURCE_NOT_FOUND;
+		} else {
+			hash = stream_hash(&inode->i_streams[i]);
+			if (!is_zero_hash(hash))
+				return blob_not_found_error(inode, hash);
+		}
 	}
 	return 0;
 }
@@ -2142,10 +2151,10 @@ prepare_blob_list_for_write(WIMStruct *wim, int image,
 }
 
 static int
-write_file_blobs(WIMStruct *wim, int image, int write_flags,
-		 unsigned num_threads,
-		 struct list_head *blob_list_override,
-		 struct list_head *blob_table_list_ret)
+write_file_data(WIMStruct *wim, int image, int write_flags,
+		unsigned num_threads,
+		struct list_head *blob_list_override,
+		struct list_head *blob_table_list_ret)
 {
 	int ret;
 	struct list_head _blob_list;
@@ -2180,11 +2189,11 @@ write_file_blobs(WIMStruct *wim, int image, int write_flags,
 		}
 	}
 
-	return wim_write_blob_list(wim,
-				   blob_list,
-				   write_flags,
-				   num_threads,
-				   filter_ctx);
+	return write_file_data_blobs(wim,
+				     blob_list,
+				     write_flags,
+				     num_threads,
+				     filter_ctx);
 }
 
 static int
@@ -2453,7 +2462,7 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	    && wim_has_integrity_table(wim))
 	{
 		old_blob_table_end = wim->hdr.blob_table_reshdr.offset_in_wim +
-				       wim->hdr.blob_table_reshdr.size_in_wim;
+				     wim->hdr.blob_table_reshdr.size_in_wim;
 		(void)read_integrity_table(wim,
 					   old_blob_table_end - WIM_HEADER_DISK_SIZE,
 					   &old_integrity_table);
@@ -2606,6 +2615,9 @@ unlock_wim_for_append(WIMStruct *wim)
  *   reading the WIM from a pipe.  This copy of the XML data is ignored if the
  *   WIM is read from a seekable file (not a pipe).
  *
+ * - Solid resources are not allowed.  Each blob is always stored in its own
+ *   resource.
+ *
  * - The format of resources, or blobs, has been modified to allow them to be
  *   used before the "blob table" has been read.  Each blob is prefixed with a
  *   `struct pwm_blob_hdr' that is basically an abbreviated form of `struct
@@ -2667,13 +2679,13 @@ write_pipable_wim(WIMStruct *wim, int image, int write_flags,
 
 	WARNING("Creating a pipable WIM, which will "
 		"be incompatible\n"
-		"          with Microsoft's software (wimgapi/imagex/Dism).");
+		"          with Microsoft's software (WIMGAPI/ImageX/DISM).");
 
 	/* At this point, the header at the beginning of the file has already
 	 * been written.  */
 
 	/* For efficiency, when wimlib adds an image to the WIM with
-	 * wimlib_add_image(), the SHA-1 message digests of files is not
+	 * wimlib_add_image(), the SHA-1 message digests of files are not
 	 * calculated; instead, they are calculated while the files are being
 	 * written.  However, this does not work when writing a pipable WIM,
 	 * since when writing a blob to a pipable WIM, its SHA-1 message digest
@@ -2696,11 +2708,11 @@ write_pipable_wim(WIMStruct *wim, int image, int write_flags,
 	if (ret)
 		return ret;
 
-	/* Write blobs needed for the image(s) being included in the output WIM,
-	 * or blobs needed for the split WIM part.  */
-	return write_file_blobs(wim, image, write_flags,
-				num_threads, blob_list_override,
-				blob_table_list_ret);
+	/* Write file data needed for the image(s) being included in the output
+	 * WIM, or file data needed for the split WIM part.  */
+	return write_file_data(wim, image, write_flags,
+			       num_threads, blob_list_override,
+			       blob_table_list_ret);
 
 	/* The blob table, XML data, and header at end are handled by
 	 * finish_write().  */
@@ -2775,6 +2787,12 @@ write_wim_part(WIMStruct *wim,
 
 	if (write_flags & WIMLIB_WRITE_FLAG_SOLID)
 		DEBUG("\tSOLID");
+
+	if (write_flags & WIMLIB_WRITE_FLAG_SEND_DONE_WITH_FILE_MESSAGES)
+		DEBUG("\tSEND_DONE_WITH_FILE_MESSAGES");
+
+	if (write_flags & WIMLIB_WRITE_FLAG_NO_SOLID_SORT)
+		DEBUG("\tNO_SOLID_SORT");
 
 	if (write_flags & WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR)
 		DEBUG("\tFILE_DESCRIPTOR");
@@ -2911,14 +2929,12 @@ write_wim_part(WIMStruct *wim,
 	if (total_parts != 1)
 		wim->hdr.boot_idx = 0;
 
-	/* Initialize output file descriptor.  */
+	/* Set up output file descriptor.  */
 	if (write_flags & WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR) {
-		/* File descriptor was explicitly provided.  Return error if
-		 * file descriptor is not seekable, unless writing a pipable WIM
-		 * was requested.  */
-		wim->out_fd.fd = *(const int*)path_or_fd;
-		wim->out_fd.offset = 0;
+		/* File descriptor was explicitly provided.  */
+		filedes_init(&wim->out_fd, *(const int *)path_or_fd);
 		if (!filedes_is_seekable(&wim->out_fd)) {
+			/* The file descriptor is a pipe.  */
 			ret = WIMLIB_ERR_INVALID_PARAM;
 			if (!(write_flags & WIMLIB_WRITE_FLAG_PIPABLE))
 				goto out_restore_hdr;
@@ -2948,13 +2964,13 @@ write_wim_part(WIMStruct *wim,
 	if (ret)
 		goto out_restore_hdr;
 
-	/* Write file blobs and metadata resources.  */
+	/* Write file data and metadata resources.  */
 	if (!(write_flags & WIMLIB_WRITE_FLAG_PIPABLE)) {
 		/* Default case: create a normal (non-pipable) WIM.  */
-		ret = write_file_blobs(wim, image, write_flags,
-				       num_threads,
-				       blob_list_override,
-				       &blob_table_list);
+		ret = write_file_data(wim, image, write_flags,
+				      num_threads,
+				      blob_list_override,
+				      &blob_table_list);
 		if (ret)
 			goto out_restore_hdr;
 
@@ -3229,8 +3245,8 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 		goto out_restore_physical_hdr;
 	}
 
-	ret = wim_write_blob_list(wim, &blob_list, write_flags,
-				  num_threads, &filter_ctx);
+	ret = write_file_data_blobs(wim, &blob_list, write_flags,
+				    num_threads, &filter_ctx);
 	if (ret)
 		goto out_truncate;
 

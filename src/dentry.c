@@ -1819,8 +1819,7 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 		const struct wim_inode_stream *efs_strm;
 		const u8 *efs_hash;
 
-		efs_strm = inode_get_stream(inode, STREAM_TYPE_EFSRPC_RAW_DATA,
-					    NO_STREAM_NAME);
+		efs_strm = inode_get_unnamed_stream(inode, STREAM_TYPE_EFSRPC_RAW_DATA);
 		efs_hash = efs_strm ? stream_hash(efs_strm) : zero_hash;
 		copy_hash(disk_dentry->default_hash, efs_hash);
 		disk_dentry->num_extra_streams = cpu_to_le16(0);
@@ -1836,7 +1835,6 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 		 */
 		bool have_named_data_stream = false;
 		bool have_reparse_point_stream = false;
-		u16 num_extra_streams = 0;
 		const u8 *unnamed_data_stream_hash = zero_hash;
 		const u8 *reparse_point_hash;
 		for (unsigned i = 0; i < inode->i_num_streams; i++) {
@@ -1852,7 +1850,9 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 			}
 		}
 
-		if (have_reparse_point_stream || have_named_data_stream) {
+		if (unlikely(have_reparse_point_stream || have_named_data_stream)) {
+
+			unsigned num_extra_streams = 0;
 
 			copy_hash(disk_dentry->default_hash, zero_hash);
 
@@ -1865,19 +1865,22 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 			p = write_extra_stream_entry(p, NO_STREAM_NAME,
 						     unnamed_data_stream_hash);
 			num_extra_streams++;
+
+			for (unsigned i = 0; i < inode->i_num_streams; i++) {
+				const struct wim_inode_stream *strm = &inode->i_streams[i];
+				if (stream_is_named_data_stream(strm)) {
+					p = write_extra_stream_entry(p, strm->stream_name,
+								     stream_hash(strm));
+					num_extra_streams++;
+				}
+			}
+			wimlib_assert(num_extra_streams <= 0xFFFF);
+
+			disk_dentry->num_extra_streams = cpu_to_le16(num_extra_streams);
 		} else {
 			copy_hash(disk_dentry->default_hash, unnamed_data_stream_hash);
+			disk_dentry->num_extra_streams = cpu_to_le16(0);
 		}
-
-		for (unsigned i = 0; i < inode->i_num_streams; i++) {
-			const struct wim_inode_stream *strm = &inode->i_streams[i];
-			if (stream_is_named_data_stream(strm)) {
-				p = write_extra_stream_entry(p, strm->stream_name,
-							     stream_hash(strm));
-				num_extra_streams++;
-			}
-		}
-		disk_dentry->num_extra_streams = cpu_to_le16(num_extra_streams);
 	}
 
 	return p;

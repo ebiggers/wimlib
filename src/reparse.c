@@ -144,7 +144,7 @@ make_reparse_buffer(const struct reparse_data * restrict rpdata,
 	data = mempcpy(data, rpdata->print_name, rpdata->print_name_nbytes);
 	*(utf16lechar*)data = cpu_to_le16(0);
 	data += 2;
-	rpbuf_disk->rpdatalen = cpu_to_le16(data - rpbuf - 8);
+	rpbuf_disk->rpdatalen = cpu_to_le16(data - rpbuf - REPARSE_DATA_OFFSET);
 	*rpbuflen_ret = data - rpbuf;
 	return 0;
 }
@@ -179,8 +179,7 @@ wim_inode_get_reparse_data(const struct wim_inode * restrict inode,
 	} else {
 		struct wim_inode_stream *strm;
 
-		strm = inode_get_stream(inode, STREAM_TYPE_REPARSE_POINT,
-					NO_STREAM_NAME);
+		strm = inode_get_unnamed_stream(inode, STREAM_TYPE_REPARSE_POINT);
 		if (strm)
 			blob = stream_blob_resolved(strm);
 		else
@@ -215,7 +214,7 @@ wim_inode_get_reparse_data(const struct wim_inode * restrict inode,
 	 * XXX this could be one of the unknown fields in the WIM dentry. */
 	rpbuf_disk->rpreserved = cpu_to_le16(0);
 
-	*rpbuflen_ret = rpdatalen + 8;
+	*rpbuflen_ret = rpdatalen + REPARSE_DATA_OFFSET;
 	return 0;
 }
 
@@ -423,7 +422,7 @@ wim_inode_set_symlink(struct wim_inode *inode, const char *target,
 	ret = tstr_to_utf16le(target, strlen(target),
 			      &name_utf16le, &name_utf16le_nbytes);
 	if (ret)
-		return ret;
+		goto out;
 
 	for (size_t i = 0; i < name_utf16le_nbytes / 2; i++)
 		if (name_utf16le[i] == cpu_to_le16('/'))
@@ -499,16 +498,22 @@ wim_inode_set_symlink(struct wim_inode *inode, const char *target,
 	}
 
 	ret = make_reparse_buffer(&rpdata, (u8*)&rpbuf_disk, &rpbuflen);
-	if (ret == 0) {
-		if (!inode_add_stream_with_data(inode,
-						STREAM_TYPE_REPARSE_POINT,
-						NO_STREAM_NAME,
-						(u8*)&rpbuf_disk + 8,
-						rpbuflen - 8,
-						blob_table))
-			ret = WIMLIB_ERR_NOMEM;
-	}
+	if (ret)
+		goto out_free_name;
+
+	ret = WIMLIB_ERR_NOMEM;
+	if (!inode_add_stream_with_data(inode,
+					STREAM_TYPE_REPARSE_POINT,
+					NO_STREAM_NAME,
+					(u8*)&rpbuf_disk + REPARSE_DATA_OFFSET,
+					rpbuflen - REPARSE_DATA_OFFSET,
+					blob_table))
+		goto out_free_name;
+
+	ret = 0;
+out_free_name:
 	FREE(name_utf16le);
+out:
 	return ret;
 }
 
