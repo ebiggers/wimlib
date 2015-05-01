@@ -21,6 +21,10 @@ Version 1.8.1-BETA:
 	The '--enable-verify-compression' configure option has been removed.  If
 	you want to verify a WIM file, use the 'wimverify' program.
 
+	The way the "file count", "directory count", "total bytes", and "hard
+	link bytes" image statistics (stored in the WIM XML data) is calculated
+	has been slightly changed.
+
 Version 1.8.0:
 	Improved the LZX compressor.  It is now 15-20% faster than before and
 	provides a slightly better compression ratio.

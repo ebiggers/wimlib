@@ -1163,79 +1163,25 @@ xml_set_memory_allocator(void *(*malloc_func)(size_t),
 }
 
 static int
-calculate_dentry_statistics(struct wim_dentry *dentry, void *arg)
+calculate_dentry_statistics(struct wim_dentry *dentry, void *_info)
 {
-	struct image_info *info = arg;
+	struct image_info *info = _info;
 	const struct wim_inode *inode = dentry->d_inode;
 
-	/* Update directory count and file count.
-	 *
-	 * Each dentry counts as either a file or a directory, but not both.
-	 * The root directory is an exception: it is not counted at all.
-	 *
-	 * Symbolic links and junction points (and presumably other reparse
-	 * points) count as regular files.  This is despite the fact that
-	 * junction points have FILE_ATTRIBUTE_DIRECTORY set.
-	 */
+	if (inode_is_directory(inode))
+		info->dir_count++;
+	else
+		info->file_count++;
 
-	if (!dentry_is_root(dentry)) {
-		if (inode_is_directory(inode))
-			info->dir_count++;
-		else
-			info->file_count++;
-	}
+	for (unsigned i = 0; i < inode->i_num_streams; i++) {
+		const struct blob_descriptor *blob;
 
-	/*
-	 * Update total bytes and hard link bytes.
-	 *
-	 * We try to act the same as the MS implementation, even though there
-	 * are some inconsistencies/bugs in the way it operates.
-	 *
-	 * If there are no alternate data streams in the image, the "total
-	 * bytes" is the sum of the size of the un-named data stream of each
-	 * inode times the link count of that inode.  In other words, it would
-	 * be the total number of bytes of regular files you would have if you
-	 * extracted the full image without any hard-links.  The "hard link
-	 * bytes" is equal to the "total bytes" minus the size of the un-named
-	 * data stream of each inode.  In other words, the "hard link bytes"
-	 * counts the size of the un-named data stream for all the links to each
-	 * inode except the first one.
-	 *
-	 * Reparse points and directories don't seem to be counted in either the
-	 * total bytes or the hard link bytes.
-	 *
-	 * And now we get to the most confusing part, the alternate data
-	 * streams.  They are not counted in the "total bytes".  However, if the
-	 * link count of an inode with alternate data streams is 2 or greater,
-	 * the size of all the alternate data streams is included in the "hard
-	 * link bytes", and this size is multiplied by the link count (NOT one
-	 * less than the link count).
-	 */
-	if (!(inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
-				     FILE_ATTRIBUTE_REPARSE_POINT)))
-	{
-		struct blob_descriptor *blob;
-
-		blob = inode_get_blob_for_unnamed_data_stream(inode,
-							      info->blob_table);
-		if (blob) {
-			info->total_bytes += blob->size;
-			if (!dentry_is_first_in_inode(dentry))
-				info->hard_link_bytes += blob->size;
-		}
-
-		if (inode->i_nlink >= 2 && dentry_is_first_in_inode(dentry)) {
-			for (unsigned i = 0; i < inode->i_num_streams; i++) {
-				if (stream_is_named_data_stream(&inode->i_streams[i])) {
-					blob = stream_blob(&inode->i_streams[i],
-							   info->blob_table);
-					if (blob) {
-						info->hard_link_bytes += inode->i_nlink *
-									 blob->size;
-					}
-				}
-			}
-		}
+		blob = stream_blob(&inode->i_streams[i], info->blob_table);
+		if (!blob)
+			continue;
+		info->total_bytes += blob->size;
+		if (!dentry_is_first_in_inode(dentry))
+			info->hard_link_bytes += blob->size;
 	}
 	return 0;
 }
@@ -1243,6 +1189,9 @@ calculate_dentry_statistics(struct wim_dentry *dentry, void *arg)
 /*
  * Calculate what to put in the <FILECOUNT>, <DIRCOUNT>, <TOTALBYTES>, and
  * <HARDLINKBYTES> elements of the specified WIM image.
+ *
+ * Note: since these stats are likely to be used for display purposes only, we
+ * no longer attempt to duplicate WIMGAPI's weird bugs when calculating them.
  */
 void
 xml_update_image_info(WIMStruct *wim, int image)
