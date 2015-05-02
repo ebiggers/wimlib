@@ -52,9 +52,7 @@
 #include "wimlib/progress.h"
 #include "wimlib/resource.h"
 #include "wimlib/solid.h"
-#ifdef __WIN32__
-#  include "wimlib/win32.h" /* win32_rename_replacement() */
-#endif
+#include "wimlib/win32.h" /* win32_rename_replacement() */
 #include "wimlib/write.h"
 #include "wimlib/xml.h"
 

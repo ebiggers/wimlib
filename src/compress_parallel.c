@@ -42,9 +42,7 @@
 #include "wimlib/error.h"
 #include "wimlib/list.h"
 #include "wimlib/util.h"
-#ifdef __WIN32__
-#  include "wimlib/win32.h" /* win32_get_number_of_processors() */
-#endif
+#include "wimlib/win32.h" /* win32_get_number_of_processors() */
 
 struct message_queue {
 	struct list_head list;

@@ -29,9 +29,7 @@
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
 #include "wimlib/util.h"
-#ifdef __WIN32__
-#  include "wimlib/win32.h" /* For pread(), pwrite() replacements */
-#endif
+#include "wimlib/win32.h" /* For pread(), pwrite() replacements */
 
 /* Wrapper around read() that checks for errors keeps retrying until all
  * requested bytes have been read or until end-of file has occurred.

@@ -43,9 +43,7 @@
 #include "wimlib.h"
 #include "wimlib/error.h"
 #include "wimlib/util.h"
-#ifdef __WIN32__
-#  include "wimlib/win32.h"
-#endif
+#include "wimlib/win32.h"
 
 #ifdef ENABLE_ERROR_MESSAGES
 bool wimlib_print_errors = false;

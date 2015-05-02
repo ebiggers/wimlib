@@ -1,9 +1,7 @@
 #ifndef _WIMLIB_WIN32_H
 #define _WIMLIB_WIN32_H
 
-#ifndef __WIN32__
-#  error "This header is for Win32 only"
-#endif
+#ifdef __WIN32__
 
 #include "wimlib/callback.h"
 #include "wimlib/types.h"
@@ -55,5 +53,7 @@ pread(int fd, void *buf, size_t count, off_t offset);
 
 extern ssize_t
 pwrite(int fd, const void *buf, size_t count, off_t offset);
+
+#endif /* __WIN32__ */
 
 #endif /* _WIMLIB_WIN32_H */

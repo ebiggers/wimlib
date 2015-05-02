@@ -58,12 +58,10 @@
 #include "wimlib/resource.h"
 #include "wimlib/security.h"
 #include "wimlib/unix_data.h"
-#ifdef __WIN32__
-#  include "wimlib/win32.h" /* for realpath() equivalent */
-#endif
-#include "wimlib/xml.h"
 #include "wimlib/wildcard.h"
 #include "wimlib/wim.h"
+#include "wimlib/win32.h" /* for realpath() equivalent */
+#include "wimlib/xml.h"
 
 #define WIMLIB_EXTRACT_FLAG_FROM_PIPE   0x80000000
 #define WIMLIB_EXTRACT_FLAG_IMAGEMODE   0x40000000

@@ -44,9 +44,7 @@
 #include "wimlib/security.h"
 #include "wimlib/wim.h"
 #include "wimlib/xml.h"
-#ifdef __WIN32__
-#  include "wimlib/win32.h" /* for realpath() replacement */
-#endif
+#include "wimlib/win32.h"
 
 /* Information about the available compression types for the WIM format.  */
 static const struct {
