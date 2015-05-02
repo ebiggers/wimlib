@@ -11,7 +11,7 @@ struct _ntfs_volume;
 struct _ntfs_volume;
 struct ntfs_location {
 	struct _ntfs_volume *ntfs_vol;
-	char *path;
+	u64 mft_no;
 	utf16lechar *attr_name;
 	unsigned attr_name_nchars;
 	unsigned attr_type;

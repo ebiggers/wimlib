@@ -65,8 +65,8 @@ open_ntfs_attr(ntfs_inode *ni, const struct ntfs_location *loc)
 			    loc->attr_name,
 			    loc->attr_name_nchars);
 	if (!na) {
-		ERROR_WITH_ERRNO("Failed to open attribute of \"%"TS"\" in "
-				 "NTFS volume", loc->path);
+		ERROR_WITH_ERRNO("Failed to open attribute of NTFS inode %"PRIu64,
+				 loc->mft_no);
 	}
 	return na;
 }
@@ -84,9 +84,10 @@ read_ntfs_attribute_prefix(const struct blob_descriptor *blob, u64 size,
 	int ret;
 	u8 buf[BUFFER_SIZE];
 
-	ni = ntfs_pathname_to_inode(vol, NULL, loc->path);
+	ni = ntfs_inode_open(vol, loc->mft_no);
 	if (!ni) {
-		ERROR_WITH_ERRNO("Can't find NTFS inode for \"%"TS"\"", loc->path);
+		ERROR_WITH_ERRNO("Failed to open NTFS inode %"PRIu64,
+				 loc->mft_no);
 		ret = WIMLIB_ERR_NTFS_3G;
 		goto out;
 	}
@@ -102,7 +103,8 @@ read_ntfs_attribute_prefix(const struct blob_descriptor *blob, u64 size,
 	while (bytes_remaining) {
 		s64 to_read = min(bytes_remaining, sizeof(buf));
 		if (ntfs_attr_pread(na, pos, to_read, buf) != to_read) {
-			ERROR_WITH_ERRNO("Error reading \"%"TS"\"", loc->path);
+			ERROR_WITH_ERRNO("Error reading data from NTFS inode "
+					 "%"PRIu64, loc->mft_no);
 			ret = WIMLIB_ERR_NTFS_3G;
 			goto out_close_ntfs_attr;
 		}
@@ -212,11 +214,7 @@ scan_ntfs_attr(struct wim_inode *inode,
 		blob->size = data_size;
 		blob->ntfs_loc->ntfs_vol = vol;
 		blob->ntfs_loc->attr_type = type;
-		blob->ntfs_loc->path = memdup(path, path_len + 1);
-		if (unlikely(!blob->ntfs_loc->path)) {
-			ret = WIMLIB_ERR_NOMEM;
-			goto out_cleanup;
-		}
+		blob->ntfs_loc->mft_no = ni->mft_no;
 
 		if (unlikely(name_nchars)) {
 			blob->ntfs_loc->attr_name = utf16le_dup(stream_name);
