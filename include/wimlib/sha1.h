@@ -26,12 +26,6 @@ copy_hash(u8 dest[SHA1_HASH_SIZE], const u8 src[SHA1_HASH_SIZE])
 	memcpy(dest, src, SHA1_HASH_SIZE);
 }
 
-static inline void
-random_hash(u8 hash[SHA1_HASH_SIZE])
-{
-	randomize_byte_array(hash, SHA1_HASH_SIZE);
-}
-
 static inline int
 hashes_cmp(const u8 h1[SHA1_HASH_SIZE], const u8 h2[SHA1_HASH_SIZE])
 {
@@ -48,12 +42,6 @@ static inline bool
 is_zero_hash(const u8 *hash)
 {
 	return (hash == zero_hash || hashes_equal(hash, zero_hash));
-}
-
-static inline void
-zero_out_hash(u8 hash[SHA1_HASH_SIZE])
-{
-	copy_hash(hash, zero_hash);
 }
 
 #ifdef WITH_LIBCRYPTO
