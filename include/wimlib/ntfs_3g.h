@@ -1,23 +1,13 @@
 #ifndef _WIMLIB_NTFS_3G_H
 #define _WIMLIB_NTFS_3G_H
 
+#ifdef WITH_NTFS_3G
+
 #include "wimlib/callback.h"
 #include "wimlib/types.h"
 
 struct blob_descriptor;
-struct _ntfs_volume;
-
-#ifdef WITH_NTFS_3G
-struct _ntfs_volume;
-struct ntfs_location {
-	struct _ntfs_volume *ntfs_vol;
-	u64 mft_no;
-	utf16lechar *attr_name;
-	unsigned attr_name_nchars;
-	unsigned attr_type;
-	u64 sort_key;
-};
-#endif
+struct ntfs_location;
 
 extern void
 libntfs3g_global_init(void);
@@ -26,7 +16,16 @@ extern int
 read_ntfs_attribute_prefix(const struct blob_descriptor *blob, u64 size,
 			   consume_data_callback_t cb, void *cb_ctx);
 
-extern int
-do_ntfs_umount(struct _ntfs_volume *vol);
+extern struct ntfs_location *
+clone_ntfs_location(const struct ntfs_location *loc);
 
-#endif
+extern void
+free_ntfs_location(struct ntfs_location *loc);
+
+extern int
+cmp_ntfs_locations(const struct ntfs_location *loc1,
+		   const struct ntfs_location *loc2);
+
+#endif /* WITH_NTFS_3G */
+
+#endif /* _WIMLIB_NTFS_3G_H */

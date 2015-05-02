@@ -48,6 +48,39 @@
 #include "wimlib/reparse.h"
 #include "wimlib/security.h"
 
+/* A reference-counted NTFS volume than is automatically unmounted when the
+ * reference count reaches 0  */
+struct ntfs_volume_wrapper {
+	ntfs_volume *vol;
+	size_t refcnt;
+};
+
+/* Description of where data is located in an NTFS volume  */
+struct ntfs_location {
+	struct ntfs_volume_wrapper *volume;
+	u64 mft_no;
+	utf16lechar *attr_name;
+	unsigned attr_name_nchars;
+	unsigned attr_type;
+	u64 sort_key;
+};
+
+static struct ntfs_volume_wrapper *
+get_ntfs_volume(struct ntfs_volume_wrapper *volume)
+{
+	volume->refcnt++;
+	return volume;
+}
+
+static void
+put_ntfs_volume(struct ntfs_volume_wrapper *volume)
+{
+	if (--volume->refcnt == 0) {
+		ntfs_umount(volume->vol, FALSE);
+		FREE(volume);
+	}
+}
+
 static inline const ntfschar *
 attr_record_name(const ATTR_RECORD *record)
 {
@@ -76,7 +109,7 @@ read_ntfs_attribute_prefix(const struct blob_descriptor *blob, u64 size,
 			   consume_data_callback_t cb, void *cb_ctx)
 {
 	const struct ntfs_location *loc = blob->ntfs_loc;
-	ntfs_volume *vol = loc->ntfs_vol;
+	ntfs_volume *vol = loc->volume->vol;
 	ntfs_inode *ni;
 	ntfs_attr *na;
 	s64 pos;
@@ -121,6 +154,41 @@ out_close_ntfs_inode:
 	ntfs_inode_close(ni);
 out:
 	return ret;
+}
+
+void
+free_ntfs_location(struct ntfs_location *loc)
+{
+	put_ntfs_volume(loc->volume);
+	FREE(loc->attr_name);
+	FREE(loc);
+}
+
+struct ntfs_location *
+clone_ntfs_location(const struct ntfs_location *loc)
+{
+	struct ntfs_location *new = memdup(loc, sizeof(*loc));
+	if (!new)
+		goto err0;
+	if (loc->attr_name) {
+		new->attr_name = utf16le_dup(loc->attr_name);
+		if (!new->attr_name)
+			goto err1;
+	}
+	new->volume = get_ntfs_volume(loc->volume);
+	return new;
+
+err1:
+	FREE(new);
+err0:
+	return NULL;
+}
+
+int
+cmp_ntfs_locations(const struct ntfs_location *loc1,
+		   const struct ntfs_location *loc2)
+{
+	return cmp_u64(loc1->sort_key, loc2->sort_key);
 }
 
 static int
@@ -199,7 +267,7 @@ scan_ntfs_attr(struct wim_inode *inode,
 	       const char *path,
 	       size_t path_len,
 	       struct list_head *unhashed_blobs,
-	       ntfs_volume *vol,
+	       struct ntfs_volume_wrapper *volume,
 	       ATTR_TYPES type,
 	       const ATTR_RECORD *record)
 {
@@ -236,7 +304,7 @@ scan_ntfs_attr(struct wim_inode *inode,
 
 		blob->blob_location = BLOB_IN_NTFS_VOLUME;
 		blob->size = data_size;
-		blob->ntfs_loc->ntfs_vol = vol;
+		blob->ntfs_loc->volume = get_ntfs_volume(volume);
 		blob->ntfs_loc->attr_type = type;
 		blob->ntfs_loc->mft_no = ni->mft_no;
 
@@ -293,7 +361,7 @@ scan_ntfs_attrs_with_type(struct wim_inode *inode,
 			  char *path,
 			  size_t path_len,
 			  struct list_head *unhashed_blobs,
-			  ntfs_volume *vol,
+			  struct ntfs_volume_wrapper *volume,
 			  ATTR_TYPES type)
 {
 	ntfs_attr_search_ctx *actx;
@@ -316,7 +384,7 @@ scan_ntfs_attrs_with_type(struct wim_inode *inode,
 				     path,
 				     path_len,
 				     unhashed_blobs,
-				     vol,
+				     volume,
 				     type,
 				     actx->attr);
 		if (ret)
@@ -455,7 +523,7 @@ struct readdir_ctx {
 	char *path;
 	size_t path_len;
 	struct dos_name_map *dos_name_map;
-	ntfs_volume *vol;
+	struct ntfs_volume_wrapper *volume;
 	struct capture_params *params;
 	int ret;
 };
@@ -466,7 +534,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_p,
 				 char *path,
 				 size_t path_len,
 				 int name_type,
-				 ntfs_volume *ntfs_vol,
+				 struct ntfs_volume_wrapper *volume,
 				 struct capture_params *params);
 
 static int
@@ -512,7 +580,7 @@ wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 
 	/* Open the inode for this directory entry and recursively capture the
 	 * directory tree rooted at it */
-	ntfs_inode *ni = ntfs_inode_open(ctx->vol, mref);
+	ntfs_inode *ni = ntfs_inode_open(ctx->volume->vol, mref);
 	if (!ni) {
 		/* XXX This used to be treated as an error, but NTFS-3g seemed
 		 * to be unable to read some inodes on a Windows 8 image for
@@ -530,7 +598,7 @@ wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 	child = NULL;
 	ret = build_dentry_tree_ntfs_recursive(&child, ni, ctx->path,
 					       path_len, name_type,
-					       ctx->vol, ctx->params);
+					       ctx->volume, ctx->params);
 	path_len -= mbs_name_nbytes + 1;
 	if (child)
 		dentry_add_child(ctx->parent, child);
@@ -550,7 +618,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 				 char *path,
 				 size_t path_len,
 				 int name_type,
-				 ntfs_volume *vol,
+				 struct ntfs_volume_wrapper *volume,
 				 struct capture_params *params)
 {
 	u32 attributes;
@@ -611,7 +679,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 		/* Scan the reparse point stream.  */
 		ret = scan_ntfs_attrs_with_type(inode, ni, path, path_len,
 						params->unhashed_blobs,
-						vol, AT_REPARSE_POINT);
+						volume, AT_REPARSE_POINT);
 		if (ret)
 			goto out;
 	}
@@ -623,7 +691,8 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	 * points) can have an unnamed data stream as well as named data
 	 * streams.  */
 	ret = scan_ntfs_attrs_with_type(inode, ni, path, path_len,
-					params->unhashed_blobs, vol, AT_DATA);
+					params->unhashed_blobs,
+					volume, AT_DATA);
 	if (ret)
 		goto out;
 
@@ -637,7 +706,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 			.path            = path,
 			.path_len        = path_len,
 			.dos_name_map    = &dos_name_map,
-			.vol             = vol,
+			.volume          = volume,
 			.params          = params,
 			.ret		 = 0,
 		};
@@ -680,7 +749,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 
 		/* Get security descriptor */
 		memset(&sec_ctx, 0, sizeof(sec_ctx));
-		sec_ctx.vol = vol;
+		sec_ctx.vol = volume->vol;
 
 		errno = 0;
 		sd = _sd;
@@ -728,36 +797,31 @@ out:
 	return ret;
 }
 
-
-int
-do_ntfs_umount(struct _ntfs_volume *vol)
-{
-	DEBUG("Unmounting NTFS volume");
-	if (ntfs_umount(vol, FALSE))
-		return WIMLIB_ERR_NTFS_3G;
-	else
-		return 0;
-}
-
 int
 build_dentry_tree_ntfs(struct wim_dentry **root_p,
 		       const char *device,
 		       struct capture_params *params)
 {
+	struct ntfs_volume_wrapper *volume;
 	ntfs_volume *vol;
 	ntfs_inode *root_ni;
+	char *path;
 	int ret;
+
+	volume = MALLOC(sizeof(struct ntfs_volume_wrapper));
+	if (!volume)
+		return WIMLIB_ERR_NOMEM;
 
 	DEBUG("Mounting NTFS volume `%s' read-only", device);
 
-/* NTFS-3g 2013 renamed the "read-only" mount flag from MS_RDONLY to
- * NTFS_MNT_RDONLY.
- *
- * Unfortunately we can't check for defined(NTFS_MNT_RDONLY) because
- * NTFS_MNT_RDONLY is an enumerated constant.  Also, the NTFS-3g headers don't
- * seem to contain any explicit version information.  So we have to rely on a
- * test done at configure time to detect whether NTFS_MNT_RDONLY should be used.
- * */
+	/* NTFS-3g 2013 renamed the "read-only" mount flag from MS_RDONLY to
+	 * NTFS_MNT_RDONLY.
+	 *
+	 * Unfortunately we can't check for defined(NTFS_MNT_RDONLY) because
+	 * NTFS_MNT_RDONLY is an enumerated constant.  Also, the NTFS-3g headers
+	 * don't seem to contain any explicit version information.  So we have
+	 * to rely on a test done at configure time to detect whether
+	 * NTFS_MNT_RDONLY should be used.  */
 #ifdef HAVE_NTFS_MNT_RDONLY
 	/* NTFS-3g 2013 */
 	vol = ntfs_mount(device, NTFS_MNT_RDONLY);
@@ -770,8 +834,13 @@ build_dentry_tree_ntfs(struct wim_dentry **root_p,
 	if (!vol) {
 		ERROR_WITH_ERRNO("Failed to mount NTFS volume `%s' read-only",
 				 device);
+		FREE(volume);
 		return WIMLIB_ERR_NTFS_3G;
 	}
+
+	volume->vol = vol;
+	volume->refcnt = 1;
+
 	ntfs_open_secure(vol);
 
 	/* We don't want to capture the special NTFS files such as $Bitmap.  Not
@@ -785,40 +854,29 @@ build_dentry_tree_ntfs(struct wim_dentry **root_p,
 		ERROR_WITH_ERRNO("Failed to open root inode of NTFS volume "
 				 "`%s'", device);
 		ret = WIMLIB_ERR_NTFS_3G;
-		goto out;
+		goto out_put_ntfs_volume;
 	}
 
 	/* Currently we assume that all the paths fit into this length and there
 	 * is no check for overflow. */
-	char *path = MALLOC(32768);
+	path = MALLOC(32768);
 	if (!path) {
-		ERROR("Could not allocate memory for NTFS pathname");
 		ret = WIMLIB_ERR_NOMEM;
-		goto out_cleanup;
+		goto out_close_root_ni;
 	}
 
 	path[0] = '/';
 	path[1] = '\0';
 	ret = build_dentry_tree_ntfs_recursive(root_p, root_ni, path, 1,
-					       FILE_NAME_POSIX, vol, params);
-out_cleanup:
+					       FILE_NAME_POSIX, volume, params);
 	FREE(path);
+out_close_root_ni:
 	ntfs_inode_close(root_ni);
-out:
+out_put_ntfs_volume:
 	ntfs_index_ctx_put(vol->secure_xsii);
 	ntfs_index_ctx_put(vol->secure_xsdh);
 	ntfs_inode_close(vol->secure_ni);
-
-	if (ret) {
-		if (do_ntfs_umount(vol)) {
-			ERROR_WITH_ERRNO("Failed to unmount NTFS volume `%s'",
-					 device);
-		}
-	} else {
-		/* We need to leave the NTFS volume mounted so that we can read
-		 * the NTFS files again when we are actually writing the WIM */
-		*(ntfs_volume**)params->extra_arg = vol;
-	}
+	put_ntfs_volume(volume);
 	return ret;
 }
 #endif /* WITH_NTFS_3G */

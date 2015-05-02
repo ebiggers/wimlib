@@ -62,9 +62,6 @@
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/metadata.h"
-#ifdef WITH_NTFS_3G
-#  include "wimlib/ntfs_3g.h" /* for do_ntfs_umount() */
-#endif
 #include "wimlib/paths.h"
 #include "wimlib/progress.h"
 #include "wimlib/xml.h"
@@ -792,10 +789,6 @@ execute_add_command(struct update_command_journal *j,
 	struct capture_params params;
 	struct capture_config config;
 	capture_tree_t capture_tree = platform_default_capture_tree;
-#ifdef WITH_NTFS_3G
-	struct _ntfs_volume *ntfs_vol = NULL;
-#endif
-	void *extra_arg = NULL;
 	struct wim_dentry *branch;
 
 	add_flags = add_cmd->add.add_flags;
@@ -809,15 +802,8 @@ execute_add_command(struct update_command_journal *j,
 	memset(&params, 0, sizeof(params));
 
 #ifdef WITH_NTFS_3G
-	if (add_flags & WIMLIB_ADD_FLAG_NTFS) {
+	if (add_flags & WIMLIB_ADD_FLAG_NTFS)
 		capture_tree = build_dentry_tree_ntfs;
-		extra_arg = &ntfs_vol;
-		if (wim_get_current_image_metadata(wim)->ntfs_vol != NULL) {
-			ERROR("NTFS volume already set");
-			ret = WIMLIB_ERR_INVALID_PARAM;
-			goto out;
-		}
-	}
 #endif
 
 	ret = get_capture_config(config_file, &config,
@@ -831,7 +817,6 @@ execute_add_command(struct update_command_journal *j,
 	params.sd_set = sd_set;
 	params.config = &config;
 	params.add_flags = add_flags;
-	params.extra_arg = extra_arg;
 
 	params.progfunc = wim->progfunc;
 	params.progctx = wim->progctx;
@@ -852,7 +837,7 @@ execute_add_command(struct update_command_journal *j,
 			    &params.progress, params.progctx);
 	if (ret) {
 		free_dentry_tree(branch, wim->blob_table);
-		goto out_cleanup_after_capture;
+		goto out_destroy_config;
 	}
 
 	if (WIMLIB_IS_WIM_ROOT_PATH(wim_target_path) &&
@@ -861,13 +846,13 @@ execute_add_command(struct update_command_journal *j,
 		ERROR("\"%"TS"\" is not a directory!", fs_source_path);
 		ret = WIMLIB_ERR_NOTDIR;
 		free_dentry_tree(branch, wim->blob_table);
-		goto out_cleanup_after_capture;
+		goto out_destroy_config;
 	}
 
 	ret = attach_branch(branch, wim_target_path, j,
 			    add_flags, params.progfunc, params.progctx);
 	if (ret)
-		goto out_cleanup_after_capture;
+		goto out_destroy_config;
 
 	if (config_file && (add_flags & WIMLIB_ADD_FLAG_WIMBOOT) &&
 	    WIMLIB_IS_WIM_ROOT_PATH(wim_target_path))
@@ -881,23 +866,14 @@ execute_add_command(struct update_command_journal *j,
 		 * /Windows/System32/WimBootCompress.ini in the WIM image. */
 		ret = platform_default_capture_tree(&branch, config_file, &params);
 		if (ret)
-			goto out_cleanup_after_capture;
+			goto out_destroy_config;
 
 		ret = attach_branch(branch, wimboot_cfgfile, j, 0, NULL, NULL);
 		if (ret)
-			goto out_cleanup_after_capture;
+			goto out_destroy_config;
 	}
 
-#ifdef WITH_NTFS_3G
-	wim_get_current_image_metadata(wim)->ntfs_vol = ntfs_vol;
-#endif
 	ret = 0;
-	goto out_destroy_config;
-out_cleanup_after_capture:
-#ifdef WITH_NTFS_3G
-	if (ntfs_vol)
-		do_ntfs_umount(ntfs_vol);
-#endif
 out_destroy_config:
 	destroy_capture_config(&config);
 out:
@@ -1252,9 +1228,8 @@ check_add_command(struct wimlib_update_command *cmd,
 
 #ifndef WITH_NTFS_3G
 	if (add_flags & WIMLIB_ADD_FLAG_NTFS) {
-		ERROR("wimlib was compiled without support for NTFS-3g, so\n"
-		      "        we cannot capture a WIM image directly "
-		      "from an NTFS volume");
+		ERROR("NTFS-3g capture mode is unsupported because wimlib "
+		      "was compiled --without-ntfs-3g");
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 #endif
@@ -1299,12 +1274,6 @@ check_add_command(struct wimlib_update_command *cmd,
 	}
 
 	if (!is_entire_image) {
-		if (add_flags & WIMLIB_ADD_FLAG_NTFS) {
-			ERROR("Cannot add directly from an NTFS volume "
-			      "when not capturing a full image!");
-			return WIMLIB_ERR_INVALID_PARAM;
-		}
-
 		if (add_flags & WIMLIB_ADD_FLAG_RPFIX) {
 			ERROR("Cannot do reparse point fixups when "
 			      "not capturing a full image!");

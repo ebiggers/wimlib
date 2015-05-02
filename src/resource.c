@@ -36,6 +36,7 @@
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
+#include "wimlib/ntfs_3g.h" /* for read_ntfs_attribute_prefix() */
 #include "wimlib/resource.h"
 #include "wimlib/sha1.h"
 #include "wimlib/wim.h"
@@ -44,12 +45,6 @@
 /* for read_winnt_stream_prefix(), read_win32_encrypted_file_prefix() */
 #  include "wimlib/win32.h"
 #endif
-
-#ifdef WITH_NTFS_3G
-/* for read_ntfs_attribute_prefix() */
-#  include "wimlib/ntfs_3g.h"
-#endif
-
 
 /*
  *                         Compressed WIM resources

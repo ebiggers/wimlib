@@ -5,10 +5,6 @@
 #include "wimlib/types.h"
 #include "wimlib/wim.h"
 
-#ifdef WITH_NTFS_3G
-struct _ntfs_volume;
-#endif
-
 /* Metadata for a WIM image  */
 struct wim_image_metadata {
 
@@ -39,10 +35,6 @@ struct wim_image_metadata {
 	 * the WIM file.  If this is the case, the memory for the dentry tree
 	 * should not be freed when switching to a different WIM image. */
 	u8 modified : 1;
-
-#ifdef WITH_NTFS_3G
-	struct _ntfs_volume *ntfs_vol;
-#endif
 };
 
 /* Retrieve the metadata of the image in @wim currently selected with

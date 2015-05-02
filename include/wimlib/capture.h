@@ -42,10 +42,6 @@ struct capture_params {
 	/* Flags that affect the capture operation (WIMLIB_ADD_FLAG_*) */
 	int add_flags;
 
-	/* Extra argument; set to point to a pointer to the ntfs_volume for
-	 * libntfs-3g capture.  */
-	void *extra_arg;
-
 	/* If non-NULL, the user-supplied progress function. */
 	wimlib_progress_func_t progfunc;
 	void *progctx;

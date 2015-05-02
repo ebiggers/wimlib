@@ -2564,15 +2564,9 @@ wimlib_add_image(WIMStruct *wim,
  * capture</b> for full details on how this mode works.
  *
  * In addition to the error codes that wimlib_add_image() can return,
- * wimlib_add_image_multisource() can return ::WIMLIB_ERR_INVALID_OVERLAY
- * when trying to overlay a non-directory on a directory or when otherwise
- * trying to overlay multiple conflicting files to the same location in the WIM
- * image.  It will also return ::WIMLIB_ERR_INVALID_PARAM if
- * ::WIMLIB_ADD_FLAG_NTFS was specified in @p add_flags but there
- * was not exactly one capture source with the target being the root directory.
- * (In this respect, there is no advantage to using
- * wimlib_add_image_multisource() instead of wimlib_add_image() when requesting
- * NTFS mode.)
+ * wimlib_add_image_multisource() can return ::WIMLIB_ERR_INVALID_OVERLAY when
+ * trying to overlay a non-directory on a directory or when otherwise trying to
+ * overlay multiple conflicting files to the same location in the WIM image.
  */
 extern int
 wimlib_add_image_multisource(WIMStruct *wim,
@@ -4258,12 +4252,9 @@ wimlib_unmount_image_with_progress(const wimlib_tchar *dir,
  *	Attempted to perform an add command that conflicted with previously
  *	existing files in the WIM when an overlay was attempted.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
- *	An unknown operation type was specified in the update commands; or,
- *	attempted to execute an add command where ::WIMLIB_ADD_FLAG_NTFS was set
- *	in the @p add_flags, but the same image had previously already been
- *	added from an NTFS volume; or, both ::WIMLIB_ADD_FLAG_RPFIX and
- *	::WIMLIB_ADD_FLAG_NORPFIX were specified in the @p add_flags for one add
- *	command; or, ::WIMLIB_ADD_FLAG_NTFS or ::WIMLIB_ADD_FLAG_RPFIX were
+ *	An unknown operation type was specified in the update commands; or, both
+ *	::WIMLIB_ADD_FLAG_RPFIX and ::WIMLIB_ADD_FLAG_NORPFIX were specified in
+ *	the @p add_flags for one add command; or ::WIMLIB_ADD_FLAG_RPFIX were
  *	specified in the @p add_flags for an add command in which @p
  *	wim_target_path was not the root directory of the WIM image.
  * @retval ::WIMLIB_ERR_INVALID_REPARSE_DATA

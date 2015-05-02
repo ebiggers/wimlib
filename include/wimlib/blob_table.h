@@ -35,9 +35,8 @@ enum blob_location {
 
 #ifdef WITH_NTFS_3G
 	/* The blob's data is available as the contents of an NTFS attribute
-	 * accessible through libntfs-3g.  The attribute is identified by
-	 * volume, path to an inode, attribute name, and attribute type.
-	 * @ntfs_loc points to a structure containing this information.  */
+	 * accessible through libntfs-3g.  @ntfs_loc points to a structure which
+	 * identifies the attribute.  */
 	BLOB_IN_NTFS_VOLUME,
 #endif
 
