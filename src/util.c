@@ -23,12 +23,18 @@
 #  include "config.h"
 #endif
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef HAVE_SYS_SYSCTL_H
+#  include <sys/sysctl.h>
+#endif
+#include <unistd.h>
 
 #include "wimlib.h"
 #include "wimlib/assert.h"
+#include "wimlib/error.h"
 #include "wimlib/timestamp.h"
 #include "wimlib/util.h"
 #include "wimlib/xml.h"
@@ -205,3 +211,41 @@ randomize_byte_array(u8 *p, size_t n)
 	while (n--)
 		*p++ = rand();
 }
+
+#ifndef __WIN32__
+unsigned
+get_available_cpus(void)
+{
+	long n = sysconf(_SC_NPROCESSORS_ONLN);
+	if (n < 1 || n >= UINT_MAX) {
+		WARNING("Failed to determine number of processors; assuming 1.");
+		return 1;
+	}
+	return n;
+}
+#endif /* !__WIN32__ */
+
+#ifndef __WIN32__
+u64
+get_available_memory(void)
+{
+#if defined(_SC_PAGESIZE) && defined(_SC_PHYS_PAGES)
+	long page_size = sysconf(_SC_PAGESIZE);
+	long num_pages = sysconf(_SC_PHYS_PAGES);
+	if (page_size <= 0 || num_pages <= 0)
+		goto default_size;
+	return ((u64)page_size * (u64)num_pages);
+#else
+	int mib[2] = {CTL_HW, HW_MEMSIZE};
+	u64 memsize;
+	size_t len = sizeof(memsize);
+	if (sysctl(mib, ARRAY_LEN(mib), &memsize, &len, NULL, 0) < 0 || len != 8)
+		goto default_size;
+	return memsize;
+#endif
+
+default_size:
+	WARNING("Failed to determine available memory; assuming 1 GiB");
+	return (u64)1 << 30;
+}
+#endif /* !__WIN32__ */

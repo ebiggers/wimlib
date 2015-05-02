@@ -27,12 +27,6 @@ win32_global_cleanup(void);
 extern int
 fsync(int fd);
 
-extern unsigned
-win32_get_number_of_processors(void);
-
-extern u64
-win32_get_avail_memory(void);
-
 extern tchar *
 realpath(const tchar *path, tchar *resolved_path);
 

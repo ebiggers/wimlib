@@ -117,4 +117,14 @@ cmp_u64(u64 n1, u64 n2)
 	return 0;
 }
 
+/************************
+ * System information
+ ************************/
+
+unsigned
+get_available_cpus(void);
+
+u64
+get_available_memory(void);
+
 #endif /* _WIMLIB_UTIL_H */

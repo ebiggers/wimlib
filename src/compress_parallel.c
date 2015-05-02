@@ -28,21 +28,15 @@
 #ifdef ENABLE_MULTITHREADED_COMPRESSION
 
 #include <errno.h>
-#include <limits.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#ifdef HAVE_SYS_SYSCTL_H
-#  include <sys/sysctl.h>
-#endif
 
 #include "wimlib/assert.h"
 #include "wimlib/chunk_compressor.h"
 #include "wimlib/error.h"
 #include "wimlib/list.h"
 #include "wimlib/util.h"
-#include "wimlib/win32.h" /* win32_get_number_of_processors() */
 
 struct message_queue {
 	struct list_head list;
@@ -92,49 +86,7 @@ struct parallel_chunk_compressor {
 	size_t next_chunk_idx;
 };
 
-static unsigned
-get_default_num_threads(void)
-{
-	long n;
-#ifdef __WIN32__
-	n = win32_get_number_of_processors();
-#else
-	n = sysconf(_SC_NPROCESSORS_ONLN);
-#endif
-	if (n < 1 || n >= UINT_MAX) {
-		WARNING("Failed to determine number of processors; assuming 1.");
-		return 1;
-	}
-	return n;
-}
 
-static u64
-get_avail_memory(void)
-{
-#ifdef __WIN32__
-	u64 phys_bytes = win32_get_avail_memory();
-	if (phys_bytes == 0)
-		goto default_size;
-	return phys_bytes;
-#elif defined(_SC_PAGESIZE) && defined(_SC_PHYS_PAGES)
-	long page_size = sysconf(_SC_PAGESIZE);
-	long num_pages = sysconf(_SC_PHYS_PAGES);
-	if (page_size <= 0 || num_pages <= 0)
-		goto default_size;
-	return ((u64)page_size * (u64)num_pages);
-#else
-	int mib[2] = {CTL_HW, HW_MEMSIZE};
-	u64 memsize;
-	size_t len = sizeof(memsize);
-	if (sysctl(mib, ARRAY_LEN(mib), &memsize, &len, NULL, 0) < 0 || len != 8)
-		goto default_size;
-	return memsize;
-#endif
-
-default_size:
-	WARNING("Failed to determine available memory; assuming 1 GiB");
-	return 1ULL << 30;
-}
 
 static int
 message_queue_init(struct message_queue *q)
@@ -423,7 +375,7 @@ new_parallel_chunk_compressor(int out_ctype, u32 out_chunk_size,
 	wimlib_assert(out_chunk_size > 0);
 
 	if (num_threads == 0)
-		num_threads = get_default_num_threads();
+		num_threads = get_available_cpus();
 
 	if (num_threads == 1) {
 		DEBUG("Only 1 thread; Not bothering with "
@@ -432,7 +384,7 @@ new_parallel_chunk_compressor(int out_ctype, u32 out_chunk_size,
 	}
 
 	if (max_memory == 0)
-		max_memory = get_avail_memory();
+		max_memory = get_available_memory();
 
 	desired_num_threads = num_threads;
 

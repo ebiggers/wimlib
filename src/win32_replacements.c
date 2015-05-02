@@ -339,7 +339,7 @@ err:
 
 /* Use the Win32 API to get the number of processors.  */
 unsigned
-win32_get_number_of_processors(void)
+get_available_cpus(void)
 {
 	SYSTEM_INFO sysinfo;
 	GetSystemInfo(&sysinfo);
@@ -348,7 +348,7 @@ win32_get_number_of_processors(void)
 
 /* Use the Win32 API to get the amount of available memory.  */
 u64
-win32_get_avail_memory(void)
+get_available_memory(void)
 {
 	MEMORYSTATUSEX status = {
 		.dwLength = sizeof(status),
