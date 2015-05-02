@@ -28,7 +28,8 @@ Version 1.8.1-BETA:
 	In mounted WIM images, the disk usage provided for each file (st_blocks)
 	is now the compressed size rather than the uncompressed size.
 
-	The performance of NTFS-3g capture mode has been slightly improved.
+	The performance of the NTFS-3g and Windows capture modes has been
+	slightly improved.
 
 Version 1.8.0:
 	Improved the LZX compressor.  It is now 15-20% faster than before and

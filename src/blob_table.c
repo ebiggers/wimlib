@@ -395,7 +395,7 @@ cmp_blobs_by_sequential_order(const void *p1, const void *p2)
 
 	v = (int)blob1->blob_location - (int)blob2->blob_location;
 
-	/* Different resource locations?  */
+	/* Different locations?  */
 	if (v)
 		return v;
 
@@ -429,6 +429,10 @@ cmp_blobs_by_sequential_order(const void *p1, const void *p2)
 #ifdef __WIN32__
 	case BLOB_IN_WINNT_FILE_ON_DISK:
 	case BLOB_WIN32_ENCRYPTED:
+		/* Windows: compare by starting LCN (logical cluster number)  */
+		v = cmp_u64(blob1->sort_key, blob2->sort_key);
+		if (v)
+			return v;
 #endif
 		/* Compare files by path: just a heuristic that will place files
 		 * in the same directory next to each other.  */

@@ -174,6 +174,9 @@ struct blob_descriptor {
 				struct {
 					tchar *file_on_disk;
 					struct wim_inode *file_inode;
+				#ifdef __WIN32__
+					u64 sort_key;
+				#endif
 				};
 
 				/* BLOB_IN_ATTACHED_BUFFER */

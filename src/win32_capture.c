@@ -1099,6 +1099,37 @@ out_free_buf:
 	return ret;
 }
 
+static u64
+get_sort_key(HANDLE h)
+{
+	STARTING_VCN_INPUT_BUFFER in = { .StartingVcn.QuadPart = 0 };
+	RETRIEVAL_POINTERS_BUFFER out;
+	DWORD bytesReturned;
+
+	if (!DeviceIoControl(h, FSCTL_GET_RETRIEVAL_POINTERS,
+			     &in, sizeof(in),
+			     &out, sizeof(out),
+			     &bytesReturned, NULL))
+		return 0;
+
+	if (out.ExtentCount < 1)
+		return 0;
+
+	return out.Extents[0].Lcn.QuadPart;
+}
+
+static void
+set_sort_key(struct wim_inode *inode, u64 sort_key)
+{
+	for (unsigned i = 0; i < inode->i_num_streams; i++) {
+		struct wim_inode_stream *strm = &inode->i_streams[i];
+		struct blob_descriptor *blob = stream_blob_resolved(strm);
+		if (blob && (blob->blob_location == BLOB_IN_WINNT_FILE_ON_DISK ||
+			     blob->blob_location == BLOB_WIN32_ENCRYPTED))
+			blob->sort_key = sort_key;
+	}
+}
+
 static int
 winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				  HANDLE cur_dir,
@@ -1117,6 +1148,7 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	NTSTATUS status;
 	FILE_ALL_INFORMATION file_info;
 	ACCESS_MASK requestedPerms;
+	u64 sort_key;
 
 	ret = try_exclude(full_path, full_path_nchars, params);
 	if (ret < 0) /* Excluded? */
@@ -1341,6 +1373,8 @@ retry_open:
 		}
 	}
 
+	sort_key = get_sort_key(h);
+
 	if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED)) {
 		/* Load information about the raw encrypted data.  This is
 		 * needed for any directory or non-directory that has
@@ -1377,6 +1411,8 @@ retry_open:
 		if (ret)
 			goto out;
 	}
+
+	set_sort_key(inode, sort_key);
 
 	if (inode_is_directory(inode)) {
 
