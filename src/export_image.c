@@ -128,7 +128,7 @@ wimlib_export_image(WIMStruct *src_wim,
 			     WIMLIB_EXPORT_FLAG_WIMBOOT))
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	if (src_wim == NULL || dest_wim == NULL)
+	if (!src_wim || !dest_wim || src_wim == dest_wim)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (!wim_has_metadata(src_wim) || !wim_has_metadata(dest_wim))
