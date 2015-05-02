@@ -939,17 +939,20 @@ delete_staging_dir(struct wimfs_context *ctx)
 	close(ctx->parent_dir_fd);
 }
 
-/* Number the inodes in the mounted image sequentially.  */
 static void
-reassign_inode_numbers(struct wimfs_context *ctx)
+prepare_inodes(struct wimfs_context *ctx)
 {
 	struct wim_image_metadata *imd;
 	struct wim_inode *inode;
 
 	ctx->next_ino = 1;
 	imd = wim_get_current_image_metadata(ctx->wim);
-	image_for_each_inode(inode, imd)
+	image_for_each_inode(inode, imd) {
 		inode->i_ino = ctx->next_ino++;
+		inode->i_num_opened_fds = 0;
+		inode->i_num_allocated_fds = 0;
+		inode->i_fds = NULL;
+	}
 }
 
 static void
@@ -2205,8 +2208,9 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 		}
 	}
 
-	/* Assign new inode numbers.  */
-	reassign_inode_numbers(&ctx);
+	/* Number the inodes in the mounted image sequentially and initialize
+	 * the file descriptor arrays  */
+	prepare_inodes(&ctx);
 
 	/* If a read-write mount, mark the image as modified.  */
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)
