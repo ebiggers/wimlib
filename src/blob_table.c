@@ -448,7 +448,7 @@ cmp_blobs_by_sequential_order(const void *p1, const void *p2)
 		return tstrcmp(blob1->file_on_disk, blob2->file_on_disk);
 #ifdef WITH_NTFS_3G
 	case BLOB_IN_NTFS_VOLUME:
-		return cmp_u64(blob1->ntfs_loc->mft_no, blob2->ntfs_loc->mft_no);
+		return cmp_u64(blob1->ntfs_loc->sort_key, blob2->ntfs_loc->sort_key);
 #endif
 	default:
 		/* No additional sorting order defined for this resource

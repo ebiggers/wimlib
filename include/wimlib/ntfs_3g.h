@@ -15,6 +15,7 @@ struct ntfs_location {
 	utf16lechar *attr_name;
 	unsigned attr_name_nchars;
 	unsigned attr_type;
+	u64 sort_key;
 };
 #endif
 

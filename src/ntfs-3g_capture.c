@@ -168,6 +168,30 @@ attr_type_to_wimlib_stream_type(ATTR_TYPES type)
 	}
 }
 
+/* When sorting blobs located in NTFS volumes for sequential reading, we sort
+ * first by starting LCN of the attribute if available, otherwise no sort order
+ * is defined.  This usually results in better sequential access to the volume.
+ */
+static int
+set_attr_sort_key(ntfs_inode *ni, struct ntfs_location *loc)
+{
+	ntfs_attr *na;
+	runlist_element *rl;
+
+	na = open_ntfs_attr(ni, loc);
+	if (!na)
+		return WIMLIB_ERR_NTFS_3G;
+
+	rl = ntfs_attr_find_vcn(na, 0);
+	if (rl && rl->lcn != LCN_HOLE)
+		loc->sort_key = rl->lcn;
+	else
+		loc->sort_key = 0;
+
+	ntfs_attr_close(na);
+	return 0;
+}
+
 /* Save information about an NTFS attribute (stream) to a WIM inode.  */
 static int
 scan_ntfs_attr(struct wim_inode *inode,
@@ -224,6 +248,10 @@ scan_ntfs_attr(struct wim_inode *inode,
 			}
 			blob->ntfs_loc->attr_name_nchars = name_nchars;
 		}
+
+		ret = set_attr_sort_key(ni, blob->ntfs_loc);
+		if (ret)
+			goto out_cleanup;
 
 		if (unlikely(type == AT_REPARSE_POINT)) {
 			if (blob->size < REPARSE_DATA_OFFSET) {
