@@ -1,11 +1,11 @@
 /*
  * header.c
  *
- * Read, write, or create a WIM header.
+ * Read, write, or print a WIM header.
  */
 
 /*
- * Copyright (C) 2012, 2013 Eric Biggers
+ * Copyright (C) 2012, 2013, 2015 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -25,6 +25,7 @@
 #  include "config.h"
 #endif
 
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -284,7 +285,15 @@ wimlib_print_header(const WIMStruct *wim)
 {
 	const struct wim_header *hdr = &wim->hdr;
 
-	tprintf(T("Magic Characters            = MSWIM\\000\\000\\000\n"));
+	tprintf(T("Magic Characters            = "));
+	for (int i = 0; i < sizeof(hdr->magic); i++) {
+		tchar c = (u8)(hdr->magic >> ((8 * i)));
+		if (istalpha(c))
+			tputchar(c);
+		else
+			tprintf(T("\\%o"), c);
+	}
+	tputchar(T('\n'));
 	tprintf(T("Header Size                 = %u\n"), WIM_HEADER_DISK_SIZE);
 	tprintf(T("Version                     = 0x%x\n"), hdr->wim_version);
 
