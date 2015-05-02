@@ -160,8 +160,8 @@ read_error:
  * specified is the current one, the position is advanced by the size of the
  * header.  */
 int
-write_wim_header_at_offset(const struct wim_header *hdr, struct filedes *out_fd,
-			   off_t offset)
+write_wim_header(const struct wim_header *hdr, struct filedes *out_fd,
+		 off_t offset)
 {
 	struct wim_header_disk disk_hdr _aligned_attribute(8);
 	int ret;
@@ -199,14 +199,6 @@ write_wim_header_at_offset(const struct wim_header *hdr, struct filedes *out_fd,
 	return ret;
 }
 
-/* Writes the header for a WIM file at the output file descriptor's current
- * offset.  */
-int
-write_wim_header(const struct wim_header *hdr, struct filedes *out_fd)
-{
-	return write_wim_header_at_offset(hdr, out_fd, out_fd->offset);
-}
-
 /* Update just the wim_flags field. */
 int
 write_wim_header_flags(u32 hdr_flags, struct filedes *out_fd)
@@ -215,49 +207,6 @@ write_wim_header_flags(u32 hdr_flags, struct filedes *out_fd)
 
 	return full_pwrite(out_fd, &flags, sizeof(flags),
 			   offsetof(struct wim_header_disk, wim_flags));
-}
-
-void
-set_wim_hdr_cflags(enum wimlib_compression_type ctype, struct wim_header *hdr)
-{
-	hdr->flags &= ~(WIM_HDR_FLAG_COMPRESSION |
-			WIM_HDR_FLAG_COMPRESS_RESERVED |
-			WIM_HDR_FLAG_COMPRESS_XPRESS |
-			WIM_HDR_FLAG_COMPRESS_LZX |
-			WIM_HDR_FLAG_COMPRESS_LZMS |
-			WIM_HDR_FLAG_COMPRESS_XPRESS_2);
-	switch (ctype) {
-	case WIMLIB_COMPRESSION_TYPE_NONE:
-		return;
-	case WIMLIB_COMPRESSION_TYPE_XPRESS:
-		hdr->flags |= WIM_HDR_FLAG_COMPRESSION | WIM_HDR_FLAG_COMPRESS_XPRESS;
-		return;
-	case WIMLIB_COMPRESSION_TYPE_LZX:
-		hdr->flags |= WIM_HDR_FLAG_COMPRESSION | WIM_HDR_FLAG_COMPRESS_LZX;
-		return;
-	case WIMLIB_COMPRESSION_TYPE_LZMS:
-		hdr->flags |= WIM_HDR_FLAG_COMPRESSION | WIM_HDR_FLAG_COMPRESS_LZMS;
-		return;
-	}
-	wimlib_assert(0);
-}
-
-/* Initialize the header for a WIM file.  */
-void
-init_wim_header(struct wim_header *hdr,
-		enum wimlib_compression_type ctype, u32 chunk_size)
-{
-	memset(hdr, 0, sizeof(struct wim_header));
-	hdr->magic = WIM_MAGIC;
-	if (ctype == WIMLIB_COMPRESSION_TYPE_LZMS)
-		hdr->wim_version = WIM_VERSION_SOLID;
-	else
-		hdr->wim_version = WIM_VERSION_DEFAULT;
-	set_wim_hdr_cflags(ctype, hdr);
-	hdr->chunk_size = chunk_size;
-	hdr->total_parts = 1;
-	hdr->part_number = 1;
-	randomize_byte_array(hdr->guid, sizeof(hdr->guid));
 }
 
 static const struct {

@@ -281,15 +281,13 @@ out_free_new_table:
  * This function can optionally re-use entries from an older integrity table.
  * To do this, specify old_blob_table_end and old_table.
  *
+ * On success, @wim->out_hdr.integrity_table_reshdr will be filled in with
+ * information about the integrity table that was written.
+ *
  * @wim:
  *	WIMStruct for the WIM file.  @wim->out_fd must be a seekable descriptor
  *	to the new WIM file, opened read-write, positioned at the location at
- *	which the integrity table is to be written.  Furthermore,
- *	@wim->hdr.integrity is expected to be a resource entry which will be set
- *	to the integrity table information on success.  In addition, if
- *	@old_blob_table_end != 0, @wim->hdr.integrity must initially contain
- *	information about the old integrity table, and @wim->in_fd must be a
- *	seekable descriptor to the original WIM file opened for reading.
+ *	which the integrity table is to be written.
  *
  * @new_blob_table_end:
  *	The offset of the byte directly following the blob table in the WIM
@@ -337,7 +335,7 @@ write_integrity_table(WIMStruct *wim,
 					     &wim->out_fd,
 					     WIMLIB_COMPRESSION_TYPE_NONE,
 					     0,
-					     &wim->hdr.integrity_table_reshdr,
+					     &wim->out_hdr.integrity_table_reshdr,
 					     NULL,
 					     0);
 	FREE(new_table);

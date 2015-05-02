@@ -184,12 +184,23 @@ wimlib_create_new_wim(enum wimlib_compression_type ctype, WIMStruct **wim_ret)
 		return WIMLIB_ERR_NOMEM;
 	}
 
-	init_wim_header(&wim->hdr, ctype,
-			wim_default_nonsolid_chunk_size(ctype));
-	wim->compression_type = ctype;
-	wim->out_compression_type = ctype;
+	/* Fill in wim->hdr with default values  */
+	wim->hdr.magic = WIM_MAGIC;
+	wim->hdr.wim_version = WIM_VERSION_DEFAULT;
+	wim->hdr.flags = 0;
+	wim->hdr.chunk_size = 0;
+	randomize_byte_array(wim->hdr.guid, WIMLIB_GUID_LEN);
+	wim->hdr.part_number = 1;
+	wim->hdr.total_parts = 1;
+	wim->hdr.image_count = 0;
+	wim->hdr.boot_idx = 0;
+
+	wim->compression_type = WIMLIB_COMPRESSION_TYPE_NONE;
 	wim->chunk_size = wim->hdr.chunk_size;
-	wim->out_chunk_size = wim->hdr.chunk_size;
+
+	/* Set the output compression type  */
+	wim->out_compression_type = ctype;
+	wim->out_chunk_size = wim_default_nonsolid_chunk_size(ctype);
 
 	*wim_ret = wim;
 	return 0;

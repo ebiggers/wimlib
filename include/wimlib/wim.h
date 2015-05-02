@@ -42,9 +42,13 @@ struct WIMStruct {
 
 	/* Information from the header of the WIM file.
 	 *
-	 * This is also maintained for a WIMStruct not backed by a file, but the
-	 * 'reshdr' fields have no meaning.  */
+	 * This is also maintained for a WIMStruct not backed by a file, but in
+	 * that case the 'reshdr' fields are left zeroed.  */
 	struct wim_header hdr;
+
+	/* If the library is currently writing this WIMStruct out to a file,
+	 * then this is the header being created for that file.  */
+	struct wim_header out_hdr;
 
 	/* Array of image metadata, one for each image in the WIM (array length
 	 * hdr.image_count).  Or, this will be NULL if this WIM does not contain
@@ -185,22 +189,12 @@ static inline bool wim_is_pipable(const WIMStruct *wim)
 extern bool
 wim_has_solid_resources(const WIMStruct *wim);
 
-extern void
-set_wim_hdr_cflags(enum wimlib_compression_type ctype, struct wim_header *hdr);
-
-extern void
-init_wim_header(struct wim_header *hdr,
-		enum wimlib_compression_type ctype, u32 chunk_size);
-
 extern int
 read_wim_header(WIMStruct *wim, struct wim_header *hdr);
 
 extern int
-write_wim_header(const struct wim_header *hdr, struct filedes *out_fd);
-
-extern int
-write_wim_header_at_offset(const struct wim_header *hdr, struct filedes *out_fd,
-			   off_t offset);
+write_wim_header(const struct wim_header *hdr, struct filedes *out_fd,
+		 off_t offset);
 
 extern int
 write_wim_header_flags(u32 hdr_flags, struct filedes *out_fd);

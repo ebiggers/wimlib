@@ -628,8 +628,6 @@ end_write_resource(struct write_blobs_ctx *ctx, struct wim_reshdr *out_reshdr)
 	out_reshdr->uncompressed_size = res_uncompressed_size;
 	out_reshdr->size_in_wim = res_size_in_wim;
 	out_reshdr->offset_in_wim = res_offset_in_wim;
-	DEBUG("Finished writing resource: %"PRIu64" => %"PRIu64" @ %"PRIu64"",
-	      res_uncompressed_size, res_size_in_wim, res_offset_in_wim);
 	return 0;
 }
 
@@ -749,8 +747,6 @@ write_blob_begin_read(struct blob_descriptor *blob, void *_ctx)
 				 * (and reading it again) entirely, passing its
 				 * output reference count to the duplicate blob
 				 * in the former case.  */
-				DEBUG("Discarding duplicate blob of "
-				      "length %"PRIu64, blob->size);
 				ret = do_write_blobs_progress(&ctx->progress_data,
 							      blob->size, 1, true);
 				list_del(&blob->write_blobs_list);
@@ -773,8 +769,6 @@ write_blob_begin_read(struct blob_descriptor *blob, void *_ctx)
 				 * blob descriptor must wait until
 				 * read_blob_list() has finished reading its
 				 * data.  */
-				DEBUG("Blob duplicate, but not already "
-				      "selected for writing.");
 				list_replace(&blob->write_blobs_list,
 					     &new_blob->write_blobs_list);
 				list_replace(&blob->blob_table_list,
@@ -924,8 +918,6 @@ write_chunk(struct write_blobs_ctx *ctx, const void *cchunk,
 		/* Starting to write a new blob in non-solid mode.  */
 
 		if (ctx->write_resource_flags & WRITE_RESOURCE_FLAG_PIPABLE) {
-			DEBUG("Writing pipable WIM blob header "
-			      "(offset=%"PRIu64")", ctx->out_fd->offset);
 			ret = write_pwm_blob_header(blob, ctx->out_fd,
 						    ctx->compressor != NULL);
 			if (ret)
@@ -1243,10 +1235,6 @@ write_raw_copy_resource(struct wim_resource_descriptor *in_rdesc,
 	struct blob_descriptor *blob;
 	u64 out_offset_in_wim;
 
-	DEBUG("Copying raw compressed data (size_in_wim=%"PRIu64", "
-	      "uncompressed_size=%"PRIu64")",
-	      in_rdesc->size_in_wim, in_rdesc->uncompressed_size);
-
 	/* Copy the raw data.  */
 	cur_read_offset = in_rdesc->offset_in_wim;
 	end_read_offset = cur_read_offset + in_rdesc->size_in_wim;
@@ -1520,10 +1508,8 @@ write_blob_list(struct list_head *blob_list,
 
 	remove_empty_blobs(blob_list);
 
-	if (list_empty(blob_list)) {
-		DEBUG("No blobs to write.");
+	if (list_empty(blob_list))
 		return 0;
-	}
 
 	/* If needed, set auxiliary information so that we can detect when the
 	 * library has finished using each external file.  */
@@ -1575,19 +1561,8 @@ write_blob_list(struct list_head *blob_list,
 							out_chunk_size,
 							&raw_copy_blobs);
 
-	DEBUG("Writing blob list "
-	      "(offset = %"PRIu64", write_resource_flags=0x%08x, "
-	      "out_ctype=%d, out_chunk_size=%u, num_threads=%u, "
-	      "total_bytes=%"PRIu64", num_bytes_to_compress=%"PRIu64")",
-	      out_fd->offset, write_resource_flags,
-	      out_ctype, out_chunk_size, num_threads,
-	      ctx.progress_data.progress.write_streams.total_bytes,
-	      ctx.num_bytes_to_compress);
-
-	if (ctx.num_bytes_to_compress == 0) {
-		DEBUG("No compression needed; skipping to raw copy!");
+	if (ctx.num_bytes_to_compress == 0)
 		goto out_write_raw_copy_resources;
-	}
 
 	/* Unless uncompressed output was required, allocate a chunk_compressor
 	 * to do compression.  There are serial and parallel implementations of
@@ -1622,9 +1597,6 @@ write_blob_list(struct list_head *blob_list,
 		ctx.progress_data.progress.write_streams.num_threads = ctx.compressor->num_threads;
 	else
 		ctx.progress_data.progress.write_streams.num_threads = 1;
-
-	DEBUG("Actually using %u threads",
-	      ctx.progress_data.progress.write_streams.num_threads);
 
 	INIT_LIST_HEAD(&ctx.blobs_being_compressed);
 	INIT_LIST_HEAD(&ctx.blobs_in_solid_resource);
@@ -1677,11 +1649,6 @@ write_blob_list(struct list_head *blob_list,
 		if (ret)
 			goto out_destroy_context;
 
-		DEBUG("Ending solid resource: %lu %lu %lu.",
-		      reshdr.offset_in_wim,
-		      reshdr.size_in_wim,
-		      reshdr.uncompressed_size);
-
 		offset_in_res = 0;
 		list_for_each_entry(blob, &ctx.blobs_in_solid_resource, write_blobs_list) {
 			blob->out_reshdr.size_in_wim = blob->size;
@@ -1707,7 +1674,6 @@ out_destroy_context:
 	FREE(ctx.chunk_csizes);
 	if (ctx.compressor)
 		ctx.compressor->destroy(ctx.compressor);
-	DEBUG("Done (ret=%d)", ret);
 	return ret;
 }
 
@@ -1729,7 +1695,7 @@ write_file_data_blobs(WIMStruct *wim,
 	 * has been set to WIM_VERSION_SOLID and at least one blob in the WIM's
 	 * blob table is located in a solid resource (may be the same WIM, or a
 	 * different one in the case of export).  */
-	if (wim->hdr.wim_version == WIM_VERSION_SOLID &&
+	if (wim->out_hdr.wim_version == WIM_VERSION_SOLID &&
 	    wim_has_solid_resources(wim))
 	{
 		write_resource_flags |= WRITE_RESOURCE_FLAG_SOLID;
@@ -2204,17 +2170,12 @@ write_metadata_resources(WIMStruct *wim, int image, int write_flags)
 	int end_image;
 	int write_resource_flags;
 
-	if (write_flags & WIMLIB_WRITE_FLAG_NO_METADATA) {
-		DEBUG("Not writing any metadata resources.");
+	if (write_flags & WIMLIB_WRITE_FLAG_NO_METADATA)
 		return 0;
-	}
 
 	write_resource_flags = write_flags_to_resource_flags(write_flags);
 
 	write_resource_flags &= ~WRITE_RESOURCE_FLAG_SOLID;
-
-	DEBUG("Writing metadata resources (offset=%"PRIu64")",
-	      wim->out_fd.offset);
 
 	ret = call_progress(wim->progfunc,
 			    WIMLIB_PROGRESS_MSG_WRITE_METADATA_BEGIN,
@@ -2238,18 +2199,12 @@ write_metadata_resources(WIMStruct *wim, int image, int write_flags)
 		 * the original (or was newly added).  Otherwise just copy the
 		 * existing one.  */
 		if (imd->modified) {
-			DEBUG("Image %u was modified; building and writing new "
-			      "metadata resource", i);
 			ret = write_metadata_resource(wim, i,
 						      write_resource_flags);
 		} else if (write_flags & WIMLIB_WRITE_FLAG_OVERWRITE) {
-			DEBUG("Image %u was not modified; re-using existing "
-			      "metadata resource.", i);
 			blob_set_out_reshdr_for_reuse(imd->metadata_blob);
 			ret = 0;
 		} else {
-			DEBUG("Image %u was not modified; copying existing "
-			      "metadata resource.", i);
 			ret = write_wim_resource(imd->metadata_blob,
 						 &wim->out_fd,
 						 wim->out_compression_type,
@@ -2268,10 +2223,7 @@ write_metadata_resources(WIMStruct *wim, int image, int write_flags)
 static int
 open_wim_writable(WIMStruct *wim, const tchar *path, int open_flags)
 {
-	int raw_fd;
-	DEBUG("Opening \"%"TS"\" for writing.", path);
-
-	raw_fd = topen(path, open_flags | O_BINARY, 0644);
+	int raw_fd = topen(path, open_flags | O_BINARY, 0644);
 	if (raw_fd < 0) {
 		ERROR_WITH_ERRNO("Failed to open \"%"TS"\" for writing", path);
 		return WIMLIB_ERR_OPEN;
@@ -2285,12 +2237,10 @@ close_wim_writable(WIMStruct *wim, int write_flags)
 {
 	int ret = 0;
 
-	if (!(write_flags & WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR)) {
-		DEBUG("Closing WIM file.");
+	if (!(write_flags & WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR))
 		if (filedes_valid(&wim->out_fd))
 			if (filedes_close(&wim->out_fd))
 				ret = WIMLIB_ERR_WRITE;
-	}
 	filedes_invalidate(&wim->out_fd);
 	return ret;
 }
@@ -2321,7 +2271,6 @@ cmp_blobs_by_out_rdesc(const void *p1, const void *p2)
 
 static int
 write_blob_table(WIMStruct *wim, int image, int write_flags,
-		 struct wim_reshdr *out_reshdr,
 		 struct list_head *blob_table_list)
 {
 	int ret;
@@ -2372,68 +2321,28 @@ write_blob_table(WIMStruct *wim, int image, int write_flags,
 
 	return write_blob_table_from_blob_list(blob_table_list,
 					       &wim->out_fd,
-					       wim->hdr.part_number,
-					       out_reshdr,
+					       wim->out_hdr.part_number,
+					       &wim->out_hdr.blob_table_reshdr,
 					       write_flags_to_resource_flags(write_flags));
 }
 
 /*
- * finish_write():
- *
  * Finish writing a WIM file: write the blob table, xml data, and integrity
- * table, then overwrite the WIM header.  By default, closes the WIM file
- * descriptor (@wim->out_fd) if successful.
+ * table, then overwrite the WIM header.
  *
- * write_flags is a bitwise OR of the following:
- *
- *	(public) WIMLIB_WRITE_FLAG_CHECK_INTEGRITY:
- *		Include an integrity table.
- *
- *	(public) WIMLIB_WRITE_FLAG_FSYNC:
- *		fsync() the output file before closing it.
- *
- *	(public) WIMLIB_WRITE_FLAG_PIPABLE:
- *		Writing a pipable WIM, possibly to a pipe; include pipable WIM
- *		blob headers before the blob table and XML data, and also write
- *		the WIM header at the end instead of seeking to the beginning.
- *		Can't be combined with WIMLIB_WRITE_FLAG_CHECK_INTEGRITY.
- *
- *	(private) WIMLIB_WRITE_FLAG_NO_BLOB_TABLE:
- *		Don't write the blob table.
- *
- *	(private) WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML:
- *		After writing the XML data but before writing the integrity
- *		table, write a temporary WIM header and flush the file
- *		descriptor so that the WIM is less likely to become corrupted
- *		upon abrupt program termination.
- *	(private) WIMLIB_WRITE_FLAG_HEADER_AT_END:
- *		Instead of overwriting the WIM header at the beginning of the
- *		file, simply append it to the end of the file.  (Used when
- *		writing to pipe.)
- *	(private) WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR:
- *		Do not close the file descriptor @wim->out_fd on either success
- *		on failure.
- *	(private) WIMLIB_WRITE_FLAG_USE_EXISTING_TOTALBYTES:
- *		Use the existing <TOTALBYTES> stored in the in-memory XML
- *		information, rather than setting it to the offset of the XML
- *		data being written.
- *	(private) WIMLIB_WRITE_FLAG_OVERWRITE
- *		The existing WIM file is being updated in-place.  The entries
- *		from its integrity table may be re-used.
+ * The output file descriptor is closed on success, except when writing to a
+ * user-specified file descriptor (WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR set).
  */
 static int
 finish_write(WIMStruct *wim, int image, int write_flags,
 	     struct list_head *blob_table_list)
 {
-	int ret;
-	off_t hdr_offset;
 	int write_resource_flags;
 	off_t old_blob_table_end = 0;
+	struct integrity_table *old_integrity_table = NULL;
 	off_t new_blob_table_end;
 	u64 xml_totalbytes;
-	struct integrity_table *old_integrity_table = NULL;
-
-	DEBUG("image=%d, write_flags=%08x", image, write_flags);
+	int ret;
 
 	write_resource_flags = write_flags_to_resource_flags(write_flags);
 
@@ -2441,13 +2350,13 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	 * metadata resource labeled as the "boot metadata".  This entry should
 	 * be zeroed out if there is no bootable image (boot_idx 0).  Otherwise,
 	 * it should be a copy of the resource entry for the image that is
-	 * marked as bootable.  This is not well documented...  */
-	if (wim->hdr.boot_idx == 0) {
-		zero_reshdr(&wim->hdr.boot_metadata_reshdr);
+	 * marked as bootable.  */
+	if (wim->out_hdr.boot_idx == 0) {
+		zero_reshdr(&wim->out_hdr.boot_metadata_reshdr);
 	} else {
-		copy_reshdr(&wim->hdr.boot_metadata_reshdr,
+		copy_reshdr(&wim->out_hdr.boot_metadata_reshdr,
 			    &wim->image_metadata[
-				wim->hdr.boot_idx - 1]->metadata_blob->out_reshdr);
+				wim->out_hdr.boot_idx - 1]->metadata_blob->out_reshdr);
 	}
 
 	/* If overwriting the WIM file containing an integrity table in-place,
@@ -2471,10 +2380,9 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 		 * ignoring of the return value.  */
 	}
 
-	/* Write blob table.  */
-	if (!(write_flags & WIMLIB_WRITE_FLAG_NO_BLOB_TABLE)) {
+	/* Write blob table if needed.  */
+	if (!(write_flags & WIMLIB_WRITE_FLAG_NO_NEW_BLOBS)) {
 		ret = write_blob_table(wim, image, write_flags,
-				       &wim->hdr.blob_table_reshdr,
 				       blob_table_list);
 		if (ret) {
 			free_integrity_table(old_integrity_table);
@@ -2487,30 +2395,33 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	if (write_flags & WIMLIB_WRITE_FLAG_USE_EXISTING_TOTALBYTES)
 		xml_totalbytes = WIM_TOTALBYTES_USE_EXISTING;
 	ret = write_wim_xml_data(wim, image, xml_totalbytes,
-				 &wim->hdr.xml_data_reshdr,
+				 &wim->out_hdr.xml_data_reshdr,
 				 write_resource_flags);
 	if (ret) {
 		free_integrity_table(old_integrity_table);
 		return ret;
 	}
 
-	/* Write integrity table (optional).  */
+	/* Write integrity table if needed.  */
 	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) {
-		if (write_flags & WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML) {
+		if (write_flags & WIMLIB_WRITE_FLAG_NO_NEW_BLOBS) {
+			/* The XML data we wrote may have overwritten part of
+			 * the old integrity table, so while calculating the new
+			 * integrity table we should temporarily update the WIM
+			 * header to remove the integrity table reference.   */
 			struct wim_header checkpoint_hdr;
-			memcpy(&checkpoint_hdr, &wim->hdr, sizeof(struct wim_header));
+			memcpy(&checkpoint_hdr, &wim->out_hdr, sizeof(struct wim_header));
 			zero_reshdr(&checkpoint_hdr.integrity_table_reshdr);
 			checkpoint_hdr.flags |= WIM_HDR_FLAG_WRITE_IN_PROGRESS;
-			ret = write_wim_header_at_offset(&checkpoint_hdr,
-							 &wim->out_fd, 0);
+			ret = write_wim_header(&checkpoint_hdr, &wim->out_fd, 0);
 			if (ret) {
 				free_integrity_table(old_integrity_table);
 				return ret;
 			}
 		}
 
-		new_blob_table_end = wim->hdr.blob_table_reshdr.offset_in_wim +
-				     wim->hdr.blob_table_reshdr.size_in_wim;
+		new_blob_table_end = wim->out_hdr.blob_table_reshdr.offset_in_wim +
+				     wim->out_hdr.blob_table_reshdr.size_in_wim;
 
 		ret = write_integrity_table(wim,
 					    new_blob_table_end,
@@ -2521,19 +2432,18 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 			return ret;
 	} else {
 		/* No integrity table.  */
-		zero_reshdr(&wim->hdr.integrity_table_reshdr);
+		zero_reshdr(&wim->out_hdr.integrity_table_reshdr);
 	}
 
 	/* Now that all information in the WIM header has been determined, the
 	 * preliminary header written earlier can be overwritten, the header of
 	 * the existing WIM file can be overwritten, or the final header can be
 	 * written to the end of the pipable WIM.  */
-	wim->hdr.flags &= ~WIM_HDR_FLAG_WRITE_IN_PROGRESS;
-	hdr_offset = 0;
-	if (write_flags & WIMLIB_WRITE_FLAG_HEADER_AT_END)
-		hdr_offset = wim->out_fd.offset;
-	DEBUG("Writing new header @ %"PRIu64".", hdr_offset);
-	ret = write_wim_header_at_offset(&wim->hdr, &wim->out_fd, hdr_offset);
+	wim->out_hdr.flags &= ~WIM_HDR_FLAG_WRITE_IN_PROGRESS;
+	if (write_flags & WIMLIB_WRITE_FLAG_PIPABLE)
+		ret = write_wim_header(&wim->out_hdr, &wim->out_fd, wim->out_fd.offset);
+	else
+		ret = write_wim_header(&wim->out_hdr, &wim->out_fd, 0);
 	if (ret)
 		return ret;
 
@@ -2544,7 +2454,6 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	 * operation has been written to disk, but the new file data has not.
 	 */
 	if (write_flags & WIMLIB_WRITE_FLAG_FSYNC) {
-		DEBUG("Syncing WIM file.");
 		if (fsync(wim->out_fd.fd)) {
 			ERROR_WITH_ERRNO("Error syncing data to WIM file");
 			return WIMLIB_ERR_WRITE;
@@ -2732,86 +2641,7 @@ write_wim_part(WIMStruct *wim,
 	       const u8 *guid)
 {
 	int ret;
-	struct wim_header hdr_save;
 	struct list_head blob_table_list;
-
-	if (total_parts == 1)
-		DEBUG("Writing standalone WIM.");
-	else
-		DEBUG("Writing split WIM part %u/%u", part_number, total_parts);
-	if (image == WIMLIB_ALL_IMAGES)
-		DEBUG("Including all images.");
-	else
-		DEBUG("Including image %d only.", image);
-	if (write_flags & WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR)
-		DEBUG("File descriptor: %d", *(const int*)path_or_fd);
-	else
-		DEBUG("Path: \"%"TS"\"", (const tchar*)path_or_fd);
-	DEBUG("Write flags: 0x%08x", write_flags);
-
-	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY)
-		DEBUG("\tCHECK_INTEGRITY");
-
-	if (write_flags & WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY)
-		DEBUG("\tNO_CHECK_INTEGRITY");
-
-	if (write_flags & WIMLIB_WRITE_FLAG_PIPABLE)
-		DEBUG("\tPIPABLE");
-
-	if (write_flags & WIMLIB_WRITE_FLAG_NOT_PIPABLE)
-		DEBUG("\tNOT_PIPABLE");
-
-	if (write_flags & WIMLIB_WRITE_FLAG_RECOMPRESS)
-		DEBUG("\tRECOMPRESS");
-
-	if (write_flags & WIMLIB_WRITE_FLAG_FSYNC)
-		DEBUG("\tFSYNC");
-
-	if (write_flags & WIMLIB_WRITE_FLAG_REBUILD)
-		DEBUG("\tREBUILD");
-
-	if (write_flags & WIMLIB_WRITE_FLAG_SOFT_DELETE)
-		DEBUG("\tSOFT_DELETE");
-
-	if (write_flags & WIMLIB_WRITE_FLAG_IGNORE_READONLY_FLAG)
-		DEBUG("\tIGNORE_READONLY_FLAG");
-
-	if (write_flags & WIMLIB_WRITE_FLAG_SKIP_EXTERNAL_WIMS)
-		DEBUG("\tSKIP_EXTERNAL_WIMS");
-
-	if (write_flags & WIMLIB_WRITE_FLAG_STREAMS_OK)
-		DEBUG("\tSTREAMS_OK");
-
-	if (write_flags & WIMLIB_WRITE_FLAG_RETAIN_GUID)
-		DEBUG("\tRETAIN_GUID");
-
-	if (write_flags & WIMLIB_WRITE_FLAG_SOLID)
-		DEBUG("\tSOLID");
-
-	if (write_flags & WIMLIB_WRITE_FLAG_SEND_DONE_WITH_FILE_MESSAGES)
-		DEBUG("\tSEND_DONE_WITH_FILE_MESSAGES");
-
-	if (write_flags & WIMLIB_WRITE_FLAG_NO_SOLID_SORT)
-		DEBUG("\tNO_SOLID_SORT");
-
-	if (write_flags & WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR)
-		DEBUG("\tFILE_DESCRIPTOR");
-
-	if (write_flags & WIMLIB_WRITE_FLAG_NO_METADATA)
-		DEBUG("\tNO_METADATA");
-
-	if (write_flags & WIMLIB_WRITE_FLAG_USE_EXISTING_TOTALBYTES)
-		DEBUG("\tUSE_EXISTING_TOTALBYTES");
-
-	if (num_threads == 0)
-		DEBUG("Number of threads: autodetect");
-	else
-		DEBUG("Number of threads: %u", num_threads);
-	DEBUG("Progress function: %s", (wim->progfunc ? "yes" : "no"));
-	DEBUG("Blob list:         %s", (blob_list_override ? "specified" : "autodetect"));
-	DEBUG("GUID:              %s", (write_flags &
-					WIMLIB_WRITE_FLAG_RETAIN_GUID) ? "retain"
-						: guid ? "explicit" : "generate new");
 
 	/* Internally, this is always called with a valid part number and total
 	 * parts.  */
@@ -2843,93 +2673,98 @@ write_wim_part(WIMStruct *wim,
 				    WIMLIB_WRITE_FLAG_NOT_PIPABLE))
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	/* Save previous header, then start initializing the new one.  */
-	memcpy(&hdr_save, &wim->hdr, sizeof(struct wim_header));
-
-	/* Set default integrity, pipable, and solid flags.  */
-	if (!(write_flags & (WIMLIB_WRITE_FLAG_PIPABLE |
-			     WIMLIB_WRITE_FLAG_NOT_PIPABLE)))
-		if (wim_is_pipable(wim)) {
-			DEBUG("WIM is pipable; default to PIPABLE.");
-			write_flags |= WIMLIB_WRITE_FLAG_PIPABLE;
-		}
-
+	/* Include an integrity table by default if no preference was given and
+	 * the WIM already had an integrity table.  */
 	if (!(write_flags & (WIMLIB_WRITE_FLAG_CHECK_INTEGRITY |
-			     WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY)))
-		if (wim_has_integrity_table(wim)) {
-			DEBUG("Integrity table present; default to CHECK_INTEGRITY.");
+			     WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY))) {
+		if (wim_has_integrity_table(wim))
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
-		}
+	}
+
+	/* Write a pipable WIM by default if no preference was given and the WIM
+	 * was already pipable.  */
+	if (!(write_flags & (WIMLIB_WRITE_FLAG_PIPABLE |
+			     WIMLIB_WRITE_FLAG_NOT_PIPABLE))) {
+		if (wim_is_pipable(wim))
+			write_flags |= WIMLIB_WRITE_FLAG_PIPABLE;
+	}
 
 	if ((write_flags & (WIMLIB_WRITE_FLAG_PIPABLE |
 			    WIMLIB_WRITE_FLAG_SOLID))
 				    == (WIMLIB_WRITE_FLAG_PIPABLE |
 					WIMLIB_WRITE_FLAG_SOLID))
 	{
-		ERROR("Cannot specify both PIPABLE and SOLID!");
+		ERROR("Solid compression is unsupported in pipable WIMs");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
 
-	/* Set appropriate magic number.  */
-	if (write_flags & WIMLIB_WRITE_FLAG_PIPABLE)
-		wim->hdr.magic = PWM_MAGIC;
-	else
-		wim->hdr.magic = WIM_MAGIC;
+	/* Start initializing the new file header.  */
+	memset(&wim->out_hdr, 0, sizeof(wim->out_hdr));
 
-	/* Set appropriate version number.  */
+	/* Set the magic number.  */
+	if (write_flags & WIMLIB_WRITE_FLAG_PIPABLE)
+		wim->out_hdr.magic = PWM_MAGIC;
+	else
+		wim->out_hdr.magic = WIM_MAGIC;
+
+	/* Set the version number.  */
 	if ((write_flags & WIMLIB_WRITE_FLAG_SOLID) ||
 	    wim->out_compression_type == WIMLIB_COMPRESSION_TYPE_LZMS)
-		wim->hdr.wim_version = WIM_VERSION_SOLID;
+		wim->out_hdr.wim_version = WIM_VERSION_SOLID;
 	else
-		wim->hdr.wim_version = WIM_VERSION_DEFAULT;
+		wim->out_hdr.wim_version = WIM_VERSION_DEFAULT;
 
-	/* Clear header flags that will be set automatically.  */
-	wim->hdr.flags &= ~(WIM_HDR_FLAG_METADATA_ONLY		|
-			    WIM_HDR_FLAG_RESOURCE_ONLY		|
-			    WIM_HDR_FLAG_SPANNED		|
-			    WIM_HDR_FLAG_WRITE_IN_PROGRESS);
-
-	/* Set SPANNED header flag if writing part of a split WIM.  */
+	/* Set the header flags.  */
+	wim->out_hdr.flags = (wim->hdr.flags & (WIM_HDR_FLAG_RP_FIX |
+						WIM_HDR_FLAG_READONLY));
 	if (total_parts != 1)
-		wim->hdr.flags |= WIM_HDR_FLAG_SPANNED;
-
-	/* Set part number and total parts of split WIM.  This will be 1 and 1
-	 * if the WIM is standalone.  */
-	wim->hdr.part_number = part_number;
-	wim->hdr.total_parts = total_parts;
-
-	/* Set the compression type and chunk size.  */
-	set_wim_hdr_cflags(wim->out_compression_type, &wim->hdr);
-	wim->hdr.chunk_size = wim->out_chunk_size;
-
-	/* Set GUID.  */
-	if (!(write_flags & WIMLIB_WRITE_FLAG_RETAIN_GUID)) {
-		if (guid)
-			memcpy(wim->hdr.guid, guid, WIMLIB_GUID_LEN);
-		else
-			randomize_byte_array(wim->hdr.guid, WIMLIB_GUID_LEN);
+		wim->out_hdr.flags |= WIM_HDR_FLAG_SPANNED;
+	if (wim->out_compression_type != WIMLIB_COMPRESSION_TYPE_NONE) {
+		wim->out_hdr.flags |= WIM_HDR_FLAG_COMPRESSION;
+		switch (wim->out_compression_type) {
+		case WIMLIB_COMPRESSION_TYPE_XPRESS:
+			wim->out_hdr.flags |= WIM_HDR_FLAG_COMPRESS_XPRESS;
+			break;
+		case WIMLIB_COMPRESSION_TYPE_LZX:
+			wim->out_hdr.flags |= WIM_HDR_FLAG_COMPRESS_LZX;
+			break;
+		case WIMLIB_COMPRESSION_TYPE_LZMS:
+			wim->out_hdr.flags |= WIM_HDR_FLAG_COMPRESS_LZMS;
+			break;
+		}
 	}
 
-	/* Clear references to resources that have not been written yet.  */
-	zero_reshdr(&wim->hdr.blob_table_reshdr);
-	zero_reshdr(&wim->hdr.xml_data_reshdr);
-	zero_reshdr(&wim->hdr.boot_metadata_reshdr);
-	zero_reshdr(&wim->hdr.integrity_table_reshdr);
+	/* Set the chunk size.  */
+	wim->out_hdr.chunk_size = wim->out_chunk_size;
 
-	/* Set image count and boot index correctly for single image writes.  */
-	if (image != WIMLIB_ALL_IMAGES) {
-		wim->hdr.image_count = 1;
-		if (wim->hdr.boot_idx == image)
-			wim->hdr.boot_idx = 1;
-		else
-			wim->hdr.boot_idx = 0;
+	/* Set the GUID.  */
+	if (write_flags & WIMLIB_WRITE_FLAG_RETAIN_GUID)
+		guid = wim->hdr.guid;
+	if (guid)
+		memcpy(wim->out_hdr.guid, guid, WIMLIB_GUID_LEN);
+	else
+		randomize_byte_array(wim->out_hdr.guid, WIMLIB_GUID_LEN);
+
+	/* Set the part number and total parts.  */
+	wim->out_hdr.part_number = part_number;
+	wim->out_hdr.total_parts = total_parts;
+
+	/* Set the image count.  */
+	if (image == WIMLIB_ALL_IMAGES)
+		wim->out_hdr.image_count = wim->hdr.image_count;
+	else
+		wim->out_hdr.image_count = 1;
+
+	/* Set the boot index.  */
+	wim->out_hdr.boot_idx = 0;
+	if (total_parts == 1) {
+		if (image == WIMLIB_ALL_IMAGES)
+			wim->out_hdr.boot_idx = wim->hdr.boot_idx;
+		else if (image == wim->hdr.boot_idx)
+			wim->out_hdr.boot_idx = 1;
 	}
 
-	/* Split WIMs can't be bootable.  */
-	if (total_parts != 1)
-		wim->hdr.boot_idx = 0;
-
-	/* Set up output file descriptor.  */
+	/* Set up the output file descriptor.  */
 	if (write_flags & WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR) {
 		/* File descriptor was explicitly provided.  */
 		filedes_init(&wim->out_fd, *(const int *)path_or_fd);
@@ -2937,32 +2772,31 @@ write_wim_part(WIMStruct *wim,
 			/* The file descriptor is a pipe.  */
 			ret = WIMLIB_ERR_INVALID_PARAM;
 			if (!(write_flags & WIMLIB_WRITE_FLAG_PIPABLE))
-				goto out_restore_hdr;
+				goto out_cleanup;
 			if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) {
 				ERROR("Can't include integrity check when "
 				      "writing pipable WIM to pipe!");
-				goto out_restore_hdr;
+				goto out_cleanup;
 			}
 		}
-
 	} else {
 		/* Filename of WIM to write was provided; open file descriptor
 		 * to it.  */
 		ret = open_wim_writable(wim, (const tchar*)path_or_fd,
 					O_TRUNC | O_CREAT | O_RDWR);
 		if (ret)
-			goto out_restore_hdr;
+			goto out_cleanup;
 	}
 
 	/* Write initial header.  This is merely a "dummy" header since it
-	 * doesn't have all the information yet, so it will be overwritten later
-	 * (unless writing a pipable WIM).  */
+	 * doesn't have resource entries filled in yet, so it will be
+	 * overwritten later (unless writing a pipable WIM).  */
 	if (!(write_flags & WIMLIB_WRITE_FLAG_PIPABLE))
-		wim->hdr.flags |= WIM_HDR_FLAG_WRITE_IN_PROGRESS;
-	ret = write_wim_header(&wim->hdr, &wim->out_fd);
-	wim->hdr.flags &= ~WIM_HDR_FLAG_WRITE_IN_PROGRESS;
+		wim->out_hdr.flags |= WIM_HDR_FLAG_WRITE_IN_PROGRESS;
+	ret = write_wim_header(&wim->out_hdr, &wim->out_fd, wim->out_fd.offset);
+	wim->out_hdr.flags &= ~WIM_HDR_FLAG_WRITE_IN_PROGRESS;
 	if (ret)
-		goto out_restore_hdr;
+		goto out_cleanup;
 
 	/* Write file data and metadata resources.  */
 	if (!(write_flags & WIMLIB_WRITE_FLAG_PIPABLE)) {
@@ -2972,28 +2806,24 @@ write_wim_part(WIMStruct *wim,
 				      blob_list_override,
 				      &blob_table_list);
 		if (ret)
-			goto out_restore_hdr;
+			goto out_cleanup;
 
 		ret = write_metadata_resources(wim, image, write_flags);
 		if (ret)
-			goto out_restore_hdr;
+			goto out_cleanup;
 	} else {
 		/* Non-default case: create pipable WIM.  */
 		ret = write_pipable_wim(wim, image, write_flags, num_threads,
 					blob_list_override,
 					&blob_table_list);
 		if (ret)
-			goto out_restore_hdr;
-		write_flags |= WIMLIB_WRITE_FLAG_HEADER_AT_END;
+			goto out_cleanup;
 	}
-
 
 	/* Write blob table, XML data, and (optional) integrity table.  */
 	ret = finish_write(wim, image, write_flags, &blob_table_list);
-out_restore_hdr:
-	memcpy(&wim->hdr, &hdr_save, sizeof(struct wim_header));
+out_cleanup:
 	(void)close_wim_writable(wim, write_flags);
-	DEBUG("ret=%d", ret);
 	return ret;
 }
 
@@ -3096,11 +2926,10 @@ check_resource_offsets(WIMStruct *wim, off_t end_offset)
  * header.  This operation is potentially unsafe if the program is abruptly
  * terminated while the XML data or integrity table are being overwritten, but
  * before the new header has been written.  To partially alleviate this problem,
- * a special flag (WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML) is passed to
- * finish_write() to cause a temporary WIM header to be written after the XML
- * data has been written.  This may prevent the WIM from becoming corrupted if
- * the program is terminated while the integrity table is being calculated (but
- * no guarantees, due to write re-ordering...).
+ * we write a temporary header after the XML data has been written.  This may
+ * prevent the WIM from becoming corrupted if the program is terminated while
+ * the integrity table is being calculated (but no guarantees, due to write
+ * re-ordering...).
  *
  * If we are adding new blobs, including new file data as well as any metadata
  * for any new images, then the blob table needs to be changed, and those blobs
@@ -3143,25 +2972,24 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 	int ret;
 	off_t old_wim_end;
 	u64 old_blob_table_end, old_xml_begin, old_xml_end;
-	struct wim_header hdr_save;
 	struct list_head blob_list;
 	struct list_head blob_table_list;
 	struct filter_context filter_ctx;
 
-	DEBUG("Overwriting `%"TS"' in-place", wim->filename);
-
-	/* Save original header so it can be restored in case of error  */
-	memcpy(&hdr_save, &wim->hdr, sizeof(struct wim_header));
-
-	/* Set default integrity flag.  */
+	/* Include an integrity table by default if no preference was given and
+	 * the WIM already had an integrity table.  */
 	if (!(write_flags & (WIMLIB_WRITE_FLAG_CHECK_INTEGRITY |
 			     WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY)))
 		if (wim_has_integrity_table(wim))
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 
-	/* Set WIM version if writing solid resources.  */
+	/* Start preparing the updated file header.  */
+	memcpy(&wim->out_hdr, &wim->hdr, sizeof(wim->out_hdr));
+
+	/* If using solid compression, the version number must be set to
+	 * WIM_VERSION_SOLID.  */
 	if (write_flags & WIMLIB_WRITE_FLAG_SOLID)
-		wim->hdr.wim_version = WIM_VERSION_SOLID;
+		wim->out_hdr.wim_version = WIM_VERSION_SOLID;
 
 	/* Set additional flags for overwrite.  */
 	write_flags |= WIMLIB_WRITE_FLAG_OVERWRITE |
@@ -3174,17 +3002,17 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 	old_xml_end = old_xml_begin + wim->hdr.xml_data_reshdr.size_in_wim;
 	old_blob_table_end = wim->hdr.blob_table_reshdr.offset_in_wim +
 			     wim->hdr.blob_table_reshdr.size_in_wim;
-	if (wim->hdr.integrity_table_reshdr.offset_in_wim != 0 &&
+	if (wim_has_integrity_table(wim) &&
 	    wim->hdr.integrity_table_reshdr.offset_in_wim < old_xml_end) {
 		WARNING("Didn't expect the integrity table to be before the XML data");
 		ret = WIMLIB_ERR_RESOURCE_ORDER;
-		goto out_restore_memory_hdr;
+		goto out;
 	}
 
 	if (old_blob_table_end > old_xml_begin) {
 		WARNING("Didn't expect the blob table to be after the XML data");
 		ret = WIMLIB_ERR_RESOURCE_ORDER;
-		goto out_restore_memory_hdr;
+		goto out;
 	}
 
 	/* Set @old_wim_end, which indicates the point beyond which we don't
@@ -3197,12 +3025,9 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 		 * shall write the new XML data and optional integrity table
 		 * immediately after the blob table.  Note that this may
 		 * overwrite an existing integrity table. */
-		DEBUG("Skipping writing blob table "
-		      "(no images modified or deleted)");
 		old_wim_end = old_blob_table_end;
-		write_flags |= WIMLIB_WRITE_FLAG_NO_BLOB_TABLE |
-			       WIMLIB_WRITE_FLAG_CHECKPOINT_AFTER_XML;
-	} else if (wim->hdr.integrity_table_reshdr.offset_in_wim != 0) {
+		write_flags |= WIMLIB_WRITE_FLAG_NO_NEW_BLOBS;
+	} else if (wim_has_integrity_table(wim)) {
 		/* Old WIM has an integrity table; begin writing new blobs after
 		 * it. */
 		old_wim_end = wim->hdr.integrity_table_reshdr.offset_in_wim +
@@ -3215,17 +3040,20 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 
 	ret = check_resource_offsets(wim, old_wim_end);
 	if (ret)
-		goto out_restore_memory_hdr;
+		goto out;
 
 	ret = prepare_blob_list_for_write(wim, WIMLIB_ALL_IMAGES, write_flags,
 					  &blob_list, &blob_table_list,
 					  &filter_ctx);
 	if (ret)
-		goto out_restore_memory_hdr;
+		goto out;
+
+	if (write_flags & WIMLIB_WRITE_FLAG_NO_NEW_BLOBS)
+		wimlib_assert(list_empty(&blob_list));
 
 	ret = open_wim_writable(wim, wim->filename, O_RDWR);
 	if (ret)
-		goto out_restore_memory_hdr;
+		goto out;
 
 	ret = lock_wim_for_append(wim);
 	if (ret)
@@ -3234,6 +3062,7 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 	/* Set WIM_HDR_FLAG_WRITE_IN_PROGRESS flag in header. */
 	wim->hdr.flags |= WIM_HDR_FLAG_WRITE_IN_PROGRESS;
 	ret = write_wim_header_flags(wim->hdr.flags, &wim->out_fd);
+	wim->hdr.flags &= ~WIM_HDR_FLAG_WRITE_IN_PROGRESS;
 	if (ret) {
 		ERROR_WITH_ERRNO("Error updating WIM header flags");
 		goto out_unlock_wim;
@@ -3242,7 +3071,7 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 	if (filedes_seek(&wim->out_fd, old_wim_end) == -1) {
 		ERROR_WITH_ERRNO("Can't seek to end of WIM");
 		ret = WIMLIB_ERR_WRITE;
-		goto out_restore_physical_hdr;
+		goto out_restore_hdr;
 	}
 
 	ret = write_file_data_blobs(wim, &blob_list, write_flags,
@@ -3263,21 +3092,20 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 	return 0;
 
 out_truncate:
-	if (!(write_flags & WIMLIB_WRITE_FLAG_NO_BLOB_TABLE)) {
-		WARNING("Truncating `%"TS"' to its original size (%"PRIu64" bytes)",
-			wim->filename, old_wim_end);
+	if (!(write_flags & WIMLIB_WRITE_FLAG_NO_NEW_BLOBS)) {
+		WARNING("Truncating \"%"TS"\" to its original size "
+			"(%"PRIu64" bytes)", wim->filename, old_wim_end);
 		/* Return value of ftruncate() is ignored because this is
 		 * already an error path.  */
 		(void)ftruncate(wim->out_fd.fd, old_wim_end);
 	}
-out_restore_physical_hdr:
-	(void)write_wim_header_flags(hdr_save.flags, &wim->out_fd);
+out_restore_hdr:
+	(void)write_wim_header_flags(wim->hdr.flags, &wim->out_fd);
 out_unlock_wim:
 	unlock_wim_for_append(wim);
 out_close_wim:
 	(void)close_wim_writable(wim, write_flags);
-out_restore_memory_hdr:
-	memcpy(&wim->hdr, &hdr_save, sizeof(struct wim_header));
+out:
 	return ret;
 }
 
@@ -3286,8 +3114,6 @@ overwrite_wim_via_tmpfile(WIMStruct *wim, int write_flags, unsigned num_threads)
 {
 	size_t wim_name_len;
 	int ret;
-
-	DEBUG("Overwriting `%"TS"' via a temporary file", wim->filename);
 
 	/* Write the WIM to a temporary file in the same directory as the
 	 * original WIM. */
@@ -3315,7 +3141,6 @@ overwrite_wim_via_tmpfile(WIMStruct *wim, int write_flags, unsigned num_threads)
 	/* Rename the new WIM file to the original WIM file.  Note: on Windows
 	 * this actually calls win32_rename_replacement(), not _wrename(), so
 	 * that removing the existing destination file can be handled.  */
-	DEBUG("Renaming `%"TS"' to `%"TS"'", tmpfile, wim->filename);
 	ret = trename(tmpfile, wim->filename);
 	if (ret) {
 		ERROR_WITH_ERRNO("Failed to rename `%"TS"' to `%"TS"'",
