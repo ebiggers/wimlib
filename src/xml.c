@@ -896,15 +896,16 @@ xml_write_time(xmlTextWriter *writer, const char *element_name, u64 time)
 
 /* Writes an <IMAGE> element to the XML document. */
 static int
-xml_write_image_info(xmlTextWriter *writer, const struct image_info *image_info)
+xml_write_image_info(xmlTextWriter *writer, const struct image_info *image_info,
+		     int index)
 {
 	int rc;
+
 	rc = xmlTextWriterStartElement(writer, "IMAGE");
 	if (rc < 0)
 		return rc;
 
-	rc = xmlTextWriterWriteFormatAttribute(writer, "INDEX", "%d",
-					       image_info->index);
+	rc = xmlTextWriterWriteFormatAttribute(writer, "INDEX", "%d", index);
 	if (rc < 0)
 		return rc;
 
@@ -1377,7 +1378,6 @@ prepare_wim_xml_data(WIMStruct *wim, int image, u64 total_bytes,
 	xmlOutputBuffer *outbuf;
 	xmlTextWriter *writer;
 	int ret;
-	int first, last;
 	const xmlChar *content;
 	int len;
 	u8 *xml_data;
@@ -1439,20 +1439,23 @@ prepare_wim_xml_data(WIMStruct *wim, int image, u64 total_bytes,
 	}
 
 	if (image == WIMLIB_ALL_IMAGES) {
-		first = 1;
-		last = wim->hdr.image_count;
-	} else {
-		first = image;
-		last = image;
-	}
-
-	for (int i = first; i <= last; i++) {
-		ret = xml_write_image_info(writer, &wim->wim_info->images[i - 1]);
-		if (ret) {
+		for (int i = 0; i < wim->hdr.image_count; i++) {
+			ret = xml_write_image_info(writer,
+						   &wim->wim_info->images[i],
+						   i + 1);
 			if (ret < 0)
 				goto out_write_error;
-			goto out_free_text_writer;
+			if (ret > 0)
+				goto out_free_text_writer;
 		}
+	} else {
+		ret = xml_write_image_info(writer,
+					   &wim->wim_info->images[image - 1],
+					   1);
+		if (ret < 0)
+			goto out_write_error;
+		if (ret > 0)
+			goto out_free_text_writer;
 	}
 
 	ret = xmlTextWriterEndElement(writer);
