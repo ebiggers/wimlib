@@ -26,7 +26,7 @@ struct wim_image_metadata {
 	struct blob_descriptor *metadata_blob;
 
 	/* Linked list of 'struct wim_inode's for this image. */
-	struct list_head inode_list;
+	struct hlist_head inode_list;
 
 	/* Linked list of 'struct blob_descriptor's for blobs that are
 	 * referenced by this image's dentry tree, but have not had their SHA-1
@@ -71,7 +71,11 @@ wim_get_current_security_data(WIMStruct *wim)
 
 /* Iterate over each inode in a WIM image  */
 #define image_for_each_inode(inode, imd) \
-	list_for_each_entry(inode, &(imd)->inode_list, i_list)
+	hlist_for_each_entry(inode, &(imd)->inode_list, i_hlist)
+
+/* Iterate over each inode in a WIM image (safe against inode removal)  */
+#define image_for_each_inode_safe(inode, tmp, imd) \
+	hlist_for_each_entry_safe(inode, tmp, &(imd)->inode_list, i_hlist)
 
 /* Iterate over each blob in a WIM image that has not yet been hashed */
 #define image_for_each_unhashed_blob(blob, imd) \

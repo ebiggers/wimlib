@@ -121,19 +121,10 @@ struct wim_inode {
 	 * i_nlink dentries in this list.  */
 	struct list_head i_dentry;
 
-	/* Field to place this inode into a list. */
-	union {
-		/* Hash list node- used in inode_fixup.c when the inodes are
-		 * placed into a hash table keyed by inode number and optionally
-		 * device number, in order to detect dentries that are aliases
-		 * for the same inode. */
-		struct hlist_node i_hlist;
-
-		/* Normal list node- used to connect all the inodes of a WIM
-		 * image into a single linked list referenced from the `struct
-		 * wim_image_metadata' for that image. */
-		struct list_head i_list;
-	};
+	/* Field to place this inode into a list.  While reading a WIM image or
+	 * adding files to a WIM image this is owned by the inode table;
+	 * otherwise this links the inodes for the WIM image.  */
+	struct hlist_node i_hlist;
 
 	/* Number of dentries that are aliases for this inode.  */
 	u32 i_nlink;
@@ -437,6 +428,6 @@ inode_unref_blobs(struct wim_inode *inode, struct blob_table *blob_table);
 
 /* inode_fixup.c  */
 extern int
-dentry_tree_fix_inodes(struct wim_dentry *root, struct list_head *inode_list);
+dentry_tree_fix_inodes(struct wim_dentry *root, struct hlist_head *inode_list);
 
 #endif /* _WIMLIB_INODE_H  */

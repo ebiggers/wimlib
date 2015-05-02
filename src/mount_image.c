@@ -502,8 +502,8 @@ create_file(struct fuse_context *fuse_ctx, const char *path,
 		}
 	}
 
-	list_add_tail(&new_inode->i_list,
-		      &wim_get_current_image_metadata(wimfs_ctx->wim)->inode_list);
+	hlist_add_head(&new_inode->i_hlist,
+		       &wim_get_current_image_metadata(wimfs_ctx->wim)->inode_list);
 
 	dentry_add_child(parent, new_dentry);
 
@@ -1001,12 +1001,13 @@ inode_close_fds(struct wim_inode *inode)
 static void
 close_all_fds(struct wimfs_context *ctx)
 {
-	struct wim_inode *inode, *tmp;
+	struct wim_inode *inode;
+	struct hlist_node *tmp;
 	struct wim_image_metadata *imd;
 
 	imd = wim_get_current_image_metadata(ctx->wim);
 
-	list_for_each_entry_safe(inode, tmp, &imd->inode_list, i_list)
+	image_for_each_inode_safe(inode, tmp, imd)
 		inode_close_fds(inode);
 }
 

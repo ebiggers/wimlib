@@ -57,7 +57,6 @@ new_inode(struct wim_dentry *dentry, bool set_timestamps)
 	inode->i_security_id = -1;
 	/*inode->i_nlink = 0;*/
 	inode->i_not_rpfixed = 1;
-	INIT_LIST_HEAD(&inode->i_list);
 	INIT_LIST_HEAD(&inode->i_dentry);
 	inode->i_streams = inode->i_embedded_streams;
 	if (set_timestamps) {
@@ -86,8 +85,6 @@ free_inode(struct wim_inode *inode)
 		FREE(inode->i_streams);
 	if (inode->i_extra)
 		FREE(inode->i_extra);
-	/* HACK: This may instead delete the inode from i_list, but hlist_del()
-	 * behaves the same as list_del(). */
 	if (!hlist_unhashed(&inode->i_hlist))
 		hlist_del(&inode->i_hlist);
 	FREE(inode);

@@ -67,7 +67,7 @@ inode_table_insert(struct wim_dentry *dentry, void *_params)
 	struct wim_inode *inode;
 
 	if (d_inode->i_ino == 0) {
-		list_add_tail(&d_inode->i_list, &table->extra_inodes);
+		hlist_add_head(&d_inode->i_hlist, &table->extra_inodes);
 		return 0;
 	}
 
@@ -111,32 +111,35 @@ inode_table_insert(struct wim_dentry *dentry, void *_params)
 	return 0;
 }
 
+static void
+hlist_move_all(struct hlist_head *src, struct hlist_head *dest)
+{
+	struct hlist_node *node;
+
+	while ((node = src->first) != NULL) {
+		hlist_del(node);
+		hlist_add_head(node, dest);
+	}
+}
+
 /* Move the inodes from the 'struct wim_inode_table' to the 'inode_list'.  */
 static void
 build_inode_list(struct wim_inode_table *inode_table,
-		 struct list_head *inode_list)
+		 struct hlist_head *inode_list)
 {
-	list_splice(&inode_table->extra_inodes, inode_list);
-	for (size_t i = 0; i < inode_table->capacity; i++) {
-		while (!hlist_empty(&inode_table->array[i])) {
-			struct wim_inode *inode;
-
-			inode = hlist_entry(inode_table->array[i].first,
-					    struct wim_inode, i_hlist);
-			hlist_del(&inode->i_hlist);
-			list_add(&inode->i_list, inode_list);
-		}
-	}
+	hlist_move_all(&inode_table->extra_inodes, inode_list);
+	for (size_t i = 0; i < inode_table->capacity; i++)
+		hlist_move_all(&inode_table->array[i], inode_list);
 }
 
 /* Re-assign inode numbers to the inodes in the list.  */
 static void
-reassign_inode_numbers(struct list_head *inode_list)
+reassign_inode_numbers(struct hlist_head *inode_list)
 {
 	struct wim_inode *inode;
 	u64 cur_ino = 1;
 
-	list_for_each_entry(inode, inode_list, i_list)
+	hlist_for_each_entry(inode, inode_list, i_hlist)
 		inode->i_ino = cur_ino++;
 }
 
@@ -165,7 +168,7 @@ reassign_inode_numbers(struct list_head *inode_list)
  * i_ino fields.
  */
 int
-dentry_tree_fix_inodes(struct wim_dentry *root, struct list_head *inode_list)
+dentry_tree_fix_inodes(struct wim_dentry *root, struct hlist_head *inode_list)
 {
 	struct inode_fixup_params params;
 	int ret;

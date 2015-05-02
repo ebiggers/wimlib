@@ -217,7 +217,7 @@ destroy_image_metadata(struct wim_image_metadata *imd,
 			free_blob_descriptor(blob);
 	}
 	INIT_LIST_HEAD(&imd->unhashed_blobs);
-	INIT_LIST_HEAD(&imd->inode_list);
+	INIT_HLIST_HEAD(&imd->inode_list);
 #ifdef WITH_NTFS_3G
 	if (imd->ntfs_vol) {
 		do_ntfs_umount(imd->ntfs_vol);
@@ -260,7 +260,7 @@ new_image_metadata(void)
 	imd = CALLOC(1, sizeof(*imd));
 	if (imd) {
 		imd->refcnt = 1;
-		INIT_LIST_HEAD(&imd->inode_list);
+		INIT_HLIST_HEAD(&imd->inode_list);
 		INIT_LIST_HEAD(&imd->unhashed_blobs);
 	}
 	return imd;
