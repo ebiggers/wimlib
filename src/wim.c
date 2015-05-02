@@ -90,8 +90,8 @@ static const struct {
 static bool
 wim_compression_type_valid(enum wimlib_compression_type ctype)
 {
-	return ctype >= 0 && ctype < ARRAY_LEN(wim_ctype_info) &&
-	       wim_ctype_info[ctype].name != NULL;
+	return (unsigned)ctype < ARRAY_LEN(wim_ctype_info) &&
+	       wim_ctype_info[(unsigned)ctype].name != NULL;
 }
 
 /* Is the specified chunk size valid for the compression type?  */
@@ -101,8 +101,8 @@ wim_chunk_size_valid(u32 chunk_size, enum wimlib_compression_type ctype)
 	if (!(chunk_size == 0 || is_power_of_2(chunk_size)))
 		return false;
 
-	return chunk_size >= wim_ctype_info[ctype].min_chunk_size &&
-	       chunk_size <= wim_ctype_info[ctype].max_chunk_size;
+	return chunk_size >= wim_ctype_info[(unsigned)ctype].min_chunk_size &&
+	       chunk_size <= wim_ctype_info[(unsigned)ctype].max_chunk_size;
 }
 
 /* Return the default chunk size to use for the specified compression type in
@@ -110,7 +110,7 @@ wim_chunk_size_valid(u32 chunk_size, enum wimlib_compression_type ctype)
 static u32
 wim_default_nonsolid_chunk_size(enum wimlib_compression_type ctype)
 {
-	return wim_ctype_info[ctype].default_nonsolid_chunk_size;
+	return wim_ctype_info[(unsigned)ctype].default_nonsolid_chunk_size;
 }
 
 /* Return the default chunk size to use for the specified compression type in
@@ -118,7 +118,7 @@ wim_default_nonsolid_chunk_size(enum wimlib_compression_type ctype)
 static u32
 wim_default_solid_chunk_size(enum wimlib_compression_type ctype)
 {
-	return wim_ctype_info[ctype].default_solid_chunk_size;
+	return wim_ctype_info[(unsigned)ctype].default_solid_chunk_size;
 }
 
 /* Return the default compression type to use in solid resources.  */
@@ -576,7 +576,7 @@ wimlib_get_compression_type_string(enum wimlib_compression_type ctype)
 	if (!wim_compression_type_valid(ctype))
 		return T("Invalid");
 
-	return wim_ctype_info[ctype].name;
+	return wim_ctype_info[(unsigned)ctype].name;
 }
 
 WIMLIBAPI void
