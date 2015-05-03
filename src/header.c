@@ -174,12 +174,8 @@ write_wim_header(const struct wim_header *hdr, struct filedes *out_fd,
 	disk_hdr.hdr_size = cpu_to_le32(sizeof(struct wim_header_disk));
 	disk_hdr.wim_version = cpu_to_le32(hdr->wim_version);
 	disk_hdr.wim_flags = cpu_to_le32(hdr->flags);
-	if (hdr->flags & WIM_HDR_FLAG_COMPRESSION)
-		disk_hdr.chunk_size = cpu_to_le32(hdr->chunk_size);
-	else
-		disk_hdr.chunk_size = 0;
+	disk_hdr.chunk_size = cpu_to_le32(hdr->chunk_size);
 	memcpy(disk_hdr.guid, hdr->guid, WIM_GUID_LEN);
-
 	disk_hdr.part_number = cpu_to_le16(hdr->part_number);
 	disk_hdr.total_parts = cpu_to_le16(hdr->total_parts);
 	disk_hdr.image_count = cpu_to_le32(hdr->image_count);
