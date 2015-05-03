@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #ifdef HAVE_SYS_SYSCTL_H
+#  include <sys/types.h>
 #  include <sys/sysctl.h>
 #endif
 #include <unistd.h>
