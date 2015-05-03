@@ -67,8 +67,7 @@ struct wim_header_disk {
 	u32 wim_flags;
 
 	/* +0x14: Uncompressed chunk size for non-solid compressed resources in
-	 * the WIM or 0 if the WIM is uncompressed.  (However wimlib will accept
-	 * any value here if the WIM is uncompressed.)  */
+	 * the WIM or 0 if the WIM is uncompressed.  */
 	u32 chunk_size;
 
 	/* +0x18: Globally unique identifier for the WIM file.  Basically a
