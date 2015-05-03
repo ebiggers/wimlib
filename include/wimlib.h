@@ -2451,6 +2451,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_NOT_A_MOUNTPOINT                   = 80,
 	WIMLIB_ERR_NOT_PERMITTED_TO_UNMOUNT           = 81,
 	WIMLIB_ERR_FVE_LOCKED_VOLUME		      = 82,
+	WIMLIB_ERR_UNABLE_TO_READ_CAPTURE_CONFIG      = 83,
 };
 
 
@@ -4244,8 +4245,7 @@ wimlib_unmount_image_with_progress(const wimlib_tchar *dir,
  *	Windows-only: One of the "add" commands attempted to add files from an
  *	encrypted BitLocker volume that hasn't yet been unlocked.
  * @retval ::WIMLIB_ERR_INVALID_CAPTURE_CONFIG
- *	The capture configuration structure specified for an add command was
- *	invalid.
+ *	The contents of a capture configuration file were invalid.
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  *	@p image did not exist in @p wim.
  * @retval ::WIMLIB_ERR_INVALID_OVERLAY
@@ -4292,6 +4292,8 @@ wimlib_unmount_image_with_progress(const wimlib_tchar *dir,
  * @retval ::WIMLIB_ERR_STAT
  *	While executing an add command, failed to get attributes for a file or
  *	directory.
+ * @retval ::WIMLIB_ERR_UNABLE_TO_READ_CAPTURE_CONFIG
+ *	A capture configuration file could not be read.
  * @retval ::WIMLIB_ERR_UNSUPPORTED
  * 	::WIMLIB_ADD_FLAG_NTFS was specified in the @p add_flags for an update
  * 	command, but wimlib was configured with the @c --without-ntfs-3g flag;

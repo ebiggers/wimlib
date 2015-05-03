@@ -220,7 +220,7 @@ static const tchar * const error_strings[] = {
 	[WIMLIB_ERR_INTEGRITY]
 		= T("The WIM file is corrupted (failed integrity check)"),
 	[WIMLIB_ERR_INVALID_CAPTURE_CONFIG]
-		= T("The capture configuration string was invalid"),
+		= T("The contents of the capture configuration file were invalid"),
 	[WIMLIB_ERR_INVALID_CHUNK_SIZE]
 		= T("The compression chunk size was unrecognized"),
 	[WIMLIB_ERR_INVALID_COMPRESSION_TYPE]
@@ -354,6 +354,8 @@ static const tchar * const error_strings[] = {
 		= T("The current user does not have permission to unmount the WIM image"),
 	[WIMLIB_ERR_FVE_LOCKED_VOLUME]
 		= T("The volume must be unlocked before it can be used"),
+	[WIMLIB_ERR_UNABLE_TO_READ_CAPTURE_CONFIG]
+		= T("The capture configuration file could not be read"),
 };
 
 WIMLIBAPI const tchar *

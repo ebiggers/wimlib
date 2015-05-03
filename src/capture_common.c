@@ -203,8 +203,25 @@ read_capture_config(const tchar *config_file, const void *buf,
 	ret = do_load_text_file(config_file, buf, bufsize, &mem,
 				sections, ARRAY_LEN(sections),
 				LOAD_TEXT_FILE_REMOVE_QUOTES, mangle_pat);
-	if (ret)
+	if (ret) {
+		ERROR("Failed to load capture configuration file \"%"TS"\"",
+		      config_file);
+		switch (ret) {
+		case WIMLIB_ERR_INVALID_UTF8_STRING:
+		case WIMLIB_ERR_INVALID_UTF16_STRING:
+			ERROR("Note: the capture configuration file must be "
+			      "valid UTF-8 or UTF-16LE");
+			ret = WIMLIB_ERR_INVALID_CAPTURE_CONFIG;
+			break;
+		case WIMLIB_ERR_OPEN:
+		case WIMLIB_ERR_STAT:
+		case WIMLIB_ERR_NOMEM:
+		case WIMLIB_ERR_READ:
+			ret = WIMLIB_ERR_UNABLE_TO_READ_CAPTURE_CONFIG;
+			break;
+		}
 		return ret;
+	}
 
 	FREE(prepopulate_pats.strings);
 	FREE(compression_exclusion_pats.strings);
