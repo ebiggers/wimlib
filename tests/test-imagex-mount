@@ -171,7 +171,7 @@ echo "Unmounting WIM with changes committed and --check"
 if ! imagex_unmount tmp.mnt --commit --check; then
 	error "Failed to unmount read-write mounted WIM"
 fi
-if test "`wiminfo dir.wim | grep Integrity | awk '{print $3}'`" != "yes"; then
+if ! wiminfo dir.wim | grep -q Integrity; then
 	error "Integrity information was not included"
 fi
 if ! wimapply dir.wim tmp.apply; then

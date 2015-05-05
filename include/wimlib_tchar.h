@@ -22,6 +22,7 @@ typedef wchar_t tchar;
 #  define tmemcpy	wmemcpy
 #  define tmemmove	wmemmove
 #  define tmempcpy	wmempcpy
+#  define tstrcat	wcscat
 #  define tstrcpy	wcscpy
 #  define tprintf	wprintf
 #  define tsprintf	swprintf
@@ -80,6 +81,7 @@ typedef char tchar;
 #  define tmemcpy	memcpy
 #  define tmemmove	memmove
 #  define tmempcpy	mempcpy
+#  define tstrcat	strcat
 #  define tstrcpy	strcpy
 #  define tprintf	printf
 #  define tsprintf	sprintf

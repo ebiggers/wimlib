@@ -152,7 +152,7 @@ echo "Testing capture of WIM with integrity table"
 if ! wimcapture dir dir.wim --check; then
 	error "Failed to capture WIM with integrity table"
 fi
-if ! test "`wiminfo dir.wim | grep Integrity | awk '{print $3}'`" = "yes"; then
+if ! wiminfo dir.wim | grep -q Integrity; then
 	error "Integrity table on WIM not made"
 fi
 if ! wimapply --check dir.wim tmp; then
@@ -186,14 +186,14 @@ echo "Testing appending WIM image with integrity check"
 if ! wimappend dir2 dir.wim "newname2" --check; then
 	error "Appending WIM image failed"
 fi
-if ! test "`wiminfo dir.wim | grep Integrity | awk '{print $3}'`" = "yes"; then
+if ! wiminfo dir.wim | grep -q Integrity; then
 	error "Integrity table not set correctly on image append"
 fi
 echo "Testing appending WIM image with no integrity check"
 if ! wimappend dir2 dir.wim "newname3" --nocheck; then
 	error "Appending WIM image failed"
 fi
-if ! test "`wiminfo dir.wim | grep Integrity | awk '{print $3}'`" = "no"; then
+if wiminfo dir.wim | grep -q Integrity; then
 	error "WIM integrity table not removed"
 fi
 # 5 images at this point
@@ -232,7 +232,7 @@ echo "Testing appending directory to empty WIM and making it bootable"
 if ! wimappend dir dir.wim "myname" "mydesc" --check --boot; then
 	error "Couldn't append named, described, bootable image to empty WIM with integrity check"
 fi
-if ! test "`wiminfo dir.wim | grep Integrity | awk '{print $3}'`" = "yes"; then
+if ! wiminfo dir.wim | grep -q Integrity; then
 	error "Integrity check not found"
 fi
 if ! test "`wiminfo dir.wim | grep '^Boot Index' | awk '{print $3}'`" = "1"; then

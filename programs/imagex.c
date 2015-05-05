@@ -2413,6 +2413,9 @@ static void print_byte_field(const uint8_t field[], size_t len)
 static void
 print_wim_information(const tchar *wimfile, const struct wimlib_wim_info *info)
 {
+	tchar attr_string[256];
+	tchar *p;
+
 	tputs(T("WIM Information:"));
 	tputs(T("----------------"));
 	tprintf(T("Path:           %"TS"\n"), wimfile);
@@ -2428,13 +2431,32 @@ print_wim_information(const tchar *wimfile, const struct wimlib_wim_info *info)
 	tprintf(T("Part Number:    %d/%d\n"), info->part_number, info->total_parts);
 	tprintf(T("Boot Index:     %d\n"), info->boot_index);
 	tprintf(T("Size:           %"PRIu64" bytes\n"), info->total_bytes);
-	tprintf(T("Integrity Info: %"TS"\n"),
-		info->has_integrity_table ? T("yes") : T("no"));
-	tprintf(T("Relative path junction: %"TS"\n"),
-		info->has_rpfix ? T("yes") : T("no"));
-	tprintf(T("Pipable:        %"TS"\n"),
-		info->pipable ? T("yes") : T("no"));
-	tputchar(T('\n'));
+
+	attr_string[0] = T('\0');
+
+	if (info->pipable)
+		tstrcat(attr_string, "Pipable, ");
+
+	if (info->has_integrity_table)
+		tstrcat(attr_string, "Integrity info, ");
+
+	if (info->has_rpfix)
+		tstrcat(attr_string, "Relative path junction, ");
+
+	if (info->resource_only)
+		tstrcat(attr_string, "Resource only, ");
+
+	if (info->metadata_only)
+		tstrcat(attr_string, "Metadata only, ");
+
+	if (info->is_marked_readonly)
+		tstrcat(attr_string, "Readonly, ");
+
+	p = tstrchr(attr_string, '\0');
+	if (p >= &attr_string[2] && p[-1] == T(' ') && p[-2] == T(','))
+		p[-2] = '\0';
+
+	tprintf(T("Attributes:     %"TS"\n\n"), attr_string);
 }
 
 static int
