@@ -130,49 +130,18 @@ file attributes will be applied, the full data will be extracted to each sparse
 file, so extracted "sparse" files may not actually contain any sparse regions.
 .PP
 Regardless, since almost all information from the WIM image is restored in this
-mode, it is possible to restore an image of an actual Windows installation using
-\fBwimlib-imagex\fR on UNIX-like systems in addition to with
-\fBwimlib-imagex\fR on Windows.  In the examples at the end of this manual
-page, there is an example of applying an image from the "install.wim" file
-contained in the installation media for Windows Vista, Windows 7, and Windows 8
-in the "sources" directory.
+mode, it is possible (and fully supported) to restore an image of an actual
+Windows installation using \fBwimlib-imagex\fR on UNIX-like systems as an
+alternative to using \fBwimlib-imagex\fR on Windows.  In the examples at the end
+of this manual page, there is an example of applying an image from the
+"install.wim" file contained in the installation media for Windows (Vista or
+later) in the "sources" directory.
 .PP
-But in order to actually boot Windows from an applied image, you must understand
-the boot process of Windows versions Vista and later.  Basically, it is the
-following:
-.nr step 1 1
-.IP \n[step]. 3
-The Master Boot Record loads the Volume Boot Record (also called the Boot
-Sector) of the active partition, which is on an NTFS filesystem.  This partition
-is called the "system partition".
-.IP \n+[step].
-The "bootmgr" program on the "system partition" is loaded (\\BOOTMGR).
-.IP \n+[step].
-bootmgr loads the Boot Configuration Data (\\Boot\\BCD) from the "system
-partition".
-.IP \n+[step].
-Based on the information contained in the Boot Configuration Data, a loader for
-the Windows kernel is executed from the "Boot" partition, which is where Windows
-is installed.
-.PP
-So let's say you applied an image from an existing "install.wim" as in the
-example, or you've applied a custom Windows image that you've created using the
-\fBwimlib-imagex capture\fR (1) command.  You've just applied the "Boot" partition, or
-the main Windows partition, but there is no "System" partition yet (i.e.  no
-\\BOOTMGR and no \\Boot\\BCD).
-.PP
-A "System" partition can be created created by running the "bcdboot.exe" program
-from within Windows or Windows PE.  Alternatively, you can capture a separate
-WIM image containing the "System" partition.  Or, the "System" partition may the
-same as the "Boot" partition, so the two "partitions" may be combined in one WIM
-image.  However, as the \\Boot\\BCD file contains the Windows bootloader
-configuration, a WIM containing it can only be used on systems where you are
-setting up the same bootloader configuration, including the same partition
-layout.
-.PP
-Besides setting up the files on the "System" partition, don't forget to set the
-bootable flag on it, and have a master boot record that loads the bootable
-partition (Windows' MBR does, and SYSLINUX provides an equivalent MBR).
+Note that to actually boot Windows (Vista or later) from an applied
+"install.wim" image, you also need to mark the partition as "bootable" and set
+up various boot files, such as \\BOOTMGR and \\BOOT\\BCD.  The latter task is
+most easily accomplished by running the "bcdboot.exe" program from a live
+Windows system (such as Windows PE), but there are other options as well.
 .SH DIRECTORY EXTRACTION (WINDOWS)
 On Windows, \fBwimlib-imagex apply\fR and \fBwimlib-imagex extract\fR
 natively support Windows-specific and NTFS-specific data.  For best results, the
@@ -440,8 +409,8 @@ to Microsoft WIMGAPI/ImageX/DISM which can overwrite arbitrary files on the
 target drive when extracting a malicious WIM file containing files named
 \fI..\fR or containing path separators.
 .SH EXAMPLES
-Extract the first image from the Windows PE image on the Windows Vista/7/8
-installation media to the directory "boot":
+Extract the first image from the Windows PE image on the Windows (Vista or
+later) installation media to the directory "boot":
 .RS
 .PP
 wimlib-imagex apply /mnt/windows/sources/boot.wim 1 boot
@@ -454,7 +423,7 @@ wimapply /media/windows/sources/boot.wim 1 boot
 .RE
 .PP
 On Windows, apply an image of an entire volume, for example from "install.wim"
-which can be found on the Windows Vista/7/8 installation media:
+which can be found on the Windows (Vista or later) installation media:
 .RS
 .PP
 wimlib-imagex apply install.wim 1 E:\\
