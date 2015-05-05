@@ -31,6 +31,9 @@ Version 1.8.1-BETA:
 	The performance of the NTFS-3g and Windows capture modes has been
 	slightly improved.
 
+	On UNIX-like systems, symbolic links whose targets contain the backslash
+	character are now handled correctly (losslessly).
+
 Version 1.8.0:
 	Improved the LZX compressor.  It is now 15-20% faster than before and
 	provides a slightly better compression ratio.

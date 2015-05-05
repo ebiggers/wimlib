@@ -310,7 +310,7 @@ parse_substitute_name(const utf16lechar *substitute_name,
 /*
  * Get the UNIX-style symlink target from the WIM inode for a reparse point.
  * Specifically, this translates the target from UTF-16 to the current multibyte
- * encoding, strips the drive prefix if present, and replaces backslashes with
+ * encoding, strips the drive prefix if present, and swaps backslashes and
  * forward slashes.
  *
  * @inode
@@ -384,9 +384,12 @@ wim_inode_readlink(const struct wim_inode * restrict inode,
 	}
 
 out_translate_slashes:
-	for (size_t i = 0; i < link_target_len; i++)
+	for (size_t i = 0; i < link_target_len; i++) {
 		if (translated_target[i] == '\\')
 			translated_target[i] = '/';
+		else if (translated_target[i] == '/')
+			translated_target[i] = '\\';
+	}
 out_have_link:
 	if (link_target_len > bufsize) {
 		link_target_len = bufsize;
@@ -424,9 +427,12 @@ wim_inode_set_symlink(struct wim_inode *inode, const char *target,
 	if (ret)
 		goto out;
 
-	for (size_t i = 0; i < name_utf16le_nbytes / 2; i++)
+	for (size_t i = 0; i < name_utf16le_nbytes / 2; i++) {
 		if (name_utf16le[i] == cpu_to_le16('/'))
 			name_utf16le[i] = cpu_to_le16('\\');
+		else if (name_utf16le[i] == cpu_to_le16('\\'))
+			name_utf16le[i] = cpu_to_le16('/');
+	}
 
 	/* Compatability notes:
 	 *
@@ -434,12 +440,9 @@ wim_inode_set_symlink(struct wim_inode *inode, const char *target,
 	 * is a relative symbolic link.  (Quite simple compared to the various
 	 * ways to provide Windows paths.)
 	 *
-	 * To change a UNIX relative symbolic link to Windows format, we only
-	 * need to translate it to UTF-16LE and replace forward slashes with
-	 * backslashes.  We do not make any attempt to handle filename character
-	 * problems, such as a link target that itself contains backslashes on
-	 * UNIX.  Then, for these relative links, we set the reparse header
-	 * @flags field to SYMBOLIC_LINK_RELATIVE.
+	 * To change a UNIX relative symbolic link to Windows format, we need to
+	 * translate it to UTF-16LE, swap forward slashes and backslashes, and
+	 * set 'rpflags' to SYMBOLIC_LINK_RELATIVE.
 	 *
 	 * For UNIX absolute symbolic links, we must set the @flags field to 0.
 	 * Then, there are multiple options as to actually represent the
