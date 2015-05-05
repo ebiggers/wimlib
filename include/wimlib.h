@@ -1298,21 +1298,27 @@ struct wimlib_wim_info {
 	 */
 	uint32_t opened_from_file : 1;
 
-	/** 1 iff this WIM file is considered readonly for any reason. */
+	/** 1 iff this WIM file is considered readonly for any reason (e.g. the
+	 * "readonly" header flag is set, or this is part of a split WIM, or
+	 * filesystem permissions deny writing)  */
 	uint32_t is_readonly : 1;
 
-	/** 1 iff reparse-point fixups are enabled for one or more images in
-	 * this WIM file.  */
+	/** 1 iff the "reparse point fix" flag is set in this WIM's header  */
 	uint32_t has_rpfix : 1;
 
-	/** 1 iff this WIM file is marked read-only in its header.  */
+	/** 1 iff the "readonly" flag is set in this WIM's header  */
 	uint32_t is_marked_readonly : 1;
 
-	/** 1 iff this WIM file is part of a spanned set.  */
+	/** 1 iff the "spanned" flag is set in this WIM's header  */
 	uint32_t spanned : 1;
 
+	/** 1 iff the "write in progress" flag is set in this WIM's header  */
 	uint32_t write_in_progress : 1;
+
+	/** 1 iff the "metadata only" flag is set in this WIM's header  */
 	uint32_t metadata_only : 1;
+
+	/** 1 iff the "resource only" flag is set in this WIM's header  */
 	uint32_t resource_only : 1;
 
 	/** 1 iff this WIM file is pipable (see ::WIMLIB_WRITE_FLAG_PIPABLE).  */
