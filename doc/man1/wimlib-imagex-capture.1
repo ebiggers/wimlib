@@ -51,30 +51,26 @@ the corresponding documentation for Windows.
 .PP
 On UNIX-like systems, when \fISOURCE\fR specifies a directory or a symbolic link
 to a directory, the WIM image will be captured from the directory tree rooted at
-this directory.  This directory can be on any type of filesystem, and mount
-points are followed recursively.  However, it is important to keep in mind that
-the WIM format was designed for Windows, so it cannot store all possible
-metadata from filesystems used on UNIX-like systems.  The main information that
-will \fInot\fR be stored is:
+this directory.  This directory can be on any type of filesystem, and
+mountpoints are followed recursively.  In this mode, wimlib will store the
+following types of information:
 .IP \[bu] 4
-UNIX file owners, groups, modes, and device IDs (major and minor numbers),
-unless the \fB--unix-data\fR option is specified.  By default (without
-\fB--unix-data\fR), files that are neither regular files, directories, nor
-symbolic links, such as device nodes and FIFOs, will be excluded.
+Directories and regular files, and the contents of regular files
 .IP \[bu]
-Extended attributes.  This mainly includes extensions to the traditional UNIX
-security model, such as SELinux security labels, POSIX ACLs, and capabilities
-labels.
+Hard links
 .IP \[bu]
-Linux file attributes, as can be changed using the \fBchattr\fR (1) utility.
+Symbolic links (translated losslessly to Windows reparse points)
+.IP \[bu]
+Last modification times (mtime) and last access times (atime) with 100
+nanosecond granularity
+.IP \[bu]
+With \fB--unix-data\fR: UNIX owners, groups, and modes
+.IP \[bu]
+With \fB--unix-data\fR: device nodes, FIFOs, and UNIX domain sockets
 .PP
-Notes: Timestamps are stored with 100 nanosecond granularity and include last
-modification time (mtime) and last access time (atime), but not last status
-change time (ctime).  Hard links and symbolic links are supported by the WIM
-format and \fIare\fR stored.  Symbolic links are turned into "native" Windows
-symbolic links, or "reparse points"; this process is fully reversible, e.g.
-automatically by \fBwimlib-imagex apply\fR, unless the symbolic link target
-contains backslash characters.
+There is no support for storing extended attributes (e.g. SELinux security
+labels and POSIX ACLs).  Also note that last status change times (ctime) are not
+stored.
 .PP
 Pedantic note: A limitation of the WIM format prevents the unusual case where a
 single symbolic link file itself has multiple names (hard links); in this
@@ -89,10 +85,10 @@ an NTFS volume or volume image, and \fBwimlib-imagex\fR will capture a WIM
 image containing the full contents of the NTFS volume, including NTFS-specific
 data.  This is done using libntfs-3g.
 .PP
-Please note that the NTFS volume capture mode is \fInot\fR entered if
-\fISOURCE\fR is a directory, even if an NTFS filesystem is mounted on
-\fISOURCE\fR using ntfs-3g.  You must specify the NTFS volume itself (and it
-must be unmounted, and you must have permission to read from it).
+Note that the NTFS volume capture mode is \fInot\fR entered if \fISOURCE\fR is a
+directory, even if an NTFS filesystem is mounted on \fISOURCE\fR using ntfs-3g.
+You must specify the NTFS volume itself (and it must be unmounted, and you must
+have permission to read from it).
 .PP
 The NTFS volume capture mode attempts to capture as much data and metadata as
 possible, including:
@@ -116,10 +112,10 @@ Win32+DOS namespace, and POSIX namespace.  This includes hard links.
 .PP
 However, the main limitations of this NTFS volume capture mode are:
 .IP \[bu] 4
-Encrypted files are excluded by default.  Although ntfs-3g can read their data,
-they need to be stored in the WIM file in a special format that wimlib does not
-yet support (except on Windows, where wimlib can treat the data as opaque and
-hand it off to the appropriate API function).
+Encrypted files are excluded by default.  Although libntfs-3g can read their
+data, they need to be stored in the WIM file in a special format that wimlib
+does not yet support (except on Windows, where wimlib can treat the data as
+opaque and hand it off to the appropriate API function).
 .IP \[bu]
 The sparse attribute on sparse files will be saved, but the data stored will be
 the full data of the file rather than the "sparse" data.  (The data is, however,
@@ -163,12 +159,11 @@ considered an error condition.
 .IP \[bu]
 Hard links, if supported by the source filesystem.
 .PP
-Note: the capture process is reversible, since when \fBwimlib-imagex
-apply\fR (on Windows) extracts the captured WIM image, it will extract all of
-the above information, at least to the extent supported by the destination
-filesystem.  One exception is that since encrypted files are stored as
-encrypted, their data will not be available if restored on a Windows system
-that does not have the decryption key.
+There is no support for storing NTFS extended attributes and object IDs.
+.PP
+The capture process is reversible, since when \fBwimlib-imagex apply\fR (on
+Windows) extracts the captured WIM image, it will extract all of the above
+information, at least to the extent supported by the destination filesystem.
 .PP
 Pedantic note: since Windows is not fully compatible with its own filesystem
 (NTFS), on Windows wimlib cannot archive certain files that may exist on a valid
@@ -204,6 +199,10 @@ that 20 is quick compression, 50 is medium compression, and 100 is high
 compression.  However, you can choose any value, and not just these particular
 values.  The default is 50.
 .IP ""
+This option only affects the compression type used in non-solid WIM resources.
+If you are creating a solid WIM (using the \fB--solid\fR option), then you
+probably want \fB--solid-compress\fR instead.
+.IP ""
 Be careful if you choose LZMS compression.  It is not compatible with wimlib
 before v1.6.0, WIMGAPI before Windows 8, DISM before Windows 8.1, and 7-Zip.
 .IP ""
@@ -227,8 +226,8 @@ LZMS: 32K, 64K, 128K, 256K, 512K, 1M, 2M, 4M, 8M, 16M, 32M, 64M, 128M, 256M, 512
 You can provide the full number (e.g. 32768), or you can use one of the K, M, or
 G suffixes.  KiB, MiB, and GiB are also accepted.
 .IP ""
-This option only affects the chunk size used for non-solid WIM resources.  If
-you are creating a solid WIM (using the \fB--solid\fR option), then you probably
+This option only affects the chunk size used in non-solid WIM resources.  If you
+are creating a solid WIM (using the \fB--solid\fR option), then you probably
 want \fB--solid-chunk-size\fR instead.
 .IP ""
 Use this option with caution if compatibility with Microsoft's implementation is
@@ -290,7 +289,7 @@ works) for capturing the new image.  The configuration file specifies files that
 are to be treated specially during the image capture.
 .IP ""
 The format of the configuration file is INI-style; that is, it is arranged in
-bracketed sections.  Currently, only the following sections are recognized:
+bracketed sections.  Currently, the following sections are recognized:
 .RS
 .IP \[bu] 4
 [ExclusionList] ---  contains a list of path globs to exclude from capture.  If
@@ -304,10 +303,6 @@ later with \fB--wimboot\fR, these are globs of files that shall be extracted
 normally, not as WIMBoot "pointer files".  If a directory is matched, all files
 and subdirectories are also matched recursively.
 .RE
-.IP ""
-Any unrecognized sections will be ignored, with a warning printed.  Sections
-dealing with compression (e.g. [CompressionExclusion]) are not particularly
-important.
 .IP ""
 Path globs may contain the '*' and '?' meta-characters.  Relative globs (e.g.
 *.mp3) match against a filename in any directory.  Absolute globs (e.g.
