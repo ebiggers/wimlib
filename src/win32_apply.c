@@ -2465,11 +2465,11 @@ do_warnings(const struct win32_apply_ctx *ctx)
 	}
 }
 
-static uint64_t
+static u64
 count_dentries(const struct list_head *dentry_list)
 {
 	const struct list_head *cur;
-	uint64_t count = 0;
+	u64 count = 0;
 
 	list_for_each(cur, dentry_list)
 		count++;
@@ -2483,7 +2483,7 @@ win32_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 {
 	int ret;
 	struct win32_apply_ctx *ctx = (struct win32_apply_ctx *)_ctx;
-	uint64_t dentry_count;
+	u64 dentry_count;
 
 	ret = prepare_target(dentry_list, ctx);
 	if (ret)

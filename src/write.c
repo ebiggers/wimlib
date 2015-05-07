@@ -277,7 +277,7 @@ struct write_blobs_progress_data {
 	wimlib_progress_func_t progfunc;
 	void *progctx;
 	union wimlib_progress_info progress;
-	uint64_t next_progress;
+	u64 next_progress;
 };
 
 static int
@@ -290,7 +290,7 @@ do_write_blobs_progress(struct write_blobs_progress_data *progress_data,
 	if (discarded) {
 		progress->write_streams.total_bytes -= complete_size;
 		progress->write_streams.total_streams -= complete_count;
-		if (progress_data->next_progress != ~(uint64_t)0 &&
+		if (progress_data->next_progress != ~(u64)0 &&
 		    progress_data->next_progress > progress->write_streams.total_bytes)
 		{
 			progress_data->next_progress = progress->write_streams.total_bytes;
@@ -310,7 +310,7 @@ do_write_blobs_progress(struct write_blobs_progress_data *progress_data,
 			return ret;
 
 		if (progress_data->next_progress == progress->write_streams.total_bytes) {
-			progress_data->next_progress = ~(uint64_t)0;
+			progress_data->next_progress = ~(u64)0;
 		} else {
 			/* Handle rate-limiting of messages  */
 

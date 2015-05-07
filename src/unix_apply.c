@@ -472,11 +472,11 @@ unix_create_dirs_and_empty_files(const struct list_head *dentry_list,
 
 static void
 unix_count_dentries(const struct list_head *dentry_list,
-		    uint64_t *dir_count_ret, uint64_t *empty_file_count_ret)
+		    u64 *dir_count_ret, u64 *empty_file_count_ret)
 {
 	const struct wim_dentry *dentry;
-	uint64_t dir_count = 0;
-	uint64_t empty_file_count = 0;
+	u64 dir_count = 0;
+	u64 empty_file_count = 0;
 
 	list_for_each_entry(dentry, dentry_list, d_extraction_list_node) {
 
@@ -723,8 +723,8 @@ unix_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	int ret;
 	struct unix_apply_ctx *ctx = (struct unix_apply_ctx *)_ctx;
 	size_t path_max;
-	uint64_t dir_count;
-	uint64_t empty_file_count;
+	u64 dir_count;
+	u64 empty_file_count;
 
 	/* Compute the maximum path length that will be needed, then allocate
 	 * some path buffers.  */

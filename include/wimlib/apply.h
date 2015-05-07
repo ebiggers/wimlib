@@ -103,10 +103,10 @@ maybe_do_file_progress(struct apply_ctx *ctx, enum wimlib_progress_msg msg)
 }
 
 extern int
-start_file_structure_phase(struct apply_ctx *ctx, uint64_t end_file_count);
+start_file_structure_phase(struct apply_ctx *ctx, u64 end_file_count);
 
 extern int
-start_file_metadata_phase(struct apply_ctx *ctx, uint64_t end_file_count);
+start_file_metadata_phase(struct apply_ctx *ctx, u64 end_file_count);
 
 /* Report that a file was created, prior to blob extraction.  */
 static inline int

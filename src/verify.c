@@ -71,7 +71,7 @@ end_verify_blob(struct blob_descriptor *blob, int status, void *_ctx)
 		return status;
 
 	if (ctx->next_progress == progress->verify_streams.total_bytes) {
-		ctx->next_progress = ~(uint64_t)0;
+		ctx->next_progress = ~(u64)0;
 		return 0;
 	}
 

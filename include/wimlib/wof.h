@@ -378,32 +378,32 @@ struct wim_provider_external_info {
 struct wim_provider_overlay_entry {
 	/* Byte offset of the next entry from the beginning of this structure,
 	 * or 0 if there are no more entries.  */
-	uint32_t next_entry_offset;
+	u32 next_entry_offset;
 
-	uint32_t padding;
+	u32 padding;
 
 	/* Identifier for the WIM file.  */
-	uint64_t data_source_id;
+	u64 data_source_id;
 
 	/* GUID of the WIM file.  */
-	uint8_t guid[16];
+	u8 guid[16];
 
 	/* Byte offset of the WIM's file name from the beginning of this
 	 * structure.  */
-	uint32_t wim_file_name_offset;
+	u32 wim_file_name_offset;
 
 	/* Type of WIM file: WIM_BOOT_OS_WIM or WIM_BOOT_NOT_OS_WIM.  */
-	uint32_t wim_type;
+	u32 wim_type;
 
 	/* Index of the image in the WIM to use??? (This doesn't really make
 	 * sense, since WIM files combine file data "blobs" for all images into
 	 * a single table.  Set to 1 if unsure...)  */
-	uint32_t wim_index;
+	u32 wim_index;
 
 	/* 0 when WIM provider active, otherwise
 	 * WIM_PROVIDER_EXTERNAL_FLAG_NOT_ACTIVE or
 	 * WIM_PROVIDER_EXTERNAL_FLAG_SUSPENDED.  */
-	uint32_t flags;
+	u32 flags;
 
 	/* Full path to the WIM in the NT device namespace, e.g.
 	 * "\Device\HardDiskVolume2\test.wim".  Seems to be null-terminated,

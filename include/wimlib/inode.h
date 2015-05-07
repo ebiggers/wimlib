@@ -161,7 +161,7 @@ struct wim_inode {
 	 * wimlib sets out-of-bounds indices and values less than -1 in this
 	 * field to -1.  So the extraction code need not do an upper bound check
 	 * after checking for -1 (or equivalently < 0).  */
-	int32_t i_security_id;
+	s32 i_security_id;
 
 	/* Identity of a reparse point.  See
 	 * http://msdn.microsoft.com/en-us/library/windows/desktop/aa365503(v=vs.85).aspx

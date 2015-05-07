@@ -886,11 +886,11 @@ out:
 	return ret;
 }
 
-static uint64_t
+static u64
 ntfs_3g_count_dentries(const struct list_head *dentry_list)
 {
 	const struct wim_dentry *dentry;
-	uint64_t count = 0;
+	u64 count = 0;
 
 	list_for_each_entry(dentry, dentry_list, d_extraction_list_node) {
 		count++;

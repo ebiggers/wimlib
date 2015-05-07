@@ -12,7 +12,7 @@ struct avl_tree_node;
 struct wim_sd_set {
 	struct wim_security_data *sd;
 	struct avl_tree_node *root;
-	int32_t orig_num_entries;
+	s32 orig_num_entries;
 };
 
 /* Table of security descriptors for a WIM image. */
@@ -41,7 +41,7 @@ rollback_new_security_descriptors(struct wim_sd_set *sd_set);
 extern void
 destroy_sd_set(struct wim_sd_set *sd_set);
 
-extern int32_t
+extern s32
 sd_set_add_sd(struct wim_sd_set *sd_set, const char descriptor[],
 	      size_t size);
 
