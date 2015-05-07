@@ -350,8 +350,7 @@ win32_path_to_nt_path(const wchar_t *win32_path, UNICODE_STRING *nt_path)
 	if (status == STATUS_NO_MEMORY)
 		return WIMLIB_ERR_NOMEM;
 
-	ERROR("\"%ls\": invalid path name (status=0x%08"PRIx32")",
-	      win32_path, (u32)status);
+	winnt_error(status, L"\"%ls\": invalid path name", win32_path);
 	return WIMLIB_ERR_INVALID_PARAM;
 }
 
