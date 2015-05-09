@@ -2435,26 +2435,26 @@ print_wim_information(const tchar *wimfile, const struct wimlib_wim_info *info)
 	attr_string[0] = T('\0');
 
 	if (info->pipable)
-		tstrcat(attr_string, "Pipable, ");
+		tstrcat(attr_string, T("Pipable, "));
 
 	if (info->has_integrity_table)
-		tstrcat(attr_string, "Integrity info, ");
+		tstrcat(attr_string, T("Integrity info, "));
 
 	if (info->has_rpfix)
-		tstrcat(attr_string, "Relative path junction, ");
+		tstrcat(attr_string, T("Relative path junction, "));
 
 	if (info->resource_only)
-		tstrcat(attr_string, "Resource only, ");
+		tstrcat(attr_string, T("Resource only, "));
 
 	if (info->metadata_only)
-		tstrcat(attr_string, "Metadata only, ");
+		tstrcat(attr_string, T("Metadata only, "));
 
 	if (info->is_marked_readonly)
-		tstrcat(attr_string, "Readonly, ");
+		tstrcat(attr_string, T("Readonly, "));
 
-	p = tstrchr(attr_string, '\0');
+	p = tstrchr(attr_string, T('\0'));
 	if (p >= &attr_string[2] && p[-1] == T(' ') && p[-2] == T(','))
-		p[-2] = '\0';
+		p[-2] = T('\0');
 
 	tprintf(T("Attributes:     %"TS"\n\n"), attr_string);
 }
