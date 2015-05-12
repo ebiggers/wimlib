@@ -63,6 +63,11 @@ struct win32_apply_ctx {
 		void *mem_prepopulate_pats;
 		bool wof_running;
 		bool tried_to_load_prepopulate_list;
+
+		bool have_wrong_version_wims;
+		bool have_uncompressed_wims;
+		bool have_unsupported_compressed_resources;
+		bool have_huge_resources;
 	} wimboot;
 
 	/* Open handle to the target directory  */
@@ -301,7 +306,10 @@ load_prepopulate_pats(struct win32_apply_ctx *ctx)
 	    !(blob = inode_get_blob_for_unnamed_data_stream(dentry->d_inode,
 							    ctx->common.wim->blob_table)))
 	{
-		WARNING("%ls does not exist in WIM image!", path);
+		WARNING("%ls does not exist in the WIM image.\n"
+			"          The default configuration will be used instead; it assumes that all\n"
+			"          files are valid for external backing regardless of path, equivalent\n"
+			"          to an empty [PrepopulateList] section.", path);
 		return WIMLIB_ERR_PATH_DOES_NOT_EXIST;
 	}
 
@@ -374,7 +382,8 @@ can_externally_back_path(const wchar_t *path, size_t path_nchars,
 }
 
 static bool
-is_resource_valid_for_external_backing(const struct wim_resource_descriptor *rdesc)
+is_resource_valid_for_external_backing(const struct wim_resource_descriptor *rdesc,
+				       struct win32_apply_ctx *ctx)
 {
 	/* Must be the original WIM file format.  This check excludes pipable
 	 * resources and solid resources.  It also excludes other resources
@@ -382,7 +391,10 @@ is_resource_valid_for_external_backing(const struct wim_resource_descriptor *rde
 	 */
 	if (rdesc->wim->hdr.magic != WIM_MAGIC ||
 	    rdesc->wim->hdr.wim_version != WIM_VERSION_DEFAULT)
+	{
+		ctx->wimboot.have_wrong_version_wims = true;
 		return false;
+	}
 
 	/*
 	 * Whitelist of compression types and chunk sizes supported by
@@ -397,8 +409,10 @@ is_resource_valid_for_external_backing(const struct wim_resource_descriptor *rde
 	 */
 	switch (rdesc->compression_type) {
 	case WIMLIB_COMPRESSION_TYPE_NONE:
-		if (rdesc->wim->compression_type == WIMLIB_COMPRESSION_TYPE_NONE)
+		if (rdesc->wim->compression_type == WIMLIB_COMPRESSION_TYPE_NONE) {
+			ctx->wimboot.have_uncompressed_wims = true;
 			return false;
+		}
 		break;
 	case WIMLIB_COMPRESSION_TYPE_XPRESS:
 		switch (rdesc->chunk_size) {
@@ -408,6 +422,7 @@ is_resource_valid_for_external_backing(const struct wim_resource_descriptor *rde
 		case 32768:
 			break;
 		default:
+			ctx->wimboot.have_unsupported_compressed_resources = true;
 			return false;
 		}
 		break;
@@ -416,17 +431,21 @@ is_resource_valid_for_external_backing(const struct wim_resource_descriptor *rde
 		case 32768:
 			break;
 		default:
+			ctx->wimboot.have_unsupported_compressed_resources = true;
 			return false;
 		}
 		break;
 	default:
+		ctx->wimboot.have_unsupported_compressed_resources = true;
 		return false;
 	}
 
 	/* Microsoft's WoF driver errors out if it tries to satisfy a read with
 	 * ending offset >= 4 GiB from an externally backed file.  */
-	if (rdesc->uncompressed_size > 4200000000)
+	if (rdesc->uncompressed_size > 4200000000) {
+		ctx->wimboot.have_huge_resources = true;
 		return false;
+	}
 
 	return true;
 }
@@ -631,7 +650,9 @@ start_wimboot_extraction(struct list_head *dentry_list, struct win32_apply_ctx *
 
 	if (!wim_info_get_wimboot(ctx->common.wim->wim_info,
 				  ctx->common.wim->current_image))
-		WARNING("Image is not marked as WIMBoot compatible!");
+		WARNING("The WIM image is not marked as WIMBoot compatible.  This usually\n"
+			"          means it is not intended to be used to back a Windows operating\n"
+			"          system.  Proceeding anyway.");
 
 	list_for_each_entry(dentry, dentry_list, d_extraction_list_node) {
 		struct blob_descriptor *blob;
@@ -646,6 +667,35 @@ start_wimboot_extraction(struct list_head *dentry_list, struct win32_apply_ctx *
 		ret = register_wim_with_wof(blob->rdesc->wim, ctx);
 		if (ret)
 			return ret;
+	}
+
+	if (ctx->wimboot.have_wrong_version_wims) {
+  WARNING("At least one of the source WIM files uses a version of the WIM\n"
+"          file format that not supported by Microsoft's wof.sys driver.\n"
+"          Files whose data is contained in one of these WIM files will be\n"
+"          extracted as full files rather than externally backed.");
+	}
+
+	if (ctx->wimboot.have_uncompressed_wims) {
+  WARNING("At least one of the source WIM files is uncompressed.  Files whose\n"
+"          data is contained in an uncompressed WIM file will be extracted as\n"
+"          full files rather than externally backed, since uncompressed WIM\n"
+"          files are not supported by Microsoft's wof.sys driver.");
+	}
+
+	if (ctx->wimboot.have_unsupported_compressed_resources) {
+  WARNING("At least one of the source WIM files uses a compression format that\n"
+"          is not supported by Microsoft's wof.sys driver.  Files whose data is\n"
+"          contained in a compressed resource in one of these WIM files will be\n"
+"          extracted as full files rather than externally backed.  (The\n"
+"          compression formats supported by wof.sys are: XPRESS 4K, XPRESS 8K,\n"
+"          XPRESS 16K, XPRESS 32K, and LZX 32K.)");
+	}
+
+	if (ctx->wimboot.have_huge_resources) {
+  WARNING("Some files exceeded 4.2 GB in size.  Such files will be extracted\n"
+"          as full files rather than externally backed, since very large files\n"
+"          are not supported by Microsoft's wof.sys driver.");
 	}
 
 	return 0;
