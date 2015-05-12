@@ -373,6 +373,64 @@ can_externally_back_path(const wchar_t *path, size_t path_nchars,
 	return true;
 }
 
+static bool
+is_resource_valid_for_external_backing(const struct wim_resource_descriptor *rdesc)
+{
+	/* Must be the original WIM file format.  This check excludes pipable
+	 * resources and solid resources.  It also excludes other resources
+	 * contained in such files even if they would be otherwise compatible.
+	 */
+	if (rdesc->wim->hdr.magic != WIM_MAGIC ||
+	    rdesc->wim->hdr.wim_version != WIM_VERSION_DEFAULT)
+		return false;
+
+	/*
+	 * Whitelist of compression types and chunk sizes supported by
+	 * Microsoft's WOF driver.
+	 *
+	 * Notes:
+	 *    - Uncompressed WIMs result in BSOD.  However, this only applies to
+	 *      the WIM file itself, not to uncompressed resources in a WIM file
+	 *      that is otherwise compressed.
+	 *    - XPRESS 64K sometimes appears to work, but sometimes it causes
+	 *	reads to fail with STATUS_UNSUCCESSFUL.
+	 */
+	switch (rdesc->compression_type) {
+	case WIMLIB_COMPRESSION_TYPE_NONE:
+		if (rdesc->wim->compression_type == WIMLIB_COMPRESSION_TYPE_NONE)
+			return false;
+		break;
+	case WIMLIB_COMPRESSION_TYPE_XPRESS:
+		switch (rdesc->chunk_size) {
+		case 4096:
+		case 8192:
+		case 16384:
+		case 32768:
+			break;
+		default:
+			return false;
+		}
+		break;
+	case WIMLIB_COMPRESSION_TYPE_LZX:
+		switch (rdesc->chunk_size) {
+		case 32768:
+			break;
+		default:
+			return false;
+		}
+		break;
+	default:
+		return false;
+	}
+
+	/* Microsoft's WoF driver errors out if it tries to satisfy a read with
+	 * ending offset >= 4 GiB from an externally backed file.  */
+	if (rdesc->uncompressed_size > 4200000000)
+		return false;
+
+	return true;
+}
+
 #define WIM_BACKING_NOT_ENABLED		-1
 #define WIM_BACKING_NOT_POSSIBLE	-2
 #define WIM_BACKING_EXCLUDED		-3
@@ -401,13 +459,8 @@ will_externally_back_inode(struct wim_inode *inode, struct win32_apply_ctx *ctx,
 
 	blob = inode_get_blob_for_unnamed_data_stream_resolved(inode);
 
-	/* Note: Microsoft's WoF driver errors out if it tries to satisfy a
-	 * read, with ending offset >= 4 GiB, from an externally backed file. */
-	if (!blob ||
-	    blob->blob_location != BLOB_IN_WIM ||
-	    blob->rdesc->wim != ctx->common.wim ||
-	    blob->size != blob->rdesc->uncompressed_size ||
-	    blob->size > 4200000000)
+	if (!blob || blob->blob_location != BLOB_IN_WIM ||
+	    !is_resource_valid_for_external_backing(blob->rdesc, ctx))
 		return WIM_BACKING_NOT_POSSIBLE;
 
 	/*
