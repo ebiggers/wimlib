@@ -17,6 +17,9 @@ Version 1.8.1-BETA:
 	On Windows, named data streams are now correctly extracted to existing
 	"readonly" directories.  Before, an error would be reported.
 
+	On Windows, it is now possible to do a "WIMBoot mode" extraction with
+	non-standalone WIMs such as delta WIMs.
+
 	On Windows, when doing an extraction in "WIMBoot mode", files larger
 	than 4 gigabytes are now never extracted as externally backed.  This
 	works around a bug in Microsoft's "WOF" driver.

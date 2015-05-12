@@ -2833,7 +2833,8 @@ wimlib_export_image(WIMStruct *src_wim, int src_image,
  *	::WIMLIB_EXTRACT_FLAG_NTFS was not specified in @p extract_flags.
  * @retval ::WIMLIB_ERR_WIMBOOT
  *	::WIMLIB_EXTRACT_FLAG_WIMBOOT was specified in @p extract_flags, but
- *	there was a problem creating WIMBoot pointer files.
+ *	there was a problem creating WIMBoot pointer files or registering a
+ *	source WIM file with the Windows Overlay Filesystem (WOF) driver.
  * @retval ::WIMLIB_ERR_WRITE
  * 	Failed to write data to a file being extracted.
  *

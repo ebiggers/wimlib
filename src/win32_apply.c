@@ -50,10 +50,17 @@ struct win32_apply_ctx {
 	/* WIMBoot information, only filled in if WIMLIB_EXTRACT_FLAG_WIMBOOT
 	 * was provided  */
 	struct {
-		u64 data_source_id;
+		/* This array contains the WIM files registered with WOF on the
+		 * target volume for this extraction operation.  All WIMStructs
+		 * in this array are distinct and have ->filename != NULL.  */
+		struct wimboot_wim {
+			WIMStruct *wim;
+			u64 data_source_id;
+			u8 blob_table_hash[SHA1_HASH_SIZE];
+		} *wims;
+		size_t num_wims;
 		struct string_set *prepopulate_pats;
 		void *mem_prepopulate_pats;
-		u8 blob_table_hash[SHA1_HASH_SIZE];
 		bool wof_running;
 		bool tried_to_load_prepopulate_list;
 	} wimboot;
@@ -449,11 +456,25 @@ win32_will_externally_back(struct wim_dentry *dentry, struct apply_ctx *_ctx)
 	return will_externally_back_inode(dentry->d_inode, ctx, NULL);
 }
 
+/* Find the WOF registration information for the specified WIM file.  */
+static struct wimboot_wim *
+find_wimboot_wim(WIMStruct *wim_to_find, struct win32_apply_ctx *ctx)
+{
+	for (size_t i = 0; i < ctx->wimboot.num_wims; i++)
+		if (wim_to_find == ctx->wimboot.wims[i].wim)
+			return &ctx->wimboot.wims[i];
+
+	wimlib_assert(0);
+	return NULL;
+}
+
 static int
 set_external_backing(HANDLE h, struct wim_inode *inode, struct win32_apply_ctx *ctx)
 {
 	int ret;
 	const struct wim_dentry *excluded_dentry;
+	const struct blob_descriptor *blob;
+	const struct wimboot_wim *wimboot_wim;
 
 	ret = will_externally_back_inode(inode, ctx, &excluded_dentry);
 	if (ret > 0) /* Error.  */
@@ -474,23 +495,27 @@ set_external_backing(HANDLE h, struct wim_inode *inode, struct win32_apply_ctx *
 		return call_progress(ctx->common.progfunc,
 				     WIMLIB_PROGRESS_MSG_WIMBOOT_EXCLUDE,
 				     &info, ctx->common.progctx);
-	} else {
-		/* Externally backing.  */
-		if (unlikely(!wimboot_set_pointer(h,
-						  inode_get_blob_for_unnamed_data_stream_resolved(inode),
-						  ctx->wimboot.data_source_id,
-						  ctx->wimboot.blob_table_hash,
-						  ctx->wimboot.wof_running)))
-		{
-			const DWORD err = GetLastError();
-
-			build_extraction_path(inode_first_extraction_dentry(inode), ctx);
-			win32_error(err, L"\"%ls\": Couldn't set WIMBoot pointer data",
-				    current_path(ctx));
-			return WIMLIB_ERR_WIMBOOT;
-		}
-		return 0;
 	}
+
+	/* Externally backing.  */
+
+	blob = inode_get_blob_for_unnamed_data_stream_resolved(inode);
+	wimboot_wim = find_wimboot_wim(blob->rdesc->wim, ctx);
+
+	if (unlikely(!wimboot_set_pointer(h,
+					  blob,
+					  wimboot_wim->data_source_id,
+					  wimboot_wim->blob_table_hash,
+					  ctx->wimboot.wof_running)))
+	{
+		const DWORD err = GetLastError();
+
+		build_extraction_path(inode_first_extraction_dentry(inode), ctx);
+		win32_error(err, L"\"%ls\": Couldn't set WIMBoot pointer data",
+			    current_path(ctx));
+		return WIMLIB_ERR_WIMBOOT;
+	}
+	return 0;
 }
 
 /* Calculates the SHA-1 message digest of the WIM's blob table.  */
@@ -500,32 +525,77 @@ hash_blob_table(WIMStruct *wim, u8 hash[SHA1_HASH_SIZE])
 	return wim_reshdr_to_hash(&wim->hdr.blob_table_reshdr, wim, hash);
 }
 
-/* Prepare for doing a "WIMBoot" extraction by loading patterns from
- * [PrepopulateList] of WimBootCompress.ini and allocating a WOF data source ID
- * on the target volume.  */
 static int
-start_wimboot_extraction(struct win32_apply_ctx *ctx)
+register_wim_with_wof(WIMStruct *wim, struct win32_apply_ctx *ctx)
+{
+	struct wimboot_wim *p;
+	int ret;
+
+	/* Check if already registered  */
+	for (size_t i = 0; i < ctx->wimboot.num_wims; i++)
+		if (wim == ctx->wimboot.wims[i].wim)
+			return 0;
+
+	/* Not yet registered  */
+
+	p = REALLOC(ctx->wimboot.wims,
+		    (ctx->wimboot.num_wims + 1) * sizeof(ctx->wimboot.wims[0]));
+	if (!p)
+		return WIMLIB_ERR_NOMEM;
+	ctx->wimboot.wims = p;
+
+	ctx->wimboot.wims[ctx->wimboot.num_wims].wim = wim;
+
+	ret = hash_blob_table(wim, ctx->wimboot.wims[ctx->wimboot.num_wims].blob_table_hash);
+	if (ret)
+		return ret;
+
+	ret = wimboot_alloc_data_source_id(wim->filename,
+					   wim->hdr.guid,
+					   ctx->common.wim->current_image,
+					   ctx->common.target,
+					   &ctx->wimboot.wims[ctx->wimboot.num_wims].data_source_id,
+					   &ctx->wimboot.wof_running);
+	if (ret)
+		return ret;
+
+	ctx->wimboot.num_wims++;
+	return 0;
+}
+
+/* Prepare for doing a "WIMBoot" extraction by loading patterns from
+ * [PrepopulateList] of WimBootCompress.ini and registering each source WIM file
+ * with WOF on the target volume.  */
+static int
+start_wimboot_extraction(struct list_head *dentry_list, struct win32_apply_ctx *ctx)
 {
 	int ret;
-	WIMStruct *wim = ctx->common.wim;
+	struct wim_dentry *dentry;
 
 	if (!ctx->wimboot.tried_to_load_prepopulate_list)
 		if (load_prepopulate_pats(ctx) == WIMLIB_ERR_NOMEM)
 			return WIMLIB_ERR_NOMEM;
 
-	if (!wim_info_get_wimboot(wim->wim_info, wim->current_image))
+	if (!wim_info_get_wimboot(ctx->common.wim->wim_info,
+				  ctx->common.wim->current_image))
 		WARNING("Image is not marked as WIMBoot compatible!");
 
-	ret = hash_blob_table(ctx->common.wim, ctx->wimboot.blob_table_hash);
-	if (ret)
-		return ret;
+	list_for_each_entry(dentry, dentry_list, d_extraction_list_node) {
+		struct blob_descriptor *blob;
 
-	return wimboot_alloc_data_source_id(wim->filename,
-					    wim->hdr.guid,
-					    wim->current_image,
-					    ctx->common.target,
-					    &ctx->wimboot.data_source_id,
-					    &ctx->wimboot.wof_running);
+		ret = win32_will_externally_back(dentry, &ctx->common);
+		if (ret > 0) /* Error */
+			return ret;
+		if (ret < 0) /* Won't externally back */
+			continue;
+
+		blob = inode_get_blob_for_unnamed_data_stream_resolved(dentry->d_inode);
+		ret = register_wim_with_wof(blob->rdesc->wim, ctx);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
 }
 
 static void
@@ -2490,7 +2560,7 @@ win32_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 		goto out;
 
 	if (unlikely(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT)) {
-		ret = start_wimboot_extraction(ctx);
+		ret = start_wimboot_extraction(dentry_list, ctx);
 		if (ret)
 			goto out;
 	}
@@ -2550,6 +2620,7 @@ out:
 		HeapFree(GetProcessHeap(), 0, ctx->target_ntpath.Buffer);
 	FREE(ctx->pathbuf.Buffer);
 	FREE(ctx->print_buffer);
+	FREE(ctx->wimboot.wims);
 	if (ctx->wimboot.prepopulate_pats) {
 		FREE(ctx->wimboot.prepopulate_pats->strings);
 		FREE(ctx->wimboot.prepopulate_pats);
