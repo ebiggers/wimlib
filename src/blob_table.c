@@ -1022,6 +1022,13 @@ read_blob_table(WIMStruct *wim)
 				goto out;
 			}
 
+			if (reshdr.flags & WIM_RESHDR_FLAG_SOLID) {
+				ERROR("Image metadata in solid resources "
+				      "is unsupported.");
+				ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
+				goto out;
+			}
+
 			if (wim->hdr.part_number != 1) {
 				WARNING("Ignoring metadata resource found in a "
 					"non-first part of the split WIM");
