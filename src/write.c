@@ -1689,16 +1689,6 @@ write_file_data_blobs(WIMStruct *wim,
 
 	write_resource_flags = write_flags_to_resource_flags(write_flags);
 
-	/* wimlib v1.7.0: create a solid WIM file by default if the WIM version
-	 * has been set to WIM_VERSION_SOLID and at least one blob in the WIM's
-	 * blob table is located in a solid resource (may be the same WIM, or a
-	 * different one in the case of export).  */
-	if (wim->out_hdr.wim_version == WIM_VERSION_SOLID &&
-	    wim_has_solid_resources(wim))
-	{
-		write_resource_flags |= WRITE_RESOURCE_FLAG_SOLID;
-	}
-
 	if (write_resource_flags & WRITE_RESOURCE_FLAG_SOLID) {
 		out_chunk_size = wim->out_solid_chunk_size;
 		out_ctype = wim->out_solid_compression_type;
@@ -2625,6 +2615,15 @@ write_pipable_wim(WIMStruct *wim, int image, int write_flags,
 	 * finish_write().  */
 }
 
+static bool
+should_default_to_solid_compression(WIMStruct *wim, int write_flags)
+{
+	return wim->out_hdr.wim_version == WIM_VERSION_SOLID &&
+		!(write_flags & (WIMLIB_WRITE_FLAG_SOLID |
+				 WIMLIB_WRITE_FLAG_PIPABLE)) &&
+		wim_has_solid_resources(wim);
+}
+
 /* Write a standalone WIM or split WIM (SWM) part to a new file or to a file
  * descriptor.  */
 int
@@ -2711,6 +2710,12 @@ write_wim_part(WIMStruct *wim,
 		wim->out_hdr.wim_version = WIM_VERSION_SOLID;
 	else
 		wim->out_hdr.wim_version = WIM_VERSION_DEFAULT;
+
+	/* Default to solid compression if it is valid in the chosen WIM file
+	 * format and the WIMStruct references any solid resources.  This is
+	 * useful when exporting an image from a solid WIM.  */
+	if (should_default_to_solid_compression(wim, write_flags))
+		write_flags |= WIMLIB_WRITE_FLAG_SOLID;
 
 	/* Set the header flags.  */
 	wim->out_hdr.flags = (wim->hdr.flags & (WIM_HDR_FLAG_RP_FIX |
@@ -2988,6 +2993,12 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 	 * WIM_VERSION_SOLID.  */
 	if (write_flags & WIMLIB_WRITE_FLAG_SOLID)
 		wim->out_hdr.wim_version = WIM_VERSION_SOLID;
+
+	/* Default to solid compression if it is valid in the chosen WIM file
+	 * format and the WIMStruct references any solid resources.  This is
+	 * useful when updating a solid WIM.  */
+	if (should_default_to_solid_compression(wim, write_flags))
+		write_flags |= WIMLIB_WRITE_FLAG_SOLID;
 
 	/* Set additional flags for overwrite.  */
 	write_flags |= WIMLIB_WRITE_FLAG_OVERWRITE |
