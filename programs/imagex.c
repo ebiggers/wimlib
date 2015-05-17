@@ -1181,7 +1181,7 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 		percent_done = TO_PERCENT(info->extract.completed_bytes,
 					  info->extract.total_bytes);
 		unit_shift = get_unit(info->extract.total_bytes, &unit_name);
-		imagex_printf(T("\rExtracting files: "
+		imagex_printf(T("\rExtracting file data: "
 			  "%"PRIu64" %"TS" of %"PRIu64" %"TS" (%u%%) done"),
 			info->extract.completed_bytes >> unit_shift,
 			unit_name,
