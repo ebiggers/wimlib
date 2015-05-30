@@ -129,41 +129,33 @@ struct wim_dentry_on_disk {
 	 */
 	u8 default_hash[SHA1_HASH_SIZE];
 
-	/* The format of the following data is not yet completely known and they
-	 * do not correspond to Microsoft's documentation.
+	/* Unknown field (maybe accidental padding)  */
+	le32 unknown_0x54;
+
+	/*
+	 * The following 8-byte union contains either information about the
+	 * reparse point (for files with FILE_ATTRIBUTE_REPARSE_POINT set), or
+	 * the "hard link group ID" (for other files).
 	 *
-	 * If this directory entry is for a reparse point (has
-	 * FILE_ATTRIBUTE_REPARSE_POINT set in the 'attributes' field), then the
-	 * version of the following fields containing the reparse tag is valid.
-	 * Furthermore, the field notated as not_rpfixed, as far as I can tell,
-	 * is supposed to be set to 1 if reparse point fixups (a.k.a. fixing the
-	 * targets of absolute symbolic links) were *not* done, and otherwise 0.
+	 * The reparse point information contains ReparseTag and ReparseReserved
+	 * from the header of the reparse point buffer.  It also contains a flag
+	 * that indicates whether a reparse point fixup (for the target of an
+	 * absolute symbolic link or junction) was done or not.
 	 *
-	 * If this directory entry is not for a reparse point, then the version
-	 * of the following fields containing the hard_link_group_id is valid.
-	 * All MS says about this field is that "If this file is part of a hard
-	 * link set, all the directory entries in the set will share the same
-	 * value in this field.".  However, more specifically I have observed
-	 * the following:
-	 *    - If the file is part of a hard link set of size 1, then the
-	 *    hard_link_group_id should be set to either 0, which is treated
-	 *    specially as indicating "not hardlinked", or any unique value.
-	 *    - The specific nonzero values used to identity hard link sets do
-	 *    not matter, as long as they are unique.
-	 *    - However, due to bugs in Microsoft's software, it is actually NOT
-	 *    guaranteed that directory entries that share the same hard link
-	 *    group ID are actually hard linked to each either.  See
-	 *    inode_fixup.c for the code that handles this.
+	 * The "hard link group ID" is like an inode number; all dentries for
+	 * the same inode share the same value.  See inode_fixup.c for more
+	 * information.
+	 *
+	 * Note that this union creates the limitation that reparse point files
+	 * cannot have multiple names (hard links).
 	 */
 	union {
 		struct {
-			le32 rp_unknown_1;
 			le32 reparse_tag;
-			le16 rp_unknown_2;
-			le16 not_rpfixed;
+			le16 rp_reserved;
+			le16 rp_flags;
 		} _packed_attribute reparse;
 		struct {
-			le32 rp_unknown_1;
 			le64 hard_link_group_id;
 		} _packed_attribute nonreparse;
 	};
@@ -1449,20 +1441,15 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 	inode->i_creation_time = le64_to_cpu(disk_dentry->creation_time);
 	inode->i_last_access_time = le64_to_cpu(disk_dentry->last_access_time);
 	inode->i_last_write_time = le64_to_cpu(disk_dentry->last_write_time);
+	inode->i_unknown_0x54 = le32_to_cpu(disk_dentry->unknown_0x54);
 
-	/* I don't know what's going on here.  It seems like M$ screwed up the
-	 * reparse points, then put the fields in the same place and didn't
-	 * document it.  So we have some fields we read for reparse points, and
-	 * some fields in the same place for non-reparse-points.  */
 	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-		inode->i_rp_unknown_1 = le32_to_cpu(disk_dentry->reparse.rp_unknown_1);
 		inode->i_reparse_tag = le32_to_cpu(disk_dentry->reparse.reparse_tag);
-		inode->i_rp_unknown_2 = le16_to_cpu(disk_dentry->reparse.rp_unknown_2);
-		inode->i_not_rpfixed = le16_to_cpu(disk_dentry->reparse.not_rpfixed);
+		inode->i_rp_reserved = le16_to_cpu(disk_dentry->reparse.rp_reserved);
+		inode->i_rp_flags = le16_to_cpu(disk_dentry->reparse.rp_flags);
 		/* Leave inode->i_ino at 0.  Note: this means that WIM cannot
 		 * represent multiple hard links to a reparse point file.  */
 	} else {
-		inode->i_rp_unknown_1 = le32_to_cpu(disk_dentry->nonreparse.rp_unknown_1);
 		inode->i_ino = le64_to_cpu(disk_dentry->nonreparse.hard_link_group_id);
 	}
 
@@ -1769,13 +1756,12 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 	disk_dentry->creation_time = cpu_to_le64(inode->i_creation_time);
 	disk_dentry->last_access_time = cpu_to_le64(inode->i_last_access_time);
 	disk_dentry->last_write_time = cpu_to_le64(inode->i_last_write_time);
+	disk_dentry->unknown_0x54 = cpu_to_le32(inode->i_unknown_0x54);
 	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-		disk_dentry->reparse.rp_unknown_1 = cpu_to_le32(inode->i_rp_unknown_1);
 		disk_dentry->reparse.reparse_tag = cpu_to_le32(inode->i_reparse_tag);
-		disk_dentry->reparse.rp_unknown_2 = cpu_to_le16(inode->i_rp_unknown_2);
-		disk_dentry->reparse.not_rpfixed = cpu_to_le16(inode->i_not_rpfixed);
+		disk_dentry->reparse.rp_reserved = cpu_to_le16(inode->i_rp_reserved);
+		disk_dentry->reparse.rp_flags = cpu_to_le16(inode->i_rp_flags);
 	} else {
-		disk_dentry->nonreparse.rp_unknown_1 = cpu_to_le32(inode->i_rp_unknown_1);
 		disk_dentry->nonreparse.hard_link_group_id =
 			cpu_to_le64((inode->i_nlink == 1) ? 0 : inode->i_ino);
 	}

@@ -496,40 +496,27 @@ unix_count_dentries(const struct list_head *dentry_list,
 
 static int
 unix_create_symlink(const struct wim_inode *inode, const char *path,
-		    const u8 *rpdata, u16 rpdatalen, bool rpfix,
-		    const char *apply_dir, size_t apply_dir_nchars)
+		    size_t rpdatalen, struct unix_apply_ctx *ctx)
 {
-	char link_target[REPARSE_DATA_MAX_SIZE];
-	int ret;
+	char target[REPARSE_POINT_MAX_SIZE];
 	struct blob_descriptor blob_override;
+	int ret;
 
 	blob_set_is_located_in_attached_buffer(&blob_override,
-					       (void *)rpdata, rpdatalen);
+					       ctx->reparse_data, rpdatalen);
 
-	ret = wim_inode_readlink(inode, link_target,
-				 sizeof(link_target) - 1, &blob_override);
-	if (ret < 0) {
+	ret = wim_inode_readlink(inode, target, sizeof(target) - 1,
+				 &blob_override,
+				 ctx->target_abspath,
+				 ctx->target_abspath_nchars);
+	if (unlikely(ret < 0)) {
 		errno = -ret;
 		return WIMLIB_ERR_READLINK;
 	}
+	target[ret] = '\0';
 
-	link_target[ret] = 0;
-
-	if (rpfix && link_target[0] == '/') {
-
-		/* "Fix" the absolute symbolic link by prepending the absolute
-		 * path to the target directory.  */
-
-		if (sizeof(link_target) - (ret + 1) < apply_dir_nchars) {
-			errno = ENAMETOOLONG;
-			return WIMLIB_ERR_REPARSE_POINT_FIXUP_FAILED;
-		}
-		memmove(link_target + apply_dir_nchars, link_target,
-			ret + 1);
-		memcpy(link_target, apply_dir, apply_dir_nchars);
-	}
 retry_symlink:
-	if (symlink(link_target, path)) {
+	if (symlink(target, path)) {
 		if (errno == EEXIST && !unlink(path))
 			goto retry_symlink;
 		return WIMLIB_ERR_LINK;
@@ -655,19 +642,9 @@ unix_end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
 			/* We finally have the symlink data, so we can create
 			 * the symlink.  */
 			const char *path;
-			bool rpfix;
-
-			rpfix = (ctx->common.extract_flags &
-				 WIMLIB_EXTRACT_FLAG_RPFIX) &&
-					!inode->i_not_rpfixed;
 
 			path = unix_build_inode_extraction_path(inode, ctx);
-			ret = unix_create_symlink(inode, path,
-						  ctx->reparse_data,
-						  blob->size,
-						  rpfix,
-						  ctx->target_abspath,
-						  ctx->target_abspath_nchars);
+			ret = unix_create_symlink(inode, path, blob->size, ctx);
 			if (ret) {
 				ERROR_WITH_ERRNO("Can't create symbolic link "
 						 "\"%s\"", path);

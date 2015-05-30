@@ -37,6 +37,7 @@
 
 #include "wimlib/assert.h"
 #include "wimlib/blob_table.h"
+#include "wimlib/inode.h"
 #include "wimlib/error.h"
 #include "wimlib/util.h"
 #include "wimlib/wimboot.h"
@@ -1138,7 +1139,7 @@ wimboot_set_pointer(HANDLE h,
 			     sizeof(struct wof_external_info) +
 			     sizeof(struct wim_provider_rpdata));
 
-		in.hdr.rptag = WIMLIB_REPARSE_TAG_WOF;
+		in.hdr.rptag = WIM_IO_REPARSE_TAG_WOF;
 		in.hdr.rpdatalen = sizeof(in) - sizeof(in.hdr);
 		in.hdr.rpreserved = 0;
 

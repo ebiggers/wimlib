@@ -145,6 +145,11 @@ struct wimfs_context {
 	uid_t owner_uid;
 	gid_t owner_gid;
 
+	/* Absolute path to the mountpoint directory (may be needed for absolute
+	 * symbolic link fixups)  */
+	char *mountpoint_abspath;
+	size_t mountpoint_abspath_nchars;
+
 	/* Information about the staging directory for a read-write mount.  */
 	int parent_dir_fd;
 	int staging_dir_fd;
@@ -443,14 +448,12 @@ wim_pathname_to_stream(const struct wimfs_context *ctx,
  *	The path at which to create the first link to the new file.  If a file
  *	already exists at this path, -EEXIST is returned.
  * @mode
- *	The UNIX mode for the new file.  This is only honored if
+ *	The UNIX mode for the new file.  This is only fully honored if
  *	WIMLIB_MOUNT_FLAG_UNIX_DATA was passed to wimlib_mount_image().
  * @rdev
  *	The device ID for the new file, encoding the major and minor device
  *	numbers.  This is only honored if WIMLIB_MOUNT_FLAG_UNIX_DATA was passed
  *	to wimlib_mount_image().
- * @attributes
- *	Windows file attributes to use for the new file.
  * @dentry_ret
  *	On success, a pointer to the new dentry is returned here.  Its d_inode
  *	member will point to the new inode that was created for it and added to
@@ -460,14 +463,13 @@ wim_pathname_to_stream(const struct wimfs_context *ctx,
  */
 static int
 create_file(struct fuse_context *fuse_ctx, const char *path,
-	    mode_t mode, dev_t rdev, u32 attributes,
-	    struct wim_dentry **dentry_ret)
+	    mode_t mode, dev_t rdev, struct wim_dentry **dentry_ret)
 {
 	struct wimfs_context *wimfs_ctx = WIMFS_CTX(fuse_ctx);
 	struct wim_dentry *parent;
 	const char *basename;
-	struct wim_dentry *new_dentry;
-	struct wim_inode *new_inode;
+	struct wim_dentry *dentry;
+	struct wim_inode *inode;
 
 	parent = get_parent_dentry(wimfs_ctx->wim, path, WIMLIB_CASE_SENSITIVE);
 	if (!parent)
@@ -481,13 +483,19 @@ create_file(struct fuse_context *fuse_ctx, const char *path,
 	if (get_dentry_child_with_name(parent, basename, WIMLIB_CASE_SENSITIVE))
 		return -EEXIST;
 
-	if (new_dentry_with_new_inode(basename, true, &new_dentry))
+	if (new_dentry_with_new_inode(basename, true, &dentry))
 		return -ENOMEM;
 
-	new_inode = new_dentry->d_inode;
+	inode = dentry->d_inode;
 
-	new_inode->i_ino = wimfs_ctx->next_ino++;
-	new_inode->i_attributes = attributes;
+	inode->i_ino = wimfs_ctx->next_ino++;
+
+	/* Note: we still use FILE_ATTRIBUTE_NORMAL for device nodes, named
+	 * pipes, and sockets.  The real mode is in the UNIX metadata.  */
+	if (S_ISDIR(mode))
+		inode->i_attributes = FILE_ATTRIBUTE_DIRECTORY;
+	else
+		inode->i_attributes = FILE_ATTRIBUTE_NORMAL;
 
 	if (wimfs_ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA) {
 		struct wimlib_unix_data unix_data;
@@ -496,19 +504,19 @@ create_file(struct fuse_context *fuse_ctx, const char *path,
 		unix_data.gid = fuse_ctx->gid;
 		unix_data.mode = fuse_mask_mode(mode, fuse_ctx);
 		unix_data.rdev = rdev;
-		if (!inode_set_unix_data(new_inode, &unix_data, UNIX_DATA_ALL))
+		if (!inode_set_unix_data(inode, &unix_data, UNIX_DATA_ALL))
 		{
-			free_dentry(new_dentry);
+			free_dentry(dentry);
 			return -ENOMEM;
 		}
 	}
 
-	hlist_add_head(&new_inode->i_hlist,
+	hlist_add_head(&inode->i_hlist,
 		       &wim_get_current_image_metadata(wimfs_ctx->wim)->inode_list);
 
-	dentry_add_child(parent, new_dentry);
+	dentry_add_child(parent, dentry);
 
-	*dentry_ret = new_dentry;
+	*dentry_ret = dentry;
 	return 0;
 }
 
@@ -1491,8 +1499,7 @@ wimfs_mkdir(const char *path, mode_t mode)
 	int ret;
 
 	/* Note: according to fuse.h, mode may not include S_IFDIR  */
-	ret = create_file(fuse_get_context(), path, mode | S_IFDIR, 0,
-			  FILE_ATTRIBUTE_DIRECTORY, &dentry);
+	ret = create_file(fuse_get_context(), path, mode | S_IFDIR, 0, &dentry);
 	if (ret)
 		return ret;
 	touch_parent(dentry);
@@ -1554,11 +1561,7 @@ wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 		    !(wimfs_ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA))
 			return -EPERM;
 
-		/* Note: we still use FILE_ATTRIBUTE_NORMAL for device nodes,
-		 * named pipes, and sockets.  The real mode is in the UNIX
-		 * metadata.  */
-		ret = create_file(fuse_ctx, path, mode, rdev,
-				  FILE_ATTRIBUTE_NORMAL, &dentry);
+		ret = create_file(fuse_ctx, path, mode, rdev, &dentry);
 		if (ret)
 			return ret;
 		touch_parent(dentry);
@@ -1728,27 +1731,24 @@ wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 }
 
 static int
-wimfs_readlink(const char *path, char *buf, size_t buf_len)
+wimfs_readlink(const char *path, char *buf, size_t bufsize)
 {
-	WIMStruct *wim = wimfs_get_WIMStruct();
+	struct wimfs_context *ctx = wimfs_get_context();
 	const struct wim_inode *inode;
-	ssize_t ret;
+	int ret;
 
-	inode = wim_pathname_to_inode(wim, path);
+	inode = wim_pathname_to_inode(ctx->wim, path);
 	if (!inode)
 		return -errno;
-	if (!inode_is_symlink(inode))
+	if (bufsize <= 0)
 		return -EINVAL;
-	if (buf_len == 0)
-		return -EINVAL;
-	ret = wim_inode_readlink(inode, buf, buf_len - 1, NULL);
-	if (ret >= 0) {
-		buf[ret] = '\0';
-		ret = 0;
-	} else if (ret == -ENAMETOOLONG) {
-		buf[buf_len - 1] = '\0';
-	}
-	return ret;
+	ret = wim_inode_readlink(inode, buf, bufsize - 1, NULL,
+				 ctx->mountpoint_abspath,
+				 ctx->mountpoint_abspath_nchars);
+	if (ret < 0)
+		return ret;
+	buf[ret] = '\0';
+	return 0;
 }
 
 /* We use this for both release() and releasedir(), since in both cases we
@@ -1907,11 +1907,9 @@ wimfs_symlink(const char *to, const char *from)
 	struct wim_dentry *dentry;
 	int ret;
 
-	ret = create_file(fuse_ctx, from, S_IFLNK | 0777, 0,
-			  FILE_ATTRIBUTE_REPARSE_POINT, &dentry);
+	ret = create_file(fuse_ctx, from, S_IFLNK | 0777, 0, &dentry);
 	if (ret)
 		return ret;
-	dentry->d_inode->i_reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
 	ret = wim_inode_set_symlink(dentry->d_inode, to,
 				    wimfs_ctx->wim->blob_table);
 	if (ret) {
@@ -2217,6 +2215,11 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)
 		imd->modified = 1;
 
+	/* Save the absolute path to the mountpoint directory.  */
+	ctx.mountpoint_abspath = realpath(dir, NULL);
+	if (ctx.mountpoint_abspath)
+		ctx.mountpoint_abspath_nchars = strlen(ctx.mountpoint_abspath);
+
 	/* Build the FUSE command line.  */
 
 	fuse_argc = 0;
@@ -2302,6 +2305,7 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	/* Cleanup and return.  */
 	if (ret)
 		ret = WIMLIB_ERR_FUSE;
+	FREE(ctx.mountpoint_abspath);
 	release_extra_refcnts(&ctx);
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)
 		delete_staging_dir(&ctx);

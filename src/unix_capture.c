@@ -204,32 +204,60 @@ unix_scan_directory(struct wim_dentry *dir_dentry,
 	return ret;
 }
 
-/* Given an absolute symbolic link target @dest (UNIX-style, beginning
- * with '/'), determine whether it points into the directory specified by
- * @ino and @dev.  If so, return the target modified to be "absolute"
- * relative to this directory.  Otherwise, return NULL.  */
+/*
+ * Given an absolute symbolic link target (UNIX-style, beginning with '/'),
+ * determine whether it points into the directory identified by @ino and @dev.
+ * If yes, return the suffix of @target which is relative to this directory, but
+ * retaining leading slashes.  If no, return @target.
+ *
+ * Here are some examples, assuming that the @ino/@dev directory is "/home/e":
+ *
+ *	Original target		New target
+ *	---------------		----------
+ *	/home/e/test		/test
+ *	/home/e/test/		/test/
+ *	//home//e//test//	//test//
+ *	/home/e						(empty string)
+ *	/home/e/		/
+ *	/usr/lib		/usr/lib		(external link)
+ *
+ * Because of the possibility of other links into the @ino/@dev directory and/or
+ * multiple path separators, we can't simply do a string comparison; instead we
+ * need to stat() each ancestor directory.
+ *
+ * If the link points directly to the @ino/@dev directory with no trailing
+ * slashes, then the new target will be an empty string.  This is not a valid
+ * UNIX symlink target, but we store this in the archive anyway since the target
+ * is intended to be de-relativized when the link is extracted.
+ */
 static char *
-unix_fixup_abslink(char *dest, u64 ino, u64 dev)
+unix_relativize_link_target(char *target, u64 ino, u64 dev)
 {
-	char *p = dest;
+	char *p = target;
 
 	do {
 		char save;
 		struct stat stbuf;
 		int ret;
 
-		/* Skip non-slashes.  */
-		while (*p && *p != '/')
+		/* Skip slashes (guaranteed to be at least one here)  */
+		do {
 			p++;
+		} while (*p == '/');
 
-		/* Skip slashes.  */
-		while (*p && *p == '/')
+		/* End of string?  */
+		if (!*p)
+			break;
+
+		/* Skip non-slashes (guaranteed to be at least one here)  */
+		do {
 			p++;
+		} while (*p && *p != '/');
 
-		/* Get inode and device for this prefix.  */
+		/* Get the inode and device numbers for this prefix.  */
 		save = *p;
 		*p = '\0';
-		ret = stat(dest, &stbuf);
+		ret = stat(target, &stbuf);
 		*p = save;
 
 		if (ret) {
@@ -241,83 +269,66 @@ unix_fixup_abslink(char *dest, u64 ino, u64 dev)
 		if (stbuf.st_ino == ino && stbuf.st_dev == dev) {
 			/* Link points inside directory tree being captured.
 			 * Return abbreviated path.  */
-			*--p = '/';
-			while (p > dest && *(p - 1) == '/')
-				p--;
 			return p;
 		}
 	} while (*p);
 
 	/* Link does not point inside directory tree being captured.  */
-	return NULL;
+	return target;
 }
 
 static int
 unix_scan_symlink(const char *full_path, int dirfd, const char *relpath,
 		  struct wim_inode *inode, struct capture_params *params)
 {
-	char deref_name_buf[4096];
-	ssize_t deref_name_len;
-	char *dest;
+	char orig_target[REPARSE_POINT_MAX_SIZE];
+	char *target = orig_target;
 	int ret;
 
-	inode->i_attributes = FILE_ATTRIBUTE_REPARSE_POINT;
-	inode->i_reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
-
-	/* The idea here is to call readlink() to get the UNIX target of the
-	 * symbolic link, then turn the target into a reparse point data buffer
-	 * that contains a relative or absolute symbolic link. */
-	deref_name_len = my_readlinkat(full_path, dirfd, relpath,
-				       deref_name_buf, sizeof(deref_name_buf) - 1);
-	if (deref_name_len < 0) {
+	/* Read the UNIX symbolic link target.  */
+	ret = my_readlinkat(full_path, dirfd, relpath, target,
+			    sizeof(orig_target));
+	if (unlikely(ret < 0)) {
 		ERROR_WITH_ERRNO("\"%s\": Can't read target of symbolic link",
 				 full_path);
 		return WIMLIB_ERR_READLINK;
 	}
+	if (unlikely(ret >= sizeof(orig_target))) {
+		ERROR("\"%s\": target of symbolic link is too long", full_path);
+		return WIMLIB_ERR_READLINK;
+	}
+	target[ret] = '\0';
 
-	dest = deref_name_buf;
+	/* If the link is absolute and reparse point fixups are enabled, then
+	 * change it to be "absolute" relative to the tree being captured.  */
+	if (target[0] == '/' && (params->add_flags & WIMLIB_ADD_FLAG_RPFIX)) {
+		int status = WIMLIB_SCAN_DENTRY_NOT_FIXED_SYMLINK;
 
-	dest[deref_name_len] = '\0';
-
-	if ((params->add_flags & WIMLIB_ADD_FLAG_RPFIX) &&
-	     dest[0] == '/')
-	{
-		char *fixed_dest;
-
-		/* RPFIX (reparse point fixup) mode:  Change target of absolute
-		 * symbolic link to be "absolute" relative to the tree being
-		 * captured.  */
-		fixed_dest = unix_fixup_abslink(dest,
-						params->capture_root_ino,
-						params->capture_root_dev);
 		params->progress.scan.cur_path = full_path;
-		params->progress.scan.symlink_target = deref_name_buf;
-		if (fixed_dest) {
-			/* Link points inside the tree being captured, so it was
-			 * fixed.  */
-			inode->i_not_rpfixed = 0;
-			dest = fixed_dest;
-			ret = do_capture_progress(params,
-						  WIMLIB_SCAN_DENTRY_FIXED_SYMLINK,
-						  NULL);
-		} else {
-			/* Link points outside the tree being captured, so it
-			 * was not fixed.  */
-			ret = do_capture_progress(params,
-						  WIMLIB_SCAN_DENTRY_NOT_FIXED_SYMLINK,
-						  NULL);
+		params->progress.scan.symlink_target = target;
+
+		target = unix_relativize_link_target(target,
+						     params->capture_root_ino,
+						     params->capture_root_dev);
+		if (target != orig_target) {
+			/* Link target was fixed.  */
+			inode->i_rp_flags &= ~WIM_RP_FLAG_NOT_FIXED;
+			status = WIMLIB_SCAN_DENTRY_FIXED_SYMLINK;
 		}
+		ret = do_capture_progress(params, status, NULL);
 		if (ret)
 			return ret;
 	}
-	ret = wim_inode_set_symlink(inode, dest, params->blob_table);
+
+	/* Translate the UNIX symlink target into a Windows reparse point.  */
+	ret = wim_inode_set_symlink(inode, target, params->blob_table);
 	if (ret)
 		return ret;
 
-	/* Unfortunately, Windows seems to have the concept of "file" symbolic
-	 * links as being different from "directory" symbolic links...  so
-	 * FILE_ATTRIBUTE_DIRECTORY needs to be set on the symbolic link if the
-	 * *target* of the symbolic link is a directory.  */
+	/* On Windows, a reparse point can be set on both directory and
+	 * non-directory files.  Usually, a link that is intended to point to a
+	 * (non-)directory is stored as a reparse point on a (non-)directory
+	 * file.  Replicate this behavior by examining the target file.  */
 	struct stat stbuf;
 	if (my_fstatat(full_path, dirfd, relpath, &stbuf, 0) == 0 &&
 	    S_ISDIR(stbuf.st_mode))

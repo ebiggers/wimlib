@@ -707,8 +707,6 @@ ntfs_3g_begin_extract_blob_instance(struct blob_descriptor *blob,
 			return WIMLIB_ERR_INVALID_REPARSE_DATA;
 		}
 		ctx->reparse_ptr = ctx->rpbuf.rpdata;
-		ctx->rpbuf.rpdatalen = cpu_to_le16(blob->size);
-		ctx->rpbuf.rpreserved = cpu_to_le16(0);
 		ctx->ntfs_reparse_inodes[ctx->num_reparse_inodes] = ni;
 		ctx->wim_reparse_inodes[ctx->num_reparse_inodes] = inode;
 		ctx->num_reparse_inodes++;
@@ -862,11 +860,11 @@ ntfs_3g_end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
 	for (u32 i = 0; i < ctx->num_reparse_inodes; i++) {
 		struct wim_inode *inode = ctx->wim_reparse_inodes[i];
 
-		ctx->rpbuf.rptag = cpu_to_le32(inode->i_reparse_tag);
+		complete_reparse_point(&ctx->rpbuf, inode, blob->size);
 
 		if (ntfs_set_ntfs_reparse_data(ctx->ntfs_reparse_inodes[i],
 					       (const char *)&ctx->rpbuf,
-					       blob->size + REPARSE_DATA_OFFSET,
+					       REPARSE_DATA_OFFSET + blob->size,
 					       0))
 		{
 			ERROR_WITH_ERRNO("Failed to set reparse "

@@ -740,7 +740,7 @@ build_dentry_tree_ntfs_recursive(struct wim_dentry **root_ret,
 	 * only allow capturing an entire volume. */
 	if (params->add_flags & WIMLIB_ADD_FLAG_RPFIX &&
 	    inode_is_symlink(inode))
-		inode->i_not_rpfixed = 0;
+		inode->i_rp_flags &= ~WIM_RP_FLAG_NOT_FIXED;
 
 	if (!(params->add_flags & WIMLIB_ADD_FLAG_NO_ACLS)) {
 		struct SECURITY_CONTEXT sec_ctx;

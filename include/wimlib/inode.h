@@ -163,21 +163,16 @@ struct wim_inode {
 	 * after checking for -1 (or equivalently < 0).  */
 	s32 i_security_id;
 
-	/* Identity of a reparse point.  See
-	 * http://msdn.microsoft.com/en-us/library/windows/desktop/aa365503(v=vs.85).aspx
-	 * for what a reparse point is. */
+	/* Unknown field that we only read into memory so we can re-write it
+	 * unchanged.  Probably it's actually just padding...  */
+	u32 i_unknown_0x54;
+
+	/* The following fields correspond to 'reparse_tag', 'rp_reserved', and
+	 * 'rp_flags' in `struct wim_dentry_on_disk'.  They are only meaningful
+	 * for reparse point files.  */
 	u32 i_reparse_tag;
-
-	/* Unused/unknown fields that we just read into memory so we can
-	 * re-write them unchanged.  */
-	u32 i_rp_unknown_1;
-	u16 i_rp_unknown_2;
-
-	/* Corresponds to not_rpfixed in `struct wim_dentry_on_disk':  Set to 0
-	 * if reparse point fixups have been done.  Otherwise set to 1.  Note:
-	 * this actually may reflect the SYMBOLIC_LINK_RELATIVE flag.
-	 */
-	u16 i_not_rpfixed;
+	u16 i_rp_reserved;
+	u16 i_rp_flags;
 
 	/* Inode number; corresponds to hard_link_group_id in the `struct
 	 * wim_dentry_on_disk'.  */
@@ -240,21 +235,20 @@ struct wim_inode {
 };
 
 /*
- * Reparse tags documented at
- * http://msdn.microsoft.com/en-us/library/dd541667(v=prot.10).aspx
+ * The available reparse tags are documented at
+ * http://msdn.microsoft.com/en-us/library/dd541667(v=prot.10).aspx.
+ * Here we only define the ones of interest to us.
  */
-#define WIM_IO_REPARSE_TAG_RESERVED_ZERO	0x00000000
-#define WIM_IO_REPARSE_TAG_RESERVED_ONE		0x00000001
 #define WIM_IO_REPARSE_TAG_MOUNT_POINT		0xA0000003
-#define WIM_IO_REPARSE_TAG_HSM			0xC0000004
-#define WIM_IO_REPARSE_TAG_HSM2			0x80000006
-#define WIM_IO_REPARSE_TAG_DRIVER_EXTENDER	0x80000005
-#define WIM_IO_REPARSE_TAG_SIS			0x80000007
-#define WIM_IO_REPARSE_TAG_DFS			0x8000000A
-#define WIM_IO_REPARSE_TAG_DFSR			0x80000012
-#define WIM_IO_REPARSE_TAG_FILTER_MANAGER	0x8000000B
 #define WIM_IO_REPARSE_TAG_SYMLINK		0xA000000C
+#define WIM_IO_REPARSE_TAG_WOF			0x80000017
 
+/* Flags for the rp_flags field.  Currently the only known flag is NOT_FIXED,
+ * which indicates that the target of the absolute symbolic link or junction was
+ * not changed when it was stored.  */
+#define WIM_RP_FLAG_NOT_FIXED		   0x0001
+
+/* Windows file attribute flags  */
 #define FILE_ATTRIBUTE_READONLY            0x00000001
 #define FILE_ATTRIBUTE_HIDDEN              0x00000002
 #define FILE_ATTRIBUTE_SYSTEM              0x00000004

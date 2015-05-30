@@ -1896,12 +1896,12 @@ begin_extract_blob_instance(const struct blob_descriptor *blob,
 	return 0;
 }
 
-/* Set the reparse data @rpbuf of length @rpbuflen on the extracted file
+/* Set the reparse point @rpbuf of length @rpbuflen on the extracted file
  * corresponding to the WIM dentry @dentry.  */
 static int
-do_set_reparse_data(const struct wim_dentry *dentry,
-		    const void *rpbuf, u16 rpbuflen,
-		    struct win32_apply_ctx *ctx)
+do_set_reparse_point(const struct wim_dentry *dentry,
+		     const struct reparse_buffer_disk *rpbuf, u16 rpbuflen,
+		     struct win32_apply_ctx *ctx)
 {
 	NTSTATUS status;
 	HANDLE h;
@@ -1955,33 +1955,27 @@ skip_nt_toplevel_component(const wchar_t *path, size_t path_nchars)
 		L"\\DosDevices\\",
 		L"\\Device\\",
 	};
-	size_t first_dir_len = 0;
 	const wchar_t * const end = path + path_nchars;
 
 	for (size_t i = 0; i < ARRAY_LEN(dirs); i++) {
 		size_t len = wcslen(dirs[i]);
-		if (len <= (end - path) && !wcsnicmp(path, dirs[i], len)) {
-			first_dir_len = len;
-			break;
+		if (len <= (end - path) && !wmemcmp(path, dirs[i], len)) {
+			path += len;
+			while (path != end && *path == L'\\')
+				path++;
+			return path;
 		}
 	}
-	if (first_dir_len == 0)
-		return path;
-	path += first_dir_len;
-	while (path != end && *path == L'\\')
-		path++;
 	return path;
 }
 
-/* Given a Windows NT namespace path, such as \??\e:\Windows\System32, return a
- * pointer to the suffix of the path that is device-relative, such as
- * Windows\System32.
+/*
+ * Given a Windows NT namespace path, such as \??\e:\Windows\System32, return a
+ * pointer to the suffix of the path that is device-relative but possibly with
+ * leading slashes, such as \Windows\System32.
  *
  * The path has an explicit length and is not necessarily null terminated.
- *
- * If the path just something like \??\e: then the returned pointer will point
- * just past the colon.  In this case the length of the result will be 0
- * characters.  */
+ */
 static const wchar_t *
 get_device_relative_path(const wchar_t *path, size_t path_nchars)
 {
@@ -1992,24 +1986,22 @@ get_device_relative_path(const wchar_t *path, size_t path_nchars)
 	if (path == orig_path)
 		return orig_path;
 
-	path = wmemchr(path, L'\\', (end - path));
-	if (!path)
-		return end;
-	do {
+	while (path != end && *path != L'\\')
 		path++;
-	} while (path != end && *path == L'\\');
+
 	return path;
 }
 
 /*
- * Given a reparse point buffer for a symbolic link or junction, adjust its
- * contents so that the target of the link is consistent with the new location
- * of the files.
+ * Given a reparse point buffer for an inode for which the absolute link target
+ * was relativized when it was archived, de-relative the link target to be
+ * consistent with the actual extraction location.
  */
 static void
-try_rpfix(u8 *rpbuf, u16 *rpbuflen_p, struct win32_apply_ctx *ctx)
+try_rpfix(struct reparse_buffer_disk *rpbuf, u16 *rpbuflen_p,
+	  struct win32_apply_ctx *ctx)
 {
-	struct reparse_data rpdata;
+	struct link_reparse_point link;
 	size_t orig_subst_name_nchars;
 	const wchar_t *relpath;
 	size_t relpath_nchars;
@@ -2018,43 +2010,33 @@ try_rpfix(u8 *rpbuf, u16 *rpbuflen_p, struct win32_apply_ctx *ctx)
 	const wchar_t *fixed_print_name;
 	size_t fixed_print_name_nchars;
 
-	if (parse_reparse_data(rpbuf, *rpbuflen_p, &rpdata)) {
-		/* Do nothing if the reparse data is invalid.  */
+	/* Do nothing if the reparse data is invalid.  */
+	if (parse_link_reparse_point(rpbuf, *rpbuflen_p, &link))
 		return;
-	}
 
-	if (rpdata.rptag == WIM_IO_REPARSE_TAG_SYMLINK &&
-	    (rpdata.rpflags & SYMBOLIC_LINK_RELATIVE))
-	{
-		/* Do nothing if it's a relative symbolic link.  */
+	/* Do nothing if the reparse point is a relative symbolic link.  */
+	if (link_is_relative_symlink(&link))
 		return;
-	}
 
 	/* Build the new substitute name from the NT namespace path to the
 	 * target directory, then a path separator, then the "device relative"
 	 * part of the old substitute name.  */
 
-	orig_subst_name_nchars = rpdata.substitute_name_nbytes / sizeof(wchar_t);
+	orig_subst_name_nchars = link.substitute_name_nbytes / sizeof(wchar_t);
 
-	relpath = get_device_relative_path(rpdata.substitute_name,
+	relpath = get_device_relative_path(link.substitute_name,
 					   orig_subst_name_nchars);
 	relpath_nchars = orig_subst_name_nchars -
-			 (relpath - rpdata.substitute_name);
+			 (relpath - link.substitute_name);
 
 	target_ntpath_nchars = ctx->target_ntpath.Length / sizeof(wchar_t);
 
-	fixed_subst_name_nchars = target_ntpath_nchars;
-	if (relpath_nchars)
-		fixed_subst_name_nchars += 1 + relpath_nchars;
+	fixed_subst_name_nchars = target_ntpath_nchars + relpath_nchars;
+
 	wchar_t fixed_subst_name[fixed_subst_name_nchars];
 
-	wmemcpy(fixed_subst_name, ctx->target_ntpath.Buffer,
-		target_ntpath_nchars);
-	if (relpath_nchars) {
-		fixed_subst_name[target_ntpath_nchars] = L'\\';
-		wmemcpy(&fixed_subst_name[target_ntpath_nchars + 1],
-			relpath, relpath_nchars);
-	}
+	wmemcpy(fixed_subst_name, ctx->target_ntpath.Buffer, target_ntpath_nchars);
+	wmemcpy(&fixed_subst_name[target_ntpath_nchars], relpath, relpath_nchars);
 	/* Doesn't need to be null-terminated.  */
 
 	/* Print name should be Win32, but not all NT names can even be
@@ -2066,33 +2048,29 @@ try_rpfix(u8 *rpbuf, u16 *rpbuflen_p, struct win32_apply_ctx *ctx)
 	fixed_print_name_nchars = fixed_subst_name_nchars - (fixed_print_name -
 							     fixed_subst_name);
 
-	rpdata.substitute_name = fixed_subst_name;
-	rpdata.substitute_name_nbytes = fixed_subst_name_nchars * sizeof(wchar_t);
-	rpdata.print_name = (wchar_t *)fixed_print_name;
-	rpdata.print_name_nbytes = fixed_print_name_nchars * sizeof(wchar_t);
-	make_reparse_buffer(&rpdata, rpbuf, rpbuflen_p);
+	link.substitute_name = fixed_subst_name;
+	link.substitute_name_nbytes = fixed_subst_name_nchars * sizeof(wchar_t);
+	link.print_name = (wchar_t *)fixed_print_name;
+	link.print_name_nbytes = fixed_print_name_nchars * sizeof(wchar_t);
+	make_link_reparse_point(&link, rpbuf, rpbuflen_p);
 }
 
-/* Sets reparse data on the specified file.  This handles "fixing" the targets
- * of absolute symbolic links and junctions if WIMLIB_EXTRACT_FLAG_RPFIX was
- * specified.  */
+/* Sets the reparse point on the specified file.  This handles "fixing" the
+ * targets of absolute symbolic links and junctions if WIMLIB_EXTRACT_FLAG_RPFIX
+ * was specified.  */
 static int
-set_reparse_data(const struct wim_dentry *dentry,
-		 const void *_rpbuf, u16 rpbuflen, struct win32_apply_ctx *ctx)
+set_reparse_point(const struct wim_dentry *dentry,
+		  const struct reparse_buffer_disk *rpbuf, u16 rpbuflen,
+		  struct win32_apply_ctx *ctx)
 {
-	const struct wim_inode *inode = dentry->d_inode;
-	const void *rpbuf = _rpbuf;
-
 	if ((ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_RPFIX)
-	    && !inode->i_not_rpfixed
-	    && (inode->i_reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
-		inode->i_reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT))
+	    && !(dentry->d_inode->i_rp_flags & WIM_RP_FLAG_NOT_FIXED))
 	{
-		memcpy(&ctx->rpfixbuf, _rpbuf, rpbuflen);
-		try_rpfix((u8 *)&ctx->rpfixbuf, &rpbuflen, ctx);
+		memcpy(&ctx->rpfixbuf, rpbuf, rpbuflen);
+		try_rpfix(&ctx->rpfixbuf, &rpbuflen, ctx);
 		rpbuf = &ctx->rpfixbuf;
 	}
-	return do_set_reparse_data(dentry, rpbuf, rpbuflen, ctx);
+	return do_set_reparse_point(dentry, rpbuf, rpbuflen, ctx);
 
 }
 
@@ -2285,17 +2263,18 @@ end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
 			ret = WIMLIB_ERR_INVALID_REPARSE_DATA;
 			return check_apply_error(dentry, ctx, ret);
 		}
-		/* In the WIM format, reparse point streams are just the reparse
-		 * data and omit the header.  But we can reconstruct the header.
-		 */
+		/* Reparse data  */
 		memcpy(ctx->rpbuf.rpdata, ctx->data_buffer, blob->size);
-		ctx->rpbuf.rpdatalen = blob->size;
-		ctx->rpbuf.rpreserved = 0;
+
 		list_for_each_entry(dentry, &ctx->reparse_dentries, tmp_list) {
-			ctx->rpbuf.rptag = dentry->d_inode->i_reparse_tag;
-			ret = set_reparse_data(dentry, &ctx->rpbuf,
-					       blob->size + REPARSE_DATA_OFFSET,
-					       ctx);
+
+			/* Reparse point header  */
+			complete_reparse_point(&ctx->rpbuf, dentry->d_inode,
+					       blob->size);
+
+			ret = set_reparse_point(dentry, &ctx->rpbuf,
+						REPARSE_DATA_OFFSET + blob->size,
+						ctx);
 			ret = check_apply_error(dentry, ctx, ret);
 			if (ret)
 				return ret;

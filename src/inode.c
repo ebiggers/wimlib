@@ -56,7 +56,7 @@ new_inode(struct wim_dentry *dentry, bool set_timestamps)
 
 	inode->i_security_id = -1;
 	/*inode->i_nlink = 0;*/
-	inode->i_not_rpfixed = 1;
+	inode->i_rp_flags = WIM_RP_FLAG_NOT_FIXED;
 	INIT_LIST_HEAD(&inode->i_dentry);
 	inode->i_streams = inode->i_embedded_streams;
 	if (set_timestamps) {
