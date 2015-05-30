@@ -376,18 +376,6 @@ blob_set_is_located_in_wim_resource(struct blob_descriptor *blob,
 	blob->offset_in_res = offset_in_res;
 }
 
-/*
- * Declare that the specified blob is located in the specified non-solid WIM
- * resource.  In this case, the blob data is the entire uncompressed resource.
- */
-static inline void
-blob_set_is_located_in_nonsolid_wim_resource(struct blob_descriptor *blob,
-					     struct wim_resource_descriptor *rdesc)
-{
-	blob_set_is_located_in_wim_resource(blob, rdesc, 0);
-	blob->size = rdesc->uncompressed_size;
-}
-
 static inline void
 blob_unset_is_located_in_wim_resource(struct blob_descriptor *blob)
 {

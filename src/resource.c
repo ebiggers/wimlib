@@ -808,8 +808,7 @@ wim_reshdr_to_data(const struct wim_reshdr *reshdr, WIMStruct *wim,
 	struct wim_resource_descriptor rdesc;
 	struct blob_descriptor blob;
 
-	wim_reshdr_to_desc(reshdr, wim, &rdesc);
-	blob_set_is_located_in_nonsolid_wim_resource(&blob, &rdesc);
+	wim_reshdr_to_desc_and_blob(reshdr, wim, &rdesc, &blob);
 
 	return read_blob_into_alloc_buf(&blob, buf_ret);
 }
@@ -824,8 +823,7 @@ wim_reshdr_to_hash(const struct wim_reshdr *reshdr, WIMStruct *wim,
 	struct blob_descriptor blob;
 	int ret;
 
-	wim_reshdr_to_desc(reshdr, wim, &rdesc);
-	blob_set_is_located_in_nonsolid_wim_resource(&blob, &rdesc);
+	wim_reshdr_to_desc_and_blob(reshdr, wim, &rdesc, &blob);
 	blob.unhashed = 1;
 
 	ret = sha1_blob(&blob);
@@ -1265,6 +1263,21 @@ wim_reshdr_to_desc(const struct wim_reshdr *reshdr, WIMStruct *wim,
 		rdesc->compression_type = WIMLIB_COMPRESSION_TYPE_NONE;
 		rdesc->chunk_size = 0;
 	}
+}
+
+/*
+ * Convert the short WIM resource header @reshdr to a stand-alone WIM resource
+ * descriptor @rdesc, then set @blob to consist of that entire resource.  This
+ * should only be used for non-solid resources!
+ */
+void
+wim_reshdr_to_desc_and_blob(const struct wim_reshdr *reshdr, WIMStruct *wim,
+			    struct wim_resource_descriptor *rdesc,
+			    struct blob_descriptor *blob)
+{
+	wim_reshdr_to_desc(reshdr, wim, rdesc);
+	blob->size = rdesc->uncompressed_size;
+	blob_set_is_located_in_wim_resource(blob, rdesc, 0);
 }
 
 /* Import a WIM resource header from the on-disk format.  */

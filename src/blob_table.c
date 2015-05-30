@@ -969,9 +969,7 @@ read_blob_table(WIMStruct *wim)
 			if (!rdesc)
 				goto oom;
 
-			wim_reshdr_to_desc(&reshdr, wim, rdesc);
-
-			blob_set_is_located_in_nonsolid_wim_resource(cur_blob, rdesc);
+			wim_reshdr_to_desc_and_blob(&reshdr, wim, rdesc, cur_blob);
 		}
 
 		/* cur_blob is now a blob bound to a resource.  */

@@ -124,6 +124,11 @@ wim_reshdr_to_desc(const struct wim_reshdr *reshdr, WIMStruct *wim,
 		   struct wim_resource_descriptor *rdesc);
 
 extern void
+wim_reshdr_to_desc_and_blob(const struct wim_reshdr *reshdr, WIMStruct *wim,
+			    struct wim_resource_descriptor *rdesc,
+			    struct blob_descriptor *blob);
+
+extern void
 get_wim_reshdr(const struct wim_reshdr_disk *disk_reshdr,
 	       struct wim_reshdr *reshdr);
 

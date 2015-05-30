@@ -233,19 +233,18 @@ read_blobs_from_pipe(struct apply_ctx *ctx, const struct read_blob_callbacks *cb
 		if (ret)
 			return ret;
 
-		wim_reshdr_to_desc(&reshdr, ctx->wim, &rdesc);
-
-		if (!(rdesc.flags & WIM_RESHDR_FLAG_METADATA)
+		if (!(reshdr.flags & WIM_RESHDR_FLAG_METADATA)
 		    && (blob = lookup_blob(ctx->wim->blob_table, hash))
 		    && (blob->out_refcnt))
 		{
-			blob_set_is_located_in_nonsolid_wim_resource(blob, &rdesc);
+			wim_reshdr_to_desc_and_blob(&reshdr, ctx->wim, &rdesc, blob);
 			ret = read_blob_with_sha1(blob, cbs);
 			blob_unset_is_located_in_wim_resource(blob);
 			if (ret)
 				return ret;
 			ctx->num_blobs_remaining--;
 		} else {
+			wim_reshdr_to_desc(&reshdr, ctx->wim, &rdesc);
 			ret = skip_wim_resource(&rdesc);
 			if (ret)
 				return ret;
@@ -1958,9 +1957,8 @@ wimlib_extract_image_from_pipe_with_progress(int pipe_fd,
 		metadata_rdesc = MALLOC(sizeof(struct wim_resource_descriptor));
 		if (!metadata_rdesc)
 			goto out_wimlib_free;
-		wim_reshdr_to_desc(&reshdr, pwm, metadata_rdesc);
-		blob_set_is_located_in_nonsolid_wim_resource(imd->metadata_blob,
-							     metadata_rdesc);
+		wim_reshdr_to_desc_and_blob(&reshdr, pwm, metadata_rdesc,
+					    imd->metadata_blob);
 
 		if (i == image) {
 			/* Metadata resource is for the image being extracted.
