@@ -342,11 +342,13 @@ inode_replace_stream_data(struct wim_inode *inode,
 			  const void *data, size_t size,
 			  struct blob_table *blob_table)
 {
-	struct blob_descriptor *new_blob;
+	struct blob_descriptor *new_blob = NULL;
 
-	new_blob = new_blob_from_data_buffer(data, size, blob_table);
-	if (!new_blob)
-		return false;
+	if (size) {
+		new_blob = new_blob_from_data_buffer(data, size, blob_table);
+		if (!new_blob)
+			return false;
+	}
 
 	inode_replace_stream_blob(inode, strm, new_blob, blob_table);
 	return true;
@@ -378,16 +380,18 @@ inode_add_stream_with_data(struct wim_inode *inode,
 			   struct blob_table *blob_table)
 {
 	struct wim_inode_stream *strm;
-	struct blob_descriptor *blob;
+	struct blob_descriptor *blob = NULL;
 
 	strm = inode_add_stream(inode, stream_type, stream_name, NULL);
 	if (!strm)
 		return false;
 
-	blob = new_blob_from_data_buffer(data, size, blob_table);
-	if (!blob) {
-		inode_remove_stream(inode, strm, blob_table);
-		return false;
+	if (size) {
+		blob = new_blob_from_data_buffer(data, size, blob_table);
+		if (unlikely(!blob)) {
+			inode_remove_stream(inode, strm, blob_table);
+			return false;
+		}
 	}
 
 	inode_set_stream_blob(inode, strm, blob);
