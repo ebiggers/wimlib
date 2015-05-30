@@ -2,6 +2,9 @@ Version 1.8.2-BETA:
 	Fixed a bug: on 32-bit systems, the library would enter an infinite loop
 	if WIM image metadata was malformed in a very specific way.
 
+	Windows symbolic links and junctions in mounted WIM images are now
+	automatically rewritten to be valid in the mounted location.
+
 Version 1.8.1:
 	Fixed a bug in the LZX decompressor: malicious input data could cause
 	out of bounds writes to memory (since wimlib v1.2.2).

@@ -8,13 +8,13 @@ wimlib-imagex-mount, wimlib-imagex-mountrw, wimlib-imagex-unmount \- Mount and u
 .br
 \fBwimlib-imagex unmount\fR \fIDIRECTORY\fR [\fIOPTION\fR...]
 .SH DESCRIPTION
-The \fBwimlib-imagex mount\fR and \fBwimlib-imagex mountrw\fR commands
-will mount the image in the Windows Imaging (WIM) file \fIWIMFILE\fR specified
-by \fIIMAGE\fR on the directory \fIDIRECTORY\fR using FUSE (Filesystem in
-Userspace).  \fBwimlib-imagex mount\fR will mount the image read-only, while
-\fBwimlib-imagex mountrw\fR will mount the image read-write.
+On Linux-based systems, the \fBwimlib-imagex mount\fR and \fBwimlib-imagex
+mountrw\fR commands will mount the image in the Windows Imaging (WIM) file
+\fIWIMFILE\fR specified by \fIIMAGE\fR on the directory \fIDIRECTORY\fR using
+FUSE (Filesystem in Userspace).  \fBwimlib-imagex mount\fR will mount the image
+read-only, while \fBwimlib-imagex mountrw\fR will mount the image read-write.
 These commands are also available as simply \fBwimmount\fR, \fBwimmountrw\fR,
-and \fBwimunmount\fR if the appropriate hard links or batch files are installed.
+and \fBwimunmount\fR if the appropriate hard links are installed.
 .PP
 \fIIMAGE\fR may be a 1-based index of the image in the WIM to mount, or it may
 be the name of an image in the WIM.  Use the \fBwimlib-imagex info\fR (1)
@@ -24,6 +24,42 @@ command to see the available images in the WIM.  \fIIMAGE\fR may be omitted if
 The WIM image can be unmounted using the \fBwimlib-imagex unmount\fR
 command.  Changes made to a WIM mounted read-write will be discarded unless the
 \fB--commit\fR flag is provided to \fBwimlib-imagex unmount\fR.
+.SH DATA AND METADATA SUPPORT
+This section documents which WIM features are exposed via the mount support and
+which are not.
+.PP
+The following features are \fIsupported\fR (read/write unless otherwise
+specified):
+.IP \[bu] 4
+Hard links
+.IP \[bu]
+Symbolic links.  Native Windows symbolic links and junctions in a
+mounted WIM image will automatically be translated into UNIX symbolic links,
+potentially with their targets fixed to be valid given the actual mountpoint
+directory.  UNIX symbolic links created in a read-write mounted WIM image will
+automatically be translated into native Windows symbolic links.
+.IP \[bu]
+Named data streams (mostly).  See the \fB--streams-interface\fR option.
+.IP \[bu]
+Standard UNIX permission bits and UNIX special files are supported if the
+\fB--unix-data\fR option is used.
+.PP
+The following features are \fIunsupported\fR:
+.IP \[bu] 4
+Windows security descriptors.  These are not exposed in the mounted filesystem,
+although existing values will be preserved on commit.  New files are not given
+security descriptors.
+.IP \[bu]
+DOS names (8.3 names) (short names).  These are not exposed in the mounted
+filesystem, although existing values will be preserved on commit.  New files are
+not given DOS names.
+.IP \[bu]
+Windows file attributes.  These are not exposed in the mounted filesystem,
+although existing values will be preserved on commit.  New files are assigned
+default attributes based on the UNIX file mode bits.
+.IP \[bu]
+EFS-encrypted files.  The files themselves will be visible in mounted WIM images
+but their data will not be available.
 .SH SPLIT WIMS
 You may use \fBwimlib-imagex mount\fR to mount an image from a split WIM
 read-only.  However, you may not mount an image from a split WIM read-write.
@@ -50,35 +86,29 @@ wimlib-imagex mount mywim.swm 1 dir --ref="mywim*.swm"
 .RE
 .PP
 .SH NOTES
-If wimlib was configured using the \fB--without-fuse\fR flag, then the
-\fBwimlib-imagex mount\fR, \fBwimlib-imagex mountrw\fR, and
-\fBwimlib-imagex unmount\fR commands will not work.  Also, these commands
-are not available in the Windows builds of \fBwimlib-imagex\fR.
+\fIAvailablity\fR: Mounting WIM images is only supported on Linux-based systems.
+These commands will not work on other platforms.  Furthermore, the library
+cannot have been configured \fB--without-fuse\fR.
 .PP
-You can mount multiple images from a WIM file read-only at the same time, but
-you can only mount one image at a time from a WIM read-write.
+\fIMultiple mounts\fR: You are free to mount many WIM images at the same time,
+provided that there are not two images mounted read-write from the same file at
+the same time.
 .PP
-All files in the mounted WIM will be accessible regardless of whether there is a
-security descriptor in the WIM associated with the file or not.  New files or
-directories created in a read-write mounted WIM will be created with no security
-descriptor.  Although there is support for accessing named data streams (see the
-\fB--streams-interface\fR option), it is currently not possible to set or get
-DOS names, file attributes, or security descriptors in a mounted WIM.
+\fIAppends vs. rebuilds\fR: By default, changes to a read-write WIM are made
+in-place by appending to the WIM.  This is nice for big WIM files, since the
+entire file doesn't have to be rebuilt to make a small change.  But, if you are
+making many changes to a read-write mounted WIM, especially deleting large
+files, it is suggested to provide the \fB--rebuild\fR option to \fBwimlib-imagex
+unmount\fR to force the WIM to be rebuilt, or else run \fBwimlib-imagex
+optimize\fR on the WIM afterwards.
 .PP
-By default, changes to a read-write WIM are made in-place by appending to the
-WIM.  This is nice for big WIM files, since the entire file doesn't have to be
-rebuilt to make a small change.  But, if you are making many changes to a
-read-write mounted WIM, especially deleting large files, it is suggested to
-provide the \fB--rebuild\fR option to \fBwimlib-imagex unmount\fR to force
-the WIM to be rebuilt, or else run \fBwimlib-imagex optimize\fR on the WIM
-afterwards.
-.PP
-wimlib v1.6.0 and later can mount version 3584 WIMs, which usually contain
-LZMS-compressed solid resources and may carry the \fI.esd\fR file extension rather
-than \fI.wim\fR.  However, such files are not designed for random access, so
-reading data from them when mounted may be very slow.  In addition, \fI.esd\fR
-files downloaded directly by the Windows 8 web downloader have encrypted
-segments, and wimlib cannot mount such files until they are first decrypted.
+\fIESD files (solid WIMs)\fR: You can mount version 3584 WIMs, which usually
+contain LZMS-compressed solid resources and may carry the \fI.esd\fR file
+extension rather than \fI.wim\fR.  However, such files are not designed for
+random access, so reading data from them when mounted may be very slow.  In
+addition, \fI.esd\fR files downloaded directly by the Windows 8 web downloader
+have encrypted segments, and wimlib cannot mount such files until they are first
+decrypted.
 .SH MOUNT OPTIONS
 .TP 6
 \fB--check\fR
