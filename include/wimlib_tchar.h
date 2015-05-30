@@ -28,8 +28,9 @@ typedef wchar_t tchar;
 #  define tsprintf	swprintf
 #  define tfprintf	fwprintf
 #  define tvfprintf	vfwprintf
-#  define istalpha	iswalpha
-#  define istspace	iswspace
+#  define istalpha(c)	iswalpha((wchar_t)(c))
+#  define istspace(c)	iswspace((wchar_t)(c))
+#  define totlower(c)	towlower((wchar_t)(c))
 #  define tstrcmp	wcscmp
 #  define tstrncmp	wcsncmp
 #  define tstrchr	wcschr
@@ -55,7 +56,6 @@ typedef wchar_t tchar;
 #  define tstrdup	wcsdup
 #  define ttempnam	_wtempnam
 #  define tgetenv	_wgetenv
-#  define totlower(c)	towlower((wchar_t)(c))
 /* The following "tchar" functions do not have exact wide-character equivalents
  * on Windows so require parameter rearrangement or redirection to a replacement
  * function defined ourselves. */
@@ -87,8 +87,9 @@ typedef char tchar;
 #  define tsprintf	sprintf
 #  define tfprintf	fprintf
 #  define tvfprintf	vfprintf
-#  define istalpha	isalpha
-#  define istspace	isspace
+#  define istalpha(c)	isalpha((unsigned char)(c))
+#  define istspace(c)	isspace((unsigned char)(c))
+#  define totlower(c)	tolower((unsigned char)(c))
 #  define tstrcmp	strcmp
 #  define tstrncmp	strncmp
 #  define tstrchr	strchr
@@ -114,7 +115,6 @@ typedef char tchar;
 #  define tstrdup	strdup
 #  define ttempnam	tempnam
 #  define tgetenv	getenv
-#  define totlower(c)	tolower((unsigned char)(c))
 #  define TSTRDUP	STRDUP
 #  define tstrerror_r	strerror_r
 #  define trename	rename
