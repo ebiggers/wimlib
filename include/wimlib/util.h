@@ -24,6 +24,10 @@
 /* Get the number of elements of an array type.  */
 #define ARRAY_LEN(array)	(sizeof(array) / sizeof((array)[0]))
 
+/* Round 'v' up to the next 'alignment'-byte aligned boundary.  'alignment' must
+ * be a power of 2.  */
+#define ALIGN(v, alignment)	(((v) + ((alignment) - 1)) & ~((alignment) - 1))
+
 /* Maximum number of bytes that can be allocated on the stack.
  *
  * Note: this isn't a hard bound on the stack space used, since this is just for

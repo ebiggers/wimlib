@@ -150,7 +150,7 @@ recalculate_security_data_length(struct wim_security_data *sd)
 	u32 total_length = sizeof(u64) * sd->num_entries + 2 * sizeof(u32);
 	for (u32 i = 0; i < sd->num_entries; i++)
 		total_length += sd->sizes[i];
-	sd->total_length = (total_length + 7) & ~7;
+	sd->total_length = ALIGN(total_length, 8);
 }
 
 static int
@@ -185,16 +185,12 @@ prepare_metadata_resource(WIMStruct *wim, int image,
 		imd->root_dentry = root;
 	}
 
-	/* Offset of first child of the root dentry.  It's equal to:
-	 * - The total length of the security data, rounded to the next 8-byte
-	 *   boundary,
-	 * - plus the total length of the root dentry,
-	 * - plus 8 bytes for an end-of-directory entry following the root
-	 *   dentry (shouldn't really be needed, but just in case...)
-	 */
+	/* The offset of the first child of the root dentry is equal to the
+	 * total length of the security data, plus the total length of the root
+	 * dentry, plus 8 bytes for an end-of-directory entry following the root
+	 * dentry (shouldn't really be needed, but just in case...)  */
 	recalculate_security_data_length(sd);
-	subdir_offset = (((u64)sd->total_length + 7) & ~7) +
-			dentry_out_total_length(root) + 8;
+	subdir_offset = sd->total_length + dentry_out_total_length(root) + 8;
 
 	/* Calculate the subdirectory offsets for the entire dentry tree.  */
 	calculate_subdir_offsets(root, &subdir_offset);

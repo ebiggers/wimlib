@@ -125,7 +125,7 @@ sort_symbols(unsigned num_syms, const u32 freqs[restrict],
 	 * Tests were done with building the codes for LZX.  Results may
 	 * vary for different compression algorithms...!  */
 
-	num_counters = (DIV_ROUND_UP(num_syms, 4) + 3) & ~3;
+	num_counters = ALIGN(DIV_ROUND_UP(num_syms, 4), 4);
 
 	unsigned counters[num_counters];
 

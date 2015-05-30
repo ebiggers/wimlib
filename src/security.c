@@ -157,8 +157,8 @@ read_wim_security_data(const u8 *buf, size_t buf_len,
 		p += sd->sizes[i];
 	}
 out_align_total_length:
-	total_len = (total_len + 7) & ~7;
-	sd->total_length = (sd->total_length + 7) & ~7;
+	total_len = ALIGN(total_len, 8);
+	sd->total_length = ALIGN(sd->total_length, 8);
 	if (total_len != sd->total_length) {
 		WARNING("Expected WIM security data total length of "
 			"%u bytes, but calculated %u bytes",

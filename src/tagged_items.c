@@ -85,7 +85,7 @@ inode_get_tagged_item(const struct wim_inode *inode,
 
 		hdr = (struct tagged_item_header *)p;
 		tag = le32_to_cpu(hdr->tag);
-		len = (le32_to_cpu(hdr->length) + 7) & ~7;
+		len = ALIGN(le32_to_cpu(hdr->length), 8);
 
 		/* Length overflow?  */
 		if (unlikely(len > len_remaining - sizeof(struct tagged_item_header)))
@@ -113,7 +113,7 @@ inode_add_tagged_item(struct wim_inode *inode, u32 tag, u32 len)
 
 	/* We prepend the item instead of appending it because it's easier.  */
 
-	itemsize = sizeof(struct tagged_item_header) + ((len + 7) & ~7);
+	itemsize = sizeof(struct tagged_item_header) + ALIGN(len, 8);
 	newsize = itemsize + inode->i_extra_size;
 
 	buf = MALLOC(newsize);
@@ -130,7 +130,7 @@ inode_add_tagged_item(struct wim_inode *inode, u32 tag, u32 len)
 	hdr = (struct tagged_item_header *)buf;
 	hdr->tag = cpu_to_le32(tag);
 	hdr->length = cpu_to_le32(len);
-	return memset(hdr->data, 0, (len + 7) & ~7);
+	return memset(hdr->data, 0, ALIGN(len, 8));
 }
 
 static inline struct wimlib_unix_data_disk *

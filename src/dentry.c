@@ -347,7 +347,7 @@ stream_out_total_length(const struct wim_inode_stream *strm)
 		len += utf16le_len_bytes(strm->stream_name) + 2;
 
 	/* Account for any necessary padding to the next 8-byte boundary.  */
-	return (len + 7) & ~7;
+	return ALIGN(len, 8);
 }
 
 /*
@@ -364,12 +364,9 @@ dentry_out_total_length(const struct wim_dentry *dentry)
 
 	len = dentry_min_len_with_names(dentry->file_name_nbytes,
 					dentry->short_name_nbytes);
-	len = (len + 7) & ~7;
+	len = ALIGN(len, 8);
 
-	if (inode->i_extra_size) {
-		len += inode->i_extra_size;
-		len = (len + 7) & ~7;
-	}
+	len += ALIGN(inode->i_extra_size, 8);
 
 	if (!(inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED)) {
 		/*
@@ -396,8 +393,8 @@ dentry_out_total_length(const struct wim_dentry *dentry)
 
 		if (have_named_data_stream || have_reparse_point_stream) {
 			if (have_reparse_point_stream)
-				len += (sizeof(struct wim_extra_stream_entry_on_disk) + 7) & ~7;
-			len += (sizeof(struct wim_extra_stream_entry_on_disk) + 7) & ~7;
+				len += ALIGN(sizeof(struct wim_extra_stream_entry_on_disk), 8);
+			len += ALIGN(sizeof(struct wim_extra_stream_entry_on_disk), 8);
 		}
 	}
 
@@ -1331,10 +1328,7 @@ setup_inode_streams(const u8 *p, const u8 *end, struct wim_inode *inode,
 		disk_strm = (const struct wim_extra_stream_entry_on_disk *)p;
 
 		/* Read the length field  */
-		length = le64_to_cpu(disk_strm->length);
-
-		/* 8-byte align the length  */
-		length = (length + 7) & ~7;
+		length = ALIGN(le64_to_cpu(disk_strm->length), 8);
 
 		/* Make sure the length field is neither so small it doesn't
 		 * include all the fixed-length data nor so large it overflows
@@ -1424,7 +1418,7 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 	disk_dentry = (const struct wim_dentry_on_disk*)p;
 
 	/* Get dentry length.  */
-	length = (le64_to_cpu(disk_dentry->length) + 7) & ~7;
+	length = ALIGN(le64_to_cpu(disk_dentry->length), 8);
 
 	/* Check for end-of-directory.  */
 	if (length <= 8) {
