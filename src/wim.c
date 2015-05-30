@@ -187,7 +187,7 @@ wimlib_create_new_wim(enum wimlib_compression_type ctype, WIMStruct **wim_ret)
 	wim->hdr.wim_version = WIM_VERSION_DEFAULT;
 	wim->hdr.flags = 0;
 	wim->hdr.chunk_size = 0;
-	randomize_byte_array(wim->hdr.guid, WIMLIB_GUID_LEN);
+	generate_guid(wim->hdr.guid);
 	wim->hdr.part_number = 1;
 	wim->hdr.total_parts = 1;
 	wim->hdr.image_count = 0;
@@ -448,7 +448,7 @@ WIMLIBAPI int
 wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info)
 {
 	memset(info, 0, sizeof(struct wimlib_wim_info));
-	memcpy(info->guid, wim->hdr.guid, WIMLIB_GUID_LEN);
+	copy_guid(info->guid, wim->hdr.guid);
 	info->image_count = wim->hdr.image_count;
 	info->boot_index = wim->hdr.boot_idx;
 	info->wim_version = wim->hdr.wim_version;
@@ -494,7 +494,7 @@ wimlib_set_wim_info(WIMStruct *wim, const struct wimlib_wim_info *info, int whic
 	}
 
 	if (which & WIMLIB_CHANGE_GUID)
-		memcpy(wim->hdr.guid, info->guid, WIM_GUID_LEN);
+		copy_guid(wim->hdr.guid, info->guid);
 
 	if (which & WIMLIB_CHANGE_BOOT_INDEX)
 		wim->hdr.boot_idx = info->boot_index;

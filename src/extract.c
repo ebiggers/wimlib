@@ -201,7 +201,7 @@ read_blobs_from_pipe(struct apply_ctx *ctx,
 	struct wim_resource_descriptor rdesc;
 	struct blob_descriptor *blob;
 
-	memcpy(ctx->progress.extract.guid, ctx->wim->hdr.guid, WIM_GUID_LEN);
+	copy_guid(ctx->progress.extract.guid, ctx->wim->hdr.guid);
 	ctx->progress.extract.part_number = ctx->wim->hdr.part_number;
 	ctx->progress.extract.total_parts = ctx->wim->hdr.total_parts;
 	ret = extract_progress(ctx, WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN);
@@ -218,10 +218,10 @@ read_blobs_from_pipe(struct apply_ctx *ctx,
 
 			if (part_number == ctx->progress.extract.part_number &&
 			    total_parts == ctx->progress.extract.total_parts &&
-			    !memcmp(pwm_hdr.guid, ctx->progress.extract.guid, WIM_GUID_LEN))
+			    guids_equal(pwm_hdr.guid, ctx->progress.extract.guid))
 				continue;
 
-			memcpy(ctx->progress.extract.guid, pwm_hdr.guid, WIM_GUID_LEN);
+			copy_guid(ctx->progress.extract.guid, pwm_hdr.guid);
 			ctx->progress.extract.part_number = part_number;
 			ctx->progress.extract.total_parts = total_parts;
 			ret = extract_progress(ctx, WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN);

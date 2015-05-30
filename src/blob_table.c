@@ -406,7 +406,7 @@ cmp_blobs_by_sequential_order(const void *p1, const void *p2)
 
 		/* Different (possibly split) WIMs?  */
 		if (wim1 != wim2) {
-			v = memcmp(wim1->hdr.guid, wim2->hdr.guid, WIM_GUID_LEN);
+			v = cmp_guids(wim1->hdr.guid, wim2->hdr.guid);
 			if (v)
 				return v;
 		}

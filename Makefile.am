@@ -115,6 +115,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/error.h		\
 	include/wimlib/file_io.h	\
 	include/wimlib/glob.h		\
+	include/wimlib/guid.h		\
 	include/wimlib/hc_matchfinder.h	\
 	include/wimlib/header.h		\
 	include/wimlib/inode.h		\

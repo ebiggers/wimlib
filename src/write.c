@@ -2751,9 +2751,9 @@ write_wim_part(WIMStruct *wim,
 	if (write_flags & WIMLIB_WRITE_FLAG_RETAIN_GUID)
 		guid = wim->hdr.guid;
 	if (guid)
-		memcpy(wim->out_hdr.guid, guid, WIMLIB_GUID_LEN);
+		copy_guid(wim->out_hdr.guid, guid);
 	else
-		randomize_byte_array(wim->out_hdr.guid, WIMLIB_GUID_LEN);
+		generate_guid(wim->out_hdr.guid);
 
 	/* Set the part number and total parts.  */
 	wim->out_hdr.part_number = part_number;

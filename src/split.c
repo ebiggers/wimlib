@@ -69,7 +69,7 @@ write_split_wim(WIMStruct *orig_wim, const tchar *swm_name,
 	union wimlib_progress_info progress;
 	unsigned part_number;
 	int ret;
-	u8 guid[WIMLIB_GUID_LEN];
+	u8 guid[GUID_SIZE];
 
 	swm_name_len = tstrlen(swm_name);
 	swm_name_buf = alloca((swm_name_len + 20) * sizeof(tchar));
@@ -91,7 +91,7 @@ write_split_wim(WIMStruct *orig_wim, const tchar *swm_name,
 		progress.split.total_bytes += swm_info->parts[part_number - 1].size;
 	progress.split.total_parts = swm_info->num_parts;
 
-	randomize_byte_array(guid, WIMLIB_GUID_LEN);
+	generate_guid(guid);
 
 	for (part_number = 1; part_number <= swm_info->num_parts; part_number++) {
 		int part_write_flags;

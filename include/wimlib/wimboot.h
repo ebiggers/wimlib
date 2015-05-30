@@ -10,7 +10,7 @@ struct blob_descriptor;
 
 extern int
 wimboot_alloc_data_source_id(const wchar_t *wim_path,
-			     const u8 guid[WIM_GUID_LEN], int image,
+			     const u8 guid[GUID_SIZE], int image,
 			     const wchar_t *target, u64 *data_source_id_ret,
 			     bool *wof_running_ret);
 

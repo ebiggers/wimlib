@@ -346,7 +346,7 @@ static u8 *
 fill_in_wimoverlay_dat(u8 *buf,
 		       const struct WimOverlay_dat_header *old_hdr,
 		       const wchar_t *wim_path,
-		       const u8 wim_guid[WIM_GUID_LEN],
+		       const u8 wim_guid[GUID_SIZE],
 		       int image,
 		       u64 new_data_source_id,
 		       const PARTITION_INFORMATION_EX *part_info,
@@ -394,8 +394,8 @@ fill_in_wimoverlay_dat(u8 *buf,
 	new_entry_1->entry_2_length = new_entry_2_size;
 	new_entry_1->wim_type = WIM_BOOT_NOT_OS_WIM;
 	new_entry_1->wim_index = image;
-	BUILD_BUG_ON(sizeof(new_entry_1->guid) != WIM_GUID_LEN);
-	memcpy(new_entry_1->guid, wim_guid, WIM_GUID_LEN);
+	BUILD_BUG_ON(sizeof(new_entry_1->guid) != GUID_SIZE);
+	copy_guid(new_entry_1->guid, wim_guid);
 
 	p += sizeof(struct WimOverlay_dat_entry_1);
 
@@ -491,7 +491,7 @@ fill_in_wimoverlay_dat(u8 *buf,
 static int
 prepare_wimoverlay_dat(const struct WimOverlay_dat_header *old_hdr,
 		       const wchar_t *wim_path,
-		       const u8 wim_guid[WIM_GUID_LEN],
+		       const u8 wim_guid[GUID_SIZE],
 		       int image,
 		       void **new_contents_ret,
 		       u32 *new_contents_size_ret,
@@ -790,7 +790,7 @@ out_free_contents:
  */
 static int
 update_wimoverlay_manually(const wchar_t *drive, const wchar_t *wim_path,
-			   const u8 wim_guid[WIM_GUID_LEN],
+			   const u8 wim_guid[GUID_SIZE],
 			   int image, u64 *data_source_id_ret)
 {
 	wchar_t path_main[] = L"A:\\System Volume Information\\WimOverlay.dat";
@@ -926,7 +926,7 @@ try_to_attach_wof(const wchar_t *drive)
  */
 int
 wimboot_alloc_data_source_id(const wchar_t *wim_path,
-			     const u8 wim_guid[WIM_GUID_LEN],
+			     const u8 wim_guid[GUID_SIZE],
 			     int image, const wchar_t *target,
 			     u64 *data_source_id_ret, bool *wof_running_ret)
 {
