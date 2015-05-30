@@ -51,7 +51,7 @@ sprint_hash(const u8 hash[SHA1_HASH_SIZE], tchar strbuf[SHA1_HASH_SIZE * 2 + 1])
 
 #define rol(value, bits) (((value) << (bits)) | ((value) >> (32 - (bits))))
 
-#define blk0(i) (tmp[i] = be32_to_cpu(((const be32 *)block)[i]))
+#define blk0(i) (tmp[i] = be32_to_cpu(load_be32_unaligned(&(block)[(i) * 4])))
 
 #define blk(i) (tmp[i & 15] = rol(tmp[(i + 13) & 15] ^ \
 				  tmp[(i +  8) & 15] ^ \
