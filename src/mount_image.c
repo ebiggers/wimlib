@@ -717,7 +717,7 @@ extract_blob_to_staging_dir(struct wim_inode *inode,
 		filedes_init(&fd, staging_fd);
 		errno = 0;
 		extract_size = min(old_blob->size, size);
-		result = extract_blob_to_fd(old_blob, &fd, extract_size);
+		result = extract_blob_prefix_to_fd(old_blob, extract_size, &fd);
 	} else {
 		extract_size = 0;
 		result = 0;
@@ -1311,9 +1311,9 @@ wimfs_getxattr(const char *path, const char *name, char *value,
 	       size_t size)
 {
 	const struct wimfs_context *ctx = wimfs_get_context();
-	struct wim_inode *inode;
-	struct wim_inode_stream *strm;
-	struct blob_descriptor *blob;
+	const struct wim_inode *inode;
+	const struct wim_inode_stream *strm;
+	const struct blob_descriptor *blob;
 
 	if (!strncmp(name, "wimfs.", 6)) {
 		/* Handle some magical extended attributes.  These really should
@@ -1386,7 +1386,7 @@ wimfs_getxattr(const char *path, const char *name, char *value,
 		if (size < blob->size)
 			return -ERANGE;
 
-		if (read_full_blob_into_buf(blob, value))
+		if (read_blob_into_buf(blob, value))
 			return errno ? -errno : -EIO;
 	}
 	return blob->size;
@@ -1669,7 +1669,7 @@ wimfs_read(const char *path, char *buf, size_t size,
 
 	switch (blob->blob_location) {
 	case BLOB_IN_WIM:
-		if (read_partial_wim_blob_into_buf(blob, size, offset, buf))
+		if (read_partial_wim_blob_into_buf(blob, offset, size, buf))
 			ret = errno ? -errno : -EIO;
 		else
 			ret = size;

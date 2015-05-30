@@ -1,7 +1,6 @@
 #ifndef _WIMLIB_RESOURCE_H
 #define _WIMLIB_RESOURCE_H
 
-#include "wimlib/callback.h"
 #include "wimlib/list.h"
 #include "wimlib/sha1.h"
 #include "wimlib/types.h"
@@ -108,15 +107,6 @@ struct wim_reshdr {
  * identifies the main entry for a solid resource.  */
 #define SOLID_RESOURCE_MAGIC_NUMBER	0x100000000ULL
 
-/* Returns true if the specified WIM resource is compressed (may be either solid
- * or non-solid)  */
-static inline bool
-resource_is_compressed(const struct wim_resource_descriptor *rdesc)
-{
-	return (rdesc->flags & (WIM_RESHDR_FLAG_COMPRESSED |
-				WIM_RESHDR_FLAG_SOLID));
-}
-
 static inline void
 copy_reshdr(struct wim_reshdr *dest, const struct wim_reshdr *src)
 {
@@ -130,14 +120,14 @@ zero_reshdr(struct wim_reshdr *reshdr)
 }
 
 extern void
-wim_res_hdr_to_desc(const struct wim_reshdr *reshdr, WIMStruct *wim,
-		    struct wim_resource_descriptor *rdesc);
+wim_reshdr_to_desc(const struct wim_reshdr *reshdr, WIMStruct *wim,
+		   struct wim_resource_descriptor *rdesc);
 
 extern void
 get_wim_reshdr(const struct wim_reshdr_disk *disk_reshdr,
 	       struct wim_reshdr *reshdr);
 
-void
+extern void
 put_wim_reshdr(const struct wim_reshdr *reshdr,
 	       struct wim_reshdr_disk *disk_reshdr);
 
@@ -178,84 +168,80 @@ get_chunk_entry_size(u64 res_size, bool is_alt)
 
 extern int
 read_partial_wim_blob_into_buf(const struct blob_descriptor *blob,
-			       size_t size, u64 offset, void *buf);
+			       u64 offset, size_t size, void *buf);
 
 extern int
-read_full_blob_into_buf(const struct blob_descriptor *blob, void *buf);
+read_blob_into_buf(const struct blob_descriptor *blob, void *buf);
 
 extern int
-read_full_blob_into_alloc_buf(const struct blob_descriptor *blob, void **buf_ret);
+read_blob_into_alloc_buf(const struct blob_descriptor *blob, void **buf_ret);
 
 extern int
-wim_reshdr_to_data(const struct wim_reshdr *reshdr,
-		   WIMStruct *wim, void **buf_ret);
+wim_reshdr_to_data(const struct wim_reshdr *reshdr, WIMStruct *wim,
+		   void **buf_ret);
 
 extern int
 wim_reshdr_to_hash(const struct wim_reshdr *reshdr, WIMStruct *wim,
 		   u8 hash[SHA1_HASH_SIZE]);
 
 extern int
-skip_wim_resource(struct wim_resource_descriptor *rdesc);
+skip_wim_resource(const struct wim_resource_descriptor *rdesc);
 
-/*
- * Type of callback function for beginning to read a blob.
- *
- * @blob:
- *	Blob that is about to be read.
- *
- * @ctx:
- *	User-provided context.
- *
- * Must return 0 on success, a positive error code on failure, or the special
- * value BEGIN_BLOB_STATUS_SKIP_BLOB to indicate that the blob should not be
- * read, and read_blob_list() should continue on to the next blob (without
- * calling @consume_chunk or @end_blob).
- */
-typedef int (*read_blob_list_begin_blob_t)(struct blob_descriptor *blob, void *ctx);
+/* Callback functions for reading blobs  */
+struct read_blob_callbacks {
 
-#define BEGIN_BLOB_STATUS_SKIP_BLOB	-1
+	/* Called when starting to read a blob.  Must return 0 on success, or a
+	 * positive wimlib error code on failure, or in the case of
+	 * read_blob_list(), the special value BEGIN_BLOB_STATUS_SKIP_BLOB which
+	 * indicates that the data for this blob should not be read.  */
+	int (*begin_blob)(struct blob_descriptor *blob, void *ctx);
+#define BEGIN_BLOB_STATUS_SKIP_BLOB	(-1)
 
-/*
- * Type of callback function for finishing reading a blob.
- *
- * @blob:
- *	Blob that has been fully read, or blob that started being read but could
- *	not be fully read due to a read error.
- *
- * @status:
- *	0 if reading the blob was successful; otherwise a nonzero error code
- *	that specifies the return status.
- *
- * @ctx:
- *	User-provided context.
- */
-typedef int (*read_blob_list_end_blob_t)(struct blob_descriptor *blob,
-					 int status,
-					 void *ctx);
+	/* Called when the next chunk of uncompressed data is available.  'size'
+	 * is guaranteed to be nonzero.  Must return 0 on success, or a positive
+	 * wimlib error code on failure.  */
+	int (*consume_chunk)(const void *chunk, size_t size, void *ctx);
 
+	/* Called when a blob has been successfully read (status=0), or when
+	 * begin_blob() was successfully called but an error occurred before the
+	 * blob was fully read (status != 0; in this case the implementation
+	 * should do cleanup and then pass on the status).  Must return 0 on
+	 * success, or a positive wimlib error code on failure.  */
+	int (*end_blob)(struct blob_descriptor *blob, int status, void *ctx);
 
-/* Callback functions and contexts for read_blob_list().  */
-struct read_blob_list_callbacks {
-
-	/* Called when a blob is about to be read.  */
-	read_blob_list_begin_blob_t begin_blob;
-
-	/* Called when a chunk of data has been read.  */
-	consume_data_callback_t consume_chunk;
-
-	/* Called when a blob has been fully read.  A successful call to
-	 * @begin_blob will always be matched by a call to @end_blob.  */
-	read_blob_list_end_blob_t end_blob;
-
-	/* Parameter passed to @begin_blob.  */
-	void *begin_blob_ctx;
-
-	/* Parameter passed to @consume_chunk.  */
-	void *consume_chunk_ctx;
-
-	/* Parameter passed to @end_blob.  */
-	void *end_blob_ctx;
+	/* Parameter passed to each of the callback functions.  */
+	void *ctx;
 };
+
+/* Call cbs->begin_blob() if present.  */
+static inline int
+call_begin_blob(struct blob_descriptor *blob,
+		const struct read_blob_callbacks *cbs)
+{
+	if (!cbs->begin_blob)
+		return 0;
+	return (*cbs->begin_blob)(blob, cbs->ctx);
+}
+
+/* Call cbs->consume_chunk() if present.  */
+static inline int
+call_consume_chunk(const void *chunk, size_t size,
+		   const struct read_blob_callbacks *cbs)
+{
+	if (!cbs->consume_chunk)
+		return 0;
+	return (*cbs->consume_chunk)(chunk, size, cbs->ctx);
+}
+
+/* Call cbs->end_blob() if present.  */
+static inline int
+call_end_blob(struct blob_descriptor *blob, int status,
+	      const struct read_blob_callbacks *cbs)
+{
+	if (!cbs->end_blob)
+		return status;
+	return (*cbs->end_blob)(blob, status, cbs->ctx);
+}
 
 /* Flags for read_blob_list()  */
 #define VERIFY_BLOB_HASHES		0x1
@@ -264,19 +250,22 @@ struct read_blob_list_callbacks {
 
 extern int
 read_blob_list(struct list_head *blob_list, size_t list_head_offset,
-	       const struct read_blob_list_callbacks *cbs, int flags);
-
-/* Functions to extract blobs.  */
+	       const struct read_blob_callbacks *cbs, int flags);
 
 extern int
-extract_blob(struct blob_descriptor *blob, u64 size,
-	     consume_data_callback_t extract_chunk, void *extract_chunk_arg);
+read_blob_with_cbs(struct blob_descriptor *blob,
+		   const struct read_blob_callbacks *cbs);
 
 extern int
-extract_blob_to_fd(struct blob_descriptor *blob, struct filedes *fd, u64 size);
+read_blob_with_sha1(struct blob_descriptor *blob,
+		    const struct read_blob_callbacks *cbs);
 
 extern int
-extract_full_blob_to_fd(struct blob_descriptor *blob, struct filedes *fd);
+extract_blob_prefix_to_fd(struct blob_descriptor *blob, u64 size,
+			  struct filedes *fd);
+
+extern int
+extract_blob_to_fd(struct blob_descriptor *blob, struct filedes *fd);
 
 /* Miscellaneous blob functions.  */
 

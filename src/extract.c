@@ -191,8 +191,7 @@ read_error:
 }
 
 static int
-read_blobs_from_pipe(struct apply_ctx *ctx,
-		     const struct read_blob_list_callbacks *cbs)
+read_blobs_from_pipe(struct apply_ctx *ctx, const struct read_blob_callbacks *cbs)
 {
 	int ret;
 	u8 hash[SHA1_HASH_SIZE];
@@ -234,24 +233,14 @@ read_blobs_from_pipe(struct apply_ctx *ctx,
 		if (ret)
 			return ret;
 
-		wim_res_hdr_to_desc(&reshdr, ctx->wim, &rdesc);
+		wim_reshdr_to_desc(&reshdr, ctx->wim, &rdesc);
 
 		if (!(rdesc.flags & WIM_RESHDR_FLAG_METADATA)
 		    && (blob = lookup_blob(ctx->wim->blob_table, hash))
 		    && (blob->out_refcnt))
 		{
 			blob_set_is_located_in_nonsolid_wim_resource(blob, &rdesc);
-
-			ret = (*cbs->begin_blob)(blob, cbs->begin_blob_ctx);
-
-			if (!ret) {
-				ret = extract_blob(blob, blob->size,
-						   cbs->consume_chunk,
-						   cbs->consume_chunk_ctx);
-
-				ret = (*cbs->end_blob)(blob, ret,
-						       cbs->end_blob_ctx);
-			}
+			ret = read_blob_with_sha1(blob, cbs);
 			blob_unset_is_located_in_wim_resource(blob);
 			if (ret)
 				return ret;
@@ -315,8 +304,8 @@ begin_extract_blob_wrapper(struct blob_descriptor *blob, void *_ctx)
 
 	if (unlikely(blob->out_refcnt > MAX_OPEN_FILES))
 		return create_temporary_file(&ctx->tmpfile_fd, &ctx->tmpfile_name);
-	else
-		return (*ctx->saved_cbs->begin_blob)(blob, ctx->saved_cbs->begin_blob_ctx);
+
+	return call_begin_blob(blob, ctx->saved_cbs);
 }
 
 static int
@@ -391,10 +380,9 @@ extract_chunk_wrapper(const void *chunk, size_t size, void *_ctx)
 					 ctx->tmpfile_name);
 		}
 		return ret;
-	} else {
-		return (*ctx->saved_cbs->consume_chunk)(chunk, size,
-							ctx->saved_cbs->consume_chunk_ctx);
 	}
+
+	return call_consume_chunk(chunk, size, ctx->saved_cbs);
 }
 
 static int
@@ -402,7 +390,7 @@ extract_from_tmpfile(const tchar *tmpfile_name, struct apply_ctx *ctx)
 {
 	struct blob_descriptor tmpfile_blob;
 	struct blob_descriptor *orig_blob = ctx->cur_blob;
-	const struct read_blob_list_callbacks *cbs = ctx->saved_cbs;
+	const struct read_blob_callbacks *cbs = ctx->saved_cbs;
 	int ret;
 	const u32 orig_refcnt = orig_blob->out_refcnt;
 
@@ -426,7 +414,7 @@ extract_from_tmpfile(const tchar *tmpfile_name, struct apply_ctx *ctx)
 		 * blob descriptor to callbacks provided by the extraction
 		 * backend as opposed to the tmpfile blob descriptor, since they
 		 * shouldn't actually read data from the blob other than through
-		 * the read_blob_prefix() call below.  But for
+		 * the read_blob_with_cbs() call below.  But for
 		 * WIMLIB_EXTRACT_FLAG_WIMBOOT mode on Windows it does matter
 		 * because it needs access to the original WIM resource
 		 * descriptor in order to create the external backing reference.
@@ -435,17 +423,17 @@ extract_from_tmpfile(const tchar *tmpfile_name, struct apply_ctx *ctx)
 		orig_blob->out_refcnt = 1;
 		orig_blob->inline_blob_extraction_targets[0] = targets[i];
 
-		ret = (*cbs->begin_blob)(orig_blob, cbs->begin_blob_ctx);
+		ret = call_begin_blob(orig_blob, cbs);
 		if (ret)
 			break;
 
-		/* Extra SHA-1 isn't necessary here, but it shouldn't hurt as
-		 * this case is very rare anyway.  */
-		ret = extract_blob(&tmpfile_blob, tmpfile_blob.size,
-				   cbs->consume_chunk,
-				   cbs->consume_chunk_ctx);
+		struct read_blob_callbacks wrapper_cbs = {
+			.consume_chunk	= cbs->consume_chunk,
+			.ctx		= cbs->ctx,
+		};
+		ret = read_blob_with_cbs(&tmpfile_blob, &wrapper_cbs);
 
-		ret = (*cbs->end_blob)(orig_blob, ret, cbs->end_blob_ctx);
+		ret = call_end_blob(orig_blob, ret, cbs);
 		if (ret)
 			break;
 	}
@@ -467,10 +455,9 @@ end_extract_blob_wrapper(struct blob_descriptor *blob, int status, void *_ctx)
 		tunlink(ctx->tmpfile_name);
 		FREE(ctx->tmpfile_name);
 		return status;
-	} else {
-		return (*ctx->saved_cbs->end_blob)(blob, status,
-						   ctx->saved_cbs->end_blob_ctx);
 	}
+
+	return call_end_blob(blob, status, ctx->saved_cbs);
 }
 
 /*
@@ -481,8 +468,7 @@ end_extract_blob_wrapper(struct blob_descriptor *blob, int status, void *_ctx)
  *
  * This also handles sending WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS.
  *
- * This also works if the WIM is being read from a pipe, whereas attempting to
- * read blobs directly (e.g. with read_full_blob_into_buf()) will not.
+ * This also works if the WIM is being read from a pipe.
  *
  * This also will split up blobs that will need to be extracted to more than
  * MAX_OPEN_FILES locations, as measured by the 'out_refcnt' of each blob.
@@ -492,16 +478,13 @@ end_extract_blob_wrapper(struct blob_descriptor *blob, int status, void *_ctx)
  * destination file system might not support hard links).
  */
 int
-extract_blob_list(struct apply_ctx *ctx,
-		  const struct read_blob_list_callbacks *cbs)
+extract_blob_list(struct apply_ctx *ctx, const struct read_blob_callbacks *cbs)
 {
-	struct read_blob_list_callbacks wrapper_cbs = {
-		.begin_blob        = begin_extract_blob_wrapper,
-		.begin_blob_ctx    = ctx,
-		.consume_chunk     = extract_chunk_wrapper,
-		.consume_chunk_ctx = ctx,
-		.end_blob          = end_extract_blob_wrapper,
-		.end_blob_ctx      = ctx,
+	struct read_blob_callbacks wrapper_cbs = {
+		.begin_blob	= begin_extract_blob_wrapper,
+		.consume_chunk	= extract_chunk_wrapper,
+		.end_blob	= end_extract_blob_wrapper,
+		.ctx		= ctx,
 	};
 	ctx->saved_cbs = cbs;
 	if (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_FROM_PIPE) {
@@ -545,7 +528,7 @@ extract_dentry_to_stdout(struct wim_dentry *dentry,
 	}
 
 	filedes_init(&_stdout, STDOUT_FILENO);
-	return extract_full_blob_to_fd(blob, &_stdout);
+	return extract_blob_to_fd(blob, &_stdout);
 }
 
 static int
@@ -1975,7 +1958,7 @@ wimlib_extract_image_from_pipe_with_progress(int pipe_fd,
 		metadata_rdesc = MALLOC(sizeof(struct wim_resource_descriptor));
 		if (!metadata_rdesc)
 			goto out_wimlib_free;
-		wim_res_hdr_to_desc(&reshdr, pwm, metadata_rdesc);
+		wim_reshdr_to_desc(&reshdr, pwm, metadata_rdesc);
 		blob_set_is_located_in_nonsolid_wim_resource(imd->metadata_blob,
 							     metadata_rdesc);
 

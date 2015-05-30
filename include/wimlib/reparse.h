@@ -89,7 +89,7 @@ make_reparse_buffer(const struct reparse_data * restrict rpdata,
 #ifndef __WIN32__
 ssize_t
 wim_inode_readlink(const struct wim_inode * restrict inode, char * restrict buf,
-		   size_t buf_len, struct blob_descriptor *blob);
+		   size_t buf_len, const struct blob_descriptor *blob);
 
 extern int
 wim_inode_set_symlink(struct wim_inode *inode, const char *target,

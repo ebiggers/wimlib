@@ -3,20 +3,19 @@
 
 #ifdef __WIN32__
 
-#include "wimlib/callback.h"
 #include "wimlib/types.h"
 
 struct blob_descriptor;
+struct read_blob_callbacks;
 
 extern int
 read_winnt_stream_prefix(const struct blob_descriptor *blob, u64 size,
-			 consume_data_callback_t cb, void *cb_ctx);
+			 const struct read_blob_callbacks *cbs);
 
 extern int
 read_win32_encrypted_file_prefix(const struct blob_descriptor *blob,
 				 u64 size,
-				 consume_data_callback_t cb,
-				 void *cb_ctx);
+				 const struct read_blob_callbacks *cbs);
 
 extern int
 win32_global_init(int init_flags);

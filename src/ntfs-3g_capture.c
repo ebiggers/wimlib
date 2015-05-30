@@ -106,7 +106,7 @@ open_ntfs_attr(ntfs_inode *ni, const struct ntfs_location *loc)
 
 int
 read_ntfs_attribute_prefix(const struct blob_descriptor *blob, u64 size,
-			   consume_data_callback_t cb, void *cb_ctx)
+			   const struct read_blob_callbacks *cbs)
 {
 	const struct ntfs_location *loc = blob->ntfs_loc;
 	ntfs_volume *vol = loc->volume->vol;
@@ -143,7 +143,7 @@ read_ntfs_attribute_prefix(const struct blob_descriptor *blob, u64 size,
 		}
 		pos += to_read;
 		bytes_remaining -= to_read;
-		ret = cb(buf, to_read, cb_ctx);
+		ret = call_consume_chunk(buf, to_read, cbs);
 		if (ret)
 			goto out_close_ntfs_attr;
 	}

@@ -611,7 +611,7 @@ do_load_solid_info(WIMStruct *wim, struct wim_resource_descriptor **rdescs,
 
 		rdesc = rdescs[i];
 
-		wim_res_hdr_to_desc(&reshdr, wim, rdesc);
+		wim_reshdr_to_desc(&reshdr, wim, rdesc);
 
 		/* For solid resources, the uncompressed size, compression type,
 		 * and chunk size are stored in the resource itself, not in the
@@ -969,7 +969,7 @@ read_blob_table(WIMStruct *wim)
 			if (!rdesc)
 				goto oom;
 
-			wim_res_hdr_to_desc(&reshdr, wim, rdesc);
+			wim_reshdr_to_desc(&reshdr, wim, rdesc);
 
 			blob_set_is_located_in_nonsolid_wim_resource(cur_blob, rdesc);
 		}

@@ -106,7 +106,7 @@ retry:
  * described by @blob.  */
 int
 read_winnt_stream_prefix(const struct blob_descriptor *blob, u64 size,
-			 consume_data_callback_t cb, void *cb_ctx)
+			 const struct read_blob_callbacks *cbs)
 {
 	const wchar_t *path;
 	HANDLE h;
@@ -147,7 +147,7 @@ read_winnt_stream_prefix(const struct blob_descriptor *blob, u64 size,
 		bytes_read = iosb.Information;
 
 		bytes_remaining -= bytes_read;
-		ret = (*cb)(buf, bytes_read, cb_ctx);
+		ret = call_consume_chunk(buf, bytes_read, cbs);
 		if (ret)
 			break;
 	}
@@ -156,8 +156,7 @@ read_winnt_stream_prefix(const struct blob_descriptor *blob, u64 size,
 }
 
 struct win32_encrypted_read_ctx {
-	consume_data_callback_t read_prefix_cb;
-	void *read_prefix_ctx;
+	const struct read_blob_callbacks *cbs;
 	int wimlib_err_code;
 	u64 bytes_remaining;
 };
@@ -172,7 +171,7 @@ win32_encrypted_export_cb(unsigned char *data, void *_ctx, unsigned long len)
 	if (bytes_to_consume == 0)
 		return ERROR_SUCCESS;
 
-	ret = (*ctx->read_prefix_cb)(data, bytes_to_consume, ctx->read_prefix_ctx);
+	ret = call_consume_chunk(data, bytes_to_consume, ctx->cbs);
 	if (ret) {
 		ctx->wimlib_err_code = ret;
 		/* It doesn't matter what error code is returned here, as long
@@ -186,7 +185,7 @@ win32_encrypted_export_cb(unsigned char *data, void *_ctx, unsigned long len)
 int
 read_win32_encrypted_file_prefix(const struct blob_descriptor *blob,
 				 u64 size,
-				 consume_data_callback_t cb, void *cb_ctx)
+				 const struct read_blob_callbacks *cbs)
 {
 	struct win32_encrypted_read_ctx export_ctx;
 	DWORD err;
@@ -197,8 +196,7 @@ read_win32_encrypted_file_prefix(const struct blob_descriptor *blob,
 	if (blob->file_inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
 		flags |= CREATE_FOR_DIR;
 
-	export_ctx.read_prefix_cb = cb;
-	export_ctx.read_prefix_ctx = cb_ctx;
+	export_ctx.cbs = cbs;
 	export_ctx.wimlib_err_code = 0;
 	export_ctx.bytes_remaining = size;
 

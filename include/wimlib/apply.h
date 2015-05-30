@@ -32,7 +32,7 @@ struct wim_features {
 };
 
 struct blob_descriptor;
-struct read_blob_list_callbacks;
+struct read_blob_callbacks;
 struct apply_operations;
 struct wim_dentry;
 
@@ -69,7 +69,7 @@ struct apply_ctx {
 	unsigned long invalid_sequence;
 	unsigned long num_blobs_remaining;
 	struct list_head blob_list;
-	const struct read_blob_list_callbacks *saved_cbs;
+	const struct read_blob_callbacks *saved_cbs;
 	struct blob_descriptor *cur_blob;
 	u64 cur_blob_offset;
 	struct filedes tmpfile_fd;
@@ -140,8 +140,7 @@ report_apply_error(struct apply_ctx *ctx, int error_code, const tchar *path)
 			 struct wim_dentry, d_extraction_alias_node)
 
 extern int
-extract_blob_list(struct apply_ctx *ctx,
-		    const struct read_blob_list_callbacks *cbs);
+extract_blob_list(struct apply_ctx *ctx, const struct read_blob_callbacks *cbs);
 
 /*
  * Represents an extraction backend.

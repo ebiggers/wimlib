@@ -947,13 +947,11 @@ ntfs_3g_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 		goto out_unmount;
 
 	/* Extract blobs.  */
-	struct read_blob_list_callbacks cbs = {
-		.begin_blob        = ntfs_3g_begin_extract_blob,
-		.begin_blob_ctx    = ctx,
-		.consume_chunk     = ntfs_3g_extract_chunk,
-		.consume_chunk_ctx = ctx,
-		.end_blob          = ntfs_3g_end_extract_blob,
-		.end_blob_ctx      = ctx,
+	struct read_blob_callbacks cbs = {
+		.begin_blob	= ntfs_3g_begin_extract_blob,
+		.consume_chunk	= ntfs_3g_extract_chunk,
+		.end_blob	= ntfs_3g_end_extract_blob,
+		.ctx		= ctx,
 	};
 	ret = extract_blob_list(&ctx->common, &cbs);
 

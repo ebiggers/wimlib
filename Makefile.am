@@ -98,7 +98,6 @@ libwim_la_SOURCES =		\
 	include/wimlib/bitops.h		\
 	include/wimlib/blob_table.h	\
 	include/wimlib/bt_matchfinder.h	\
-	include/wimlib/callback.h	\
 	include/wimlib/capture.h	\
 	include/wimlib/case.h		\
 	include/wimlib/compiler.h	\

@@ -3,18 +3,18 @@
 
 #ifdef WITH_NTFS_3G
 
-#include "wimlib/callback.h"
 #include "wimlib/types.h"
 
 struct blob_descriptor;
 struct ntfs_location;
+struct read_blob_callbacks;
 
 extern void
 libntfs3g_global_init(void);
 
 extern int
 read_ntfs_attribute_prefix(const struct blob_descriptor *blob, u64 size,
-			   consume_data_callback_t cb, void *cb_ctx);
+			   const struct read_blob_callbacks *cbs);
 
 extern struct ntfs_location *
 clone_ntfs_location(const struct ntfs_location *loc);

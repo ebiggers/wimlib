@@ -149,6 +149,9 @@ make_reparse_buffer(const struct reparse_data * restrict rpdata,
 	return 0;
 }
 
+/* UNIX version of getting and setting the data in reparse points */
+#ifndef __WIN32__
+
 /*
  * Read the reparse data from a WIM inode that is a reparse point.
  *
@@ -165,9 +168,9 @@ static int
 wim_inode_get_reparse_data(const struct wim_inode * restrict inode,
 			   u8 * restrict rpbuf,
 			   u16 * restrict rpbuflen_ret,
-			   struct blob_descriptor *blob_override)
+			   const struct blob_descriptor *blob_override)
 {
-	struct blob_descriptor *blob;
+	const struct blob_descriptor *blob;
 	int ret;
 	struct reparse_buffer_disk *rpbuf_disk;
 	u16 rpdatalen;
@@ -197,7 +200,7 @@ wim_inode_get_reparse_data(const struct wim_inode * restrict inode,
 	rpdatalen = blob->size;
 
 	/* Read the reparse data from blob  */
-	ret = read_full_blob_into_buf(blob, rpbuf + REPARSE_DATA_OFFSET);
+	ret = read_blob_into_buf(blob, rpbuf + REPARSE_DATA_OFFSET);
 	if (ret)
 		return ret;
 
@@ -217,9 +220,6 @@ wim_inode_get_reparse_data(const struct wim_inode * restrict inode,
 	*rpbuflen_ret = rpdatalen + REPARSE_DATA_OFFSET;
 	return 0;
 }
-
-/* UNIX version of getting and setting the data in reparse points */
-#ifndef __WIN32__
 
 static const utf16lechar volume_junction_prefix[11] = {
 	cpu_to_le16('\\'),
@@ -338,7 +338,7 @@ parse_substitute_name(const utf16lechar *substitute_name,
 ssize_t
 wim_inode_readlink(const struct wim_inode * restrict inode,
 		   char * restrict buf, size_t bufsize,
-		   struct blob_descriptor *blob_override)
+		   const struct blob_descriptor *blob_override)
 {
 	int ret;
 	struct reparse_buffer_disk rpbuf_disk _aligned_attribute(8);

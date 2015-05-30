@@ -81,7 +81,7 @@ read_metadata_resource(struct wim_image_metadata *imd)
 	DEBUG("Reading metadata resource (size=%"PRIu64").", metadata_blob->size);
 
 	/* Read the metadata resource into memory.  (It may be compressed.)  */
-	ret = read_full_blob_into_alloc_buf(metadata_blob, &buf);
+	ret = read_blob_into_alloc_buf(metadata_blob, &buf);
 	if (ret)
 		return ret;
 

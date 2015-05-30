@@ -289,7 +289,7 @@ load_prepopulate_pats(struct win32_apply_ctx *ctx)
 {
 	const wchar_t *path = L"\\Windows\\System32\\WimBootCompress.ini";
 	struct wim_dentry *dentry;
-	struct blob_descriptor *blob;
+	const struct blob_descriptor *blob;
 	int ret;
 	void *buf;
 	struct string_set *s;
@@ -313,7 +313,7 @@ load_prepopulate_pats(struct win32_apply_ctx *ctx)
 		return WIMLIB_ERR_PATH_DOES_NOT_EXIST;
 	}
 
-	ret = read_full_blob_into_alloc_buf(blob, &buf);
+	ret = read_blob_into_alloc_buf(blob, &buf);
 	if (ret)
 		return ret;
 
@@ -2686,13 +2686,11 @@ win32_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	if (ret)
 		goto out;
 
-	struct read_blob_list_callbacks cbs = {
-		.begin_blob        = begin_extract_blob,
-		.begin_blob_ctx    = ctx,
-		.consume_chunk     = extract_chunk,
-		.consume_chunk_ctx = ctx,
-		.end_blob          = end_extract_blob,
-		.end_blob_ctx      = ctx,
+	struct read_blob_callbacks cbs = {
+		.begin_blob	= begin_extract_blob,
+		.consume_chunk	= extract_chunk,
+		.end_blob	= end_extract_blob,
+		.ctx		= ctx,
 	};
 	ret = extract_blob_list(&ctx->common, &cbs);
 	if (ret)

@@ -795,7 +795,7 @@ write_blob_uncompressed(struct blob_descriptor *blob, struct filedes *out_fd)
 	if (filedes_seek(out_fd, begin_offset) == -1)
 		return 0;
 
-	ret = extract_full_blob_to_fd(blob, out_fd);
+	ret = extract_blob_to_fd(blob, out_fd);
 	if (ret) {
 		/* Error reading the uncompressed data.  */
 		if (out_fd->offset == begin_offset &&
@@ -1615,13 +1615,11 @@ write_blob_list(struct list_head *blob_list,
 	/* Read the list of blobs needing to be compressed, using the specified
 	 * callbacks to execute processing of the data.  */
 
-	struct read_blob_list_callbacks cbs = {
-		.begin_blob		= write_blob_begin_read,
-		.begin_blob_ctx		= &ctx,
-		.consume_chunk		= write_blob_process_chunk,
-		.consume_chunk_ctx	= &ctx,
-		.end_blob		= write_blob_end_read,
-		.end_blob_ctx		= &ctx,
+	struct read_blob_callbacks cbs = {
+		.begin_blob	= write_blob_begin_read,
+		.consume_chunk	= write_blob_process_chunk,
+		.end_blob	= write_blob_end_read,
+		.ctx		= &ctx,
 	};
 
 	ret = read_blob_list(blob_list,

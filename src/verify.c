@@ -116,9 +116,9 @@ wimlib_verify_wim(WIMStruct *wim, int verify_flags)
 	union wimlib_progress_info progress;
 	struct verify_blob_list_ctx ctx;
 	struct blob_descriptor *blob;
-	struct read_blob_list_callbacks cbs = {
-		.end_blob = end_verify_blob,
-		.end_blob_ctx = &ctx,
+	struct read_blob_callbacks cbs = {
+		.end_blob	= end_verify_blob,
+		.ctx		= &ctx,
 	};
 
 	/* Check parameters  */
