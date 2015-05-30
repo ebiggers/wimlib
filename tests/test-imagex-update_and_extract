@@ -24,7 +24,7 @@ fail() {
 	msg "TEST FAILED (See above)"
 }
 
-trap fail exit
+trap fail EXIT
 
 prepare_empty_wim() {
 	rm -rf in.dir
@@ -285,7 +285,7 @@ WIMLIB_IMAGEX_IGNORE_CASE=1 wimextract test.wim 1 @pathlist --dest-dir=out.dir -
 echo "**********************************************************"
 echo "          wimupdate/extract tests passed              "
 echo "**********************************************************"
-trap exit
+trap EXIT
 
 cd ..
 default_cleanup

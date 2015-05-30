@@ -528,7 +528,7 @@ if [ -n "$start_script" -o -n "$overlay" -o -n "$remove_setup" ]; then
 	modify_wim=yes
 fi
 check_needed_programs
-trap cleanup exit
+trap cleanup EXIT
 
 if [ $make != wim ]; then
 	mkdir -p "$tmp_dir"/{boot,sources}
