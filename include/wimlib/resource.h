@@ -134,10 +134,6 @@ wim_res_hdr_to_desc(const struct wim_reshdr *reshdr, WIMStruct *wim,
 		    struct wim_resource_descriptor *rdesc);
 
 extern void
-wim_res_desc_to_hdr(const struct wim_resource_descriptor *rdesc,
-		    struct wim_reshdr *reshdr);
-
-extern void
 get_wim_reshdr(const struct wim_reshdr_disk *disk_reshdr,
 	       struct wim_reshdr *reshdr);
 
@@ -301,7 +297,7 @@ write_metadata_resource(WIMStruct *wim, int image, int write_resource_flags);
  * checking.  */
 #define PWM_BLOB_MAGIC 0x2b9b9ba2443db9d8ULL
 
-/* Header that precedes each resource in a pipable WIM.  */
+/* Header that precedes each blob in a pipable WIM.  */
 struct pwm_blob_hdr {
 	le64 magic;			/* +0   */
 	le64 uncompressed_size;		/* +8   */

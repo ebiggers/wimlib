@@ -134,61 +134,59 @@ end_file_metadata_phase(struct apply_ctx *ctx)
 	return end_file_phase(ctx, WIMLIB_PROGRESS_MSG_EXTRACT_METADATA);
 }
 
-#define PWM_ALLOW_WIM_HDR 0x00001
+#define PWM_FOUND_WIM_HDR (-1)
 
-/* Read the header for a blob in a pipable WIM.  */
+/* Read the header for a blob in a pipable WIM.  If @pwm_hdr_ret is not NULL,
+ * also look for a pipable WIM header and return PWM_FOUND_WIM_HDR if found.  */
 static int
-read_pwm_blob_header(WIMStruct *pwm, struct blob_descriptor *blob,
-		     struct wim_resource_descriptor *rdesc,
-		     int flags, struct wim_header_disk *hdr_ret)
+read_pwm_blob_header(WIMStruct *pwm, u8 hash_ret[SHA1_HASH_SIZE],
+		     struct wim_reshdr *reshdr_ret,
+		     struct wim_header_disk *pwm_hdr_ret)
 {
-	union {
-		struct pwm_blob_hdr blob_hdr;
-		struct wim_header_disk pwm_hdr;
-	} buf;
-	struct wim_reshdr reshdr;
 	int ret;
+	struct pwm_blob_hdr blob_hdr;
+	u64 magic;
 
-	ret = full_read(&pwm->in_fd, &buf.blob_hdr, sizeof(buf.blob_hdr));
-	if (ret)
+	ret = full_read(&pwm->in_fd, &blob_hdr, sizeof(blob_hdr));
+	if (unlikely(ret))
 		goto read_error;
 
-	if ((flags & PWM_ALLOW_WIM_HDR) &&
-	    le64_to_cpu(buf.blob_hdr.magic) == PWM_MAGIC)
-	{
-		BUILD_BUG_ON(sizeof(buf.pwm_hdr) < sizeof(buf.blob_hdr));
-		ret = full_read(&pwm->in_fd, &buf.blob_hdr + 1,
-				sizeof(buf.pwm_hdr) - sizeof(buf.blob_hdr));
+	magic = le64_to_cpu(blob_hdr.magic);
 
-		if (ret)
+	if (magic == PWM_MAGIC && pwm_hdr_ret != NULL) {
+		memcpy(pwm_hdr_ret, &blob_hdr, sizeof(blob_hdr));
+		ret = full_read(&pwm->in_fd,
+				(u8 *)pwm_hdr_ret + sizeof(blob_hdr),
+				sizeof(*pwm_hdr_ret) - sizeof(blob_hdr));
+		if (unlikely(ret))
 			goto read_error;
-		blob->blob_location = BLOB_NONEXISTENT;
-		memcpy(hdr_ret, &buf.pwm_hdr, sizeof(buf.pwm_hdr));
-		return 0;
+		return PWM_FOUND_WIM_HDR;
 	}
 
-	if (le64_to_cpu(buf.blob_hdr.magic) != PWM_BLOB_MAGIC) {
-		ERROR("Data read on pipe is invalid (expected blob header).");
+	if (unlikely(magic != PWM_BLOB_MAGIC)) {
+		ERROR("Data read on pipe is invalid (expected blob header)");
 		return WIMLIB_ERR_INVALID_PIPABLE_WIM;
 	}
 
-	copy_hash(blob->hash, buf.blob_hdr.hash);
+	copy_hash(hash_ret, blob_hdr.hash);
 
-	reshdr.size_in_wim = 0;
-	reshdr.flags = le32_to_cpu(buf.blob_hdr.flags);
-	reshdr.offset_in_wim = pwm->in_fd.offset;
-	reshdr.uncompressed_size = le64_to_cpu(buf.blob_hdr.uncompressed_size);
-	wim_res_hdr_to_desc(&reshdr, pwm, rdesc);
-	blob_set_is_located_in_nonsolid_wim_resource(blob, rdesc);
-	blob->is_metadata = (rdesc->flags & WIM_RESHDR_FLAG_METADATA) != 0;
+	reshdr_ret->size_in_wim = 0; /* Not available  */
+	reshdr_ret->flags = le32_to_cpu(blob_hdr.flags);
+	reshdr_ret->offset_in_wim = pwm->in_fd.offset;
+	reshdr_ret->uncompressed_size = le64_to_cpu(blob_hdr.uncompressed_size);
 
-	if (unlikely(blob->size == 0))
+	if (unlikely(reshdr_ret->uncompressed_size == 0)) {
+		ERROR("Data read on pipe is invalid (resource is of 0 size)");
 		return WIMLIB_ERR_INVALID_PIPABLE_WIM;
+	}
 
 	return 0;
 
 read_error:
-	ERROR_WITH_ERRNO("Error reading pipable WIM from pipe");
+	if (ret == WIMLIB_ERR_UNEXPECTED_END_OF_FILE)
+		ERROR("The pipe ended before all needed data was sent!");
+	else
+		ERROR_WITH_ERRNO("Error reading pipable WIM from pipe");
 	return ret;
 }
 
@@ -196,94 +194,76 @@ static int
 read_blobs_from_pipe(struct apply_ctx *ctx,
 		     const struct read_blob_list_callbacks *cbs)
 {
-	struct blob_descriptor *found_blob = NULL;
-	struct wim_resource_descriptor *rdesc = NULL;
-	struct blob_table *blob_table;
 	int ret;
+	u8 hash[SHA1_HASH_SIZE];
+	struct wim_reshdr reshdr;
+	struct wim_header_disk pwm_hdr;
+	struct wim_resource_descriptor rdesc;
+	struct blob_descriptor *blob;
 
-	ret = WIMLIB_ERR_NOMEM;
-	found_blob = new_blob_descriptor();
-	if (!found_blob)
-		goto out;
-
-	rdesc = MALLOC(sizeof(struct wim_resource_descriptor));
-	if (!rdesc)
-		goto out;
-
-	blob_table = ctx->wim->blob_table;
 	memcpy(ctx->progress.extract.guid, ctx->wim->hdr.guid, WIM_GUID_LEN);
 	ctx->progress.extract.part_number = ctx->wim->hdr.part_number;
 	ctx->progress.extract.total_parts = ctx->wim->hdr.total_parts;
 	ret = extract_progress(ctx, WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN);
 	if (ret)
-		goto out;
+		return ret;
 
 	while (ctx->num_blobs_remaining) {
-		struct wim_header_disk pwm_hdr;
-		struct blob_descriptor *needed_blob;
 
-		if (found_blob->blob_location != BLOB_NONEXISTENT)
-			blob_unset_is_located_in_wim_resource(found_blob);
-		ret = read_pwm_blob_header(ctx->wim, found_blob, rdesc,
-					   PWM_ALLOW_WIM_HDR, &pwm_hdr);
-		if (ret)
-			goto out;
+		ret = read_pwm_blob_header(ctx->wim, hash, &reshdr, &pwm_hdr);
 
-		if ((found_blob->blob_location != BLOB_NONEXISTENT)
-		    && !found_blob->is_metadata
-		    && (needed_blob = lookup_blob(blob_table, found_blob->hash))
-		    && (needed_blob->out_refcnt))
-		{
-			blob_unset_is_located_in_wim_resource(found_blob);
-			blob_set_is_located_in_nonsolid_wim_resource(needed_blob, rdesc);
-
-			ret = (*cbs->begin_blob)(needed_blob,
-						 cbs->begin_blob_ctx);
-			if (ret) {
-				blob_unset_is_located_in_wim_resource(needed_blob);
-				goto out;
-			}
-
-			ret = extract_blob(needed_blob, needed_blob->size,
-					   cbs->consume_chunk,
-					   cbs->consume_chunk_ctx);
-
-			ret = (*cbs->end_blob)(needed_blob, ret,
-					       cbs->end_blob_ctx);
-			blob_unset_is_located_in_wim_resource(needed_blob);
-			if (ret)
-				goto out;
-			ctx->num_blobs_remaining--;
-		} else if (found_blob->blob_location != BLOB_NONEXISTENT) {
-			ret = skip_wim_resource(found_blob->rdesc);
-			if (ret)
-				goto out;
-		} else {
+		if (ret == PWM_FOUND_WIM_HDR) {
 			u16 part_number = le16_to_cpu(pwm_hdr.part_number);
 			u16 total_parts = le16_to_cpu(pwm_hdr.total_parts);
 
-			if (part_number != ctx->progress.extract.part_number ||
-			    total_parts != ctx->progress.extract.total_parts ||
-			    memcmp(pwm_hdr.guid, ctx->progress.extract.guid,
-				   WIM_GUID_LEN))
-			{
-				ctx->progress.extract.part_number = part_number;
-				ctx->progress.extract.total_parts = total_parts;
-				memcpy(ctx->progress.extract.guid,
-				       pwm_hdr.guid, WIM_GUID_LEN);
-				ret = extract_progress(ctx,
-						       WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN);
-				if (ret)
-					goto out;
+			if (part_number == ctx->progress.extract.part_number &&
+			    total_parts == ctx->progress.extract.total_parts &&
+			    !memcmp(pwm_hdr.guid, ctx->progress.extract.guid, WIM_GUID_LEN))
+				continue;
+
+			memcpy(ctx->progress.extract.guid, pwm_hdr.guid, WIM_GUID_LEN);
+			ctx->progress.extract.part_number = part_number;
+			ctx->progress.extract.total_parts = total_parts;
+			ret = extract_progress(ctx, WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN);
+			if (ret)
+				return ret;
+
+			continue;
+		}
+
+		if (ret)
+			return ret;
+
+		wim_res_hdr_to_desc(&reshdr, ctx->wim, &rdesc);
+
+		if (!(rdesc.flags & WIM_RESHDR_FLAG_METADATA)
+		    && (blob = lookup_blob(ctx->wim->blob_table, hash))
+		    && (blob->out_refcnt))
+		{
+			blob_set_is_located_in_nonsolid_wim_resource(blob, &rdesc);
+
+			ret = (*cbs->begin_blob)(blob, cbs->begin_blob_ctx);
+
+			if (!ret) {
+				ret = extract_blob(blob, blob->size,
+						   cbs->consume_chunk,
+						   cbs->consume_chunk_ctx);
+
+				ret = (*cbs->end_blob)(blob, ret,
+						       cbs->end_blob_ctx);
 			}
+			blob_unset_is_located_in_wim_resource(blob);
+			if (ret)
+				return ret;
+			ctx->num_blobs_remaining--;
+		} else {
+			ret = skip_wim_resource(&rdesc);
+			if (ret)
+				return ret;
 		}
 	}
-	ret = 0;
-out:
-	if (found_blob && found_blob->blob_location != BLOB_IN_WIM)
-		FREE(rdesc);
-	free_blob_descriptor(found_blob);
-	return ret;
+
+	return 0;
 }
 
 /* Creates a temporary file opened for writing.  The open file descriptor is
@@ -1916,19 +1896,18 @@ wimlib_extract_image_from_pipe_with_progress(int pipe_fd,
 	 * write_pipable_wim() for more details about the format of pipable
 	 * WIMs.)  */
 	{
-		struct blob_descriptor xml_blob;
-		struct wim_resource_descriptor xml_rdesc;
-		ret = read_pwm_blob_header(pwm, &xml_blob, &xml_rdesc, 0, NULL);
+		u8 hash[SHA1_HASH_SIZE];
+
+		ret = read_pwm_blob_header(pwm, hash,
+					   &pwm->hdr.xml_data_reshdr, NULL);
 		if (ret)
 			goto out_wimlib_free;
 
-		if (!xml_blob.is_metadata) {
+		if (!(pwm->hdr.xml_data_reshdr.flags & WIM_RESHDR_FLAG_METADATA)) {
 			ERROR("Expected XML data, but found non-metadata resource.");
 			ret = WIMLIB_ERR_INVALID_PIPABLE_WIM;
 			goto out_wimlib_free;
 		}
-
-		wim_res_desc_to_hdr(&xml_rdesc, &pwm->hdr.xml_data_reshdr);
 
 		ret = read_wim_xml_data(pwm);
 		if (ret)
@@ -1967,36 +1946,38 @@ wimlib_extract_image_from_pipe_with_progress(int pipe_fd,
 
 	/* Load the needed metadata resource.  */
 	for (i = 1; i <= pwm->hdr.image_count; i++) {
-		struct blob_descriptor *metadata_blob;
 		struct wim_image_metadata *imd;
+		struct wim_reshdr reshdr;
 		struct wim_resource_descriptor *metadata_rdesc;
 
-		metadata_blob = new_blob_descriptor();
-		if (metadata_blob == NULL) {
-			ret = WIMLIB_ERR_NOMEM;
-			goto out_wimlib_free;
-		}
-		metadata_rdesc = MALLOC(sizeof(struct wim_resource_descriptor));
-		if (metadata_rdesc == NULL) {
-			ret = WIMLIB_ERR_NOMEM;
-			free_blob_descriptor(metadata_blob);
-			goto out_wimlib_free;
-		}
-
-		ret = read_pwm_blob_header(pwm, metadata_blob, metadata_rdesc, 0, NULL);
 		imd = pwm->image_metadata[i - 1];
-		imd->metadata_blob = metadata_blob;
-		if (ret) {
-			FREE(metadata_rdesc);
-			goto out_wimlib_free;
-		}
 
-		if (!metadata_blob->is_metadata) {
+		ret = WIMLIB_ERR_NOMEM;
+		imd->metadata_blob = new_blob_descriptor();
+		if (!imd->metadata_blob)
+			goto out_wimlib_free;
+
+		imd->metadata_blob->is_metadata = 1;
+
+		ret = read_pwm_blob_header(pwm, imd->metadata_blob->hash,
+					   &reshdr, NULL);
+		if (ret)
+			goto out_wimlib_free;
+
+		if (!(reshdr.flags & WIM_RESHDR_FLAG_METADATA)) {
 			ERROR("Expected metadata resource, but found "
-			      "non-metadata resource.");
+			      "non-metadata resource");
 			ret = WIMLIB_ERR_INVALID_PIPABLE_WIM;
 			goto out_wimlib_free;
 		}
+
+		ret = WIMLIB_ERR_NOMEM;
+		metadata_rdesc = MALLOC(sizeof(struct wim_resource_descriptor));
+		if (!metadata_rdesc)
+			goto out_wimlib_free;
+		wim_res_hdr_to_desc(&reshdr, pwm, metadata_rdesc);
+		blob_set_is_located_in_nonsolid_wim_resource(imd->metadata_blob,
+							     metadata_rdesc);
 
 		if (i == image) {
 			/* Metadata resource is for the image being extracted.
