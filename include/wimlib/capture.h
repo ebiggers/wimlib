@@ -89,9 +89,9 @@ typedef int (*capture_tree_t)(struct wim_dentry **, const tchar *,
 #ifdef WITH_NTFS_3G
 /* ntfs-3g_capture.c */
 extern int
-build_dentry_tree_ntfs(struct wim_dentry **root_p,
-		       const tchar *device,
-		       struct capture_params *params);
+ntfs_3g_build_dentry_tree(struct wim_dentry **root_ret,
+			  const tchar *device,
+			  struct capture_params *params);
 #endif
 
 #ifdef __WIN32__

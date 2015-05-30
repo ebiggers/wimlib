@@ -803,7 +803,7 @@ execute_add_command(struct update_command_journal *j,
 
 #ifdef WITH_NTFS_3G
 	if (add_flags & WIMLIB_ADD_FLAG_NTFS)
-		capture_tree = build_dentry_tree_ntfs;
+		capture_tree = ntfs_3g_build_dentry_tree;
 #endif
 
 	ret = get_capture_config(config_file, &config,
