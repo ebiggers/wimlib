@@ -91,28 +91,14 @@ wimlib_calloc(size_t nmemb, size_t size)
 char *
 wimlib_strdup(const char *str)
 {
-	size_t size;
-	char *p;
-
-	size = strlen(str);
-	p = MALLOC(size + 1);
-	if (p)
-		p = memcpy(p, str, size + 1);
-	return p;
+	return memdup(str, strlen(str) + 1);
 }
 
 #ifdef __WIN32__
 wchar_t *
 wimlib_wcsdup(const wchar_t *str)
 {
-	size_t size;
-	wchar_t *p;
-
-	size = wcslen(str);
-	p = MALLOC((size + 1) * sizeof(wchar_t));
-	if (p)
-		p = wmemcpy(p, str, size + 1);
-	return p;
+	return memdup(str, (wcslen(str) + 1) * sizeof(wchar_t));
 }
 #endif
 
