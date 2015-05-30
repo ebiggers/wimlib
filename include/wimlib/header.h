@@ -57,18 +57,18 @@ struct wim_header_disk {
 
 	/* +0x08: Size of the WIM header, in bytes; WIM_HEADER_DISK_SIZE
 	 * expected (currently the only supported value).  */
-	u32 hdr_size;
+	le32 hdr_size;
 
 	/* +0x0c: Version of the WIM file.  Recognized values are the
 	 * WIM_VERSION_* constants from above.  */
-	u32 wim_version;
+	le32 wim_version;
 
 	/* +0x10: Flags for the WIM file (WIM_HDR_FLAG_*).  */
-	u32 wim_flags;
+	le32 wim_flags;
 
 	/* +0x14: Uncompressed chunk size for non-solid compressed resources in
 	 * the WIM or 0 if the WIM is uncompressed.  */
-	u32 chunk_size;
+	le32 chunk_size;
 
 	/* +0x18: Globally unique identifier for the WIM file.  Basically a
 	 * bunch of random bytes.  */
@@ -76,15 +76,15 @@ struct wim_header_disk {
 
 	/* +0x28: Number of this WIM part in the split WIM file, indexed from 1,
 	 * or 1 if the WIM is not split.  */
-	u16 part_number;
+	le16 part_number;
 
 	/* +0x2a: Total number of parts of the split WIM file, or 1 if the WIM
 	 * is not split.  */
-	u16 total_parts;
+	le16 total_parts;
 
 	/* +0x2c: Number of images in the WIM.  WIMGAPI requires that this be at
 	 * least 1.  wimlib allows 0.  */
-	u32 image_count;
+	le32 image_count;
 
 	/* +0x30: Location and size of the WIM's blob table.  */
 	struct wim_reshdr_disk blob_table_reshdr;
@@ -98,7 +98,7 @@ struct wim_header_disk {
 
 	/* +0x78: 1-based index of the bootable image of the WIM, or 0 if no
 	 * image is bootable.  */
-	u32 boot_idx;
+	le32 boot_idx;
 
 	/* +0x7c: Location and size of the WIM's integrity table, or all zeroes
 	 * if the WIM has no integrity table.
