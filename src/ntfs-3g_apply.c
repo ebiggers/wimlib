@@ -385,7 +385,7 @@ ntfs_3g_set_metadata(ntfs_inode *ni, const struct wim_inode *inode,
 	}
 
 	/* Security descriptor  */
-	if ((inode->i_security_id >= 0)
+	if (inode_has_security_descriptor(inode)
 	    && !(extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS))
 	{
 		const void *desc;

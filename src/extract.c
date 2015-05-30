@@ -1157,7 +1157,7 @@ inode_tally_features(const struct wim_inode *inode,
 		else
 			features->other_reparse_points++;
 	}
-	if (inode->i_security_id != -1)
+	if (inode_has_security_descriptor(inode))
 		features->security_descriptors++;
 	if (inode_has_unix_data(inode))
 		features->unix_data++;

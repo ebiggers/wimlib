@@ -109,7 +109,7 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry, struct wim_dentry *dentry,
 	for (struct wim_dentry *d = dentry; !dentry_is_root(d); d = d->d_parent)
 		wdentry->depth++;
 
-	if (inode->i_security_id >= 0) {
+	if (inode_has_security_descriptor(inode)) {
 		struct wim_security_data *sd;
 
 		sd = wim_get_current_security_data(wim);

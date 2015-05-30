@@ -2451,7 +2451,7 @@ do_apply_metadata_to_file(HANDLE h, const struct wim_inode *inode,
 	NTSTATUS status;
 
 	/* Set security descriptor if present and not in NO_ACLS mode  */
-	if (inode->i_security_id >= 0 &&
+	if (inode_has_security_descriptor(inode) &&
 	    !(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS))
 	{
 		const struct wim_security_data *sd;

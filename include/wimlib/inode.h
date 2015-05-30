@@ -157,10 +157,8 @@ struct wim_inode {
 
 	/* Corresponds to 'security_id' in `struct wim_dentry_on_disk':  The
 	 * index of this inode's security descriptor in the WIM image's table of
-	 * security descriptors, or -1.  Note: when a WIM image is loaded,
-	 * wimlib sets out-of-bounds indices and values less than -1 in this
-	 * field to -1.  So the extraction code need not do an upper bound check
-	 * after checking for -1 (or equivalently < 0).  */
+	 * security descriptors, or -1 if this inode does not have a security
+	 * descriptor.  */
 	s32 i_security_id;
 
 	/* Unknown field that we only read into memory so we can re-write it
@@ -322,6 +320,13 @@ static inline bool
 inode_has_children(const struct wim_inode *inode)
 {
 	return inode->i_children != NULL;
+}
+
+/* Does the inode have a security descriptor?  */
+static inline bool
+inode_has_security_descriptor(const struct wim_inode *inode)
+{
+	return inode->i_security_id >= 0;
 }
 
 extern struct wim_inode_stream *
