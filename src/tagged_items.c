@@ -44,12 +44,7 @@ struct tagged_item_header {
 	le32 tag;
 
 	/* Size of the data of this tagged item, in bytes.  This excludes this
-	 * header and should be a multiple of 8.
-	 *
-	 * (Actually, the MS implementation seems to round this up to an 8 byte
-	 * boundary when calculating the offset to the next tagged item, but
-	 * uses this length unmodified when validating the item.  We might as
-	 * well do the same.)  */
+	 * header and should be a multiple of 8.  */
 	le32 length;
 
 	/* Variable length data  */
@@ -90,14 +85,16 @@ inode_get_tagged_item(const struct wim_inode *inode,
 
 		hdr = (struct tagged_item_header *)p;
 		tag = le32_to_cpu(hdr->tag);
-		len = le32_to_cpu(hdr->length);
+		len = (le32_to_cpu(hdr->length) + 7) & ~7;
 
+		/* Length overflow?  */
+		if (unlikely(len > len_remaining - sizeof(struct tagged_item_header)))
+			return NULL;
+
+		/* Matches the item we wanted?  */
 		if (tag == desired_tag && len >= min_data_len)
 			return hdr->data;
 
-		len = (len + 7) & ~7;
-		if (len_remaining <= sizeof(struct tagged_item_header) + len)
-			return NULL;
 		len_remaining -= sizeof(struct tagged_item_header) + len;
 		p += sizeof(struct tagged_item_header) + len;
 	}
