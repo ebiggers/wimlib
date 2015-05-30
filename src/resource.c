@@ -554,28 +554,6 @@ read_error:
 	goto out_free_memory;
 }
 
-static int
-fill_zeroes(u64 size, consume_data_callback_t cb, void *cb_ctx)
-{
-	if (unlikely(size)) {
-		u8 buf[min(size, BUFFER_SIZE)];
-
-		memset(buf, 0, sizeof(buf));
-
-		do {
-			size_t len;
-			int ret;
-
-			len = min(size, BUFFER_SIZE);
-			ret = cb(buf, len, cb_ctx);
-			if (ret)
-				return ret;
-			size -= len;
-		} while (size);
-	}
-	return 0;
-}
-
 /* Read raw data from a file descriptor at the specified offset, feeding the
  * data it in chunks into the specified callback function.  */
 static int
@@ -668,37 +646,9 @@ read_partial_wim_resource(const struct wim_resource_descriptor *rdesc,
 		return read_compressed_wim_resource(rdesc, &range, 1,
 						    cb, cb_ctx);
 	} else {
-		/* Reading uncompressed resource.  For completeness, handle the
-		 * weird case where size_in_wim < uncompressed_size.  */
-
-		u64 read_size;
-		u64 zeroes_size;
-		int ret;
-
-		if (likely(offset + size <= rdesc->size_in_wim) ||
-		    rdesc->is_pipable)
-		{
-			read_size = size;
-			zeroes_size = 0;
-		} else {
-			if (offset >= rdesc->size_in_wim) {
-				read_size = 0;
-				zeroes_size = size;
-			} else {
-				read_size = rdesc->size_in_wim - offset;
-				zeroes_size = offset + size - rdesc->size_in_wim;
-			}
-		}
-
-		ret = read_raw_file_data(&rdesc->wim->in_fd,
-					 rdesc->offset_in_wim + offset,
-					 read_size,
-					 cb,
-					 cb_ctx);
-		if (ret)
-			return ret;
-
-		return fill_zeroes(zeroes_size, cb, cb_ctx);
+		return read_raw_file_data(&rdesc->wim->in_fd,
+					  rdesc->offset_in_wim + offset,
+					  size, cb, cb_ctx);
 	}
 }
 

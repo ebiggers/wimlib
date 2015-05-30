@@ -953,27 +953,13 @@ read_blob_table(WIMStruct *wim)
 					goto out;
 			}
 
-			/* How to handle an uncompressed resource with its
-			 * uncompressed size different from its compressed size?
-			 *
-			 * Based on a simple test, WIMGAPI seems to handle this
-			 * as follows:
-			 *
-			 * if (size_in_wim > uncompressed_size) {
-			 *	Ignore uncompressed_size; use size_in_wim
-			 *	instead.
-			 * } else {
-			 *	Honor uncompressed_size, but treat the part of
-			 *	the file data above size_in_wim as all zeros.
-			 * }
-			 *
-			 * So we will do the same.  */
-			if (unlikely(!(reshdr.flags &
-				       WIM_RESHDR_FLAG_COMPRESSED) &&
-				     (reshdr.size_in_wim >
-				      reshdr.uncompressed_size)))
+			if (unlikely(!(reshdr.flags & WIM_RESHDR_FLAG_COMPRESSED) &&
+				     (reshdr.size_in_wim != reshdr.uncompressed_size)))
 			{
-				reshdr.uncompressed_size = reshdr.size_in_wim;
+				ERROR("Uncompressed resource has "
+				      "size_in_wim != uncompressed_size");
+				ret = WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY;
+				goto out;
 			}
 
 			/* Set up a resource descriptor for this blob.  */
