@@ -1333,19 +1333,13 @@ finish_remaining_chunks(struct write_blobs_ctx *ctx)
 }
 
 static void
-remove_empty_blobs(struct list_head *blob_list)
+validate_blob_list(struct list_head *blob_list)
 {
-	struct blob_descriptor *blob, *tmp;
+	struct blob_descriptor *blob;
 
-	list_for_each_entry_safe(blob, tmp, blob_list, write_blobs_list) {
+	list_for_each_entry(blob, blob_list, write_blobs_list) {
 		wimlib_assert(blob->will_be_in_output_wim);
-		if (blob->size == 0) {
-			list_del(&blob->write_blobs_list);
-			blob->out_reshdr.offset_in_wim = 0;
-			blob->out_reshdr.size_in_wim = 0;
-			blob->out_reshdr.uncompressed_size = 0;
-			blob->out_reshdr.flags = reshdr_flags_for_blob(blob);
-		}
+		wimlib_assert(blob->size != 0);
 	}
 }
 
@@ -1504,7 +1498,7 @@ write_blob_list(struct list_head *blob_list,
 				(WRITE_RESOURCE_FLAG_SOLID |
 				 WRITE_RESOURCE_FLAG_PIPABLE));
 
-	remove_empty_blobs(blob_list);
+	validate_blob_list(blob_list);
 
 	if (list_empty(blob_list))
 		return 0;
