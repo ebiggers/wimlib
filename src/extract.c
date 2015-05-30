@@ -384,61 +384,31 @@ extract_chunk_wrapper(const void *chunk, size_t size, void *_ctx)
 	return call_consume_chunk(chunk, size, ctx->saved_cbs);
 }
 
+/* Copy the blob's data from the temporary file to each of its targets.
+ *
+ * This is executed only in the very uncommon case that a blob is being
+ * extracted to more than MAX_OPEN_FILES targets!  */
 static int
-extract_from_tmpfile(const tchar *tmpfile_name, struct apply_ctx *ctx)
+extract_from_tmpfile(const tchar *tmpfile_name,
+		     const struct blob_descriptor *orig_blob,
+		     const struct read_blob_callbacks *cbs)
 {
 	struct blob_descriptor tmpfile_blob;
-	struct blob_descriptor *orig_blob = ctx->cur_blob;
-	const struct read_blob_callbacks *cbs = ctx->saved_cbs;
+	const struct blob_extraction_target *targets = blob_extraction_targets(orig_blob);
 	int ret;
-	const u32 orig_refcnt = orig_blob->out_refcnt;
-
-	BUILD_BUG_ON(MAX_OPEN_FILES <
-		     ARRAY_LEN(orig_blob->inline_blob_extraction_targets));
-
-	struct blob_extraction_target *targets = orig_blob->blob_extraction_targets;
-
-	/* Copy the blob's data from the temporary file to each of its targets.
-	 *
-	 * This is executed only in the very uncommon case that a blob is being
-	 * extracted to more than MAX_OPEN_FILES targets!  */
 
 	memcpy(&tmpfile_blob, orig_blob, sizeof(struct blob_descriptor));
 	tmpfile_blob.blob_location = BLOB_IN_FILE_ON_DISK;
-	tmpfile_blob.file_on_disk = ctx->tmpfile_name;
-	ret = 0;
-	for (u32 i = 0; i < orig_refcnt; i++) {
+	tmpfile_blob.file_on_disk = (tchar *)tmpfile_name;
+	tmpfile_blob.out_refcnt = 1;
 
-		/* Note: it usually doesn't matter whether we pass the original
-		 * blob descriptor to callbacks provided by the extraction
-		 * backend as opposed to the tmpfile blob descriptor, since they
-		 * shouldn't actually read data from the blob other than through
-		 * the read_blob_with_cbs() call below.  But for
-		 * WIMLIB_EXTRACT_FLAG_WIMBOOT mode on Windows it does matter
-		 * because it needs access to the original WIM resource
-		 * descriptor in order to create the external backing reference.
-		 */
-
-		orig_blob->out_refcnt = 1;
-		orig_blob->inline_blob_extraction_targets[0] = targets[i];
-
-		ret = call_begin_blob(orig_blob, cbs);
+	for (u32 i = 0; i < orig_blob->out_refcnt; i++) {
+		tmpfile_blob.inline_blob_extraction_targets[0] = targets[i];
+		ret = read_blob_with_cbs(&tmpfile_blob, cbs);
 		if (ret)
-			break;
-
-		struct read_blob_callbacks wrapper_cbs = {
-			.consume_chunk	= cbs->consume_chunk,
-			.ctx		= cbs->ctx,
-		};
-		ret = read_blob_with_cbs(&tmpfile_blob, &wrapper_cbs);
-
-		ret = call_end_blob(orig_blob, ret, cbs);
-		if (ret)
-			break;
+			return ret;
 	}
-	FREE(targets);
-	orig_blob->out_refcnt = 0;
-	return ret;
+	return 0;
 }
 
 static int
@@ -449,7 +419,8 @@ end_extract_blob_wrapper(struct blob_descriptor *blob, int status, void *_ctx)
 	if (unlikely(filedes_valid(&ctx->tmpfile_fd))) {
 		filedes_close(&ctx->tmpfile_fd);
 		if (!status)
-			status = extract_from_tmpfile(ctx->tmpfile_name, ctx);
+			status = extract_from_tmpfile(ctx->tmpfile_name, blob,
+						      ctx->saved_cbs);
 		filedes_invalidate(&ctx->tmpfile_fd);
 		tunlink(ctx->tmpfile_name);
 		FREE(ctx->tmpfile_name);

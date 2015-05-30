@@ -353,7 +353,7 @@ extern int
 cmp_blobs_by_sequential_order(const void *p1, const void *p2);
 
 static inline const struct blob_extraction_target *
-blob_extraction_targets(struct blob_descriptor *blob)
+blob_extraction_targets(const struct blob_descriptor *blob)
 {
 	if (blob->out_refcnt <= ARRAY_LEN(blob->inline_blob_extraction_targets))
 		return blob->inline_blob_extraction_targets;
