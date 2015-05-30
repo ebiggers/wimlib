@@ -58,6 +58,11 @@
 #  define noinline
 #endif
 
+/* Same as 'noinline', but 'noinline_for_stack' documents that 'noinline' is
+ * being used to prevent the annotated function from being inlined into a
+ * recursive function and increasing its stack usage.  */
+#define noinline_for_stack	noinline
+
 #ifndef CPU_IS_BIG_ENDIAN
 #  error "missing required endianness definition"
 #endif

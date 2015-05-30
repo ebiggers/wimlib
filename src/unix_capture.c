@@ -277,7 +277,7 @@ unix_relativize_link_target(char *target, u64 ino, u64 dev)
 	return target;
 }
 
-static int
+static noinline_for_stack int
 unix_scan_symlink(const char *full_path, int dirfd, const char *relpath,
 		  struct wim_inode *inode, struct capture_params *params)
 {

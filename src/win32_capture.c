@@ -233,7 +233,7 @@ read_win32_encrypted_file_prefix(const struct blob_descriptor *blob,
 /*
  * Load the short name of a file into a WIM dentry.
  */
-static NTSTATUS
+static noinline_for_stack NTSTATUS
 winnt_get_short_name(HANDLE h, struct wim_dentry *dentry)
 {
 	/* It's not any harder to just make the NtQueryInformationFile() system
@@ -261,7 +261,7 @@ winnt_get_short_name(HANDLE h, struct wim_dentry *dentry)
  * Load the security descriptor of a file into the corresponding inode and the
  * WIM image's security descriptor set.
  */
-static NTSTATUS
+static noinline_for_stack NTSTATUS
 winnt_get_security_descriptor(HANDLE h, struct wim_inode *inode,
 			      struct wim_sd_set *sd_set,
 			      struct winnt_scan_stats *stats, int add_flags)
@@ -698,53 +698,60 @@ winnt_try_rpfix(struct reparse_buffer_disk *rpbuf, u16 *rpbuflen_p,
 	return RP_FIXED;
 }
 
-/*
- * Loads the reparse point buffer from a reparse point into memory, optionally
- * fixing the targets of absolute symbolic links and junction points to be
- * relative to the root of capture.
- *
- * @h:
- *	Open handle to the reparse point file.
- * @path:
- *	Path to the reparse point file.
- * @params:
- *	Capture parameters.  add_flags, capture_root_ino, capture_root_dev,
- *	progfunc, progctx, and progress are used.
- * @rpbuf:
- *	Buffer of length at least REPARSE_POINT_MAX_SIZE bytes into which the
- *	reparse point buffer will be loaded.
- * @rpbuflen_ret:
- *	On success, the length of the reparse point buffer in bytes is written
- *	to this location.
- *
- * On success, returns 0 or RP_FIXED.
- * On failure, returns a positive error code.
- */
-static int
-winnt_get_reparse_point(HANDLE h, const wchar_t *path,
-			struct capture_params *params,
-			struct reparse_buffer_disk *rpbuf, u16 *rpbuflen_ret)
+/* Load the reparse data of a file into the corresponding WIM inode.  If the
+ * reparse point is a symbolic link or junction with an absolute target and
+ * RPFIX mode is enabled, then also rewrite its target to be relative to the
+ * capture root.  */
+static noinline_for_stack int
+winnt_load_reparse_data(HANDLE h, struct wim_inode *inode,
+			const wchar_t *full_path, struct capture_params *params)
 {
+	struct reparse_buffer_disk rpbuf;
 	DWORD bytes_returned;
+	u16 rpbuflen;
+	int ret;
+
+	if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED) {
+		/* See comment above assign_stream_types_encrypted()  */
+		WARNING("Ignoring reparse data of encrypted file \"%ls\"",
+			printable_path(full_path));
+		return 0;
+	}
 
 	if (!DeviceIoControl(h, FSCTL_GET_REPARSE_POINT,
-			     NULL, 0, rpbuf, REPARSE_POINT_MAX_SIZE,
+			     NULL, 0, &rpbuf, REPARSE_POINT_MAX_SIZE,
 			     &bytes_returned, NULL))
 	{
 		win32_error(GetLastError(), L"\"%ls\": Can't get reparse point",
-			    printable_path(path));
-		return WIMLIB_ERR_READ;
+			    printable_path(full_path));
+		return WIMLIB_ERR_READLINK;
 	}
 
-	if (unlikely(bytes_returned < REPARSE_DATA_OFFSET)) {
-		ERROR("\"%ls\": Reparse point data is invalid",
-		      printable_path(path));
+	rpbuflen = bytes_returned;
+
+	if (unlikely(rpbuflen < REPARSE_DATA_OFFSET)) {
+		ERROR("\"%ls\": reparse point buffer is too short",
+		      printable_path(full_path));
 		return WIMLIB_ERR_INVALID_REPARSE_DATA;
 	}
 
-	*rpbuflen_ret = bytes_returned;
-	if (params->add_flags & WIMLIB_ADD_FLAG_RPFIX)
-		return winnt_try_rpfix(rpbuf, rpbuflen_ret, path, params);
+	if (params->add_flags & WIMLIB_ADD_FLAG_RPFIX) {
+		ret = winnt_try_rpfix(&rpbuf, &rpbuflen, full_path, params);
+		if (ret == RP_FIXED)
+			inode->i_rp_flags &= ~WIM_RP_FLAG_NOT_FIXED;
+		else if (ret)
+			return ret;
+	}
+
+	inode->i_reparse_tag = le32_to_cpu(rpbuf.rptag);
+	if (!inode_add_stream_with_data(inode,
+					STREAM_TYPE_REPARSE_POINT,
+					NO_STREAM_NAME,
+					rpbuf.rpdata,
+					rpbuflen - REPARSE_DATA_OFFSET,
+					params->blob_table))
+		return WIMLIB_ERR_NOMEM;
+
 	return 0;
 }
 
@@ -960,13 +967,13 @@ err_nomem:
  *   and later, whereas the stream support in NtQueryInformationFile() was
  *   already present in Windows XP.
  */
-static int
+static noinline_for_stack int
 winnt_scan_data_streams(HANDLE h, const wchar_t *path, size_t path_nchars,
 			struct wim_inode *inode, struct list_head *unhashed_blobs,
 			u64 file_size, u32 vol_flags)
 {
 	int ret;
-	u8 _buf[1024] _aligned_attribute(8);
+	u8 _buf[4096] _aligned_attribute(8);
 	u8 *buf;
 	size_t bufsize;
 	IO_STATUS_BLOCK iosb;
@@ -1068,7 +1075,7 @@ out_free_buf:
 	return ret;
 }
 
-static u64
+static noinline_for_stack u64
 get_sort_key(HANDLE h)
 {
 	STARTING_VCN_INPUT_BUFFER in = { .StartingVcn.QuadPart = 0 };
@@ -1099,6 +1106,88 @@ set_sort_key(struct wim_inode *inode, u64 sort_key)
 	}
 }
 
+static noinline_for_stack u32
+get_volume_information(HANDLE h, const wchar_t *full_path,
+		       struct capture_params *params)
+{
+	FILE_FS_ATTRIBUTE_INFORMATION attr_info;
+	FILE_FS_VOLUME_INFORMATION vol_info;
+	IO_STATUS_BLOCK iosb;
+	NTSTATUS status;
+	u32 vol_flags;
+
+	/* Get volume flags  */
+	status = (*func_NtQueryVolumeInformationFile)(h, &iosb,
+						      &attr_info,
+						      sizeof(attr_info),
+						      FileFsAttributeInformation);
+	if (likely((NT_SUCCESS(status) || status == STATUS_BUFFER_OVERFLOW) &&
+		   (iosb.Information >=
+			offsetof(FILE_FS_ATTRIBUTE_INFORMATION,
+				 FileSystemAttributes) +
+			sizeof(attr_info.FileSystemAttributes))))
+	{
+		vol_flags = attr_info.FileSystemAttributes;
+	} else {
+		winnt_warning(status, L"\"%ls\": Can't get volume attributes",
+			      printable_path(full_path));
+		vol_flags = 0;
+	}
+
+	/* Get volume ID.  */
+	status = (*func_NtQueryVolumeInformationFile)(h, &iosb,
+						      &vol_info,
+						      sizeof(vol_info),
+						      FileFsVolumeInformation);
+	if (likely((NT_SUCCESS(status) || status == STATUS_BUFFER_OVERFLOW) &&
+		   (iosb.Information >=
+			offsetof(FILE_FS_VOLUME_INFORMATION,
+				 VolumeSerialNumber) +
+			sizeof(vol_info.VolumeSerialNumber))))
+	{
+		params->capture_root_dev = vol_info.VolumeSerialNumber;
+	} else {
+		winnt_warning(status, L"\"%ls\": Can't get volume ID",
+			      printable_path(full_path));
+		params->capture_root_dev = 0;
+	}
+	return vol_flags;
+}
+
+struct file_info {
+	u32 attributes;
+	u32 num_links;
+	u64 creation_time;
+	u64 last_write_time;
+	u64 last_access_time;
+	u64 ino;
+	u64 end_of_file;
+};
+
+static noinline_for_stack NTSTATUS
+get_file_info(HANDLE h, struct file_info *info)
+{
+	IO_STATUS_BLOCK iosb;
+	NTSTATUS status;
+	FILE_ALL_INFORMATION all_info;
+
+	status = (*func_NtQueryInformationFile)(h, &iosb, &all_info,
+						sizeof(all_info),
+						FileAllInformation);
+
+	if (unlikely(!NT_SUCCESS(status) && status != STATUS_BUFFER_OVERFLOW))
+		return status;
+
+	info->attributes = all_info.BasicInformation.FileAttributes;
+	info->num_links = all_info.StandardInformation.NumberOfLinks;
+	info->creation_time = all_info.BasicInformation.CreationTime.QuadPart;
+	info->last_write_time = all_info.BasicInformation.LastWriteTime.QuadPart;
+	info->last_access_time = all_info.BasicInformation.LastAccessTime.QuadPart;
+	info->ino = all_info.InternalInformation.IndexNumber.QuadPart;
+	info->end_of_file = all_info.StandardInformation.EndOfFile.QuadPart;
+	return STATUS_SUCCESS;
+}
+
 static int
 winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				  HANDLE cur_dir,
@@ -1115,7 +1204,7 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	HANDLE h = NULL;
 	int ret;
 	NTSTATUS status;
-	FILE_ALL_INFORMATION file_info;
+	struct file_info file_info;
 	ACCESS_MASK requestedPerms;
 	u64 sort_key;
 
@@ -1161,27 +1250,16 @@ retry_open:
 	}
 
 	/* Get information about the file.  */
-	{
-		IO_STATUS_BLOCK iosb;
-
-		status = (*func_NtQueryInformationFile)(h, &iosb,
-							&file_info,
-							sizeof(file_info),
-							FileAllInformation);
-
-		if (unlikely(!NT_SUCCESS(status) &&
-			     status != STATUS_BUFFER_OVERFLOW))
-		{
-			winnt_error(status,
-				    L"\"%ls\": Can't get file information",
-				    printable_path(full_path));
-			ret = WIMLIB_ERR_STAT;
-			goto out;
-		}
+	status = get_file_info(h, &file_info);
+	if (!NT_SUCCESS(status)) {
+		winnt_error(status, L"\"%ls\": Can't get file information",
+			    printable_path(full_path));
+		ret = WIMLIB_ERR_STAT;
+		goto out;
 	}
 
 	if (unlikely(!(requestedPerms & FILE_READ_DATA)) &&
-	    !(file_info.BasicInformation.FileAttributes & FILE_ATTRIBUTE_ENCRYPTED))
+	    !(file_info.attributes & FILE_ATTRIBUTE_ENCRYPTED))
 	{
 		ERROR("\"%ls\": Permission to read data was denied",
 		      printable_path(full_path));
@@ -1190,56 +1268,11 @@ retry_open:
 	}
 
 	if (unlikely(!cur_dir)) {
-
 		/* Root of tree being captured; get volume information.  */
-
-		FILE_FS_ATTRIBUTE_INFORMATION attr_info;
-		FILE_FS_VOLUME_INFORMATION vol_info;
-		IO_STATUS_BLOCK iosb;
-
-		/* Get volume flags  */
-		status = (*func_NtQueryVolumeInformationFile)(h, &iosb,
-							      &attr_info,
-							      sizeof(attr_info),
-							      FileFsAttributeInformation);
-		if (likely((NT_SUCCESS(status) ||
-			    (status == STATUS_BUFFER_OVERFLOW)) &&
-			   (iosb.Information >=
-				offsetof(FILE_FS_ATTRIBUTE_INFORMATION,
-					 FileSystemAttributes) +
-				sizeof(attr_info.FileSystemAttributes))))
-		{
-			vol_flags = attr_info.FileSystemAttributes;
-		} else {
-			winnt_warning(status,
-				      L"\"%ls\": Can't get volume attributes",
-				      printable_path(full_path));
-			vol_flags = 0;
-		}
-
-		/* Set inode number of root directory  */
-		params->capture_root_ino =
-			file_info.InternalInformation.IndexNumber.QuadPart;
-
-		/* Get volume ID.  */
-		status = (*func_NtQueryVolumeInformationFile)(h, &iosb,
-							      &vol_info,
-							      sizeof(vol_info),
-							      FileFsVolumeInformation);
-		if (likely((NT_SUCCESS(status) ||
-			    (status == STATUS_BUFFER_OVERFLOW)) &&
-			   (iosb.Information >=
-				offsetof(FILE_FS_VOLUME_INFORMATION,
-					 VolumeSerialNumber) +
-				sizeof(vol_info.VolumeSerialNumber))))
-		{
-			params->capture_root_dev = vol_info.VolumeSerialNumber;
-		} else {
-			winnt_warning(status, L"\"%ls\": Can't get volume ID",
-				      printable_path(full_path));
-			params->capture_root_dev = 0;
-		}
+		vol_flags = get_volume_information(h, full_path, params);
+		params->capture_root_ino = file_info.ino;
 	}
+
 
 	/* Create a WIM dentry with an associated inode, which may be shared.
 	 *
@@ -1255,11 +1288,10 @@ retry_open:
 	 * files on different volumes.  */
 	ret = inode_table_new_dentry(params->inode_table,
 				     filename,
-				     file_info.InternalInformation.IndexNumber.QuadPart,
+				     file_info.ino,
 				     params->capture_root_dev,
-				     (file_info.StandardInformation.NumberOfLinks <= 1 ||
-				        (file_info.BasicInformation.FileAttributes &
-					 FILE_ATTRIBUTE_DIRECTORY)),
+				     (file_info.num_links <= 1 ||
+				        (file_info.attributes & FILE_ATTRIBUTE_DIRECTORY)),
 				     &root);
 	if (ret)
 		goto out;
@@ -1284,10 +1316,10 @@ retry_open:
 		goto out_progress;
 	}
 
-	inode->i_attributes = file_info.BasicInformation.FileAttributes;
-	inode->i_creation_time = file_info.BasicInformation.CreationTime.QuadPart;
-	inode->i_last_write_time = file_info.BasicInformation.LastWriteTime.QuadPart;
-	inode->i_last_access_time = file_info.BasicInformation.LastAccessTime.QuadPart;
+	inode->i_attributes = file_info.attributes;
+	inode->i_creation_time = file_info.creation_time;
+	inode->i_last_write_time = file_info.last_write_time;
+	inode->i_last_access_time = file_info.last_access_time;
 
 	/* Get the file's security descriptor, unless we are capturing in
 	 * NO_ACLS mode or the volume does not support security descriptors.  */
@@ -1308,32 +1340,9 @@ retry_open:
 
 	/* If this is a reparse point, load the reparse data.  */
 	if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
-		if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED) {
-			/* See comment above assign_stream_types_encrypted()  */
-			WARNING("Ignoring reparse data of encrypted file \"%ls\"",
-				printable_path(full_path));
-		} else {
-			struct reparse_buffer_disk rpbuf;
-			u16 rpbuflen;
-
-			ret = winnt_get_reparse_point(h, full_path, params,
-						      &rpbuf, &rpbuflen);
-			if (ret == RP_FIXED)
-				inode->i_rp_flags &= ~WIM_RP_FLAG_NOT_FIXED;
-			else if (ret)
-				goto out;
-			inode->i_reparse_tag = le32_to_cpu(rpbuf.rptag);
-			if (!inode_add_stream_with_data(inode,
-							STREAM_TYPE_REPARSE_POINT,
-							NO_STREAM_NAME,
-							rpbuf.rpdata,
-							rpbuflen - REPARSE_DATA_OFFSET,
-							params->blob_table))
-			{
-				ret = WIMLIB_ERR_NOMEM;
-				goto out;
-			}
-		}
+		ret = winnt_load_reparse_data(h, inode, full_path, params);
+		if (ret)
+			goto out;
 	}
 
 	sort_key = get_sort_key(h);
@@ -1369,7 +1378,7 @@ retry_open:
 					      full_path_nchars,
 					      inode,
 					      params->unhashed_blobs,
-					      file_info.StandardInformation.EndOfFile.QuadPart,
+					      file_info.end_of_file,
 					      vol_flags);
 		if (ret)
 			goto out;

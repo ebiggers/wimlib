@@ -398,7 +398,7 @@ out_put_actx:
 
 /* Load the security descriptor of an NTFS inode into the corresponding WIM
  * inode and the WIM image's security descriptor set.  */
-static int
+static noinline_for_stack int
 get_security_descriptor(ntfs_inode *ni, struct wim_inode *inode,
 			ntfs_volume *vol, struct wim_sd_set *sd_set)
 {

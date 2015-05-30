@@ -2,6 +2,8 @@ Version 1.8.2-BETA:
 	Fixed a bug: on 32-bit systems, the library would enter an infinite loop
 	if WIM image metadata was malformed in a very specific way.
 
+	Reduced the stack space used by directory tree scans.
+
 	Windows symbolic links and junctions in mounted WIM images are now
 	automatically rewritten to be valid in the mounted location.
 
