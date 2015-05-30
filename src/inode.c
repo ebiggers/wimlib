@@ -498,8 +498,8 @@ blob_not_found_error(const struct wim_inode *inode, const u8 *hash)
 }
 
 /*
- * Return the blob descriptor for the specified stream, or NULL if the blob for
- * the stream is empty or not available.
+ * Return the blob descriptor for the specified stream, or NULL if the stream is
+ * empty or its blob is not available in @table.
  */
 struct blob_descriptor *
 stream_blob(const struct wim_inode_stream *strm, const struct blob_table *table)
@@ -523,9 +523,9 @@ stream_hash(const struct wim_inode_stream *strm)
 
 /*
  * Return the blob descriptor for the unnamed data stream of the inode, or NULL
- * if the inode does not have an unnamed data stream, the blob for the inode's
- * unnamed data stream is empty, or the blob for the inode's unnamed data stream
- * is not available in @blob_table.
+ * if the inode does not have an unnamed data stream, the inode's unnamed data
+ * stream is empty, or the blob for the inode's unnamed data stream is not
+ * available in @blob_table.
  */
 struct blob_descriptor *
 inode_get_blob_for_unnamed_data_stream(const struct wim_inode *inode,

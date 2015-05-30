@@ -856,6 +856,7 @@ read_blob_table(WIMStruct *wim)
 	struct blob_table *table = NULL;
 	struct blob_descriptor *cur_blob = NULL;
 	size_t num_duplicate_blobs = 0;
+	size_t num_empty_blobs = 0;
 	size_t num_wrong_part_blobs = 0;
 	u32 image_index = 0;
 	struct wim_resource_descriptor **cur_solid_rdescs = NULL;
@@ -976,12 +977,18 @@ read_blob_table(WIMStruct *wim)
 		/* cur_blob is now a blob bound to a resource.  */
 
 		/* Ignore entries with all zeroes in the hash field.  */
-		if (is_zero_hash(cur_blob->hash))
+		if (unlikely(is_zero_hash(cur_blob->hash)))
 			goto free_cur_blob_and_continue;
+
+		/* Verify that the blob has nonzero size.  */
+		if (unlikely(cur_blob->size == 0)) {
+			num_empty_blobs++;
+			goto free_cur_blob_and_continue;
+		}
 
 		/* Verify that the part number matches that of the underlying
 		 * WIM file.  */
-		if (part_number != wim->hdr.part_number) {
+		if (unlikely(part_number != wim->hdr.part_number)) {
 			num_wrong_part_blobs++;
 			goto free_cur_blob_and_continue;
 		}
@@ -1083,6 +1090,9 @@ read_blob_table(WIMStruct *wim)
 
 	if (num_duplicate_blobs > 0)
 		WARNING("Ignoring %zu duplicate blobs", num_duplicate_blobs);
+
+	if (num_empty_blobs > 0)
+		WARNING("Ignoring %zu empty blobs", num_empty_blobs);
 
 	if (num_wrong_part_blobs > 0) {
 		WARNING("Ignoring %zu blobs with wrong part number",

@@ -74,7 +74,20 @@ struct blob_descriptor {
 	/* List node for a hash bucket of the blob table  */
 	struct hlist_node hash_list;
 
-	/* Uncompressed size of this blob  */
+	/*
+	 * Uncompressed size of this blob.
+	 *
+	 * In most cases we are now enforcing that this is nonzero; i.e. an
+	 * empty stream will have "no blob" rather than "an empty blob".  The
+	 * exceptions are:
+	 *
+	 *	- blob descriptors with 'blob_location == BLOB_NONEXISTENT',
+	 *	  e.g. placeholder entries for new metadata resources or for
+	 *	  blobs required for pipable WIM extraction.  In these cases the
+	 *	  size is not meaningful information anyway.
+	 *	- blob descriptors with 'blob_location == BLOB_IN_STAGING_FILE'
+	 *	  can vary their size over time, including to 0.
+	 */
 	u64 size;
 
 	union {

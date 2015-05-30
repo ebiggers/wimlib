@@ -852,6 +852,9 @@ winnt_scan_efsrpc_raw_data(struct wim_inode *inode, const wchar_t *nt_path,
 	if (ret)
 		goto err;
 
+	/* Empty EFSRPC data does not make sense  */
+	wimlib_assert(blob->size != 0);
+
 	strm = inode_add_stream(inode, STREAM_TYPE_EFSRPC_RAW_DATA,
 				NO_STREAM_NAME, blob);
 	if (!strm)

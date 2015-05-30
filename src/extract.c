@@ -181,6 +181,10 @@ read_pwm_blob_header(WIMStruct *pwm, struct blob_descriptor *blob,
 	wim_res_hdr_to_desc(&reshdr, pwm, rdesc);
 	blob_set_is_located_in_nonsolid_wim_resource(blob, rdesc);
 	blob->is_metadata = (rdesc->flags & WIM_RESHDR_FLAG_METADATA) != 0;
+
+	if (unlikely(blob->size == 0))
+		return WIMLIB_ERR_INVALID_PIPABLE_WIM;
+
 	return 0;
 
 read_error:
