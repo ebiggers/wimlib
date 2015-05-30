@@ -310,12 +310,9 @@ enlarge_blob_table(struct blob_table *table)
 	table->array = new_array;
 	table->capacity = new_capacity;
 
-	for (i = 0; i < old_capacity; i++) {
-		hlist_for_each_entry_safe(blob, tmp, &old_array[i], hash_list) {
-			hlist_del(&blob->hash_list);
+	for (i = 0; i < old_capacity; i++)
+		hlist_for_each_entry_safe(blob, tmp, &old_array[i], hash_list)
 			blob_table_insert_raw(table, blob);
-		}
-	}
 	FREE(old_array);
 }
 
