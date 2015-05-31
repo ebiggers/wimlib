@@ -99,14 +99,14 @@ inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
 		ret = new_dentry_with_new_inode(name, false, &dentry);
 		if (ret)
 			return ret;
-		hlist_add_head(&dentry->d_inode->i_hlist, &table->extra_inodes);
+		hlist_add_head(&dentry->d_inode->i_hlist_node, &table->extra_inodes);
 	} else {
 		size_t pos;
 
 		/* File that can be hardlinked--- search the table for an
 		 * existing inode matching the inode number and device.  */
 		pos = hash_u64(hash_u64(ino) + hash_u64(devno)) % table->capacity;
-		hlist_for_each_entry(inode, &table->array[pos], i_hlist) {
+		hlist_for_each_entry(inode, &table->array[pos], i_hlist_node) {
 			if (inode->i_ino == ino && inode->i_devno == devno) {
 				/* Found; use the existing inode.  */
 				return new_dentry_with_existing_inode(name, inode,
@@ -121,7 +121,7 @@ inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
 		inode = dentry->d_inode;
 		inode->i_ino = ino;
 		inode->i_devno = devno;
-		hlist_add_head(&inode->i_hlist, &table->array[pos]);
+		hlist_add_head(&inode->i_hlist_node, &table->array[pos]);
 		table->num_entries++;
 	}
 	*dentry_ret = dentry;
@@ -143,23 +143,23 @@ inode_table_prepare_inode_list(struct wim_inode_table *table,
 	u64 cur_ino = 1;
 
 	/* Re-assign inode numbers in the existing list to avoid duplicates. */
-	hlist_for_each_entry(inode, head, i_hlist)
+	hlist_for_each_entry(inode, head, i_hlist_node)
 		inode->i_ino = cur_ino++;
 
 	/* Assign inode numbers to the new inodes and move them to the image's
 	 * inode list. */
 	for (size_t i = 0; i < table->capacity; i++) {
-		hlist_for_each_entry_safe(inode, tmp, &table->array[i], i_hlist) {
+		hlist_for_each_entry_safe(inode, tmp, &table->array[i], i_hlist_node) {
 			inode->i_ino = cur_ino++;
 			inode->i_devno = 0;
-			hlist_add_head(&inode->i_hlist, head);
+			hlist_add_head(&inode->i_hlist_node, head);
 		}
 		INIT_HLIST_HEAD(&table->array[i]);
 	}
-	hlist_for_each_entry_safe(inode, tmp, &table->extra_inodes, i_hlist) {
+	hlist_for_each_entry_safe(inode, tmp, &table->extra_inodes, i_hlist_node) {
 		inode->i_ino = cur_ino++;
 		inode->i_devno = 0;
-		hlist_add_head(&inode->i_hlist, head);
+		hlist_add_head(&inode->i_hlist_node, head);
 	}
 	INIT_HLIST_HEAD(&table->extra_inodes);
 	table->num_entries = 0;

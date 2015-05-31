@@ -511,7 +511,7 @@ create_file(struct fuse_context *fuse_ctx, const char *path,
 		}
 	}
 
-	hlist_add_head(&inode->i_hlist,
+	hlist_add_head(&inode->i_hlist_node,
 		       &wim_get_current_image_metadata(wimfs_ctx->wim)->inode_list);
 
 	dentry_add_child(parent, dentry);

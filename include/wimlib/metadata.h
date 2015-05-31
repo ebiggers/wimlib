@@ -63,11 +63,11 @@ wim_get_current_security_data(WIMStruct *wim)
 
 /* Iterate over each inode in a WIM image  */
 #define image_for_each_inode(inode, imd) \
-	hlist_for_each_entry(inode, &(imd)->inode_list, i_hlist)
+	hlist_for_each_entry(inode, &(imd)->inode_list, i_hlist_node)
 
 /* Iterate over each inode in a WIM image (safe against inode removal)  */
 #define image_for_each_inode_safe(inode, tmp, imd) \
-	hlist_for_each_entry_safe(inode, tmp, &(imd)->inode_list, i_hlist)
+	hlist_for_each_entry_safe(inode, tmp, &(imd)->inode_list, i_hlist_node)
 
 /* Iterate over each blob in a WIM image that has not yet been hashed */
 #define image_for_each_unhashed_blob(blob, imd) \

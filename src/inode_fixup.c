@@ -67,13 +67,13 @@ inode_table_insert(struct wim_dentry *dentry, void *_params)
 	struct wim_inode *inode;
 
 	if (d_inode->i_ino == 0) {
-		hlist_add_head(&d_inode->i_hlist, &table->extra_inodes);
+		hlist_add_head(&d_inode->i_hlist_node, &table->extra_inodes);
 		return 0;
 	}
 
 	/* Try adding this dentry to an existing inode.  */
 	pos = d_inode->i_ino % table->capacity;
-	hlist_for_each_entry(inode, &table->array[pos], i_hlist) {
+	hlist_for_each_entry(inode, &table->array[pos], i_hlist_node) {
 		if (inode->i_ino != d_inode->i_ino) {
 			continue;
 		}
@@ -107,7 +107,7 @@ inode_table_insert(struct wim_dentry *dentry, void *_params)
 	}
 
 	/* Keep this dentry's inode.  */
-	hlist_add_head(&d_inode->i_hlist, &table->array[pos]);
+	hlist_add_head(&d_inode->i_hlist_node, &table->array[pos]);
 	return 0;
 }
 
@@ -139,7 +139,7 @@ reassign_inode_numbers(struct hlist_head *inode_list)
 	struct wim_inode *inode;
 	u64 cur_ino = 1;
 
-	hlist_for_each_entry(inode, inode_list, i_hlist)
+	hlist_for_each_entry(inode, inode_list, i_hlist_node)
 		inode->i_ino = cur_ino++;
 }
 

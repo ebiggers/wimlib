@@ -10,7 +10,7 @@ struct wim_dentry;
  * the case of reading a WIM image), or both an inode number and a device number
  * (in the case of adding files to a WIM image).  Also contains an extra list to
  * hold inodes for which no additional hard link detection is desired.  In both
- * cases the inodes are linked by i_hlist.  */
+ * cases the inodes are linked by i_hlist_node.  */
 struct wim_inode_table {
 	struct hlist_head *array;
 	size_t num_entries;

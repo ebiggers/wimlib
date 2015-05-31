@@ -124,7 +124,7 @@ struct wim_inode {
 	/* Field to place this inode into a list.  While reading a WIM image or
 	 * adding files to a WIM image this is owned by the inode table;
 	 * otherwise this links the inodes for the WIM image.  */
-	struct hlist_node i_hlist;
+	struct hlist_node i_hlist_node;
 
 	/* Number of dentries that are aliases for this inode.  */
 	u32 i_nlink : 30;

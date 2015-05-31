@@ -85,8 +85,8 @@ free_inode(struct wim_inode *inode)
 		FREE(inode->i_streams);
 	if (inode->i_extra)
 		FREE(inode->i_extra);
-	if (!hlist_unhashed(&inode->i_hlist))
-		hlist_del(&inode->i_hlist);
+	if (!hlist_unhashed(&inode->i_hlist_node))
+		hlist_del(&inode->i_hlist_node);
 	FREE(inode);
 }
 
