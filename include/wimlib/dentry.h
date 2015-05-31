@@ -83,7 +83,7 @@ struct wim_dentry {
 	u8 d_tmp_flag : 1;
 
 	/* Used by wimlib_update_image()  */
-	u8 is_orphan : 1;
+	u8 d_is_orphan : 1;
 
 	union {
 		/* 'subdir_offset' is only used while reading and writing this

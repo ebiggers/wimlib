@@ -267,7 +267,7 @@ rollback_link(struct wim_dentry *subject, struct wim_dentry *parent,
 
 	/* @subject is now unlinked.  Add it to orphans. */
 	list_add(&subject->tmp_list, orphans);
-	subject->is_orphan = 1;
+	subject->d_is_orphan = 1;
 }
 
 /* Undo an unlink operation.  */
@@ -280,7 +280,7 @@ rollback_unlink(struct wim_dentry *subject, struct wim_dentry *parent,
 
 	/* @subject is no longer unlinked.  Delete it from orphans. */
 	list_del(&subject->tmp_list);
-	subject->is_orphan = 0;
+	subject->d_is_orphan = 0;
 }
 
 /* Rollback a name change operation.  */
@@ -362,9 +362,9 @@ journaled_link(struct update_command_journal *j,
 
 	do_link(subject, parent, j->root_p);
 
-	if (subject->is_orphan) {
+	if (subject->d_is_orphan) {
 		list_del(&subject->tmp_list);
-		subject->is_orphan = 0;
+		subject->d_is_orphan = 0;
 	}
 	return 0;
 }
@@ -395,7 +395,7 @@ journaled_unlink(struct update_command_journal *j, struct wim_dentry *subject)
 	do_unlink(subject, parent, j->root_p);
 
 	list_add(&subject->tmp_list, &j->orphans);
-	subject->is_orphan = 1;
+	subject->d_is_orphan = 1;
 	return 0;
 }
 
