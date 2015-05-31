@@ -91,7 +91,7 @@ inode_table_insert(struct wim_dentry *dentry, void *_params)
 				WARNING("Unsupported directory hard link "
 					"\"%"TS"\" <=> \"%"TS"\"",
 					dentry_full_path(dentry),
-					inode_first_full_path(inode));
+					inode_any_full_path(inode));
 			} else if (params->num_dir_hard_links ==
 				   MAX_DIR_HARD_LINK_WARNINGS + 1)
 			{

@@ -546,7 +546,7 @@ unix_begin_extract_blob_instance(const struct blob_descriptor *blob,
 		if (blob->size > REPARSE_DATA_MAX_SIZE) {
 			ERROR_WITH_ERRNO("Reparse data of \"%s\" has size "
 					 "%"PRIu64" bytes (exceeds %u bytes)",
-					 inode_first_full_path(inode),
+					 inode_any_full_path(inode),
 					 blob->size, REPARSE_DATA_MAX_SIZE);
 			return WIMLIB_ERR_INVALID_REPARSE_DATA;
 		}

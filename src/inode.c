@@ -267,7 +267,7 @@ inode_add_stream(struct wim_inode *inode, int stream_type,
 {
 	if (inode->i_num_streams >= 0xFFFF) {
 		ERROR("Inode has too many streams! Path=\"%"TS"\"",
-		      inode_first_full_path(inode));
+		      inode_any_full_path(inode));
 		errno = EFBIG;
 		return NULL;
 	}
@@ -492,7 +492,7 @@ blob_not_found_error(const struct wim_inode *inode, const u8 *hash)
 		ERROR("\"%"TS"\": blob not found\n"
 		      "        SHA-1 message digest of missing blob:\n"
 		      "        %"TS"",
-		      inode_first_full_path(inode), hashstr);
+		      inode_any_full_path(inode), hashstr);
 	}
 	return WIMLIB_ERR_RESOURCE_NOT_FOUND;
 }

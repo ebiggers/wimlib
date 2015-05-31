@@ -269,13 +269,13 @@ new_inode(struct wim_dentry *dentry, bool set_timestamps);
 	hlist_for_each_entry((dentry), &(inode)->i_alias_list, d_alias_node)
 
 /* Return an alias of the specified inode.  */
-#define inode_first_dentry(inode) \
+#define inode_any_dentry(inode) \
 	hlist_entry(inode->i_alias_list.first, struct wim_dentry, d_alias_node)
 
 /* Return the full path of an alias of the specified inode, or NULL if a full
  * path could not be determined.  */
-#define inode_first_full_path(inode) \
-	dentry_full_path(inode_first_dentry(inode))
+#define inode_any_full_path(inode) \
+	dentry_full_path(inode_any_dentry(inode))
 
 extern void
 d_associate(struct wim_dentry *dentry, struct wim_inode *inode);

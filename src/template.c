@@ -123,7 +123,7 @@ static int
 reference_template_file(struct wim_inode *inode, WIMStruct *wim,
 			WIMStruct *template_wim)
 {
-	struct wim_dentry *dentry = inode_first_dentry(inode);
+	struct wim_dentry *dentry = inode_any_dentry(inode);
 	struct wim_dentry *template_dentry;
 	int ret;
 
