@@ -36,10 +36,10 @@
 #include "wimlib/error.h"
 #include "wimlib/metadata.h"
 #include "wimlib/paths.h"
+#include "wimlib/pattern.h"
 #include "wimlib/reparse.h"
 #include "wimlib/textfile.h"
 #include "wimlib/xml.h"
-#include "wimlib/wildcard.h"
 #include "wimlib/wimboot.h"
 
 struct win32_apply_ctx {
@@ -341,28 +341,15 @@ load_prepopulate_pats(struct win32_apply_ctx *ctx)
 	return 0;
 }
 
-/* Returns %true if the specified absolute path to a file in the WIM image
- * matches a pattern in [PrepopulateList] of WimBootCompress.ini.  Otherwise
- * returns %false.  */
-static bool
-in_prepopulate_list(const wchar_t *path, size_t path_nchars,
-		    const struct win32_apply_ctx *ctx)
-{
-	const struct string_set *pats = ctx->wimboot.prepopulate_pats;
-
-	if (!pats || !pats->num_strings)
-		return false;
-
-	return match_pattern_list(path, path_nchars, pats);
-}
-
 /* Returns %true if the specified absolute path to a file in the WIM image can
  * be subject to external backing when extracted.  Otherwise returns %false.  */
 static bool
-can_externally_back_path(const wchar_t *path, size_t path_nchars,
-			 const struct win32_apply_ctx *ctx)
+can_externally_back_path(const wchar_t *path, const struct win32_apply_ctx *ctx)
 {
-	if (in_prepopulate_list(path, path_nchars, ctx))
+	/* Does the path match a pattern given in the [PrepopulateList] section
+	 * of WimBootCompress.ini?  */
+	if (ctx->wimboot.prepopulate_pats &&
+	    match_pattern_list(path, ctx->wimboot.prepopulate_pats))
 		return false;
 
 	/* Since we attempt to modify the SYSTEM registry after it's extracted
@@ -374,8 +361,7 @@ can_externally_back_path(const wchar_t *path, size_t path_nchars,
 	 * However, a WIM that wasn't specifically captured in "WIMBoot mode"
 	 * may contain SYSTEM.* files.  So to make things "just work", hard-code
 	 * the pattern.  */
-	if (match_path(path, path_nchars, L"\\Windows\\System32\\config\\SYSTEM*",
-		       OS_PREFERRED_PATH_SEPARATOR, false))
+	if (match_path(path, L"\\Windows\\System32\\config\\SYSTEM*", false))
 		return false;
 
 	return true;
@@ -492,9 +478,7 @@ will_externally_back_inode(struct wim_inode *inode, struct win32_apply_ctx *ctx,
 		if (ret)
 			return ret;
 
-		if (!can_externally_back_path(dentry->d_full_path,
-					      wcslen(dentry->d_full_path), ctx))
-		{
+		if (!can_externally_back_path(dentry->d_full_path, ctx)) {
 			if (excluded_dentry_ret)
 				*excluded_dentry_ret = dentry;
 			return WIM_BACKING_EXCLUDED;

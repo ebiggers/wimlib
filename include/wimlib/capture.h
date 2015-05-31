@@ -76,12 +76,10 @@ extern void
 destroy_capture_config(struct capture_config *config);
 
 extern bool
-match_pattern_list(const tchar *path, size_t path_nchars,
-		   const struct string_set *list);
+match_pattern_list(const tchar *path, const struct string_set *list);
 
 extern int
-try_exclude(const tchar *full_path, size_t full_path_nchars,
-	    const struct capture_params *params);
+try_exclude(const tchar *full_path, const struct capture_params *params);
 
 typedef int (*capture_tree_t)(struct wim_dentry **, const tchar *,
 			      struct capture_params *);

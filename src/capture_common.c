@@ -30,9 +30,9 @@
 #include "wimlib/dentry.h"
 #include "wimlib/error.h"
 #include "wimlib/paths.h"
+#include "wimlib/pattern.h"
 #include "wimlib/progress.h"
 #include "wimlib/textfile.h"
-#include "wimlib/wildcard.h"
 
 /*
  * Tally a file (or directory) that has been scanned for a capture operation,
@@ -240,62 +240,22 @@ destroy_capture_config(struct capture_config *config)
 }
 
 /*
- * Determine whether a path matches any wildcard pattern in a list.
- *
- * Special rules apply about what form @path must be in; see match_path().
+ * Determine whether @path, or any ancestor directory of @path, matches any of
+ * the patterns in @list.  Path separators in @path must be WIM_PATH_SEPARATOR.
  */
 bool
-match_pattern_list(const tchar *path, size_t path_nchars,
-		   const struct string_set *list)
+match_pattern_list(const tchar *path, const struct string_set *list)
 {
 	for (size_t i = 0; i < list->num_strings; i++)
-		if (match_path(path, path_nchars, list->strings[i],
-			       OS_PREFERRED_PATH_SEPARATOR, true))
+		if (match_path(path, list->strings[i], true))
 			return true;
 	return false;
 }
 
 /*
- * Determine whether the filesystem @path should be excluded from capture, based
- * on the current capture configuration file.
- *
- * The @path must be given relative to the root of the capture, but with a
- * leading path separator.  For example, if the file "in/file" is being tested
- * and the library user ran wimlib_add_image(wim, "in", ...), then the directory
- * "in" is the root of the capture and the path should be specified as "/file".
- *
- * Also, all path separators in @path must be OS_PREFERRED_PATH_SEPARATOR, there
- * cannot be trailing slashes, and there cannot be consecutive path separators.
- *
- * As a special case, the empty string will be interpreted as a single path
- * separator (which means the root of capture itself).
- */
-static bool
-should_exclude_path(const tchar *path, size_t path_nchars,
-		    const struct capture_config *config)
-{
-	tchar dummy[2];
-
-	if (!config)
-		return false;
-
-	if (!*path) {
-		dummy[0] = OS_PREFERRED_PATH_SEPARATOR;
-		dummy[1] = T('\0');
-		path = dummy;
-		path_nchars = 1;
-	}
-
-	return match_pattern_list(path, path_nchars, &config->exclusion_pats) &&
-	      !match_pattern_list(path, path_nchars, &config->exclusion_exception_pats);
-
-}
-
-/*
  * Determine if a file should be excluded from capture.
  *
- * This function tests exclusions from both of the two possible sources of
- * exclusions:
+ * This function tests exclusions from both possible sources of exclusions:
  *
  *	(1) The capture configuration file
  *	(2) The user-provided progress function
@@ -304,9 +264,8 @@ should_exclude_path(const tchar *path, size_t path_nchars,
  * appropriate value.  Example for UNIX:  if the capture root directory is
  * "foobar/subdir", then all paths will be provided starting with
  * "foobar/subdir", so params->capture_root_nchars must be set to
- * strlen("foobar/subdir") so that try_exclude() can use the appropriate suffix
- * when it calls should_exclude_path().
- *
+ * strlen("foobar/subdir") so that the appropriate path can be matched against
+ * the patterns in the exclusion list.
  *
  * Returns:
  *	< 0 if excluded
@@ -314,15 +273,16 @@ should_exclude_path(const tchar *path, size_t path_nchars,
  *	> 0 (wimlib error code) if error
  */
 int
-try_exclude(const tchar *full_path, size_t full_path_nchars,
-	    const struct capture_params *params)
+try_exclude(const tchar *full_path, const struct capture_params *params)
 {
 	int ret;
 
-	if (should_exclude_path(full_path + params->capture_root_nchars,
-				full_path_nchars - params->capture_root_nchars,
-				params->config))
-		return -1;
+	if (params->config) {
+		const tchar *path = full_path + params->capture_root_nchars;
+		if (match_pattern_list(path, &params->config->exclusion_pats) &&
+		    !match_pattern_list(path, &params->config->exclusion_exception_pats))
+			return -1;
+	}
 
 	if (unlikely(params->add_flags & WIMLIB_ADD_FLAG_TEST_FILE_EXCLUSION)) {
 		union wimlib_progress_info info;

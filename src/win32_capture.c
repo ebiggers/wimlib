@@ -1208,10 +1208,10 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	ACCESS_MASK requestedPerms;
 	u64 sort_key;
 
-	ret = try_exclude(full_path, full_path_nchars, params);
-	if (ret < 0) /* Excluded? */
+	ret = try_exclude(full_path, params);
+	if (unlikely(ret < 0)) /* Excluded? */
 		goto out_progress;
-	if (ret > 0) /* Error? */
+	if (unlikely(ret > 0)) /* Error? */
 		goto out;
 
 	/* Open the file.  */

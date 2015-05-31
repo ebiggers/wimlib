@@ -54,11 +54,11 @@
 #include "wimlib/metadata.h"
 #include "wimlib/pathlist.h"
 #include "wimlib/paths.h"
+#include "wimlib/pattern.h"
 #include "wimlib/reparse.h"
 #include "wimlib/resource.h"
 #include "wimlib/security.h"
 #include "wimlib/unix_data.h"
-#include "wimlib/wildcard.h"
 #include "wimlib/wim.h"
 #include "wimlib/win32.h" /* for realpath() equivalent */
 #include "wimlib/xml.h"
@@ -1525,22 +1525,6 @@ check_extract_flags(const WIMStruct *wim, int *extract_flags_p)
 	return 0;
 }
 
-static u32
-get_wildcard_flags(int extract_flags)
-{
-	u32 wildcard_flags = 0;
-
-	if (extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_GLOB)
-		wildcard_flags |= WILDCARD_FLAG_ERROR_IF_NO_MATCH;
-	else
-		wildcard_flags |= WILDCARD_FLAG_WARN_IF_NO_MATCH;
-
-	if (default_ignore_case)
-		wildcard_flags |= WILDCARD_FLAG_CASE_INSENSITIVE;
-
-	return wildcard_flags;
-}
-
 struct append_dentry_ctx {
 	struct wim_dentry **dentries;
 	size_t num_dentries;
@@ -1566,6 +1550,31 @@ append_dentry_cb(struct wim_dentry *dentry, void *_ctx)
 		ctx->num_alloc_dentries = new_length;
 	}
 	ctx->dentries[ctx->num_dentries++] = dentry;
+	return 0;
+}
+
+/* Append dentries matched by a path which can contain wildcard characters.  */
+static int
+append_matched_dentries(WIMStruct *wim, const tchar *orig_pattern,
+			int extract_flags, struct append_dentry_ctx *ctx)
+{
+	const size_t count_before = ctx->num_dentries;
+	tchar *pattern;
+	int ret;
+
+	pattern = canonicalize_wim_path(orig_pattern);
+	if (!pattern)
+		return WIMLIB_ERR_NOMEM;
+	ret = expand_path_pattern(wim_get_current_root_dentry(wim), pattern,
+				  append_dentry_cb, ctx);
+	FREE(pattern);
+	if (ret || ctx->num_dentries > count_before)
+		return ret;
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_GLOB) {
+		ERROR("No matches for path pattern \"%"TS"\"", orig_pattern);
+		return WIMLIB_ERR_PATH_DOES_NOT_EXIST;
+	}
+	WARNING("No matches for path pattern \"%"TS"\"", orig_pattern);
 	return 0;
 }
 
@@ -1611,20 +1620,10 @@ do_wimlib_extract_paths(WIMStruct *wim, int image, const tchar *target,
 			.num_alloc_dentries = 0,
 		};
 
-		u32 wildcard_flags = get_wildcard_flags(extract_flags);
-
 		for (size_t i = 0; i < num_paths; i++) {
-			tchar *path = canonicalize_wim_path(paths[i]);
-			if (path == NULL) {
-				ret = WIMLIB_ERR_NOMEM;
-				trees = append_dentry_ctx.dentries;
-				goto out_free_trees;
-			}
-			ret = expand_wildcard(wim, path,
-					      append_dentry_cb,
-					      &append_dentry_ctx,
-					      wildcard_flags);
-			FREE(path);
+			ret = append_matched_dentries(wim, paths[i],
+						      extract_flags,
+						      &append_dentry_ctx);
 			if (ret) {
 				trees = append_dentry_ctx.dentries;
 				goto out_free_trees;

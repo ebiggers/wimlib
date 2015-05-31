@@ -675,10 +675,10 @@ ntfs_3g_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	struct wim_inode *inode = NULL;
 	ntfs_inode *ni = NULL;
 
-	ret = try_exclude(path, path_len, params);
-	if (ret < 0) /* Excluded? */
+	ret = try_exclude(path, params);
+	if (unlikely(ret < 0)) /* Excluded? */
 		goto out_progress;
-	if (ret > 0) /* Error? */
+	if (unlikely(ret > 0)) /* Error? */
 		goto out;
 
 	ni = ntfs_inode_open(volume->vol, mref);

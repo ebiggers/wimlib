@@ -70,6 +70,7 @@ libwim_la_SOURCES =		\
 	src/mount_image.c	\
 	src/pathlist.c		\
 	src/paths.c		\
+	src/pattern.c		\
 	src/progress.c		\
 	src/resource.c		\
 	src/reference.c		\
@@ -85,7 +86,6 @@ libwim_la_SOURCES =		\
 	src/update_image.c	\
 	src/util.c		\
 	src/verify.c		\
-	src/wildcard.c		\
 	src/wim.c		\
 	src/write.c		\
 	src/xml.c		\
@@ -134,6 +134,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/metadata.h	\
 	include/wimlib/pathlist.h	\
 	include/wimlib/paths.h		\
+	include/wimlib/pattern.h	\
 	include/wimlib/progress.h	\
 	include/wimlib/reparse.h	\
 	include/wimlib/resource.h	\
@@ -147,7 +148,6 @@ libwim_la_SOURCES =		\
 	include/wimlib/unaligned.h	\
 	include/wimlib/unix_data.h	\
 	include/wimlib/util.h		\
-	include/wimlib/wildcard.h	\
 	include/wimlib/wim.h		\
 	include/wimlib/write.h		\
 	include/wimlib/xml.h		\

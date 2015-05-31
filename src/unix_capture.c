@@ -348,10 +348,10 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 	struct stat stbuf;
 	int stat_flags;
 
-	ret = try_exclude(full_path, full_path_len, params);
-	if (ret < 0) /* Excluded? */
+	ret = try_exclude(full_path, params);
+	if (unlikely(ret < 0)) /* Excluded? */
 		goto out_progress;
-	if (ret > 0) /* Error? */
+	if (unlikely(ret > 0)) /* Error? */
 		goto out;
 
 	if (params->add_flags & (WIMLIB_ADD_FLAG_DEREFERENCE |
