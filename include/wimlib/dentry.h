@@ -123,12 +123,6 @@ struct wim_dentry {
 };
 
 static inline bool
-dentry_is_first_in_inode(const struct wim_dentry *dentry)
-{
-	return inode_first_dentry(dentry->d_inode) == dentry;
-}
-
-static inline bool
 will_extract_dentry(const struct wim_dentry *dentry)
 {
 	return dentry->d_extraction_list_node.next != NULL;

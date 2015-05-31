@@ -89,8 +89,6 @@ struct image_info {
 	bool wimboot;
 
 	/* Note: must update clone_image_info() if adding new fields here  */
-
-	struct blob_table *blob_table; /* temporary field */
 };
 
 /* A struct wim_info structure corresponds to the entire XML data for a WIM file. */
@@ -1163,28 +1161,20 @@ xml_set_memory_allocator(void *(*malloc_func)(size_t),
 	xmlMemSetup(free_func, malloc_func, realloc_func, STRDUP);
 }
 
-static int
-calculate_dentry_statistics(struct wim_dentry *dentry, void *_info)
+static u64
+inode_sum_stream_sizes(const struct wim_inode *inode,
+		       const struct blob_table *blob_table)
 {
-	struct image_info *info = _info;
-	const struct wim_inode *inode = dentry->d_inode;
-
-	if (inode_is_directory(inode))
-		info->dir_count++;
-	else
-		info->file_count++;
+	u64 total_size = 0;
 
 	for (unsigned i = 0; i < inode->i_num_streams; i++) {
 		const struct blob_descriptor *blob;
 
-		blob = stream_blob(&inode->i_streams[i], info->blob_table);
-		if (!blob)
-			continue;
-		info->total_bytes += blob->size;
-		if (!dentry_is_first_in_inode(dentry))
-			info->hard_link_bytes += blob->size;
+		blob = stream_blob(&inode->i_streams[i], blob_table);
+		if (blob)
+			total_size += blob->size;
 	}
-	return 0;
+	return total_size;
 }
 
 /*
@@ -1197,22 +1187,30 @@ calculate_dentry_statistics(struct wim_dentry *dentry, void *_info)
 void
 xml_update_image_info(WIMStruct *wim, int image)
 {
-	struct image_info *image_info;
+	struct image_info *info;
+	struct wim_image_metadata *imd;
+	struct wim_inode *inode;
+	u64 size;
 
-	DEBUG("Updating the image info for image %d", image);
+	info = &wim->wim_info->images[image - 1];
+	imd = wim->image_metadata[image - 1];
 
-	image_info = &wim->wim_info->images[image - 1];
+	info->file_count = 0;
+	info->dir_count = 0;
+	info->total_bytes = 0;
+	info->hard_link_bytes = 0;
 
-	image_info->file_count      = 0;
-	image_info->dir_count       = 0;
-	image_info->total_bytes     = 0;
-	image_info->hard_link_bytes = 0;
-	image_info->blob_table = wim->blob_table;
+	image_for_each_inode(inode, imd) {
+		if (inode_is_directory(inode))
+			info->dir_count += inode->i_nlink;
+		else
+			info->file_count += inode->i_nlink;
+		size = inode_sum_stream_sizes(inode, wim->blob_table);
+		info->total_bytes += size * inode->i_nlink;
+		info->hard_link_bytes += size * (inode->i_nlink - 1);
+	}
 
-	for_dentry_in_tree(wim->image_metadata[image - 1]->root_dentry,
-			   calculate_dentry_statistics,
-			   image_info);
-	image_info->last_modification_time = now_as_wim_timestamp();
+	info->last_modification_time = now_as_wim_timestamp();
 }
 
 /* Adds an image to the XML information. */
