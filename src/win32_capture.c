@@ -248,11 +248,11 @@ winnt_get_short_name(HANDLE h, struct wim_dentry *dentry)
 						FileAlternateNameInformation);
 	info = (const FILE_NAME_INFORMATION *)buf;
 	if (NT_SUCCESS(status) && info->FileNameLength != 0) {
-		dentry->short_name = utf16le_dupz(info->FileName,
-						  info->FileNameLength);
-		if (!dentry->short_name)
+		dentry->d_short_name = utf16le_dupz(info->FileName,
+						    info->FileNameLength);
+		if (!dentry->d_short_name)
 			return STATUS_NO_MEMORY;
-		dentry->short_name_nbytes = info->FileNameLength;
+		dentry->d_short_name_nbytes = info->FileNameLength;
 	}
 	return status;
 }

@@ -175,14 +175,14 @@ struct wim_dentry_on_disk {
 	 * encoded "long" name, excluding the null terminator.  If zero, then
 	 * this file has no long name.  The root dentry should not have a long
 	 * name, but all other dentries in the image should have long names.  */
-	le16 file_name_nbytes;
+	le16 name_nbytes;
 
 	/* Beginning of optional, variable-length fields  */
 
-	/* If file_name_nbytes != 0, the next field will be the UTF-16LE encoded
-	 * long file name.  This will be null-terminated, so the size of this
-	 * field will really be file_name_nbytes + 2.  */
-	/*utf16lechar file_name[];*/
+	/* If name_nbytes != 0, the next field will be the UTF-16LE encoded long
+	 * name.  This will be null-terminated, so the size of this field will
+	 * really be name_nbytes + 2.  */
+	/*utf16lechar name[];*/
 
 	/* If short_name_nbytes != 0, the next field will be the UTF-16LE
 	 * encoded short name.  This will be null-terminated, so the size of
@@ -228,17 +228,17 @@ struct wim_extra_stream_entry_on_disk {
 } _packed_attribute;
 
 static void
-do_dentry_set_name(struct wim_dentry *dentry, utf16lechar *file_name,
-		   size_t file_name_nbytes)
+do_dentry_set_name(struct wim_dentry *dentry, utf16lechar *name,
+		   size_t name_nbytes)
 {
-	FREE(dentry->file_name);
-	dentry->file_name = file_name;
-	dentry->file_name_nbytes = file_name_nbytes;
+	FREE(dentry->d_name);
+	dentry->d_name = name;
+	dentry->d_name_nbytes = name_nbytes;
 
 	if (dentry_has_short_name(dentry)) {
-		FREE(dentry->short_name);
-		dentry->short_name = NULL;
-		dentry->short_name_nbytes = 0;
+		FREE(dentry->d_short_name);
+		dentry->d_short_name = NULL;
+		dentry->d_short_name_nbytes = 0;
 	}
 }
 
@@ -315,11 +315,11 @@ dentry_set_name(struct wim_dentry *dentry, const tchar *name)
  * tagged metadata items as well as any extra stream entries that may need to
  * follow the dentry.  */
 static size_t
-dentry_min_len_with_names(u16 file_name_nbytes, u16 short_name_nbytes)
+dentry_min_len_with_names(u16 name_nbytes, u16 short_name_nbytes)
 {
 	size_t length = sizeof(struct wim_dentry_on_disk);
-	if (file_name_nbytes)
-		length += (u32)file_name_nbytes + 2;
+	if (name_nbytes)
+		length += (u32)name_nbytes + 2;
 	if (short_name_nbytes)
 		length += (u32)short_name_nbytes + 2;
 	return length;
@@ -354,8 +354,8 @@ dentry_out_total_length(const struct wim_dentry *dentry)
 	const struct wim_inode *inode = dentry->d_inode;
 	size_t len;
 
-	len = dentry_min_len_with_names(dentry->file_name_nbytes,
-					dentry->short_name_nbytes);
+	len = dentry_min_len_with_names(dentry->d_name_nbytes,
+					dentry->d_short_name_nbytes);
 	len = ALIGN(len, 8);
 
 	len += ALIGN(inode->i_extra_size, 8);
@@ -492,7 +492,7 @@ calculate_dentry_full_path(struct wim_dentry *dentry)
 	ulen = 0;
 	d = dentry;
 	do {
-		ulen += d->file_name_nbytes / sizeof(utf16lechar);
+		ulen += d->d_name_nbytes / sizeof(utf16lechar);
 		ulen++;
 		d = d->d_parent;  /* assumes d == d->d_parent for root  */
 	} while (!dentry_is_root(d));
@@ -502,8 +502,8 @@ calculate_dentry_full_path(struct wim_dentry *dentry)
 
 	d = dentry;
 	do {
-		p -= d->file_name_nbytes / sizeof(utf16lechar);
-		memcpy(p, d->file_name, d->file_name_nbytes);
+		p -= d->d_name_nbytes / sizeof(utf16lechar);
+		memcpy(p, d->d_name, d->d_name_nbytes);
 		*--p = cpu_to_le16(WIM_PATH_SEPARATOR);
 		d = d->d_parent;  /* assumes d == d->d_parent for root  */
 	} while (!dentry_is_root(d));
@@ -576,10 +576,10 @@ static int
 dentry_compare_names_case_insensitive(const struct wim_dentry *d1,
 				      const struct wim_dentry *d2)
 {
-	return cmp_utf16le_strings(d1->file_name,
-				   d1->file_name_nbytes / 2,
-				   d2->file_name,
-				   d2->file_name_nbytes / 2,
+	return cmp_utf16le_strings(d1->d_name,
+				   d1->d_name_nbytes / 2,
+				   d2->d_name,
+				   d2->d_name_nbytes / 2,
 				   true);
 }
 
@@ -588,10 +588,10 @@ static int
 dentry_compare_names_case_sensitive(const struct wim_dentry *d1,
 				    const struct wim_dentry *d2)
 {
-	return cmp_utf16le_strings(d1->file_name,
-				   d1->file_name_nbytes / 2,
-				   d2->file_name,
-				   d2->file_name_nbytes / 2,
+	return cmp_utf16le_strings(d1->d_name,
+				   d1->d_name_nbytes / 2,
+				   d2->d_name,
+				   d2->d_name_nbytes / 2,
 				   false);
 }
 
@@ -629,8 +629,8 @@ bool default_ignore_case =
 #endif
 ;
 
-/* Case-sensitive dentry lookup.  Only @file_name and @file_name_nbytes of
- * @dummy must be valid.  */
+/* Case-sensitive dentry lookup.  Only @d_name and @d_name_nbytes of @dummy must
+ * be valid.  */
 static struct wim_dentry *
 dir_lookup(const struct wim_inode *dir, const struct wim_dentry *dummy)
 {
@@ -644,8 +644,8 @@ dir_lookup(const struct wim_inode *dir, const struct wim_dentry *dummy)
 	return avl_tree_entry(node, struct wim_dentry, d_index_node);
 }
 
-/* Case-insensitive dentry lookup.  Only @file_name and @file_name_nbytes of
- * @dummy must be valid.  */
+/* Case-insensitive dentry lookup.  Only @d_name and @d_name_nbytes of @dummy
+ * must be valid.  */
 static struct wim_dentry *
 dir_lookup_ci(const struct wim_inode *dir, const struct wim_dentry *dummy)
 {
@@ -673,8 +673,8 @@ get_dentry_child_with_utf16le_name(const struct wim_dentry *dentry,
 	struct wim_dentry dummy;
 	struct wim_dentry *child;
 
-	dummy.file_name = (utf16lechar*)name;
-	dummy.file_name_nbytes = name_nbytes;
+	dummy.d_name = (utf16lechar*)name;
+	dummy.d_name_nbytes = name_nbytes;
 
 	if (!ignore_case)
 		/* Case-sensitive lookup.  */
@@ -1006,8 +1006,8 @@ free_dentry(struct wim_dentry *dentry)
 {
 	if (dentry) {
 		d_disassociate(dentry);
-		FREE(dentry->file_name);
-		FREE(dentry->short_name);
+		FREE(dentry->d_name);
+		FREE(dentry->d_short_name);
 		FREE(dentry->_full_path);
 		FREE(dentry);
 	}
@@ -1390,7 +1390,7 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 	struct wim_dentry *dentry;
 	struct wim_inode *inode;
 	u16 short_name_nbytes;
-	u16 file_name_nbytes;
+	u16 name_nbytes;
 	u64 calculated_size;
 	int ret;
 
@@ -1457,16 +1457,16 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 	 * name, and the short name.  */
 
 	short_name_nbytes = le16_to_cpu(disk_dentry->short_name_nbytes);
-	file_name_nbytes = le16_to_cpu(disk_dentry->file_name_nbytes);
+	name_nbytes = le16_to_cpu(disk_dentry->name_nbytes);
 
-	if (unlikely((short_name_nbytes & 1) | (file_name_nbytes & 1))) {
+	if (unlikely((short_name_nbytes & 1) | (name_nbytes & 1))) {
 		ret = WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 		goto err_free_dentry;
 	}
 
 	/* We now know the length of the file name and short name.  Make sure
 	 * the length of the dentry is large enough to actually hold them.  */
-	calculated_size = dentry_min_len_with_names(file_name_nbytes,
+	calculated_size = dentry_min_len_with_names(name_nbytes,
 						    short_name_nbytes);
 
 	if (unlikely(length < calculated_size)) {
@@ -1479,25 +1479,25 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 
 	/* Read the filename if present.  Note: if the filename is empty, there
 	 * is no null terminator following it.  */
-	if (file_name_nbytes) {
-		dentry->file_name = utf16le_dupz(p, file_name_nbytes);
-		if (dentry->file_name == NULL) {
+	if (name_nbytes) {
+		dentry->d_name = utf16le_dupz(p, name_nbytes);
+		if (unlikely(!dentry->d_name)) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto err_free_dentry;
 		}
-		dentry->file_name_nbytes = file_name_nbytes;
-		p += (u32)file_name_nbytes + 2;
+		dentry->d_name_nbytes = name_nbytes;
+		p += (u32)name_nbytes + 2;
 	}
 
 	/* Read the short filename if present.  Note: if there is no short
 	 * filename, there is no null terminator following it. */
 	if (short_name_nbytes) {
-		dentry->short_name = utf16le_dupz(p, short_name_nbytes);
-		if (dentry->short_name == NULL) {
+		dentry->d_short_name = utf16le_dupz(p, short_name_nbytes);
+		if (unlikely(!dentry->d_short_name)) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto err_free_dentry;
 		}
-		dentry->short_name_nbytes = short_name_nbytes;
+		dentry->d_short_name_nbytes = short_name_nbytes;
 		p += (u32)short_name_nbytes + 2;
 	}
 
@@ -1532,13 +1532,13 @@ err_free_dentry:
 static bool
 dentry_is_dot_or_dotdot(const struct wim_dentry *dentry)
 {
-	if (dentry->file_name_nbytes <= 4) {
-		if (dentry->file_name_nbytes == 4) {
-			if (dentry->file_name[0] == cpu_to_le16('.') &&
-			    dentry->file_name[1] == cpu_to_le16('.'))
+	if (dentry->d_name_nbytes <= 4) {
+		if (dentry->d_name_nbytes == 4) {
+			if (dentry->d_name[0] == cpu_to_le16('.') &&
+			    dentry->d_name[1] == cpu_to_le16('.'))
 				return true;
-		} else if (dentry->file_name_nbytes == 2) {
-			if (dentry->file_name[0] == cpu_to_le16('.'))
+		} else if (dentry->d_name_nbytes == 2) {
+			if (dentry->d_name[0] == cpu_to_le16('.'))
 				return true;
 		}
 	}
@@ -1766,17 +1766,17 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 			cpu_to_le64((inode->i_nlink == 1) ? 0 : inode->i_ino);
 	}
 
-	disk_dentry->short_name_nbytes = cpu_to_le16(dentry->short_name_nbytes);
-	disk_dentry->file_name_nbytes = cpu_to_le16(dentry->file_name_nbytes);
+	disk_dentry->short_name_nbytes = cpu_to_le16(dentry->d_short_name_nbytes);
+	disk_dentry->name_nbytes = cpu_to_le16(dentry->d_name_nbytes);
 	p += sizeof(struct wim_dentry_on_disk);
 
 	wimlib_assert(dentry_is_root(dentry) != dentry_has_long_name(dentry));
 
 	if (dentry_has_long_name(dentry))
-		p = mempcpy(p, dentry->file_name, (u32)dentry->file_name_nbytes + 2);
+		p = mempcpy(p, dentry->d_name, (u32)dentry->d_name_nbytes + 2);
 
 	if (dentry_has_short_name(dentry))
-		p = mempcpy(p, dentry->short_name, (u32)dentry->short_name_nbytes + 2);
+		p = mempcpy(p, dentry->d_short_name, (u32)dentry->d_short_name_nbytes + 2);
 
 	/* Align to 8-byte boundary */
 	while ((uintptr_t)p & 7)

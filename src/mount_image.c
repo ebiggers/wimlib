@@ -1712,18 +1712,15 @@ wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		return ret;
 
 	for_inode_child(child, inode) {
-		char *file_name_mbs;
-		size_t file_name_mbs_nbytes;
+		char *name;
+		size_t name_nbytes;
 
-		ret = utf16le_to_tstr(child->file_name,
-				      child->file_name_nbytes,
-				      &file_name_mbs,
-				      &file_name_mbs_nbytes);
-		if (ret)
+		if (utf16le_to_tstr(child->d_name, child->d_name_nbytes,
+				    &name, &name_nbytes))
 			return -errno;
 
-		ret = filler(buf, file_name_mbs, NULL, 0);
-		FREE(file_name_mbs);
+		ret = filler(buf, name, NULL, 0);
+		FREE(name);
 		if (ret)
 			return ret;
 	}

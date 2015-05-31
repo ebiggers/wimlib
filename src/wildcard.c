@@ -191,11 +191,11 @@ match_dentry(struct wim_dentry *cur_dentry, struct match_dentry_ctx *ctx)
 	size_t name_nchars;
 	int ret;
 
-	if (cur_dentry->file_name_nbytes == 0)
+	if (cur_dentry->d_name_nbytes == 0)
 		return 0;
 
-	ret = utf16le_get_tstr(cur_dentry->file_name,
-			       cur_dentry->file_name_nbytes,
+	ret = utf16le_get_tstr(cur_dentry->d_name,
+			       cur_dentry->d_name_nbytes,
 			       &name, &name_nchars);
 	if (ret)
 		return ret;

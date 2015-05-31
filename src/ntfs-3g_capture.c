@@ -524,11 +524,11 @@ set_dentry_dos_name(struct wim_dentry *dentry, const struct dos_name_map *map)
 	if (dentry->is_win32_name) {
 		node = lookup_dos_name(map, dentry->d_inode->i_ino);
 		if (node) {
-			dentry->short_name = utf16le_dupz(node->dos_name,
-							  node->name_nbytes);
-			if (!dentry->short_name)
+			dentry->d_short_name = utf16le_dupz(node->dos_name,
+							    node->name_nbytes);
+			if (!dentry->d_short_name)
 				return WIMLIB_ERR_NOMEM;
-			dentry->short_name_nbytes = node->name_nbytes;
+			dentry->d_short_name_nbytes = node->name_nbytes;
 		} else {
 			WARNING("NTFS inode %"PRIu64" has Win32 name with no "
 				"corresponding DOS name",

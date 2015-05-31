@@ -1149,7 +1149,7 @@ remove_conflicting_short_name(const struct wim_dentry *dentry, struct win32_appl
 	name = &ctx->pathbuf.Buffer[ctx->pathbuf.Length / sizeof(wchar_t)];
 	while (name != ctx->pathbuf.Buffer && *(name - 1) != L'\\')
 		name--;
-	end = mempcpy(name, dentry->short_name, dentry->short_name_nbytes);
+	end = mempcpy(name, dentry->d_short_name, dentry->d_short_name_nbytes);
 	ctx->pathbuf.Length = ((u8 *)end - (u8 *)ctx->pathbuf.Buffer);
 
 	/* Open the conflicting file (by short name).  */
@@ -1226,7 +1226,7 @@ set_short_name(HANDLE h, const struct wim_dentry *dentry,
 	 */
 
 	size_t bufsize = offsetof(FILE_NAME_INFORMATION, FileName) +
-			 max(dentry->short_name_nbytes, sizeof(wchar_t)) +
+			 max(dentry->d_short_name_nbytes, sizeof(wchar_t)) +
 			 sizeof(wchar_t);
 	u8 buf[bufsize] _aligned_attribute(8);
 	FILE_NAME_INFORMATION *info = (FILE_NAME_INFORMATION *)buf;
@@ -1235,8 +1235,8 @@ set_short_name(HANDLE h, const struct wim_dentry *dentry,
 
 	memset(buf, 0, bufsize);
 
-	info->FileNameLength = dentry->short_name_nbytes;
-	memcpy(info->FileName, dentry->short_name, dentry->short_name_nbytes);
+	info->FileNameLength = dentry->d_short_name_nbytes;
+	memcpy(info->FileName, dentry->d_short_name, dentry->d_short_name_nbytes);
 
 retry:
 	status = (*func_NtSetInformationFile)(h, &ctx->iosb, info, bufsize,
@@ -1245,7 +1245,7 @@ retry:
 		return 0;
 
 	if (status == STATUS_SHORT_NAMES_NOT_ENABLED_ON_VOLUME) {
-		if (dentry->short_name_nbytes == 0)
+		if (dentry->d_short_name_nbytes == 0)
 			return 0;
 		if (!ctx->tried_to_enable_short_names) {
 			wchar_t volume[7];
@@ -1279,7 +1279,7 @@ retry:
 	 *   from files.
 	 */
 	if (unlikely(status == STATUS_OBJECT_NAME_COLLISION) &&
-	    dentry->short_name_nbytes && !tried_to_remove_existing)
+	    dentry->d_short_name_nbytes && !tried_to_remove_existing)
 	{
 		tried_to_remove_existing = true;
 		status = remove_conflicting_short_name(dentry, ctx);
@@ -1290,7 +1290,7 @@ retry:
 	/* By default, failure to set short names is not an error (since short
 	 * names aren't too important anymore...).  */
 	if (!(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_SHORT_NAMES)) {
-		if (dentry->short_name_nbytes)
+		if (dentry->d_short_name_nbytes)
 			ctx->num_set_short_name_failures++;
 		else
 			ctx->num_remove_short_name_failures++;

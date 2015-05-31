@@ -106,13 +106,13 @@ struct wim_inode {
 	u32 i_attributes;
 
 	/* Root of a balanced binary search tree storing the child directory
-	 * entries of this inode, if any.  Keyed by wim_dentry->file_name, case
+	 * entries of this inode, if any.  Keyed by wim_dentry->d_name, case
 	 * sensitively.  If this inode is not a directory or if it has no
 	 * children then this will be an empty tree (NULL).  */
 	struct avl_tree_node *i_children;
 
 	/* Root of a balanced binary search tree storing the child directory
-	 * entries of this inode, if any.  Keyed by wim_dentry->file_name, case
+	 * entries of this inode, if any.  Keyed by wim_dentry->d_name, case
 	 * insensitively.  If this inode is not a directory or if it has no
 	 * children then this will be an empty tree (NULL).  */
 	struct avl_tree_node *i_children_ci;

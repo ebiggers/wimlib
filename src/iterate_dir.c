@@ -91,12 +91,12 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry, struct wim_dentry *dentry,
 	const struct wim_inode_stream *strm;
 	struct wimlib_unix_data unix_data;
 
-	ret = utf16le_get_tstr(dentry->file_name, dentry->file_name_nbytes,
+	ret = utf16le_get_tstr(dentry->d_name, dentry->d_name_nbytes,
 			       &wdentry->filename, &dummy);
 	if (ret)
 		return ret;
 
-	ret = utf16le_get_tstr(dentry->short_name, dentry->short_name_nbytes,
+	ret = utf16le_get_tstr(dentry->d_short_name, dentry->d_short_name_nbytes,
 			       &wdentry->dos_name, &dummy);
 	if (ret)
 		return ret;

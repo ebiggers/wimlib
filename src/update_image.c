@@ -315,13 +315,13 @@ rollback_update_primitive(const struct update_primitive *prim,
 		break;
 	case CHANGE_FILE_NAME:
 		rollback_name_change(prim->name.old_name,
-				     &prim->name.subject->file_name,
-				     &prim->name.subject->file_name_nbytes);
+				     &prim->name.subject->d_name,
+				     &prim->name.subject->d_name_nbytes);
 		break;
 	case CHANGE_SHORT_NAME:
 		rollback_name_change(prim->name.old_name,
-				     &prim->name.subject->short_name,
-				     &prim->name.subject->short_name_nbytes);
+				     &prim->name.subject->d_short_name,
+				     &prim->name.subject->d_short_name_nbytes);
 		break;
 	}
 }
@@ -420,26 +420,26 @@ journaled_change_name(struct update_command_journal *j,
 
 	prim.type = CHANGE_FILE_NAME;
 	prim.name.subject = dentry;
-	prim.name.old_name = dentry->file_name;
+	prim.name.old_name = dentry->d_name;
 	ret = record_update_primitive(j, prim);
 	if (ret) {
 		FREE(new_name);
 		return ret;
 	}
 
-	dentry->file_name = new_name;
-	dentry->file_name_nbytes = new_name_nbytes;
+	dentry->d_name = new_name;
+	dentry->d_name_nbytes = new_name_nbytes;
 
 	/* Clear the short name.  */
 	prim.type = CHANGE_SHORT_NAME;
 	prim.name.subject = dentry;
-	prim.name.old_name = dentry->short_name;
+	prim.name.old_name = dentry->d_short_name;
 	ret = record_update_primitive(j, prim);
 	if (ret)
 		return ret;
 
-	dentry->short_name = NULL;
-	dentry->short_name_nbytes = 0;
+	dentry->d_short_name = NULL;
+	dentry->d_short_name_nbytes = 0;
 	return 0;
 }
 
@@ -513,8 +513,8 @@ handle_conflict(struct wim_dentry *branch, struct wim_dentry *existing,
 
 			existing_child =
 				get_dentry_child_with_utf16le_name(existing,
-								   new_child->file_name,
-								   new_child->file_name_nbytes,
+								   new_child->d_name,
+								   new_child->d_name_nbytes,
 								   WIMLIB_CASE_PLATFORM_DEFAULT);
 			unlink_dentry(new_child);
 			if (existing_child) {

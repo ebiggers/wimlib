@@ -643,7 +643,7 @@ destroy_dentry_list(struct list_head *dentry_list)
 		dentry_reset_extraction_list_node(dentry);
 		inode->i_visited = 0;
 		inode->i_can_externally_back = 0;
-		if ((void *)dentry->d_extraction_name != (void *)dentry->file_name)
+		if ((void *)dentry->d_extraction_name != (void *)dentry->d_name)
 			FREE(dentry->d_extraction_name);
 		dentry->d_extraction_name = NULL;
 		dentry->d_extraction_name_nchars = 0;
@@ -718,8 +718,8 @@ dentry_calculate_extraction_name(struct wim_dentry *dentry,
 
 #ifdef WITH_NTFS_3G
 	if (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
-		dentry->d_extraction_name = dentry->file_name;
-		dentry->d_extraction_name_nchars = dentry->file_name_nbytes /
+		dentry->d_extraction_name = dentry->d_name;
+		dentry->d_extraction_name_nchars = dentry->d_name_nbytes /
 						   sizeof(utf16lechar);
 		return 0;
 	}
@@ -752,9 +752,9 @@ dentry_calculate_extraction_name(struct wim_dentry *dentry,
 		}
 	}
 
-	if (file_name_valid(dentry->file_name, dentry->file_name_nbytes / 2, false)) {
-		ret = utf16le_get_tstr(dentry->file_name,
-				       dentry->file_name_nbytes,
+	if (file_name_valid(dentry->d_name, dentry->d_name_nbytes / 2, false)) {
+		ret = utf16le_get_tstr(dentry->d_name,
+				       dentry->d_name_nbytes,
 				       (const tchar **)&dentry->d_extraction_name,
 				       &dentry->d_extraction_name_nchars);
 		dentry->d_extraction_name_nchars /= sizeof(tchar);
@@ -777,16 +777,16 @@ dentry_calculate_extraction_name(struct wim_dentry *dentry,
 
 out_replace:
 	{
-		utf16lechar utf16_name_copy[dentry->file_name_nbytes / 2];
+		utf16lechar utf16_name_copy[dentry->d_name_nbytes / 2];
 
-		memcpy(utf16_name_copy, dentry->file_name, dentry->file_name_nbytes);
-		file_name_valid(utf16_name_copy, dentry->file_name_nbytes / 2, true);
+		memcpy(utf16_name_copy, dentry->d_name, dentry->d_name_nbytes);
+		file_name_valid(utf16_name_copy, dentry->d_name_nbytes / 2, true);
 
 		const tchar *tchar_name;
 		size_t tchar_nchars;
 
 		ret = utf16le_get_tstr(utf16_name_copy,
-				       dentry->file_name_nbytes,
+				       dentry->d_name_nbytes,
 				       &tchar_name, &tchar_nchars);
 		if (ret)
 			return ret;

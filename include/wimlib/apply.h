@@ -198,9 +198,9 @@ struct apply_operations {
 	 *
 	 * 'd_extraction_name' and 'd_extraction_name_nchars' of each dentry
 	 * will be set to indicate the actual name with which the dentry should
-	 * be extracted.  This may or may not be the same as 'file_name'.
-	 * TODO: really, the extraction backends should be responsible for
-	 * generating 'd_extraction_name'.
+	 * be extracted.  This may or may not be the same as 'd_name'.  TODO:
+	 * really, the extraction backends should be responsible for generating
+	 * 'd_extraction_name'.
 	 *
 	 * Each dentry will refer to a valid inode in 'd_inode'.  Each inode
 	 * will contain a list of dentries of that inode being extracted; this

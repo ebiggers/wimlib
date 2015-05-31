@@ -115,9 +115,9 @@ blob_set_solid_sort_name_from_inode(struct blob_descriptor *blob,
 
 	/* If this file has multiple names, choose the shortest one.  */
 	inode_for_each_dentry(dentry, inode) {
-		if (dentry->file_name_nbytes < best_name_nbytes) {
-			best_name = dentry->file_name;
-			best_name_nbytes = dentry->file_name_nbytes;
+		if (dentry->d_name_nbytes < best_name_nbytes) {
+			best_name = dentry->d_name;
+			best_name_nbytes = dentry->d_name_nbytes;
 		}
 	}
 	blob->solid_sort_name = utf16le_dupz(best_name, best_name_nbytes);

@@ -280,7 +280,7 @@ ntfs_3g_restore_dos_name(ntfs_inode *ni, ntfs_inode *dir_ni,
 	 * UTF-16LE internally... which is annoying because we currently have
 	 * the UTF-16LE string but not the multibyte string.  */
 
-	ret = utf16le_get_tstr(dentry->short_name, dentry->short_name_nbytes,
+	ret = utf16le_get_tstr(dentry->d_short_name, dentry->d_short_name_nbytes,
 			       &dos_name, &dos_name_nbytes);
 	if (ret)
 		goto out_close;
