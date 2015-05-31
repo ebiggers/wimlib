@@ -139,6 +139,10 @@ report_apply_error(struct apply_ctx *ctx, int error_code, const tchar *path)
 	list_first_entry(&(inode)->i_extraction_aliases,	\
 			 struct wim_dentry, d_extraction_alias_node)
 
+#define inode_for_each_extraction_alias(dentry, inode)			\
+	list_for_each_entry(dentry, &(inode)->i_extraction_aliases,	\
+			    d_extraction_alias_node)
+
 extern int
 extract_blob_list(struct apply_ctx *ctx, const struct read_blob_callbacks *cbs);
 

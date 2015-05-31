@@ -518,17 +518,12 @@ ntfs_3g_create_directories(struct wim_dentry *root,
 static struct wim_dentry *
 ntfs_3g_first_extraction_alias(struct wim_inode *inode)
 {
-	struct list_head *next = inode->i_extraction_aliases.next;
 	struct wim_dentry *dentry;
 
-	do {
-		dentry = list_entry(next, struct wim_dentry,
-				    d_extraction_alias_node);
+	inode_for_each_extraction_alias(dentry, inode)
 		if (dentry_has_short_name(dentry))
-			break;
-		next = next->next;
-	} while (next != &inode->i_extraction_aliases);
-	return dentry;
+			return dentry;
+	return inode_first_extraction_dentry(inode);
 }
 
 /*
@@ -573,7 +568,6 @@ ntfs_3g_create_nondirectory(struct wim_inode *inode,
 	struct wim_dentry *first_dentry;
 	ntfs_inode *dir_ni;
 	ntfs_inode *ni;
-	struct list_head *next;
 	struct wim_dentry *dentry;
 	int ret;
 
@@ -629,17 +623,13 @@ ntfs_3g_create_nondirectory(struct wim_inode *inode,
 	}
 
 	/* Create additional links if present.  */
-	next = inode->i_extraction_aliases.next;
-	do {
-		dentry = list_entry(next, struct wim_dentry,
-				    d_extraction_alias_node);
+	inode_for_each_extraction_alias(dentry, inode) {
 		if (dentry != first_dentry) {
 			ret = ntfs_3g_add_link(ni, dentry);
 			if (ret)
 				goto out_close_ni;
 		}
-		next = next->next;
-	} while (next != &inode->i_extraction_aliases);
+	}
 
 	/* Set metadata.  */
 	ret = ntfs_3g_set_metadata(ni, inode, ctx);

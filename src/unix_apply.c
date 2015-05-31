@@ -330,9 +330,7 @@ unix_create_hardlinks(const struct wim_inode *inode,
 	const struct wim_dentry *dentry;
 	const char *newpath;
 
-	list_for_each_entry(dentry, &inode->i_extraction_aliases,
-			    d_extraction_alias_node)
-	{
+	inode_for_each_extraction_alias(dentry, inode) {
 		if (dentry == first_dentry)
 			continue;
 

@@ -328,10 +328,7 @@ extract_chunk_wrapper(const void *chunk, size_t size, void *_ctx)
 			const struct wim_inode *inode = targets[i].inode;
 			const struct wim_dentry *dentry;
 
-			list_for_each_entry(dentry,
-					    &inode->i_extraction_aliases,
-					    d_extraction_alias_node)
-			{
+			inode_for_each_extraction_alias(dentry, inode) {
 				progress->extract.completed_bytes += size;
 				if (ctx->cur_blob_offset == ctx->cur_blob->size)
 					progress->extract.completed_streams++;

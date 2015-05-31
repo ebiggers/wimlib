@@ -458,7 +458,6 @@ static int
 will_externally_back_inode(struct wim_inode *inode, struct win32_apply_ctx *ctx,
 			   const struct wim_dentry **excluded_dentry_ret)
 {
-	struct list_head *next;
 	struct wim_dentry *dentry;
 	struct blob_descriptor *blob;
 	int ret;
@@ -486,10 +485,8 @@ will_externally_back_inode(struct wim_inode *inode, struct win32_apply_ctx *ctx,
 	 * We need to check the patterns in [PrepopulateList] against every name
 	 * of the inode, in case any of them match.
 	 */
-	next = inode->i_extraction_aliases.next;
-	do {
-		dentry = list_entry(next, struct wim_dentry,
-				    d_extraction_alias_node);
+
+	inode_for_each_extraction_alias(dentry, inode) {
 
 		ret = calculate_dentry_full_path(dentry);
 		if (ret)
@@ -502,8 +499,7 @@ will_externally_back_inode(struct wim_inode *inode, struct win32_apply_ctx *ctx,
 				*excluded_dentry_ret = dentry;
 			return WIM_BACKING_EXCLUDED;
 		}
-		next = next->next;
-	} while (next != &inode->i_extraction_aliases);
+	}
 
 	inode->i_can_externally_back = 1;
 	return 0;
@@ -1028,17 +1024,12 @@ prepare_target(struct list_head *dentry_list, struct win32_apply_ctx *ctx)
 static struct wim_dentry *
 first_extraction_alias(const struct wim_inode *inode)
 {
-	struct list_head *next = inode->i_extraction_aliases.next;
 	struct wim_dentry *dentry;
 
-	do {
-		dentry = list_entry(next, struct wim_dentry,
-				    d_extraction_alias_node);
+	inode_for_each_extraction_alias(dentry, inode)
 		if (dentry_has_short_name(dentry))
-			break;
-		next = next->next;
-	} while (next != &inode->i_extraction_aliases);
-	return dentry;
+			return dentry;
+	return inode_first_extraction_dentry(inode);
 }
 
 /*
@@ -1706,23 +1697,17 @@ static int
 create_links(HANDLE h, const struct wim_dentry *first_dentry,
 	     struct win32_apply_ctx *ctx)
 {
-	const struct wim_inode *inode;
-	const struct list_head *next;
+	const struct wim_inode *inode = first_dentry->d_inode;
 	const struct wim_dentry *dentry;
 	int ret;
 
-	inode = first_dentry->d_inode;
-	next = inode->i_extraction_aliases.next;
-	do {
-		dentry = list_entry(next, struct wim_dentry,
-				    d_extraction_alias_node);
+	inode_for_each_extraction_alias(dentry, inode) {
 		if (dentry != first_dentry) {
 			ret = create_link(h, dentry, ctx);
 			if (ret)
 				return ret;
 		}
-		next = next->next;
-	} while (next != &inode->i_extraction_aliases);
+	}
 	return 0;
 }
 
@@ -2178,18 +2163,12 @@ begin_extract_blob(struct blob_descriptor *blob, void *_ctx)
 		} else {
 			/* Hard links not supported.  Extract the blob
 			 * separately to each alias of the inode.  */
-			struct list_head *next;
-
-			next = inode->i_extraction_aliases.next;
-			do {
-				dentry = list_entry(next, struct wim_dentry,
-						    d_extraction_alias_node);
+			inode_for_each_extraction_alias(dentry, inode) {
 				ret = begin_extract_blob_instance(blob, dentry, strm, ctx);
 				ret = check_apply_error(dentry, ctx, ret);
 				if (ret)
 					goto fail;
-				next = next->next;
-			} while (next != &inode->i_extraction_aliases);
+			}
 		}
 	}
 
