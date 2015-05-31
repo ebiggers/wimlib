@@ -247,7 +247,6 @@ parallel_chunk_compressor_destroy(struct chunk_compressor *_ctx)
 		return;
 
 	if (ctx->num_started_threads != 0) {
-		DEBUG("Terminating %u compressor threads", ctx->num_started_threads);
 		message_queue_terminate(&ctx->chunks_to_compress_queue);
 
 		for (i = 0; i < ctx->num_started_threads; i++)
@@ -377,11 +376,8 @@ new_parallel_chunk_compressor(int out_ctype, u32 out_chunk_size,
 	if (num_threads == 0)
 		num_threads = get_available_cpus();
 
-	if (num_threads == 1) {
-		DEBUG("Only 1 thread; Not bothering with "
-		      "parallel chunk compressor.");
+	if (num_threads == 1)
 		return -1;
-	}
 
 	if (max_memory == 0)
 		max_memory = get_available_memory();
@@ -433,11 +429,8 @@ new_parallel_chunk_compressor(int out_ctype, u32 out_chunk_size,
 			desired_num_threads, num_threads);
 	}
 
-	if (num_threads == 1) {
-		DEBUG("Only 1 thread; Not bothering with "
-		      "parallel chunk compressor.");
+	if (num_threads == 1)
 		return -2;
-	}
 
 	ret = WIMLIB_ERR_NOMEM;
 	ctx = CALLOC(1, sizeof(*ctx));
@@ -484,8 +477,6 @@ new_parallel_chunk_compressor(int out_ctype, u32 out_chunk_size,
 	     ctx->num_started_threads < num_threads;
 	     ctx->num_started_threads++)
 	{
-		DEBUG("pthread_create thread %u of %u",
-		      ctx->num_started_threads + 1, num_threads);
 		ret = pthread_create(&ctx->thread_data[ctx->num_started_threads].thread,
 				     NULL,
 				     compressor_thread_proc,

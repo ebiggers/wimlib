@@ -87,9 +87,6 @@ read_wim_security_data(const u8 *buf, size_t buf_len,
 	sd->total_length = le32_to_cpu(sd_disk->total_length);
 	sd->num_entries = le32_to_cpu(sd_disk->num_entries);
 
-	DEBUG("Reading security data: num_entries=%u, total_length=%u",
-	      sd->num_entries, sd->total_length);
-
 	/* Length field of 0 is a special case that really means length
 	 * of 8. */
 	if (sd->total_length == 0)
@@ -187,9 +184,6 @@ u8 *
 write_wim_security_data(const struct wim_security_data * restrict sd,
 			u8 * restrict p)
 {
-	DEBUG("Writing security data (total_length = %"PRIu32", num_entries "
-	      "= %"PRIu32")", sd->total_length, sd->num_entries);
-
 	u8 *orig_p = p;
 	struct wim_security_data_disk *sd_disk = (struct wim_security_data_disk*)p;
 	u32 num_entries = sd->num_entries;
@@ -209,8 +203,6 @@ write_wim_security_data(const struct wim_security_data * restrict sd,
 		*p++ = 0;
 
 	wimlib_assert(p - orig_p == sd->total_length);
-
-	DEBUG("Successfully wrote security data.");
 	return p;
 }
 
@@ -354,7 +346,6 @@ sd_set_add_sd(struct wim_sd_set *sd_set, const char *descriptor, size_t size)
 	sd->descriptors[sd->num_entries] = descr_copy;
 	sd->sizes[sd->num_entries] = size;
 	sd->num_entries++;
-	DEBUG("There are now %u security descriptors", sd->num_entries);
 	bret = insert_sd_node(sd_set, new);
 	wimlib_assert(bret);
 	security_id = new->security_id;

@@ -78,8 +78,6 @@ read_metadata_resource(struct wim_image_metadata *imd)
 
 	metadata_blob = imd->metadata_blob;
 
-	DEBUG("Reading metadata resource (size=%"PRIu64").", metadata_blob->size);
-
 	/* Read the metadata resource into memory.  (It may be compressed.)  */
 	ret = read_blob_into_alloc_buf(metadata_blob, &buf);
 	if (ret)
@@ -132,7 +130,6 @@ read_metadata_resource(struct wim_image_metadata *imd)
 	imd->root_dentry = root;
 	imd->security_data = sd;
 	INIT_LIST_HEAD(&imd->unhashed_blobs);
-	DEBUG("Done parsing metadata resource.");
 	return 0;
 
 out_free_dentry_tree:
@@ -165,8 +162,6 @@ prepare_metadata_resource(WIMStruct *wim, int image,
 	size_t len;
 	struct wim_security_data *sd;
 	struct wim_image_metadata *imd;
-
-	DEBUG("Preparing metadata resource for image %d", image);
 
 	ret = select_wim_image(wim, image);
 	if (ret)

@@ -49,16 +49,12 @@
 bool wimlib_print_errors = false;
 FILE *wimlib_error_file = NULL; /* Set in wimlib_global_init() */
 static bool wimlib_owns_error_file = false;
-#endif
 
-#if defined(ENABLE_ERROR_MESSAGES) || defined(ENABLE_DEBUG)
 static void
 wimlib_vmsg(const tchar *tag, const tchar *format, va_list va, bool perror)
 {
-#ifndef ENABLE_DEBUG
 	if (!wimlib_print_errors)
 		return;
-#endif
 	int errno_save = errno;
 	fflush(stdout);
 	tfputs(tag, wimlib_error_file);
@@ -82,9 +78,7 @@ wimlib_vmsg(const tchar *tag, const tchar *format, va_list va, bool perror)
 	fflush(wimlib_error_file);
 	errno = errno_save;
 }
-#endif
 
-#ifdef ENABLE_ERROR_MESSAGES
 void
 wimlib_error(const tchar *format, ...)
 {
@@ -124,22 +118,7 @@ wimlib_warning_with_errno(const tchar *format, ...)
 	wimlib_vmsg(T("\r[WARNING] "), format, va, true);
 	va_end(va);
 }
-
-#endif
-
-#ifdef ENABLE_DEBUG
-void wimlib_debug(const tchar *filename, int line, const char *func,
-		  const tchar *format, ...)
-{
-	va_list va;
-	tchar buf[tstrlen(filename) + strlen(func) + 30];
-
-	tsprintf(buf, T("[%"TS" %d] %s(): "), filename, line, func);
-	va_start(va, format);
-	wimlib_vmsg(buf, format, va, false);
-	va_end(va);
-}
-#endif
+#endif /* ENABLE_ERROR_MESSAGES */
 
 void
 print_byte_field(const u8 *field, size_t len, FILE *out)

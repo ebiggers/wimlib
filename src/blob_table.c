@@ -632,17 +632,7 @@ do_load_solid_info(WIMStruct *wim, struct wim_resource_descriptor **rdescs,
 		BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_LZX != 2);
 		BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_LZMS != 3);
 		rdesc->compression_type = le32_to_cpu(hdr.compression_format);
-
 		rdesc->chunk_size = le32_to_cpu(hdr.chunk_size);
-
-		DEBUG("Solid resource %zu/%zu: %"PRIu64" => %"PRIu64" "
-		      "(%"TS"/%"PRIu32") @ +%"PRIu64"",
-		      i + 1, num_rdescs,
-		      rdesc->uncompressed_size,
-		      rdesc->size_in_wim,
-		      wimlib_get_compression_type_string(rdesc->compression_type),
-		      rdesc->chunk_size,
-		      rdesc->offset_in_wim);
 	}
 	return 0;
 }
@@ -859,8 +849,6 @@ read_blob_table(WIMStruct *wim)
 	struct wim_resource_descriptor **cur_solid_rdescs = NULL;
 	size_t cur_num_solid_rdescs = 0;
 
-	DEBUG("Reading blob table.");
-
 	/* Calculate the number of entries in the blob table.  */
 	num_entries = wim->hdr.blob_table_reshdr.uncompressed_size /
 		      sizeof(struct blob_descriptor_disk);
@@ -886,13 +874,6 @@ read_blob_table(WIMStruct *wim)
 
 		/* Get the resource header  */
 		get_wim_reshdr(&disk_entry->reshdr, &reshdr);
-
-		DEBUG("reshdr: size_in_wim=%"PRIu64", "
-		      "uncompressed_size=%"PRIu64", "
-		      "offset_in_wim=%"PRIu64", "
-		      "flags=0x%02x",
-		      reshdr.size_in_wim, reshdr.uncompressed_size,
-		      reshdr.offset_in_wim, reshdr.flags);
 
 		/* Ignore SOLID flag if it isn't supposed to be used in this WIM
 		 * version.  */
@@ -1038,11 +1019,6 @@ read_blob_table(WIMStruct *wim)
 			 * this overrides the actual locations of the metadata
 			 * resources themselves in the WIM file as well as any
 			 * information written in the XML data.  */
-			DEBUG("Found metadata resource for image %"PRIu32" at "
-			      "offset %"PRIu64".",
-			      image_index + 1,
-			      reshdr.offset_in_wim);
-
 			wim->image_metadata[image_index++]->metadata_blob = cur_blob;
 		} else {
 			/* Blob table entry for a non-metadata blob.  */
@@ -1094,7 +1070,6 @@ read_blob_table(WIMStruct *wim)
 			num_wrong_part_blobs);
 	}
 
-	DEBUG("Done reading blob table.");
 	wim->blob_table = table;
 	ret = 0;
 	goto out_free_buf;
@@ -1154,9 +1129,6 @@ write_blob_table_from_blob_list(struct list_head *blob_list,
 		}
 	}
 
-	DEBUG("Writing WIM blob table (size=%zu, offset=%"PRIu64")",
-	      table_size, out_fd->offset);
-
 	table_buf = MALLOC(table_size);
 	if (table_buf == NULL) {
 		ERROR("Failed to allocate %zu bytes for temporary blob table",
@@ -1215,7 +1187,6 @@ write_blob_table_from_blob_list(struct list_head *blob_list,
 					     NULL,
 					     write_resource_flags);
 	FREE(table_buf);
-	DEBUG("ret=%d", ret);
 	return ret;
 }
 

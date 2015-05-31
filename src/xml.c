@@ -1074,8 +1074,6 @@ xml_export_image(const struct wim_info *old_wim_info,
 	struct image_info *image_info;
 	int ret;
 
-	DEBUG("Copying XML data between WIM files for source image %d.", image);
-
 	wimlib_assert(old_wim_info != NULL);
 	wimlib_assert(image >= 1 && image <= old_wim_info->num_images);
 
@@ -1127,7 +1125,6 @@ xml_delete_image(struct wim_info **wim_info_p, int image)
 
 	wim_info = *wim_info_p;
 	wimlib_assert(image >= 1 && image <= wim_info->num_images);
-	DEBUG("Deleting image %d from the XML data.", image);
 
 	destroy_image_info(&wim_info->images[image - 1]);
 
@@ -1500,7 +1497,6 @@ out_output_buffer_close:
 out_buffer_free:
 	xmlBufferFree(buf);
 out:
-	DEBUG("ret=%d", ret);
 	return ret;
 
 out_write_error:
@@ -1519,9 +1515,6 @@ write_wim_xml_data(WIMStruct *wim, int image, u64 total_bytes,
 	u8 *xml_data;
 	size_t xml_len;
 
-	DEBUG("Writing WIM XML data (image=%d, offset=%"PRIu64")",
-	      image, wim->out_fd.offset);
-
 	ret = prepare_wim_xml_data(wim, image, total_bytes,
 				   &xml_data, &xml_len);
 	if (ret)
@@ -1539,7 +1532,6 @@ write_wim_xml_data(WIMStruct *wim, int image, u64 total_bytes,
 					     NULL,
 					     write_resource_flags);
 	FREE(xml_data);
-	DEBUG("ret=%d", ret);
 	return ret;
 }
 
@@ -1588,7 +1580,6 @@ wimlib_get_xml_data(WIMStruct *wim, void **buf_ret, size_t *bufsize_ret)
 
 	xml_reshdr = &wim->hdr.xml_data_reshdr;
 
-	DEBUG("Reading XML data.");
 	*bufsize_ret = xml_reshdr->uncompressed_size;
 	return wim_reshdr_to_data(xml_reshdr, wim, buf_ret);
 }

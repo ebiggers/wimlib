@@ -78,8 +78,6 @@ read_wim_header(WIMStruct *wim, struct wim_header *hdr)
 
 	BUILD_BUG_ON(sizeof(struct wim_header_disk) != WIM_HEADER_DISK_SIZE);
 
-	DEBUG("Reading WIM header from \"%"TS"\"", filename);
-
 	ret = full_read(in_fd, &disk_hdr, sizeof(disk_hdr));
 	if (ret)
 		goto read_error;
@@ -135,9 +133,6 @@ read_wim_header(WIMStruct *wim, struct wim_header *hdr)
 
 	hdr->image_count = le32_to_cpu(disk_hdr.image_count);
 
-	DEBUG("part_number = %u, total_parts = %u, image_count = %u",
-	      hdr->part_number, hdr->total_parts, hdr->image_count);
-
 	if (unlikely(hdr->image_count > MAX_IMAGES)) {
 		ERROR("\"%"TS"\": Invalid image count (%u)",
 		      filename, hdr->image_count);
@@ -165,10 +160,6 @@ write_wim_header(const struct wim_header *hdr, struct filedes *out_fd,
 {
 	struct wim_header_disk disk_hdr _aligned_attribute(8);
 	int ret;
-
-	DEBUG("Writing %sWIM header at offset %"PRIu64,
-	      ((hdr->magic == PWM_MAGIC) ? "pipable " : ""),
-	      offset);
 
 	disk_hdr.magic = cpu_to_le64(hdr->magic);
 	disk_hdr.hdr_size = cpu_to_le32(sizeof(struct wim_header_disk));

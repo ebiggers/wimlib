@@ -116,8 +116,6 @@ read_integrity_table(WIMStruct *wim, u64 num_checked_bytes,
 	if (wim->hdr.integrity_table_reshdr.uncompressed_size < 8)
 		goto invalid;
 
-	DEBUG("Reading integrity table.");
-
 	ret = wim_reshdr_to_data(&wim->hdr.integrity_table_reshdr, wim, &buf);
 	if (ret)
 		return ret;
@@ -126,10 +124,6 @@ read_integrity_table(WIMStruct *wim, u64 num_checked_bytes,
 	table->size        = le32_to_cpu(table->size);
 	table->num_entries = le32_to_cpu(table->num_entries);
 	table->chunk_size  = le32_to_cpu(table->chunk_size);
-
-	DEBUG("table->size = %u, table->num_entries = %u, "
-	      "table->chunk_size = %u",
-	      table->size, table->num_entries, table->chunk_size);
 
 	if (table->size != wim->hdr.integrity_table_reshdr.uncompressed_size ||
 	    table->size != (u64)table->num_entries * SHA1_HASH_SIZE + 12 ||
@@ -311,10 +305,6 @@ write_integrity_table(WIMStruct *wim,
 	int ret;
 	u32 new_table_size;
 
-	DEBUG("Writing integrity table "
-	      "(new_blob_table_end=%"PRIu64", old_blob_table_end=%"PRIu64")",
-	      new_blob_table_end, old_blob_table_end);
-
 	wimlib_assert(old_blob_table_end <= new_blob_table_end);
 
 	ret = calculate_integrity_table(&wim->out_fd, new_blob_table_end,
@@ -339,7 +329,6 @@ write_integrity_table(WIMStruct *wim,
 					     NULL,
 					     0);
 	FREE(new_table);
-	DEBUG("ret=%d", ret);
 	return ret;
 }
 
@@ -442,10 +431,8 @@ check_wim_integrity(WIMStruct *wim)
 	struct integrity_table *table;
 	u64 end_blob_table_offset;
 
-	if (!wim_has_integrity_table(wim)) {
-		DEBUG("No integrity information.");
+	if (!wim_has_integrity_table(wim))
 		return WIM_INTEGRITY_NONEXISTENT;
-	}
 
 	end_blob_table_offset = wim->hdr.blob_table_reshdr.offset_in_wim +
 				wim->hdr.blob_table_reshdr.size_in_wim;

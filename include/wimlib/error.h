@@ -44,17 +44,6 @@ extern FILE *wimlib_error_file;
 #  define WARNING_WITH_ERRNO(format, ...)	dummy_tprintf(T(format), ## __VA_ARGS__)
 #endif /* !ENABLE_ERROR_MESSAGES */
 
-#ifdef ENABLE_DEBUG
-extern void
-wimlib_debug(const tchar *file, int line, const char *func,
-	     const tchar *format, ...);
-#  define DEBUG(format, ...) \
-		wimlib_debug(T(__FILE__), __LINE__, __func__, T(format), ## __VA_ARGS__)
-
-#else
-#  define DEBUG(format, ...) dummy_tprintf(T(format), ## __VA_ARGS__)
-#endif /* !ENABLE_DEBUG */
-
 extern void
 print_byte_field(const u8 *field, size_t len, FILE *out);
 

@@ -1642,8 +1642,6 @@ read_dentry_tree(const u8 *buf, size_t buf_len,
 	int ret;
 	struct wim_dentry *root;
 
-	DEBUG("Reading dentry tree (root_offset=%"PRIu64")", root_offset);
-
 	ret = read_dentry(buf, buf_len, &root_offset, &root);
 	if (ret)
 		return ret;
@@ -1890,10 +1888,6 @@ write_dir_dentries(struct wim_dentry *dir, void *_pp)
 u8 *
 write_dentry_tree(struct wim_dentry *root, u8 *p)
 {
-	DEBUG("Writing dentry tree.");
-
-	wimlib_assert(root != NULL);
-
 	/* write root dentry and end-of-directory entry following it */
 	p = write_dentry(root, p);
 	*(u64*)p = 0;

@@ -796,9 +796,6 @@ execute_add_command(struct update_command_journal *j,
 	wim_target_path = add_cmd->add.wim_target_path;
 	config_file = add_cmd->add.config_file;
 
-	DEBUG("fs_source_path=\"%"TS"\", wim_target_path=\"%"TS"\", add_flags=%#x",
-	      fs_source_path, wim_target_path, add_flags);
-
 	memset(&params, 0, sizeof(params));
 
 #ifdef WITH_NTFS_3G
@@ -891,8 +888,6 @@ execute_delete_command(struct update_command_journal *j,
 
 	flags = delete_cmd->delete_.delete_flags;
 	wim_path = delete_cmd->delete_.wim_path;
-
-	DEBUG("Deleting WIM path \"%"TS"\" (flags=%#x)", wim_path, flags);
 
 	tree = get_dentry(wim, wim_path, WIMLIB_CASE_PLATFORM_DEFAULT);
 	if (!tree) {
@@ -1064,22 +1059,6 @@ execute_rename_command(struct update_command_journal *j,
 	return ret;
 }
 
-static inline const tchar *
-update_op_to_str(int op)
-{
-	switch (op) {
-	case WIMLIB_UPDATE_OP_ADD:
-		return T("add");
-	case WIMLIB_UPDATE_OP_DELETE:
-		return T("delete");
-	case WIMLIB_UPDATE_OP_RENAME:
-		return T("rename");
-	default:
-		wimlib_assert(0);
-		return NULL;
-	}
-}
-
 static bool
 have_command_type(const struct wimlib_update_command *cmds, size_t num_cmds,
 		  enum wimlib_update_op op)
@@ -1138,8 +1117,6 @@ execute_update_commands(WIMStruct *wim,
 	info.update.total_commands = num_cmds;
 	ret = 0;
 	for (size_t i = 0; i < num_cmds; i++) {
-		DEBUG("Executing update command %zu of %zu (op=%"TS")",
-		      i + 1, num_cmds, update_op_to_str(cmds[i].op));
 		info.update.command = &cmds[i];
 		if (update_flags & WIMLIB_UPDATE_FLAG_SEND_PROGRESS) {
 			ret = call_progress(wim->progfunc,
@@ -1424,14 +1401,10 @@ wimlib_update_image(WIMStruct *wim,
 	if (update_flags & ~WIMLIB_UPDATE_FLAG_SEND_PROGRESS)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	DEBUG("Updating image %d with %zu commands", image, num_cmds);
-
 	/* Load the metadata for the image to modify (if not loaded already) */
 	ret = select_wim_image(wim, image);
 	if (ret)
 		goto out;
-
-	DEBUG("Preparing %zu update commands", num_cmds);
 
 	/* Make a copy of the update commands, in the process doing certain
 	 * canonicalizations on paths (e.g. translating backslashes to forward
@@ -1448,7 +1421,6 @@ wimlib_update_image(WIMStruct *wim,
 		goto out_free_cmds_copy;
 
 	/* Actually execute the update commands. */
-	DEBUG("Executing %zu update commands", num_cmds);
 	ret = execute_update_commands(wim, cmds_copy, num_cmds, update_flags);
 	if (ret)
 		goto out_free_cmds_copy;

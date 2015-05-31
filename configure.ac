@@ -242,16 +242,6 @@ AM_CONDITIONAL([ENABLE_SSSE3_SHA1], [test "$ENABLE_SSSE3_SHA1" = "yes"])
 
 # ----------------------------- Other options ---------------------------------
 
-AC_MSG_CHECKING([whether to include debugging messages])
-AC_ARG_ENABLE([debug],
-	AS_HELP_STRING([--enable-debug], [include debugging messages]),
-	[ENABLE_DEBUG=$enableval],
-	[ENABLE_DEBUG=no])
-AC_MSG_RESULT([$ENABLE_DEBUG])
-if test "$ENABLE_DEBUG" = "yes"; then
-	AC_DEFINE([ENABLE_DEBUG], [1], [Define to 1 if including debug messages])
-fi
-
 AC_MSG_CHECKING([whether to include error messages])
 AC_ARG_ENABLE([error_messages],
 	AS_HELP_STRING([--disable-error-messages], [do not compile in error messsages]),
