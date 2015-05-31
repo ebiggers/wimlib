@@ -359,8 +359,8 @@ inode_replace_stream_data(struct wim_inode *inode,
 			  struct blob_table *blob_table);
 
 extern bool
-inode_add_stream_with_data(struct wim_inode *inode, int stream_type,
-			   const utf16lechar *stream_name,
+inode_add_stream_with_data(struct wim_inode *inode,
+			   int stream_type, const utf16lechar *stream_name,
 			   const void *data, size_t size,
 			   struct blob_table *blob_table);
 
@@ -397,8 +397,8 @@ extern bool
 inode_has_named_data_stream(const struct wim_inode *inode);
 
 extern int
-inode_resolve_streams(struct wim_inode *inode,
-		      struct blob_table *table, bool force);
+inode_resolve_streams(struct wim_inode *inode, struct blob_table *table,
+		      bool force);
 
 extern int
 blob_not_found_error(const struct wim_inode *inode, const u8 *hash);

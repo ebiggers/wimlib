@@ -341,8 +341,7 @@ blob_to_wimlib_resource_entry(const struct blob_descriptor *blob,
 			      struct wimlib_resource_entry *wentry);
 
 extern int
-sort_blob_list(struct list_head *blob_list,
-	       size_t list_head_offset,
+sort_blob_list(struct list_head *blob_list, size_t list_head_offset,
 	       int (*compar)(const void *, const void*));
 
 extern int
@@ -402,8 +401,7 @@ after_blob_hashed(struct blob_descriptor *blob,
 		  struct blob_table *blob_table);
 
 extern int
-hash_unhashed_blob(struct blob_descriptor *blob,
-		   struct blob_table *blob_table,
+hash_unhashed_blob(struct blob_descriptor *blob, struct blob_table *blob_table,
 		   struct blob_descriptor **blob_ret);
 
 extern struct blob_descriptor **

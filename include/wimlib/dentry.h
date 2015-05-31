@@ -132,8 +132,7 @@ dentry_out_total_length(const struct wim_dentry *dentry);
 
 extern int
 for_dentry_in_tree(struct wim_dentry *root,
-		   int (*visitor)(struct wim_dentry*, void*),
-		   void *args);
+		   int (*visitor)(struct wim_dentry *, void *), void *args);
 
 /* Iterate through each @child dentry of the @dir directory inode,
  * in sorted order by case sensitive name.  */
@@ -182,19 +181,17 @@ extern void
 calculate_subdir_offsets(struct wim_dentry *root, u64 *subdir_offset_p);
 
 extern int
-dentry_set_name(struct wim_dentry *dentry, const tchar *new_name);
+dentry_set_name(struct wim_dentry *dentry, const tchar *name);
 
 extern int
-dentry_set_name_utf16le(struct wim_dentry *dentry, const utf16lechar *new_name,
-			size_t new_name_nbytes);
+dentry_set_name_utf16le(struct wim_dentry *dentry, const utf16lechar *name,
+			size_t name_nbytes);
 
 extern struct wim_dentry *
-get_dentry(struct WIMStruct *wim, const tchar *path,
-	   CASE_SENSITIVITY_TYPE case_type);
+get_dentry(WIMStruct *wim, const tchar *path, CASE_SENSITIVITY_TYPE case_type);
 
 extern struct wim_dentry *
-get_dentry_child_with_name(const struct wim_dentry *dentry,
-			   const tchar *name,
+get_dentry_child_with_name(const struct wim_dentry *dentry, const tchar *name,
 			   CASE_SENSITIVITY_TYPE case_type);
 
 extern struct wim_dentry *
@@ -204,7 +201,7 @@ get_dentry_child_with_utf16le_name(const struct wim_dentry *dentry,
 				   CASE_SENSITIVITY_TYPE case_type);
 
 extern struct wim_dentry *
-get_parent_dentry(struct WIMStruct *wim, const tchar *path,
+get_parent_dentry(WIMStruct *wim, const tchar *path,
 		  CASE_SENSITIVITY_TYPE case_type);
 
 extern int
@@ -231,8 +228,7 @@ extern void
 free_dentry(struct wim_dentry *dentry);
 
 extern void
-free_dentry_tree(struct wim_dentry *root,
-		 struct blob_table *blob_table);
+free_dentry_tree(struct wim_dentry *root, struct blob_table *blob_table);
 
 extern void
 unlink_dentry(struct wim_dentry *dentry);
@@ -284,4 +280,5 @@ dentry_has_short_name(const struct wim_dentry *dentry)
 {
 	return dentry->d_short_name_nbytes != 0;
 }
+
 #endif /* _WIMLIB_DENTRY_H */

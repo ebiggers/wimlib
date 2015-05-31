@@ -666,10 +666,10 @@ struct wim_dentry *
 get_dentry_child_with_utf16le_name(const struct wim_dentry *dentry,
 				   const utf16lechar *name,
 				   size_t name_nbytes,
-				   CASE_SENSITIVITY_TYPE case_ctype)
+				   CASE_SENSITIVITY_TYPE case_type)
 {
 	const struct wim_inode *dir = dentry->d_inode;
-	bool ignore_case = will_ignore_case(case_ctype);
+	bool ignore_case = will_ignore_case(case_type);
 	struct wim_dentry dummy;
 	struct wim_dentry *child;
 
