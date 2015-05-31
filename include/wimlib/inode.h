@@ -119,7 +119,7 @@ struct wim_inode {
 
 	/* List of dentries that are aliases for this inode.  There will be
 	 * i_nlink dentries in this list.  */
-	struct hlist_head i_dentry;
+	struct hlist_head i_alias_list;
 
 	/* Field to place this inode into a list.  While reading a WIM image or
 	 * adding files to a WIM image this is owned by the inode table;
@@ -180,13 +180,13 @@ struct wim_inode {
 		/* Device number, used only during image capture, so we can
 		 * identify hard linked files by the combination of inode number
 		 * and device number (rather than just inode number, which could
-		 * be ambigious if the captured tree spans a mountpoint).  Set
+		 * be ambiguous if the captured tree spans a mountpoint).  Set
 		 * to 0 otherwise.  */
 		u64 i_devno;
 
 		/* Fields used only during extraction  */
 		struct {
-			/* A singly linked list of aliases of this dentry that
+			/* A singly linked list of aliases of this inode that
 			 * are being extracted in the current extraction
 			 * operation.  This list may be shorter than the inode's
 			 * full alias list.  This list will be constructed
@@ -268,11 +268,11 @@ new_inode(struct wim_dentry *dentry, bool set_timestamps);
 
 /* Iterate through each alias of the specified inode.  */
 #define inode_for_each_dentry(dentry, inode) \
-	hlist_for_each_entry((dentry), &(inode)->i_dentry, d_alias)
+	hlist_for_each_entry((dentry), &(inode)->i_alias_list, d_alias_node)
 
 /* Return an alias of the specified inode.  */
 #define inode_first_dentry(inode) \
-	hlist_entry(inode->i_dentry.first, struct wim_dentry, d_alias)
+	hlist_entry(inode->i_alias_list.first, struct wim_dentry, d_alias_node)
 
 /* Return the full path of an alias of the specified inode, or NULL if a full
  * path could not be determined.  */

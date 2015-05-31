@@ -57,7 +57,7 @@ struct wim_dentry {
 
 	/* Linked list node that places this dentry in the list of aliases for
 	 * its inode (d_inode) */
-	struct hlist_node d_alias;
+	struct hlist_node d_alias_node;
 
 	/* Pointer to the UTF-16LE short filename (malloc()ed buffer), or NULL
 	 * if this dentry has no short name.  */

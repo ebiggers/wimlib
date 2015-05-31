@@ -57,7 +57,7 @@ new_inode(struct wim_dentry *dentry, bool set_timestamps)
 	inode->i_security_id = -1;
 	/*inode->i_nlink = 0;*/
 	inode->i_rp_flags = WIM_RP_FLAG_NOT_FIXED;
-	INIT_HLIST_HEAD(&inode->i_dentry);
+	INIT_HLIST_HEAD(&inode->i_alias_list);
 	inode->i_streams = inode->i_embedded_streams;
 	if (set_timestamps) {
 		u64 now = now_as_wim_timestamp();
@@ -108,7 +108,7 @@ d_associate(struct wim_dentry *dentry, struct wim_inode *inode)
 {
 	wimlib_assert(!dentry->d_inode);
 
-	hlist_add_head(&dentry->d_alias, &inode->i_dentry);
+	hlist_add_head(&dentry->d_alias_node, &inode->i_alias_list);
 	dentry->d_inode = inode;
 	inode->i_nlink++;
 }
@@ -125,7 +125,7 @@ d_disassociate(struct wim_dentry *dentry)
 
 	wimlib_assert(inode->i_nlink > 0);
 
-	hlist_del(&dentry->d_alias);
+	hlist_del(&dentry->d_alias_node);
 	dentry->d_inode = NULL;
 	inode->i_nlink--;
 
