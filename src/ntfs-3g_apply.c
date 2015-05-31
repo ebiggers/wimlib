@@ -760,28 +760,29 @@ ntfs_3g_cleanup_blob_extract(struct ntfs_3g_apply_ctx *ctx)
 static ntfs_inode *
 ntfs_3g_open_inode(struct wim_inode *inode, struct ntfs_3g_apply_ctx *ctx)
 {
-	ntfs_inode *ni = NULL;
+	ntfs_inode *ni;
 
-	if (inode->i_visited) {
-		for (u32 i = 0; i < ctx->num_open_inodes; i++) {
+	/* If the same blob is being extracted to multiple streams of the same
+	 * inode, then we must only open the inode once.  */
+	if (unlikely(inode->i_num_streams > 1)) {
+		for (unsigned i = 0; i < ctx->num_open_inodes; i++) {
 			if (ctx->open_inodes[i]->mft_no == inode->i_mft_no) {
 				ni = ctx->open_inodes[i];
-				break;
+				goto have_inode;
 			}
 		}
 	}
-	if (!ni) {
-		ni = ntfs_inode_open(ctx->vol, inode->i_mft_no);
-		ctx->open_inodes[ctx->num_open_inodes++] = ni;
-		inode->i_visited = 1;
-	}
 
-	if (!ni) {
+	ni = ntfs_inode_open(ctx->vol, inode->i_mft_no);
+	if (unlikely(!ni)) {
 		ERROR_WITH_ERRNO("Can't open \"%s\" in NTFS volume",
 				 dentry_full_path(
 					inode_first_extraction_dentry(inode)));
 		return NULL;
 	}
+
+have_inode:
+	ctx->open_inodes[ctx->num_open_inodes++] = ni;
 	return ni;
 }
 
@@ -811,8 +812,6 @@ ntfs_3g_begin_extract_blob(struct blob_descriptor *blob, void *_ctx)
 out_cleanup:
 	ntfs_3g_cleanup_blob_extract(ctx);
 out:
-	for (u32 i = 0; i < blob->out_refcnt; i++)
-		targets[i].inode->i_visited = 0;
 	return ret;
 }
 

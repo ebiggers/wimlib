@@ -129,10 +129,8 @@ struct wim_inode {
 	/* Number of dentries that are aliases for this inode.  */
 	u32 i_nlink : 30;
 
-	/* Flag used to mark this inode as visited; this is used when visiting
-	 * all the inodes in a dentry tree exactly once.  It will be 0 by
-	 * default and must be cleared following the tree traversal, even in
-	 * error paths.  */
+	/* Flag used by some code to mark this inode as visited.  It will be 0
+	 * by default, and it always must be cleared after use.  */
 	u32 i_visited : 1;
 
 	/* Cached value  */
