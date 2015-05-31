@@ -654,8 +654,8 @@ do_done_with_blob(struct blob_descriptor *blob,
 	inode = blob->file_inode;
 
 	wimlib_assert(inode != NULL);
-	wimlib_assert(inode->num_remaining_streams > 0);
-	if (--inode->num_remaining_streams > 0)
+	wimlib_assert(inode->i_num_remaining_streams > 0);
+	if (--inode->i_num_remaining_streams > 0)
 		return 0;
 
 #ifdef __WIN32__
@@ -1361,7 +1361,7 @@ init_done_with_file_info(struct list_head *blob_list)
 
 	list_for_each_entry(blob, blob_list, write_blobs_list) {
 		if (blob_is_in_file(blob)) {
-			blob->file_inode->num_remaining_streams = 0;
+			blob->file_inode->i_num_remaining_streams = 0;
 			blob->may_send_done_with_file = 1;
 		} else {
 			blob->may_send_done_with_file = 0;
@@ -1370,7 +1370,7 @@ init_done_with_file_info(struct list_head *blob_list)
 
 	list_for_each_entry(blob, blob_list, write_blobs_list)
 		if (blob->may_send_done_with_file)
-			blob->file_inode->num_remaining_streams++;
+			blob->file_inode->i_num_remaining_streams++;
 }
 
 /*
