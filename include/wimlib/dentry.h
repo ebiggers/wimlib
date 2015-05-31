@@ -59,21 +59,19 @@ struct wim_dentry {
 	 * its inode (d_inode) */
 	struct hlist_node d_alias_node;
 
-	/* Pointer to the UTF-16LE short filename (malloc()ed buffer), or NULL
-	 * if this dentry has no short name.  */
-	utf16lechar *d_short_name;
-
 	/* Pointer to the UTF-16LE filename (malloc()ed buffer), or NULL if this
 	 * dentry has no filename.  */
 	utf16lechar *d_name;
 
-	/* Length of UTF-16LE encoded short filename, in bytes, not including
-	 * the terminating zero wide-character. */
-	u16 d_short_name_nbytes;
+	/* Pointer to the UTF-16LE short filename (malloc()ed buffer), or NULL
+	 * if this dentry has no short name.  */
+	utf16lechar *d_short_name;
 
-	/* Length of UTF-16LE encoded "long" file name, in bytes, not including
-	 * the terminating null character. */
+	/* Length of 'd_name' in bytes, excluding the terminating null  */
 	u16 d_name_nbytes;
+
+	/* Length of 'd_short_name' in bytes, excluding the terminating null  */
+	u16 d_short_name_nbytes;
 
 	/* When capturing from an NTFS volume using NTFS-3g, this flag is set on
 	 * dentries that were created from a filename in the WIN32 or WIN32+DOS
@@ -275,14 +273,14 @@ dentry_has_children(const struct wim_dentry *dentry)
 }
 
 static inline bool
-dentry_has_short_name(const struct wim_dentry *dentry)
-{
-	return dentry->d_short_name_nbytes != 0;
-}
-
-static inline bool
 dentry_has_long_name(const struct wim_dentry *dentry)
 {
 	return dentry->d_name_nbytes != 0;
+}
+
+static inline bool
+dentry_has_short_name(const struct wim_dentry *dentry)
+{
+	return dentry->d_short_name_nbytes != 0;
 }
 #endif /* _WIMLIB_DENTRY_H */
