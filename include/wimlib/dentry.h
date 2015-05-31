@@ -99,7 +99,7 @@ struct wim_dentry {
 	 * that can be printed without conversion.  By default this field will
 	 * be NULL and will only be calculated on-demand by the
 	 * calculate_dentry_full_path() or dentry_full_path() functions.  */
-	tchar *_full_path;
+	tchar *d_full_path;
 
 	/* (Extraction only) Actual name to extract this dentry as.  This may be
 	 * either in 'tchars' or in 'utf16lechars', depending on what encoding

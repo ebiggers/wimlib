@@ -472,10 +472,10 @@ for_dentry_in_tree_depth(struct wim_dentry *root,
 /*
  * Calculate the full path to @dentry within the WIM image, if not already done.
  *
- * The full name will be saved in the cached value 'dentry->_full_path'.
+ * The full name will be saved in the cached value 'dentry->d_full_path'.
  *
  * Whenever possible, use dentry_full_path() instead of calling this and
- * accessing _full_path directly.
+ * accessing d_full_path directly.
  *
  * Returns 0 or an error code resulting from a failed string conversion.
  */
@@ -486,7 +486,7 @@ calculate_dentry_full_path(struct wim_dentry *dentry)
 	size_t dummy;
 	const struct wim_dentry *d;
 
-	if (dentry->_full_path)
+	if (dentry->d_full_path)
 		return 0;
 
 	ulen = 0;
@@ -511,7 +511,7 @@ calculate_dentry_full_path(struct wim_dentry *dentry)
 	wimlib_assert(p == ubuf);
 
 	return utf16le_to_tstr(ubuf, ulen * sizeof(utf16lechar),
-			       &dentry->_full_path, &dummy);
+			       &dentry->d_full_path, &dummy);
 }
 
 /*
@@ -525,7 +525,7 @@ tchar *
 dentry_full_path(struct wim_dentry *dentry)
 {
 	calculate_dentry_full_path(dentry);
-	return dentry->_full_path;
+	return dentry->d_full_path;
 }
 
 static int
@@ -1008,7 +1008,7 @@ free_dentry(struct wim_dentry *dentry)
 		d_disassociate(dentry);
 		FREE(dentry->d_name);
 		FREE(dentry->d_short_name);
-		FREE(dentry->_full_path);
+		FREE(dentry->d_full_path);
 		FREE(dentry);
 	}
 }

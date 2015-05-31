@@ -492,8 +492,8 @@ will_externally_back_inode(struct wim_inode *inode, struct win32_apply_ctx *ctx,
 		if (ret)
 			return ret;
 
-		if (!can_externally_back_path(dentry->_full_path,
-					      wcslen(dentry->_full_path), ctx))
+		if (!can_externally_back_path(dentry->d_full_path,
+					      wcslen(dentry->d_full_path), ctx))
 		{
 			if (excluded_dentry_ret)
 				*excluded_dentry_ret = dentry;
@@ -557,7 +557,7 @@ set_external_backing(HANDLE h, struct wim_inode *inode, struct win32_apply_ctx *
 
 		build_extraction_path(excluded_dentry, ctx);
 
-		info.wimboot_exclude.path_in_wim = excluded_dentry->_full_path;
+		info.wimboot_exclude.path_in_wim = excluded_dentry->d_full_path;
 		info.wimboot_exclude.extraction_path = current_path(ctx);
 
 		return call_progress(ctx->common.progfunc,

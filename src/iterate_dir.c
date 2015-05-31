@@ -104,7 +104,7 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry, struct wim_dentry *dentry,
 	ret = calculate_dentry_full_path(dentry);
 	if (ret)
 		return ret;
-	wdentry->full_path = dentry->_full_path;
+	wdentry->full_path = dentry->d_full_path;
 
 	for (struct wim_dentry *d = dentry; !dentry_is_root(d); d = d->d_parent)
 		wdentry->depth++;

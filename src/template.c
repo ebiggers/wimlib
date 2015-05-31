@@ -141,10 +141,10 @@ dentry_reference_template(struct wim_dentry *dentry, void *_args)
 	if (ret)
 		return ret;
 
-	template_dentry = get_dentry(template_wim, dentry->_full_path,
+	template_dentry = get_dentry(template_wim, dentry->d_full_path,
 				     WIMLIB_CASE_SENSITIVE);
 	if (template_dentry == NULL) {
-		DEBUG("\"%"TS"\": newly added file", dentry->_full_path);
+		DEBUG("\"%"TS"\": newly added file", dentry->d_full_path);
 		return 0;
 	}
 
@@ -154,12 +154,12 @@ dentry_reference_template(struct wim_dentry *dentry, void *_args)
 	if (inode_metadata_consistent(inode, template_inode, wim->blob_table,
 				      template_wim->blob_table))
 	{
-		DEBUG("\"%"TS"\": No change detected", dentry->_full_path);
+		DEBUG("\"%"TS"\": No change detected", dentry->d_full_path);
 		inode_copy_checksums(inode, template_inode, wim->blob_table,
 				     template_wim->blob_table);
 		inode->i_visited = 1;
 	} else {
-		DEBUG("\"%"TS"\": change detected!", dentry->_full_path);
+		DEBUG("\"%"TS"\": change detected!", dentry->d_full_path);
 	}
 	return 0;
 }

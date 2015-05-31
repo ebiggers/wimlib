@@ -550,7 +550,7 @@ handle_conflict(struct wim_dentry *branch, struct wim_dentry *existing,
 		if (add_flags & WIMLIB_ADD_FLAG_VERBOSE) {
 			union wimlib_progress_info info;
 
-			info.replace.path_in_wim = existing->_full_path;
+			info.replace.path_in_wim = existing->d_full_path;
 			ret = call_progress(progfunc,
 					    WIMLIB_PROGRESS_MSG_REPLACE_FILE_IN_WIM,
 					    &info, progctx);
@@ -919,8 +919,8 @@ execute_delete_command(struct update_command_journal *j,
 static int
 free_dentry_full_path(struct wim_dentry *dentry, void *_ignore)
 {
-	FREE(dentry->_full_path);
-	dentry->_full_path = NULL;
+	FREE(dentry->d_full_path);
+	dentry->d_full_path = NULL;
 	return 0;
 }
 
@@ -1017,7 +1017,7 @@ rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to,
 		unlink_dentry(src);
 		dentry_add_child(parent_of_dst, src);
 	}
-	if (src->_full_path)
+	if (src->d_full_path)
 		for_dentry_in_tree(src, free_dentry_full_path, NULL);
 	return 0;
 }
