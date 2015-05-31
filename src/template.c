@@ -119,23 +119,13 @@ inode_copy_checksums(struct wim_inode *inode,
 	}
 }
 
-struct reference_template_args {
-	WIMStruct *wim;
-	WIMStruct *template_wim;
-};
-
 static int
-dentry_reference_template(struct wim_dentry *dentry, void *_args)
+reference_template_file(struct wim_inode *inode, WIMStruct *wim,
+			WIMStruct *template_wim)
 {
-	int ret;
+	struct wim_dentry *dentry = inode_first_dentry(inode);
 	struct wim_dentry *template_dentry;
-	struct wim_inode *inode, *template_inode;
-	struct reference_template_args *args = _args;
-	WIMStruct *wim = args->wim;
-	WIMStruct *template_wim = args->template_wim;
-
-	if (dentry->d_inode->i_visited)
-		return 0;
+	int ret;
 
 	ret = calculate_dentry_full_path(dentry);
 	if (ret)
@@ -143,24 +133,16 @@ dentry_reference_template(struct wim_dentry *dentry, void *_args)
 
 	template_dentry = get_dentry(template_wim, dentry->d_full_path,
 				     WIMLIB_CASE_SENSITIVE);
-	if (template_dentry == NULL) {
-		DEBUG("\"%"TS"\": newly added file", dentry->d_full_path);
-		return 0;
-	}
-
-	inode = dentry->d_inode;
-	template_inode = template_dentry->d_inode;
-
-	if (inode_metadata_consistent(inode, template_inode, wim->blob_table,
-				      template_wim->blob_table))
+	if (template_dentry != NULL &&
+	    inode_metadata_consistent(inode, template_dentry->d_inode,
+				      wim->blob_table, template_wim->blob_table))
 	{
-		DEBUG("\"%"TS"\": No change detected", dentry->d_full_path);
-		inode_copy_checksums(inode, template_inode, wim->blob_table,
-				     template_wim->blob_table);
-		inode->i_visited = 1;
-	} else {
-		DEBUG("\"%"TS"\": change detected!", dentry->d_full_path);
+		inode_copy_checksums(inode, template_dentry->d_inode,
+				     wim->blob_table, template_wim->blob_table);
 	}
+
+	FREE(dentry->d_full_path);
+	dentry->d_full_path = NULL;
 	return 0;
 }
 
@@ -172,6 +154,7 @@ wimlib_reference_template_image(WIMStruct *wim, int new_image,
 {
 	int ret;
 	struct wim_image_metadata *new_imd;
+	struct wim_inode *inode;
 
 	if (flags != 0)
 		return WIMLIB_ERR_INVALID_PARAM;
@@ -196,13 +179,11 @@ wimlib_reference_template_image(WIMStruct *wim, int new_image,
 	if (ret)
 		return ret;
 
-	struct reference_template_args args = {
-		.wim = wim,
-		.template_wim = template_wim,
-	};
+	image_for_each_inode(inode, new_imd) {
+		ret = reference_template_file(inode, wim, template_wim);
+		if (ret)
+			return ret;
+	}
 
-	ret = for_dentry_in_tree(new_imd->root_dentry,
-				 dentry_reference_template, &args);
-	dentry_tree_clear_inode_visited(new_imd->root_dentry);
-	return ret;
+	return 0;
 }

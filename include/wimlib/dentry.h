@@ -218,9 +218,6 @@ extern int
 new_dentry_with_existing_inode(const tchar *name, struct wim_inode *inode,
 			       struct wim_dentry **dentry_ret);
 
-extern void
-dentry_tree_clear_inode_visited(struct wim_dentry *root);
-
 extern int
 new_filler_directory(struct wim_dentry **dentry_ret);
 

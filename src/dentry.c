@@ -982,19 +982,6 @@ new_filler_directory(struct wim_dentry **dentry_ret)
 	return 0;
 }
 
-static int
-dentry_clear_inode_visited(struct wim_dentry *dentry, void *_ignore)
-{
-	dentry->d_inode->i_visited = 0;
-	return 0;
-}
-
-void
-dentry_tree_clear_inode_visited(struct wim_dentry *root)
-{
-	for_dentry_in_tree(root, dentry_clear_inode_visited, NULL);
-}
-
 /*
  * Free a WIM dentry.
  *
