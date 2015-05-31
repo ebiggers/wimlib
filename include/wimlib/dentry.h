@@ -77,7 +77,7 @@ struct wim_dentry {
 	 * dentries that were created from a filename in the WIN32 or WIN32+DOS
 	 * namespaces rather than the POSIX namespace.  Otherwise this will
 	 * always be 0.  */
-	u8 is_win32_name : 1;
+	u8 d_is_win32_name : 1;
 
 	/* Temporary flag; always reset to 0 when done using.  */
 	u8 tmp_flag : 1;

@@ -521,7 +521,7 @@ set_dentry_dos_name(struct wim_dentry *dentry, const struct dos_name_map *map)
 {
 	const struct dos_name_node *node;
 
-	if (dentry->is_win32_name) {
+	if (dentry->d_is_win32_name) {
 		node = lookup_dos_name(map, dentry->d_inode->i_ino);
 		if (node) {
 			dentry->d_short_name = utf16le_dupz(node->dos_name,
@@ -717,7 +717,7 @@ ntfs_3g_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		goto out;
 
 	if (name_type & FILE_NAME_WIN32) /* Win32 or Win32+DOS name (rather than POSIX) */
-		root->is_win32_name = 1;
+		root->d_is_win32_name = 1;
 
 	inode = root->d_inode;
 
