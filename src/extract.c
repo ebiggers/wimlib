@@ -753,11 +753,12 @@ dentry_calculate_extraction_name(struct wim_dentry *dentry,
 	}
 
 	if (file_name_valid(dentry->d_name, dentry->d_name_nbytes / 2, false)) {
+		size_t nbytes = 0;
 		ret = utf16le_get_tstr(dentry->d_name,
 				       dentry->d_name_nbytes,
 				       (const tchar **)&dentry->d_extraction_name,
-				       &dentry->d_extraction_name_nchars);
-		dentry->d_extraction_name_nchars /= sizeof(tchar);
+				       &nbytes);
+		dentry->d_extraction_name_nchars = nbytes / sizeof(tchar);
 		return ret;
 	} else {
 		if (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_REPLACE_INVALID_FILENAMES)

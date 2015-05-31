@@ -73,17 +73,21 @@ struct wim_dentry {
 	/* Length of 'd_short_name' in bytes, excluding the terminating null  */
 	u16 d_short_name_nbytes;
 
+	/* (Extraction only) Length of 'd_extraction_name' in _characters_,
+	 * excluding the terminating null  */
+	u16 d_extraction_name_nchars;
+
 	/* When capturing from an NTFS volume using NTFS-3g, this flag is set on
 	 * dentries that were created from a filename in the WIN32 or WIN32+DOS
 	 * namespaces rather than the POSIX namespace.  Otherwise this will
 	 * always be 0.  */
-	u8 d_is_win32_name : 1;
+	u16 d_is_win32_name : 1;
 
 	/* Temporary flag; always reset to 0 when done using.  */
-	u8 d_tmp_flag : 1;
+	u16 d_tmp_flag : 1;
 
 	/* Used by wimlib_update_image()  */
-	u8 d_is_orphan : 1;
+	u16 d_is_orphan : 1;
 
 	union {
 		/* The subdir offset is only used while reading and writing this
@@ -107,14 +111,11 @@ struct wim_dentry {
 	 * doesn't, it is an allocated buffer which must be freed.  */
 	void *d_extraction_name;
 
-	/* (Extraction only) Number of characters in d_extraction_name.  */
-	size_t d_extraction_name_nchars;
-
 	/* (Extraction only) Linked list node that connects all dentries being
 	 * extracted as part of the current extraction operation.  */
 	struct list_head d_extraction_list_node;
 
-	/* (Extraction only) Pointer to the next alias for this dentry's inode
+	/* (Extraction only) Pointer to the next alias of this dentry's inode
 	 * that needs to be extracted as part of the current extraction
 	 * operation, or NULL if this is the last alias.  */
 	struct wim_dentry *d_next_extraction_alias;
