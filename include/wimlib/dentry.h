@@ -116,10 +116,10 @@ struct wim_dentry {
 	 * extracted as part of the current extraction operation.  */
 	struct list_head d_extraction_list_node;
 
-	/* (Extraction only) Linked list node that connects all dentries being
-	 * extracted as aliases of the same inode as part of the current
-	 * extraction operation.  */
-	struct list_head d_extraction_alias_node;
+	/* (Extraction only) Pointer to the next alias for this dentry's inode
+	 * that needs to be extracted as part of the current extraction
+	 * operation, or NULL if this is the last alias.  */
+	struct wim_dentry *d_next_extraction_alias;
 };
 
 static inline bool

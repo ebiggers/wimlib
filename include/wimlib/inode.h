@@ -186,13 +186,13 @@ struct wim_inode {
 
 		/* Fields used only during extraction  */
 		struct {
-			/* List of aliases of this dentry that are being
-			 * extracted in the current extraction operation.  This
-			 * will be a (possibly nonproper) subset of the dentries
-			 * in the i_dentry list.  This list will be constructed
+			/* A singly linked list of aliases of this dentry that
+			 * are being extracted in the current extraction
+			 * operation.  This list may be shorter than the inode's
+			 * full alias list.  This list will be constructed
 			 * regardless of whether the extraction backend supports
 			 * hard links or not.  */
-			struct list_head i_extraction_aliases;
+			struct wim_dentry *i_first_extraction_alias;
 
 		#ifdef WITH_NTFS_3G
 			/* In NTFS-3g extraction mode, this is set to the Master

@@ -134,14 +134,13 @@ report_apply_error(struct apply_ctx *ctx, int error_code, const tchar *path)
 	return report_error(ctx->progfunc, ctx->progctx, error_code, path);
 }
 
-/* Returns any of the aliases of an inode that are being extracted.  */
-#define inode_first_extraction_dentry(inode)		\
-	list_first_entry(&(inode)->i_extraction_aliases,	\
-			 struct wim_dentry, d_extraction_alias_node)
+#define inode_first_extraction_dentry(inode)				\
+	((inode)->i_first_extraction_alias)
 
 #define inode_for_each_extraction_alias(dentry, inode)			\
-	list_for_each_entry(dentry, &(inode)->i_extraction_aliases,	\
-			    d_extraction_alias_node)
+	for (dentry = inode_first_extraction_dentry(inode);		\
+	     dentry != NULL;						\
+	     dentry = dentry->d_next_extraction_alias)
 
 extern int
 extract_blob_list(struct apply_ctx *ctx, const struct read_blob_callbacks *cbs);
@@ -203,10 +202,9 @@ struct apply_operations {
 	 * TODO: really, the extraction backends should be responsible for
 	 * generating 'd_extraction_name'.
 	 *
-	 * Each dentry will refer to a valid inode in 'd_inode'.
-	 * 'd_inode->i_extraction_aliases' will contain a list of just the
-	 * dentries of that inode being extracted.  This will be a (possibly
-	 * nonproper) subset of the 'd_inode->i_dentry' list.
+	 * Each dentry will refer to a valid inode in 'd_inode'.  Each inode
+	 * will contain a list of dentries of that inode being extracted; this
+	 * list may be shorter than the inode's full dentry list.
 	 *
 	 * The blobs required to be extracted will already be prepared in
 	 * 'apply_ctx'.  The extraction backend should call extract_blob_list()

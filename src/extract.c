@@ -1080,18 +1080,14 @@ static void
 dentry_list_build_inode_alias_lists(struct list_head *dentry_list)
 {
 	struct wim_dentry *dentry;
-	struct wim_inode *inode;
+
+	list_for_each_entry(dentry, dentry_list, d_extraction_list_node)
+		dentry->d_inode->i_first_extraction_alias = NULL;
 
 	list_for_each_entry(dentry, dentry_list, d_extraction_list_node) {
-		inode = dentry->d_inode;
-		if (!inode->i_visited)
-			INIT_LIST_HEAD(&inode->i_extraction_aliases);
-		list_add_tail(&dentry->d_extraction_alias_node,
-			      &inode->i_extraction_aliases);
-		inode->i_visited = 1;
+		dentry->d_next_extraction_alias = dentry->d_inode->i_first_extraction_alias;
+		dentry->d_inode->i_first_extraction_alias = dentry;
 	}
-	list_for_each_entry(dentry, dentry_list, d_extraction_list_node)
-		dentry->d_inode->i_visited = 0;
 }
 
 static void
