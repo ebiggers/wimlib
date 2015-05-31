@@ -86,10 +86,10 @@ struct wim_dentry {
 	u8 d_is_orphan : 1;
 
 	union {
-		/* 'subdir_offset' is only used while reading and writing this
+		/* The subdir offset is only used while reading and writing this
 		 * dentry.  See the corresponding field in `struct
 		 * wim_dentry_on_disk' for explanation.  */
-		u64 subdir_offset;
+		u64 d_subdir_offset;
 
 		/* Temporary list field  */
 		struct list_head d_tmp_list;

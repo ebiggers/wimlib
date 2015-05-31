@@ -536,7 +536,7 @@ dentry_calculate_subdir_offset(struct wim_dentry *dentry, void *_subdir_offset_p
 		struct wim_dentry *child;
 
 		/* Set offset of directory's child dentries  */
-		dentry->subdir_offset = *subdir_offset_p;
+		dentry->d_subdir_offset = *subdir_offset_p;
 
 		/* Account for child dentries  */
 		for_dentry_child(child, dentry)
@@ -545,8 +545,8 @@ dentry_calculate_subdir_offset(struct wim_dentry *dentry, void *_subdir_offset_p
 		/* Account for end-of-directory entry  */
 		*subdir_offset_p += 8;
 	} else {
-		/* Not a directory; set subdir_offset to 0  */
-		dentry->subdir_offset = 0;
+		/* Not a directory; set the subdir offset to 0  */
+		dentry->d_subdir_offset = 0;
 	}
 	return 0;
 }
@@ -1437,7 +1437,7 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 	/* Read more fields: some into the dentry, and some into the inode.  */
 	inode->i_attributes = le32_to_cpu(disk_dentry->attributes);
 	inode->i_security_id = le32_to_cpu(disk_dentry->security_id);
-	dentry->subdir_offset = le64_to_cpu(disk_dentry->subdir_offset);
+	dentry->d_subdir_offset = le64_to_cpu(disk_dentry->subdir_offset);
 	inode->i_creation_time = le64_to_cpu(disk_dentry->creation_time);
 	inode->i_last_access_time = le64_to_cpu(disk_dentry->last_access_time);
 	inode->i_last_write_time = le64_to_cpu(disk_dentry->last_write_time);
@@ -1549,14 +1549,14 @@ static int
 read_dentry_tree_recursive(const u8 * restrict buf, size_t buf_len,
 			   struct wim_dentry * restrict dir)
 {
-	u64 cur_offset = dir->subdir_offset;
+	u64 cur_offset = dir->d_subdir_offset;
 
 	/* Check for cyclic directory structure, which would cause infinite
 	 * recursion if not handled.  */
 	for (struct wim_dentry *d = dir->d_parent;
 	     !dentry_is_root(d); d = d->d_parent)
 	{
-		if (unlikely(d->subdir_offset == cur_offset)) {
+		if (unlikely(d->d_subdir_offset == cur_offset)) {
 			ERROR("Cyclic directory structure detected: children "
 			      "of \"%"TS"\" coincide with children of \"%"TS"\"",
 			      dentry_full_path(dir), dentry_full_path(d));
@@ -1610,7 +1610,7 @@ read_dentry_tree_recursive(const u8 * restrict buf, size_t buf_len,
 
 		/* If this child is a directory that itself has children, call
 		 * this procedure recursively.  */
-		if (child->subdir_offset != 0) {
+		if (child->d_subdir_offset != 0) {
 			if (likely(dentry_is_directory(child))) {
 				ret = read_dentry_tree_recursive(buf,
 								 buf_len,
@@ -1676,7 +1676,7 @@ read_dentry_tree(const u8 *buf, size_t buf_len,
 			goto err_free_dentry_tree;
 		}
 
-		if (likely(root->subdir_offset != 0)) {
+		if (likely(root->d_subdir_offset != 0)) {
 			ret = read_dentry_tree_recursive(buf, buf_len, root);
 			if (ret)
 				goto err_free_dentry_tree;
@@ -1748,7 +1748,7 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 
 	disk_dentry->attributes = cpu_to_le32(inode->i_attributes);
 	disk_dentry->security_id = cpu_to_le32(inode->i_security_id);
-	disk_dentry->subdir_offset = cpu_to_le64(dentry->subdir_offset);
+	disk_dentry->subdir_offset = cpu_to_le64(dentry->d_subdir_offset);
 
 	disk_dentry->unused_1 = cpu_to_le64(0);
 	disk_dentry->unused_2 = cpu_to_le64(0);
@@ -1869,7 +1869,7 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 static int
 write_dir_dentries(struct wim_dentry *dir, void *_pp)
 {
-	if (dir->subdir_offset != 0) {
+	if (dir->d_subdir_offset != 0) {
 		u8 **pp = _pp;
 		u8 *p = *pp;
 		struct wim_dentry *child;

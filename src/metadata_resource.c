@@ -102,7 +102,7 @@ read_metadata_resource(struct wim_image_metadata *imd)
 	 *
 	 * Notes: The metadata resource consists of the security data, followed
 	 * by the directory entry for the root directory, followed by all the
-	 * other directory entries in the filesystem.  The subdir_offset field
+	 * other directory entries in the filesystem.  The subdir offset field
 	 * of each directory entry gives the start of its child entries from the
 	 * beginning of the metadata resource.  An end-of-directory is signaled
 	 * by a directory entry of length '0', really of length 8, because
