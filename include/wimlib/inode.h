@@ -127,16 +127,16 @@ struct wim_inode {
 	struct hlist_node i_hlist;
 
 	/* Number of dentries that are aliases for this inode.  */
-	u32 i_nlink;
+	u32 i_nlink : 30;
 
 	/* Flag used to mark this inode as visited; this is used when visiting
 	 * all the inodes in a dentry tree exactly once.  It will be 0 by
 	 * default and must be cleared following the tree traversal, even in
 	 * error paths.  */
-	u8 i_visited : 1;
+	u32 i_visited : 1;
 
 	/* Cached value  */
-	u8 i_can_externally_back : 1;
+	u32 i_can_externally_back : 1;
 
 	/* If not NULL, a pointer to the extra data that was read from the
 	 * dentry.  This should be a series of tagged items, each of which
