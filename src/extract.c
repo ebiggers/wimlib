@@ -580,8 +580,10 @@ dentry_reset_extraction_list_node(struct wim_dentry *dentry)
 static int
 dentry_delete_from_list(struct wim_dentry *dentry, void *_ignore)
 {
-	list_del(&dentry->d_extraction_list_node);
-	dentry_reset_extraction_list_node(dentry);
+	if (will_extract_dentry(dentry)) {
+		list_del(&dentry->d_extraction_list_node);
+		dentry_reset_extraction_list_node(dentry);
+	}
 	return 0;
 }
 
