@@ -119,7 +119,7 @@ struct wim_inode {
 
 	/* List of dentries that are aliases for this inode.  There will be
 	 * i_nlink dentries in this list.  */
-	struct list_head i_dentry;
+	struct hlist_head i_dentry;
 
 	/* Field to place this inode into a list.  While reading a WIM image or
 	 * adding files to a WIM image this is owned by the inode table;
@@ -268,11 +268,11 @@ new_inode(struct wim_dentry *dentry, bool set_timestamps);
 
 /* Iterate through each alias of the specified inode.  */
 #define inode_for_each_dentry(dentry, inode) \
-	list_for_each_entry((dentry), &(inode)->i_dentry, d_alias)
+	hlist_for_each_entry((dentry), &(inode)->i_dentry, d_alias)
 
 /* Return an alias of the specified inode.  */
 #define inode_first_dentry(inode) \
-	container_of(inode->i_dentry.next, struct wim_dentry, d_alias)
+	hlist_entry(inode->i_dentry.first, struct wim_dentry, d_alias)
 
 /* Return the full path of an alias of the specified inode, or NULL if a full
  * path could not be determined.  */
