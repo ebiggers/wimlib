@@ -181,8 +181,8 @@ free_update_command_journal(struct update_command_journal *j)
 	/* Free orphaned dentry trees  */
 	while (!list_empty(&j->orphans)) {
 		orphan = list_first_entry(&j->orphans,
-					  struct wim_dentry, tmp_list);
-		list_del(&orphan->tmp_list);
+					  struct wim_dentry, d_tmp_list);
+		list_del(&orphan->d_tmp_list);
 		free_dentry_tree(orphan, j->blob_table);
 	}
 
@@ -266,7 +266,7 @@ rollback_link(struct wim_dentry *subject, struct wim_dentry *parent,
 	do_unlink(subject, parent, root_p);
 
 	/* @subject is now unlinked.  Add it to orphans. */
-	list_add(&subject->tmp_list, orphans);
+	list_add(&subject->d_tmp_list, orphans);
 	subject->d_is_orphan = 1;
 }
 
@@ -279,7 +279,7 @@ rollback_unlink(struct wim_dentry *subject, struct wim_dentry *parent,
 	do_link(subject, parent, root_p);
 
 	/* @subject is no longer unlinked.  Delete it from orphans. */
-	list_del(&subject->tmp_list);
+	list_del(&subject->d_tmp_list);
 	subject->d_is_orphan = 0;
 }
 
@@ -363,7 +363,7 @@ journaled_link(struct update_command_journal *j,
 	do_link(subject, parent, j->root_p);
 
 	if (subject->d_is_orphan) {
-		list_del(&subject->tmp_list);
+		list_del(&subject->d_tmp_list);
 		subject->d_is_orphan = 0;
 	}
 	return 0;
@@ -394,7 +394,7 @@ journaled_unlink(struct update_command_journal *j, struct wim_dentry *subject)
 
 	do_unlink(subject, parent, j->root_p);
 
-	list_add(&subject->tmp_list, &j->orphans);
+	list_add(&subject->d_tmp_list, &j->orphans);
 	subject->d_is_orphan = 1;
 	return 0;
 }

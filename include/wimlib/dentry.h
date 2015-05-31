@@ -92,7 +92,7 @@ struct wim_dentry {
 		u64 subdir_offset;
 
 		/* Temporary list field  */
-		struct list_head tmp_list;
+		struct list_head d_tmp_list;
 	};
 
 	/* Full path to this dentry in the WIM, in platform-dependent tchars

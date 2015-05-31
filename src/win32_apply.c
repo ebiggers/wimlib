@@ -122,12 +122,12 @@ struct win32_apply_ctx {
 	 * beginning of the array)  */
 	unsigned num_open_handles;
 
-	/* List of dentries, joined by @tmp_list, that need to have reparse data
-	 * extracted as soon as the whole blob has been read into @data_buffer.
-	 * */
+	/* List of dentries, joined by @d_tmp_list, that need to have reparse
+	 * data extracted as soon as the whole blob has been read into
+	 * @data_buffer.  */
 	struct list_head reparse_dentries;
 
-	/* List of dentries, joined by @tmp_list, that need to have raw
+	/* List of dentries, joined by @d_tmp_list, that need to have raw
 	 * encrypted data extracted as soon as the whole blob has been read into
 	 * @data_buffer.  */
 	struct list_head encrypted_dentries;
@@ -1815,7 +1815,7 @@ begin_extract_blob_instance(const struct blob_descriptor *blob,
 		 * data be available.  So, stage the data in a buffer.  */
 		if (!prepare_data_buffer(ctx, blob->size))
 			return WIMLIB_ERR_NOMEM;
-		list_add_tail(&dentry->tmp_list, &ctx->reparse_dentries);
+		list_add_tail(&dentry->d_tmp_list, &ctx->reparse_dentries);
 		return 0;
 	}
 
@@ -1833,7 +1833,7 @@ begin_extract_blob_instance(const struct blob_descriptor *blob,
 		 * such files...  */
 		if (!prepare_data_buffer(ctx, blob->size))
 			return WIMLIB_ERR_NOMEM;
-		list_add_tail(&dentry->tmp_list, &ctx->encrypted_dentries);
+		list_add_tail(&dentry->d_tmp_list, &ctx->encrypted_dentries);
 		return 0;
 	}
 
@@ -2233,7 +2233,7 @@ end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
 	if (!list_empty(&ctx->reparse_dentries)) {
 		if (blob->size > REPARSE_DATA_MAX_SIZE) {
 			dentry = list_first_entry(&ctx->reparse_dentries,
-						  struct wim_dentry, tmp_list);
+						  struct wim_dentry, d_tmp_list);
 			build_extraction_path(dentry, ctx);
 			ERROR("Reparse data of \"%ls\" has size "
 			      "%"PRIu64" bytes (exceeds %u bytes)",
@@ -2245,7 +2245,7 @@ end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
 		/* Reparse data  */
 		memcpy(ctx->rpbuf.rpdata, ctx->data_buffer, blob->size);
 
-		list_for_each_entry(dentry, &ctx->reparse_dentries, tmp_list) {
+		list_for_each_entry(dentry, &ctx->reparse_dentries, d_tmp_list) {
 
 			/* Reparse point header  */
 			complete_reparse_point(&ctx->rpbuf, dentry->d_inode,
@@ -2262,7 +2262,7 @@ end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
 
 	if (!list_empty(&ctx->encrypted_dentries)) {
 		ctx->encrypted_size = blob->size;
-		list_for_each_entry(dentry, &ctx->encrypted_dentries, tmp_list) {
+		list_for_each_entry(dentry, &ctx->encrypted_dentries, d_tmp_list) {
 			ret = extract_encrypted_file(dentry, ctx);
 			ret = check_apply_error(dentry, ctx, ret);
 			if (ret)
