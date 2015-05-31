@@ -80,7 +80,7 @@ struct wim_dentry {
 	u8 d_is_win32_name : 1;
 
 	/* Temporary flag; always reset to 0 when done using.  */
-	u8 tmp_flag : 1;
+	u8 d_tmp_flag : 1;
 
 	/* Used by wimlib_update_image()  */
 	u8 is_orphan : 1;

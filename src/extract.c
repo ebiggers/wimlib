@@ -522,14 +522,14 @@ remove_duplicate_trees(struct wim_dentry **trees, size_t num_trees)
 {
 	size_t i, j = 0;
 	for (i = 0; i < num_trees; i++) {
-		if (!trees[i]->tmp_flag) {
+		if (!trees[i]->d_tmp_flag) {
 			/* Found distinct dentry.  */
-			trees[i]->tmp_flag = 1;
+			trees[i]->d_tmp_flag = 1;
 			trees[j++] = trees[i];
 		}
 	}
 	for (i = 0; i < j; i++)
-		trees[i]->tmp_flag = 0;
+		trees[i]->d_tmp_flag = 0;
 	return j;
 }
 
@@ -543,23 +543,23 @@ remove_contained_trees(struct wim_dentry **trees, size_t num_trees)
 {
 	size_t i, j = 0;
 	for (i = 0; i < num_trees; i++)
-		trees[i]->tmp_flag = 1;
+		trees[i]->d_tmp_flag = 1;
 	for (i = 0; i < num_trees; i++) {
 		struct wim_dentry *d = trees[i];
 		while (!dentry_is_root(d)) {
 			d = d->d_parent;
-			if (d->tmp_flag)
+			if (d->d_tmp_flag)
 				goto tree_contained;
 		}
 		trees[j++] = trees[i];
 		continue;
 
 	tree_contained:
-		trees[i]->tmp_flag = 0;
+		trees[i]->d_tmp_flag = 0;
 	}
 
 	for (i = 0; i < j; i++)
-		trees[i]->tmp_flag = 0;
+		trees[i]->d_tmp_flag = 0;
 	return j;
 }
 
