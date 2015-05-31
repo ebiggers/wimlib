@@ -70,7 +70,7 @@ struct wim_inode_stream {
 	union {
 		u8 _stream_hash[SHA1_HASH_SIZE];
 		struct blob_descriptor *_stream_blob;
-	};
+	} _packed_attribute; /* union is SHA1_HASH_SIZE bytes */
 
 	/* 'stream_resolved' determines whether 'stream_hash' or 'stream_blob'
 	 * is valid as described above.  */

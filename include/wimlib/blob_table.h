@@ -108,7 +108,7 @@ struct blob_descriptor {
 			struct wim_inode *back_inode;
 			u32 back_stream_id;
 		};
-	};
+	} _packed_attribute; /* union is SHA1_HASH_SIZE bytes */
 
 	/* Number of times this blob is referenced by file streams in WIM
 	 * images.  See blob_decrement_refcnt() for information about the
