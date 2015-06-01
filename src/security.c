@@ -84,7 +84,7 @@ read_wim_security_data(const u8 *buf, size_t buf_len,
 		goto out_of_memory;
 
 	sd_disk = (const struct wim_security_data_disk *)buf;
-	sd->total_length = le32_to_cpu(sd_disk->total_length);
+	sd->total_length = ALIGN(le32_to_cpu(sd_disk->total_length), 8);
 	sd->num_entries = le32_to_cpu(sd_disk->num_entries);
 
 	/* Length field of 0 is a special case that really means length
@@ -120,7 +120,7 @@ read_wim_security_data(const u8 *buf, size_t buf_len,
 
 	/* Return immediately if no security descriptors. */
 	if (sd->num_entries == 0)
-		goto out_align_total_length;
+		goto out_descriptors_ready;
 
 	/* Allocate a new buffer for the sizes array */
 	sd->sizes = MALLOC(sizes_size);
@@ -153,13 +153,11 @@ read_wim_security_data(const u8 *buf, size_t buf_len,
 			goto out_of_memory;
 		p += sd->sizes[i];
 	}
-out_align_total_length:
-	total_len = ALIGN(total_len, 8);
-	sd->total_length = ALIGN(sd->total_length, 8);
-	if (total_len != sd->total_length) {
-		WARNING("Expected WIM security data total length of "
-			"%u bytes, but calculated %u bytes",
-			sd->total_length, (unsigned)total_len);
+out_descriptors_ready:
+	if (ALIGN(total_len, 8) != sd->total_length) {
+		WARNING("Stored WIM security data total length was "
+			"%"PRIu32" bytes, but calculated %"PRIu32" bytes",
+			sd->total_length, (u32)total_len);
 	}
 	*sd_ret = sd;
 	ret = 0;
