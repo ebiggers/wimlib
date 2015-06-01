@@ -624,6 +624,8 @@ do_done_with_blob(struct blob_descriptor *blob,
 {
 	int ret;
 	struct wim_inode *inode;
+	tchar *cookie1;
+	tchar *cookie2;
 
 	if (!blob->may_send_done_with_file)
 		return 0;
@@ -635,38 +637,14 @@ do_done_with_blob(struct blob_descriptor *blob,
 	if (--inode->i_num_remaining_streams > 0)
 		return 0;
 
-#ifdef __WIN32__
-	/* XXX: This logic really should be somewhere else.  */
-
-	/* We want the path to the file, but blob->file_on_disk might actually
-	 * refer to a named data stream.  Temporarily strip the named data
-	 * stream from the path.  */
-	wchar_t *p_colon = NULL;
-	wchar_t *p_question_mark = NULL;
-	const wchar_t *p_stream_name;
-
-	p_stream_name = path_stream_name(blob->file_on_disk);
-	if (unlikely(p_stream_name)) {
-		p_colon = (wchar_t *)(p_stream_name - 1);
-		wimlib_assert(*p_colon == L':');
-		*p_colon = L'\0';
-	}
-
-	/* We also should use a fake Win32 path instead of a NT path  */
-	if (!wcsncmp(blob->file_on_disk, L"\\??\\", 4)) {
-		p_question_mark = &blob->file_on_disk[1];
-		*p_question_mark = L'\\';
-	}
-#endif
+	cookie1 = progress_get_streamless_path(blob->file_on_disk);
+	cookie2 = progress_get_win32_path(blob->file_on_disk);
 
 	ret = done_with_file(blob->file_on_disk, progfunc, progctx);
 
-#ifdef __WIN32__
-	if (p_colon)
-		*p_colon = L':';
-	if (p_question_mark)
-		*p_question_mark = L'?';
-#endif
+	progress_put_win32_path(cookie2);
+	progress_put_streamless_path(cookie1);
+
 	return ret;
 }
 

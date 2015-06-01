@@ -23,8 +23,6 @@
 #  include "config.h"
 #endif
 
-#include <string.h>
-
 #include "wimlib/progress.h"
 
 int
@@ -33,6 +31,7 @@ report_error(wimlib_progress_func_t progfunc,
 {
 	int ret;
 	union wimlib_progress_info progress;
+	tchar *cookie;
 
 	if (error_code == WIMLIB_ERR_SUCCESS ||
 	    error_code == WIMLIB_ERR_ABORTED_BY_PROGRESS ||
@@ -43,25 +42,12 @@ report_error(wimlib_progress_func_t progfunc,
 	progress.handle_error.error_code = error_code;
 	progress.handle_error.will_ignore = false;
 
-#ifdef __WIN32__
-	/* Hack for Windows...  */
-
-	wchar_t *p_question_mark = NULL;
-
-	if (!wcsncmp(path, L"\\??\\", 4)) {
-		/* Trivial transformation:  NT namespace => Win32 namespace  */
-		p_question_mark = (wchar_t *)&path[1];
-		*p_question_mark = L'\\';
-	}
-#endif
+	cookie = progress_get_win32_path(path);
 
 	ret = call_progress(progfunc, WIMLIB_PROGRESS_MSG_HANDLE_ERROR,
 			    &progress, progctx);
 
-#ifdef __WIN32__
-	if (p_question_mark)
-		*p_question_mark = L'?';
-#endif
+	progress_put_win32_path(cookie);
 
 	if (ret)
 		return ret;

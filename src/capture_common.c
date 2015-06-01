@@ -285,30 +285,19 @@ try_exclude(const tchar *full_path, const struct capture_params *params)
 	}
 
 	if (unlikely(params->add_flags & WIMLIB_ADD_FLAG_TEST_FILE_EXCLUSION)) {
+
 		union wimlib_progress_info info;
+		tchar *cookie;
 
 		info.test_file_exclusion.path = full_path;
 		info.test_file_exclusion.will_exclude = false;
 
-	#ifdef __WIN32__
-		/* Hack for Windows...  */
-
-		wchar_t *p_question_mark = NULL;
-
-		if (!wcsncmp(full_path, L"\\??\\", 4)) {
-			/* Trivial transformation:  NT namespace => Win32 namespace  */
-			p_question_mark = (wchar_t *)&full_path[1];
-			*p_question_mark = L'\\';
-		}
-	#endif
+		cookie = progress_get_win32_path(full_path);
 
 		ret = call_progress(params->progfunc, WIMLIB_PROGRESS_MSG_TEST_FILE_EXCLUSION,
 				    &info, params->progctx);
 
-	#ifdef __WIN32__
-		if (p_question_mark)
-			*p_question_mark = L'?';
-	#endif
+		progress_put_win32_path(cookie);
 
 		if (ret)
 			return ret;
