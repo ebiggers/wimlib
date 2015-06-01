@@ -341,30 +341,9 @@ extract_chunk_wrapper(const void *chunk, size_t size, void *_ctx)
 		if (ret)
 			return ret;
 
-		if (progress->extract.completed_bytes >=
-		    progress->extract.total_bytes)
-		{
-			ctx->next_progress = UINT64_MAX;
-		} else {
-			/* Send new message as soon as another 1/128 of the
-			 * total has been extracted.  (Arbitrary number.)  */
-			ctx->next_progress =
-				progress->extract.completed_bytes +
-					progress->extract.total_bytes / 128;
-
-			/* ... Unless that would be more than 5000000 bytes, in
-			 * which case send the next after the next 5000000
-			 * bytes.  (Another arbitrary number.)  */
-			if (progress->extract.completed_bytes + 5000000 <
-			    ctx->next_progress)
-				ctx->next_progress =
-					progress->extract.completed_bytes + 5000000;
-
-			/* ... But always send a message as soon as we're
-			 * completely done.  */
-			if (progress->extract.total_bytes < ctx->next_progress)
-				ctx->next_progress = progress->extract.total_bytes;
-		}
+		set_next_progress(progress->extract.completed_bytes,
+				  progress->extract.total_bytes,
+				  &ctx->next_progress);
 	}
 
 	if (unlikely(filedes_valid(&ctx->tmpfile_fd))) {

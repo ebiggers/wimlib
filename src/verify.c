@@ -58,37 +58,18 @@ end_verify_blob(struct blob_descriptor *blob, int status, void *_ctx)
 	progress->verify_streams.completed_streams++;
 	progress->verify_streams.completed_bytes += blob->size;
 
-	/* Handle rate-limiting of progress messages  */
+	if (progress->verify_streams.completed_bytes >= ctx->next_progress) {
 
-	if (progress->verify_streams.completed_bytes < ctx->next_progress)
-		return 0;
+		status = call_progress(ctx->progfunc,
+				       WIMLIB_PROGRESS_MSG_VERIFY_STREAMS,
+				       progress, ctx->progctx);
+		if (status)
+			return status;
 
-	/* Time for another progress message.  */
-
-	status = call_progress(ctx->progfunc, WIMLIB_PROGRESS_MSG_VERIFY_STREAMS,
-			       progress, ctx->progctx);
-	if (status)
-		return status;
-
-	if (ctx->next_progress == progress->verify_streams.total_bytes) {
-		ctx->next_progress = ~(u64)0;
-		return 0;
+		set_next_progress(progress->verify_streams.completed_bytes,
+				  progress->verify_streams.total_bytes,
+				  &ctx->next_progress);
 	}
-
-	/* Send new message as soon as another 1/128 of the total has
-	 * been verified.  (Arbitrary number.)  */
-	ctx->next_progress = progress->verify_streams.completed_bytes +
-			     progress->verify_streams.total_bytes / 128;
-
-	/* ... Unless that would be more than 5000000 bytes, in which case send
-	 * the next after the next 5000000 bytes. (Another arbitrary number.) */
-	if (progress->verify_streams.completed_bytes + 5000000 < ctx->next_progress)
-		ctx->next_progress = progress->verify_streams.completed_bytes + 5000000;
-
-	/* ... But always send a message as soon as we're completely
-	 * done.  */
-	if (progress->verify_streams.total_bytes < ctx->next_progress)
-		ctx->next_progress = progress->verify_streams.total_bytes;
 	return 0;
 }
 

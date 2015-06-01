@@ -300,8 +300,8 @@ do_write_blobs_progress(struct write_blobs_progress_data *progress_data,
 		progress->write_streams.completed_streams += complete_count;
 	}
 
-	if (progress->write_streams.completed_bytes >= progress_data->next_progress)
-	{
+	if (progress->write_streams.completed_bytes >= progress_data->next_progress) {
+
 		ret = call_progress(progress_data->progfunc,
 				    WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
 				    progress,
@@ -309,32 +309,9 @@ do_write_blobs_progress(struct write_blobs_progress_data *progress_data,
 		if (ret)
 			return ret;
 
-		if (progress_data->next_progress == progress->write_streams.total_bytes) {
-			progress_data->next_progress = ~(u64)0;
-		} else {
-			/* Handle rate-limiting of messages  */
-
-			/* Send new message as soon as another 1/128 of the
-			 * total has been written.  (Arbitrary number.)  */
-			progress_data->next_progress =
-				progress->write_streams.completed_bytes +
-					progress->write_streams.total_bytes / 128;
-
-			/* ... Unless that would be more than 5000000 bytes, in
-			 * which case send the next after the next 5000000
-			 * bytes.  (Another arbitrary number.)  */
-			if (progress->write_streams.completed_bytes + 5000000 <
-			    progress_data->next_progress)
-				progress_data->next_progress =
-					progress->write_streams.completed_bytes + 5000000;
-
-			/* ... But always send a message as soon as we're
-			 * completely done.  */
-			if (progress->write_streams.total_bytes <
-			    progress_data->next_progress)
-				progress_data->next_progress =
-					progress->write_streams.total_bytes;
-		}
+		set_next_progress(progress->write_streams.completed_bytes,
+				  progress->write_streams.total_bytes,
+				  &progress_data->next_progress);
 	}
 	return 0;
 }
