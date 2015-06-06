@@ -744,6 +744,8 @@ winnt_load_reparse_data(HANDLE h, struct wim_inode *inode,
 	}
 
 	inode->i_reparse_tag = le32_to_cpu(rpbuf.rptag);
+	inode->i_rp_reserved = le16_to_cpu(rpbuf.rpreserved);
+
 	if (!inode_add_stream_with_data(inode,
 					STREAM_TYPE_REPARSE_POINT,
 					NO_STREAM_NAME,
