@@ -189,34 +189,33 @@ cmp_ntfs_locations(const struct ntfs_location *loc1,
 	return cmp_u64(loc1->sort_key, loc2->sort_key);
 }
 
+/* Read rptag and rpreserved from the NTFS inode and save them in the WIM inode.
+ */
 static int
-read_reparse_tag(ntfs_inode *ni, struct ntfs_location *loc,
-		 u32 *reparse_tag_ret)
+read_reparse_header(ntfs_inode *ni, struct wim_inode *inode)
 {
-	int ret;
-	le32 reparse_tag;
+	struct {
+		le32 rptag;
+		le16 rpdatalen;
+		le16 rpreserved;
+	} hdr;
+	s64 res;
 	ntfs_attr *na;
 
-	na = open_ntfs_attr(ni, loc);
-	if (!na) {
-		ret = WIMLIB_ERR_NTFS_3G;
-		goto out;
-	}
+	na = ntfs_attr_open(ni, AT_REPARSE_POINT, AT_UNNAMED, 0);
+	if (!na)
+		return WIMLIB_ERR_NTFS_3G;
 
-	if (ntfs_attr_pread(na, 0, sizeof(reparse_tag),
-			    &reparse_tag) != sizeof(reparse_tag))
-	{
-		ERROR_WITH_ERRNO("Error reading reparse data");
-		ret = WIMLIB_ERR_NTFS_3G;
-		goto out_close_ntfs_attr;
-	}
-	*reparse_tag_ret = le32_to_cpu(reparse_tag);
-	ret = 0;
-out_close_ntfs_attr:
+	res = ntfs_attr_pread(na, 0, sizeof(hdr), &hdr);
+
 	ntfs_attr_close(na);
-out:
-	return ret;
 
+	if (res != sizeof(hdr))
+		return WIMLIB_ERR_NTFS_3G;
+
+	inode->i_reparse_tag = le32_to_cpu(hdr.rptag);
+	inode->i_rp_reserved = le16_to_cpu(hdr.rpreserved);
+	return 0;
 }
 
 static int
@@ -268,7 +267,7 @@ scan_ntfs_attr(struct wim_inode *inode,
 	       ATTR_TYPES type,
 	       const ATTR_RECORD *record)
 {
-	const u64 data_size = ntfs_get_attribute_value_length(record);
+	u64 data_size = ntfs_get_attribute_value_length(record);
 	const u32 name_nchars = record->name_length;
 	struct blob_descriptor *blob = NULL;
 	utf16lechar *stream_name = NULL;
@@ -281,6 +280,23 @@ scan_ntfs_attr(struct wim_inode *inode,
 					   name_nchars * sizeof(ntfschar));
 		if (!stream_name) {
 			ret = WIMLIB_ERR_NOMEM;
+			goto out_cleanup;
+		}
+	}
+
+	if (unlikely(type == AT_REPARSE_POINT)) {
+		if (data_size < REPARSE_DATA_OFFSET) {
+			ERROR("Reparse point attribute of \"%s\" "
+			      "is too short!", path);
+			ret = WIMLIB_ERR_INVALID_REPARSE_DATA;
+			goto out_cleanup;
+		}
+		data_size -= REPARSE_DATA_OFFSET;
+
+		ret = read_reparse_header(ni, inode);
+		if (ret) {
+			ERROR_WITH_ERRNO("Error reading reparse point header "
+					 "of \"%s\"", path);
 			goto out_cleanup;
 		}
 	}
@@ -317,21 +333,6 @@ scan_ntfs_attr(struct wim_inode *inode,
 		ret = set_attr_sort_key(ni, blob->ntfs_loc);
 		if (ret)
 			goto out_cleanup;
-
-		if (unlikely(type == AT_REPARSE_POINT)) {
-			if (blob->size < REPARSE_DATA_OFFSET) {
-				ERROR("Reparse data of \"%s\" "
-				      "is invalid (only %"PRIu64" bytes)!",
-				      path, data_size);
-				ret = WIMLIB_ERR_INVALID_REPARSE_DATA;
-				goto out_cleanup;
-			}
-			blob->size -= REPARSE_DATA_OFFSET;
-			ret = read_reparse_tag(ni, blob->ntfs_loc,
-					       &inode->i_reparse_tag);
-			if (ret)
-				goto out_cleanup;
-		}
 	}
 
 	strm = inode_add_stream(inode,
