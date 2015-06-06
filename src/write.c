@@ -769,13 +769,9 @@ write_blob_uncompressed(struct blob_descriptor *blob, struct filedes *out_fd)
 
 	wimlib_assert(out_fd->offset - begin_offset == blob->size);
 
-	if (out_fd->offset < end_offset &&
-	    0 != ftruncate(out_fd->fd, out_fd->offset))
-	{
-		ERROR_WITH_ERRNO("Can't truncate output file to "
-				 "offset %"PRIu64, out_fd->offset);
-		return WIMLIB_ERR_WRITE;
-	}
+	/* We could ftruncate() the file to 'out_fd->offset' here, but there
+	 * isn't much point.  Usually we will only be truncating by a few bytes
+	 * and will just overwrite the data immediately.  */
 
 	blob->out_reshdr.size_in_wim = blob->size;
 	blob->out_reshdr.flags &= ~(WIM_RESHDR_FLAG_COMPRESSED |
