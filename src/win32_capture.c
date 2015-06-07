@@ -449,8 +449,7 @@ winnt_recurse_directory(HANDLE h,
 
 				if (ret)
 					goto out_free_buf;
-				if (child)
-					dentry_add_child(parent, child);
+				attach_scanned_tree(parent, child, params->blob_table);
 			}
 			if (info->NextEntryOffset == 0)
 				break;

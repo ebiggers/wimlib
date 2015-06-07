@@ -607,8 +607,7 @@ filldir(void *_ctx, const ntfschar *name, const int name_nchars,
 	ret = ntfs_3g_build_dentry_tree_recursive(&child, mref, ctx->path,
 						  path_len, name_type,
 						  ctx->volume, ctx->params);
-	if (child)
-		dentry_add_child(ctx->parent, child);
+	attach_scanned_tree(ctx->parent, child, ctx->params->blob_table);
 out_free_mbs_name:
 	FREE(mbs_name);
 out:

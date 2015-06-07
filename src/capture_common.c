@@ -340,3 +340,18 @@ should_ignore_filename(const tchar *name, const int name_nchars)
 
 	return false;
 }
+
+/* Attach a newly scanned directory tree to its parent directory, with duplicate
+ * handling.  */
+void
+attach_scanned_tree(struct wim_dentry *parent, struct wim_dentry *child,
+		    struct blob_table *blob_table)
+{
+	struct wim_dentry *duplicate;
+
+	if (child && (duplicate = dentry_add_child(parent, child))) {
+		WARNING("Duplicate file path: \"%"TS"\".  Only capturing "
+			"the first version.", dentry_full_path(duplicate));
+		free_dentry_tree(child, blob_table);
+	}
+}

@@ -196,8 +196,7 @@ unix_scan_directory(struct wim_dentry *dir_dentry,
 		full_path[full_path_len] = '\0';
 		if (ret)
 			break;
-		if (child)
-			dentry_add_child(dir_dentry, child);
+		attach_scanned_tree(dir_dentry, child, params->blob_table);
 	}
 	closedir(dir);
 	return ret;

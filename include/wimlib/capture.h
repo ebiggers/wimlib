@@ -120,4 +120,8 @@ report_capture_error(struct capture_params *params, int error_code,
 extern bool
 should_ignore_filename(const tchar *name, int name_nchars);
 
+extern void
+attach_scanned_tree(struct wim_dentry *parent, struct wim_dentry *child,
+		    struct blob_table *blob_table);
+
 #endif /* _WIMLIB_CAPTURE_H */
