@@ -388,8 +388,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 	}
 
 	ret = inode_table_new_dentry(params->inode_table, relpath,
-				     stbuf.st_ino, stbuf.st_dev,
-				     S_ISDIR(stbuf.st_mode), &tree);
+				     stbuf.st_ino, stbuf.st_dev, false, &tree);
 	if (ret)
 		goto out;
 

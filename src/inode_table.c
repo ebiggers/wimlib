@@ -91,39 +91,41 @@ inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
 {
 	struct wim_dentry *dentry;
 	struct wim_inode *inode;
+	struct hlist_head *list;
 	int ret;
 
 	if (noshare) {
-		/* File that cannot be hardlinked--- Return a new inode with its
-		 * inode and device numbers left at 0. */
-		ret = new_dentry_with_new_inode(name, false, &dentry);
-		if (ret)
-			return ret;
-		hlist_add_head(&dentry->d_inode->i_hlist_node, &table->extra_inodes);
+		/* No hard link detection  */
+		list = &table->extra_inodes;
 	} else {
-		size_t pos;
-
-		/* File that can be hardlinked--- search the table for an
-		 * existing inode matching the inode number and device.  */
-		pos = hash_u64(hash_u64(ino) + hash_u64(devno)) % table->capacity;
-		hlist_for_each_entry(inode, &table->array[pos], i_hlist_node) {
-			if (inode->i_ino == ino && inode->i_devno == devno) {
-				/* Found; use the existing inode.  */
-				return new_dentry_with_existing_inode(name, inode,
-								      dentry_ret);
+		/* Hard link detection  */
+		list = &table->array[hash_u64(hash_u64(ino) + hash_u64(devno))
+				     % table->capacity];
+		hlist_for_each_entry(inode, list, i_hlist_node) {
+			if (inode->i_ino != ino || inode->i_devno != devno)
+				continue;
+			if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
+				WARNING("Not honoring directory hard link "
+					"of \"%"TS"\"",
+					inode_any_full_path(inode));
+				continue;
 			}
+			/* Inode found; use it.  */
+			return new_dentry_with_existing_inode(name, inode,
+							      dentry_ret);
 		}
 
-		/* Not found; create a new inode and add it to the table.  */
-		ret = new_dentry_with_new_inode(name, false, &dentry);
-		if (ret)
-			return ret;
-		inode = dentry->d_inode;
-		inode->i_ino = ino;
-		inode->i_devno = devno;
-		hlist_add_head(&inode->i_hlist_node, &table->array[pos]);
+		/* Inode not found; create it.  */
 		table->num_entries++;
 	}
+
+	ret = new_dentry_with_new_inode(name, false, &dentry);
+	if (ret)
+		return ret;
+	inode = dentry->d_inode;
+	hlist_add_head(&inode->i_hlist_node, list);
+	inode->i_ino = ino;
+	inode->i_devno = devno;
 	*dentry_ret = dentry;
 	return 0;
 }

@@ -1290,8 +1290,7 @@ retry_open:
 				     filename,
 				     file_info.ino,
 				     params->capture_root_dev,
-				     (file_info.num_links <= 1 ||
-				        (file_info.attributes & FILE_ATTRIBUTE_DIRECTORY)),
+				     (file_info.num_links <= 1),
 				     &root);
 	if (ret)
 		goto out;
