@@ -655,19 +655,20 @@ file_name_valid(utf16lechar *name, size_t num_chars, bool fix)
 	if (num_chars == 0)
 		return true;
 	for (i = 0; i < num_chars; i++) {
-		switch (name[i]) {
+		switch (le16_to_cpu(name[i])) {
 	#ifdef __WIN32__
-		case cpu_to_le16('\\'):
-		case cpu_to_le16(':'):
-		case cpu_to_le16('*'):
-		case cpu_to_le16('?'):
-		case cpu_to_le16('"'):
-		case cpu_to_le16('<'):
-		case cpu_to_le16('>'):
-		case cpu_to_le16('|'):
+		case '\x01'...'\x1F':
+		case '\\':
+		case ':':
+		case '*':
+		case '?':
+		case '"':
+		case '<':
+		case '>':
+		case '|':
 	#endif
-		case cpu_to_le16('/'):
-		case cpu_to_le16('\0'):
+		case '/':
+		case '\0':
 			if (fix)
 				name[i] = replacement_char;
 			else
