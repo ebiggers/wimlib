@@ -415,9 +415,8 @@ winnt_recurse_directory(HANDLE h,
 	{
 		const FILE_NAMES_INFORMATION *info = buf;
 		for (;;) {
-			if (!(info->FileNameLength == 2 && info->FileName[0] == L'.') &&
-			    !(info->FileNameLength == 4 && info->FileName[0] == L'.' &&
-							   info->FileName[1] == L'.'))
+			if (!should_ignore_filename(info->FileName,
+						    info->FileNameLength / 2))
 			{
 				wchar_t *p;
 				wchar_t *filename;

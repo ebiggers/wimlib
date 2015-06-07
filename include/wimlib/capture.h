@@ -117,4 +117,7 @@ report_capture_error(struct capture_params *params, int error_code,
 	return report_error(params->progfunc, params->progctx, error_code, path);
 }
 
+extern bool
+should_ignore_filename(const tchar *name, int name_nchars);
+
 #endif /* _WIMLIB_CAPTURE_H */

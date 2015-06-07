@@ -180,13 +180,12 @@ unix_scan_directory(struct wim_dentry *dir_dentry,
 			break;
 		}
 
-		if (entry->d_name[0] == '.' &&
-		    (entry->d_name[1] == '\0' ||
-		     (entry->d_name[1] == '.' && entry->d_name[2] == '\0')))
+		name_len = strlen(entry->d_name);
+
+		if (should_ignore_filename(entry->d_name, name_len))
 			continue;
 
 		full_path[full_path_len] = '/';
-		name_len = strlen(entry->d_name);
 		memcpy(&full_path[full_path_len + 1], entry->d_name, name_len + 1);
 		ret = unix_build_dentry_tree_recursive(&child,
 						       full_path,

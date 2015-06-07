@@ -591,16 +591,12 @@ filldir(void *_ctx, const ntfschar *name, const int name_nchars,
 			goto out;
 	}
 
-	/* Ignore . and .. entries  */
-	ret = 0;
-	if ((name_nchars == 1 && name[0] == cpu_to_le16('.')) ||
-	    (name_nchars == 2 && name[0] == cpu_to_le16('.') &&
-				 name[1] == cpu_to_le16('.')))
-		goto out;
-
 	ret = utf16le_to_tstr(name, name_nbytes, &mbs_name, &mbs_name_nbytes);
 	if (ret)
 		goto out;
+
+	if (should_ignore_filename(mbs_name, mbs_name_nbytes))
+		goto out_free_mbs_name;
 
 	path_len = ctx->path_len;
 	if (path_len != 1)
@@ -613,6 +609,7 @@ filldir(void *_ctx, const ntfschar *name, const int name_nchars,
 						  ctx->volume, ctx->params);
 	if (child)
 		dentry_add_child(ctx->parent, child);
+out_free_mbs_name:
 	FREE(mbs_name);
 out:
 	ctx->ret = ret;

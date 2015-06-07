@@ -307,3 +307,36 @@ try_exclude(const tchar *full_path, const struct capture_params *params)
 
 	return 0;
 }
+
+/*
+ * Determine whether a directory entry of the specified name should be ignored.
+ * This is a lower level function which runs prior to try_exclude().  It handles
+ * the standard '.' and '..' entries, which show up in directory listings but
+ * should not be archived.  It also checks for odd filenames that usually should
+ * not exist but could cause problems if archiving them were to be attempted.
+ */
+bool
+should_ignore_filename(const tchar *name, const int name_nchars)
+{
+	if (name_nchars <= 0) {
+		WARNING("Ignoring empty filename");
+		return true;
+	}
+
+	if (name[0] == T('.') &&
+	    (name_nchars == 1 || (name_nchars == 2 && name[1] == T('.'))))
+		return true;
+
+	for (int i = 0; i < name_nchars; i++) {
+		if (name[i] == T('\0')) {
+			WARNING("Ignoring filename containing embedded null character");
+			return true;
+		}
+		if (name[i] == OS_PREFERRED_PATH_SEPARATOR) {
+			WARNING("Ignoring filename containing embedded path separator");
+			return true;
+		}
+	}
+
+	return false;
+}
