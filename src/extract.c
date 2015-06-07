@@ -675,16 +675,6 @@ file_name_valid(utf16lechar *name, size_t num_chars, bool fix)
 		}
 	}
 
-#ifdef __WIN32__
-	if (name[num_chars - 1] == cpu_to_le16(' ') ||
-	    name[num_chars - 1] == cpu_to_le16('.'))
-	{
-		if (fix)
-			name[num_chars - 1] = replacement_char;
-		else
-			return false;
-	}
-#endif
 	return true;
 }
 
