@@ -26,12 +26,6 @@ full_write(struct filedes *fd, const void *buf, size_t n);
 extern int
 full_pwrite(struct filedes *fd, const void *buf, size_t count, off_t offset);
 
-extern ssize_t
-raw_pread(struct filedes *fd, void *buf, size_t nbyte, off_t offset);
-
-extern ssize_t
-raw_pwrite(struct filedes *fd, const void *buf, size_t count, off_t offset);
-
 #ifndef __WIN32__
 #  define O_BINARY 0
 #endif

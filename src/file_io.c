@@ -185,18 +185,6 @@ full_pwrite(struct filedes *fd, const void *buf, size_t count, off_t offset)
 	return 0;
 }
 
-ssize_t
-raw_pread(struct filedes *fd, void *buf, size_t count, off_t offset)
-{
-	return pread(fd->fd, buf, count, offset);
-}
-
-ssize_t
-raw_pwrite(struct filedes *fd, const void *buf, size_t count, off_t offset)
-{
-	return pwrite(fd->fd, buf, count, offset);
-}
-
 off_t filedes_seek(struct filedes *fd, off_t offset)
 {
 	if (fd->is_pipe) {

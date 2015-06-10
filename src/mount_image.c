@@ -1678,7 +1678,7 @@ wimfs_read(const char *path, char *buf, size_t size,
 			ret = size;
 		break;
 	case BLOB_IN_STAGING_FILE:
-		ret = raw_pread(&fd->f_staging_fd, buf, size, offset);
+		ret = pread(fd->f_staging_fd.fd, buf, size, offset);
 		if (ret < 0)
 			ret = -errno;
 		break;
@@ -2034,7 +2034,7 @@ wimfs_write(const char *path, const char *buf, size_t size,
 	struct wimfs_fd *fd = WIMFS_FD(fi);
 	ssize_t ret;
 
-	ret = raw_pwrite(&fd->f_staging_fd, buf, size, offset);
+	ret = pwrite(fd->f_staging_fd.fd, buf, size, offset);
 	if (ret < 0)
 		return -errno;
 
