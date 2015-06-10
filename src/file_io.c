@@ -31,7 +31,8 @@
 #include "wimlib/util.h"
 #include "wimlib/win32.h" /* For pread(), pwrite() replacements */
 
-/* Wrapper around read() that checks for errors keeps retrying until all
+/*
+ * Wrapper around read() that checks for errors and keeps retrying until all
  * requested bytes have been read or until end-of file has occurred.
  *
  * Return values:
@@ -42,27 +43,21 @@
 int
 full_read(struct filedes *fd, void *buf, size_t count)
 {
-	ssize_t bytes_read;
-	size_t bytes_remaining;
-
-	for (bytes_remaining = count;
-	     bytes_remaining != 0;
-	     bytes_remaining -= bytes_read, buf += bytes_read)
-	{
-		bytes_read = read(fd->fd, buf, bytes_remaining);
-		if (unlikely(bytes_read <= 0)) {
-			if (bytes_read == 0) {
+	while (count) {
+		ssize_t ret = read(fd->fd, buf, count);
+		if (unlikely(ret <= 0)) {
+			if (ret == 0) {
 				errno = 0;
 				return WIMLIB_ERR_UNEXPECTED_END_OF_FILE;
-			} else if (errno == EINTR) {
-				continue;
-			} else {
-				return WIMLIB_ERR_READ;
 			}
+			if (errno == EINTR)
+				continue;
+			return WIMLIB_ERR_READ;
 		}
+		buf += ret;
+		count -= ret;
+		fd->offset += ret;
 	}
-	count -= bytes_remaining;
-	fd->offset += count;
 	return 0;
 }
 
@@ -95,7 +90,8 @@ pipe_read(struct filedes *fd, void *buf, size_t count, off_t offset)
 	return full_read(fd, buf, count);
 }
 
-/* Wrapper around pread() that checks for errors and keeps retrying until all
+/*
+ * Wrapper around pread() that checks for errors and keeps retrying until all
  * requested bytes have been read or until end-of file has occurred.  This also
  * transparently handle reading from pipe files, but the caller needs to be sure
  * the requested offset is greater than or equal to the current offset, or else
@@ -110,31 +106,27 @@ pipe_read(struct filedes *fd, void *buf, size_t count, off_t offset)
 int
 full_pread(struct filedes *fd, void *buf, size_t count, off_t offset)
 {
-	ssize_t bytes_read;
-	size_t bytes_remaining;
-
 	if (fd->is_pipe)
 		goto is_pipe;
 
-	for (bytes_remaining = count;
-	     bytes_remaining != 0;
-	     bytes_remaining -= bytes_read, buf += bytes_read,
-		offset += bytes_read)
-	{
-		bytes_read = pread(fd->fd, buf, bytes_remaining, offset);
-		if (unlikely(bytes_read <= 0)) {
-			if (bytes_read == 0) {
+	while (count) {
+		ssize_t ret = pread(fd->fd, buf, count, offset);
+		if (unlikely(ret <= 0)) {
+			if (ret == 0) {
 				errno = 0;
 				return WIMLIB_ERR_UNEXPECTED_END_OF_FILE;
-			} else if (errno == EINTR) {
+			}
+			if (errno == EINTR)
 				continue;
-			} else if (errno == ESPIPE) {
+			if (errno == ESPIPE) {
 				fd->is_pipe = 1;
 				goto is_pipe;
-			} else {
-				return WIMLIB_ERR_READ;
 			}
+			return WIMLIB_ERR_READ;
 		}
+		buf += ret;
+		count -= ret;
+		offset += ret;
 	}
 	return 0;
 
@@ -142,7 +134,8 @@ is_pipe:
 	return pipe_read(fd, buf, count, offset);
 }
 
-/* Wrapper around write() that checks for errors and keeps retrying until all
+/*
+ * Wrapper around write() that checks for errors and keeps retrying until all
  * requested bytes have been written.
  *
  * Return values:
@@ -152,49 +145,42 @@ is_pipe:
 int
 full_write(struct filedes *fd, const void *buf, size_t count)
 {
-	ssize_t bytes_written;
-	size_t bytes_remaining;
-
-	for (bytes_remaining = count;
-	     bytes_remaining != 0;
-	     bytes_remaining -= bytes_written, buf += bytes_written)
-	{
-		bytes_written = write(fd->fd, buf, bytes_remaining);
-		if (unlikely(bytes_written < 0)) {
+	while (count) {
+		ssize_t ret = write(fd->fd, buf, count);
+		if (unlikely(ret < 0)) {
 			if (errno == EINTR)
 				continue;
 			return WIMLIB_ERR_WRITE;
 		}
+		buf += ret;
+		count -= ret;
+		fd->offset += ret;
 	}
-	fd->offset += count;
 	return 0;
 }
 
 
-/* Wrapper around pwrite() that checks for errors and keeps retrying until all
+/*
+ * Wrapper around pwrite() that checks for errors and keeps retrying until all
  * requested bytes have been written.
  *
  * Return values:
  *	WIMLIB_ERR_SUCCESS	(0)
  *	WIMLIB_ERR_WRITE	(errno set)
- * */
+ */
 int
 full_pwrite(struct filedes *fd, const void *buf, size_t count, off_t offset)
 {
-	ssize_t bytes_written;
-	size_t bytes_remaining;
-
-	for (bytes_remaining = count;
-	     bytes_remaining != 0;
-	     bytes_remaining -= bytes_written, buf += bytes_written,
-		offset += bytes_written)
-	{
-		bytes_written = pwrite(fd->fd, buf, bytes_remaining, offset);
-		if (unlikely(bytes_written < 0)) {
+	while (count) {
+		ssize_t ret = pwrite(fd->fd, buf, count, offset);
+		if (unlikely(ret < 0)) {
 			if (errno == EINTR)
 				continue;
 			return WIMLIB_ERR_WRITE;
 		}
+		buf += ret;
+		count -= ret;
+		offset += ret;
 	}
 	return 0;
 }
