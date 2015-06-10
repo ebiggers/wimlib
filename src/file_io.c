@@ -38,7 +38,7 @@
  * Return values:
  *	WIMLIB_ERR_SUCCESS			(0)
  *	WIMLIB_ERR_READ				(errno set)
- *	WIMLIB_ERR_UNEXPECTED_END_OF_FILE	(errno set to 0)
+ *	WIMLIB_ERR_UNEXPECTED_END_OF_FILE	(errno set to EINVAL)
  */
 int
 full_read(struct filedes *fd, void *buf, size_t count)
@@ -47,7 +47,7 @@ full_read(struct filedes *fd, void *buf, size_t count)
 		ssize_t ret = read(fd->fd, buf, count);
 		if (unlikely(ret <= 0)) {
 			if (ret == 0) {
-				errno = 0;
+				errno = EINVAL;
 				return WIMLIB_ERR_UNEXPECTED_END_OF_FILE;
 			}
 			if (errno == EINTR)
@@ -100,7 +100,7 @@ pipe_read(struct filedes *fd, void *buf, size_t count, off_t offset)
  * Return values:
  *	WIMLIB_ERR_SUCCESS			(0)
  *	WIMLIB_ERR_READ				(errno set)
- *	WIMLIB_ERR_UNEXPECTED_END_OF_FILE	(errno set to 0)
+ *	WIMLIB_ERR_UNEXPECTED_END_OF_FILE	(errno set to EINVAL)
  *	WIMLIB_ERR_RESOURCE_ORDER		(errno set to ESPIPE)
  */
 int
@@ -113,7 +113,7 @@ full_pread(struct filedes *fd, void *buf, size_t count, off_t offset)
 		ssize_t ret = pread(fd->fd, buf, count, offset);
 		if (unlikely(ret <= 0)) {
 			if (ret == 0) {
-				errno = 0;
+				errno = EINVAL;
 				return WIMLIB_ERR_UNEXPECTED_END_OF_FILE;
 			}
 			if (errno == EINTR)

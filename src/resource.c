@@ -103,7 +103,7 @@ struct data_range {
  *
  *	WIMLIB_ERR_SUCCESS (0)
  *	WIMLIB_ERR_READ			  (errno set)
- *	WIMLIB_ERR_UNEXPECTED_END_OF_FILE (errno set to 0)
+ *	WIMLIB_ERR_UNEXPECTED_END_OF_FILE (errno set to EINVAL)
  *	WIMLIB_ERR_NOMEM		  (errno set to ENOMEM)
  *	WIMLIB_ERR_DECOMPRESSION	  (errno set to EINVAL)
  *	WIMLIB_ERR_INVALID_CHUNK_SIZE	  (errno set to EINVAL)
