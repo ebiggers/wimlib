@@ -1227,6 +1227,12 @@ assign_stream_types_encrypted(struct wim_inode *inode)
  * There will be an unnamed data stream, a reparse point stream, or both an
  * unnamed data stream and a reparse point stream.  In addition, there may be
  * named data streams.
+ *
+ * NOTE: if the file has a reparse point stream or at least one named data
+ * stream, then WIMGAPI puts *all* streams in the extra stream entries and
+ * leaves the default stream hash zeroed.  wimlib now does the same.  However,
+ * for input we still support the default hash field being used, since wimlib
+ * used to use it and MS software is somewhat accepting of it as well.
  */
 static void
 assign_stream_types_unencrypted(struct wim_inode *inode)
@@ -1241,7 +1247,10 @@ assign_stream_types_unencrypted(struct wim_inode *inode)
 		if (stream_is_named(strm)) {
 			/* Named data stream  */
 			strm->stream_type = STREAM_TYPE_DATA;
-		} else if (!is_zero_hash(strm->_stream_hash)) {
+		} else if (i != 0 || !is_zero_hash(strm->_stream_hash)) {
+			/* Unnamed stream in the extra stream entries, OR the
+			 * default stream in the dentry provided that it has a
+			 * nonzero hash.  */
 			if ((inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
 			    !found_reparse_point_stream) {
 				found_reparse_point_stream = true;
@@ -1250,17 +1259,21 @@ assign_stream_types_unencrypted(struct wim_inode *inode)
 				found_unnamed_data_stream = true;
 				strm->stream_type = STREAM_TYPE_DATA;
 			}
-		} else {
-			/* If no stream name is specified and the hash is zero,
-			 * then remember this stream for later so that we can
-			 * assign it to the unnamed data stream if we don't find
-			 * a better candidate.  */
+		} else if (!unnamed_stream_with_zero_hash) {
 			unnamed_stream_with_zero_hash = strm;
 		}
 	}
 
-	if (!found_unnamed_data_stream && unnamed_stream_with_zero_hash != NULL)
-		unnamed_stream_with_zero_hash->stream_type = STREAM_TYPE_DATA;
+	if (unnamed_stream_with_zero_hash) {
+		int type = STREAM_TYPE_UNKNOWN;
+		if ((inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
+		    !found_reparse_point_stream) {
+			type = STREAM_TYPE_REPARSE_POINT;
+		} else if (!found_unnamed_data_stream) {
+			type = STREAM_TYPE_DATA;
+		}
+		unnamed_stream_with_zero_hash->stream_type = type;
+	}
 }
 
 /*
