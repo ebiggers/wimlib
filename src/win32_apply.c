@@ -1448,44 +1448,104 @@ retry:
 	return WIMLIB_ERR_OPEN;
 }
 
+/* Set the reparse point @rpbuf of length @rpbuflen on the extracted file
+ * corresponding to the WIM dentry @dentry.  */
+static int
+do_set_reparse_point(const struct wim_dentry *dentry,
+		     const struct reparse_buffer_disk *rpbuf, u16 rpbuflen,
+		     struct win32_apply_ctx *ctx)
+{
+	NTSTATUS status;
+	HANDLE h;
+
+	status = create_file(&h, GENERIC_WRITE, NULL,
+			     0, FILE_OPEN, 0, dentry, ctx);
+	if (!NT_SUCCESS(status))
+		goto fail;
+
+	status = (*func_NtFsControlFile)(h, NULL, NULL, NULL,
+					 &ctx->iosb, FSCTL_SET_REPARSE_POINT,
+					 (void *)rpbuf, rpbuflen,
+					 NULL, 0);
+	(*func_NtClose)(h);
+
+	if (NT_SUCCESS(status))
+		return 0;
+
+	/* On Windows, by default only the Administrator can create symbolic
+	 * links for some reason.  By default we just issue a warning if this
+	 * appears to be the problem.  Use WIMLIB_EXTRACT_FLAG_STRICT_SYMLINKS
+	 * to get a hard error.  */
+	if (!(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_SYMLINKS)
+	    && (status == STATUS_PRIVILEGE_NOT_HELD ||
+		status == STATUS_ACCESS_DENIED)
+	    && (dentry->d_inode->i_reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
+		dentry->d_inode->i_reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT))
+	{
+		WARNING("Can't create symbolic link \"%ls\"!              \n"
+			"          (Need Administrator rights, or at least "
+			"the\n"
+			"          SeCreateSymbolicLink privilege.)",
+			current_path(ctx));
+		return 0;
+	}
+
+fail:
+	winnt_error(status, L"Can't set reparse data on \"%ls\"",
+		    current_path(ctx));
+	return WIMLIB_ERR_SET_REPARSE_DATA;
+}
+
 /*
- * Create empty named data streams for the specified file, if there are any.
+ * Create empty named data streams and potentially a reparse point for the
+ * specified file, if any.
  *
  * Since these won't have blob descriptors, they won't show up in the call to
  * extract_blob_list().  Hence the need for the special case.
  */
 static int
-create_empty_named_data_streams(const struct wim_dentry *dentry,
-				struct win32_apply_ctx *ctx)
+create_empty_streams(const struct wim_dentry *dentry,
+		     struct win32_apply_ctx *ctx)
 {
 	const struct wim_inode *inode = dentry->d_inode;
-	bool path_modified = false;
-	int ret = 0;
-
-	if (!ctx->common.supported_features.named_data_streams)
-		return 0;
+	int ret;
 
 	for (unsigned i = 0; i < inode->i_num_streams; i++) {
 		const struct wim_inode_stream *strm = &inode->i_streams[i];
-		HANDLE h;
 
-		if (!stream_is_named_data_stream(strm) ||
-		    stream_blob_resolved(strm) != NULL)
+		if (stream_blob_resolved(strm) != NULL)
 			continue;
 
-		build_extraction_path_with_ads(dentry, ctx,
-					       strm->stream_name,
-					       utf16le_len_chars(strm->stream_name));
-		path_modified = true;
-		ret = supersede_file_or_stream(ctx, &h);
-		if (ret)
-			break;
-		(*func_NtClose)(h);
+		if (strm->stream_type == STREAM_TYPE_REPARSE_POINT &&
+		    ctx->common.supported_features.reparse_points)
+		{
+			u8 buf[REPARSE_DATA_OFFSET] _aligned_attribute(8);
+			struct reparse_buffer_disk *rpbuf =
+				(struct reparse_buffer_disk *)buf;
+			complete_reparse_point(rpbuf, inode, 0);
+			ret = do_set_reparse_point(dentry, rpbuf,
+						   REPARSE_DATA_OFFSET, ctx);
+			if (ret)
+				return ret;
+		} else if (stream_is_named_data_stream(strm) &&
+			   ctx->common.supported_features.named_data_streams)
+		{
+			HANDLE h;
+
+			build_extraction_path_with_ads(dentry, ctx,
+						       strm->stream_name,
+						       utf16le_len_chars(strm->stream_name));
+			ret = supersede_file_or_stream(ctx, &h);
+
+			build_extraction_path(dentry, ctx);
+
+			if (ret)
+				return ret;
+			(*func_NtClose)(h);
+		}
 	}
-	/* Restore the path to the dentry itself  */
-	if (path_modified)
-		build_extraction_path(dentry, ctx);
-	return ret;
+
+	return 0;
 }
 
 /*
@@ -1571,7 +1631,7 @@ create_directories(struct list_head *dentry_list,
 		ret = create_directory(dentry, ctx);
 
 		if (!ret)
-			ret = create_empty_named_data_streams(dentry, ctx);
+			ret = create_empty_streams(dentry, ctx);
 
 		ret = check_apply_error(dentry, ctx, ret);
 		if (ret)
@@ -1608,7 +1668,7 @@ create_nondirectory_inode(HANDLE *h_ret, const struct wim_dentry *dentry,
 	if (ret)
 		goto out_close;
 
-	ret = create_empty_named_data_streams(dentry, ctx);
+	ret = create_empty_streams(dentry, ctx);
 	if (ret)
 		goto out_close;
 
@@ -1863,54 +1923,6 @@ begin_extract_blob_instance(const struct blob_descriptor *blob,
 				     &alloc_info, sizeof(alloc_info),
 				     FileAllocationInformation);
 	return 0;
-}
-
-/* Set the reparse point @rpbuf of length @rpbuflen on the extracted file
- * corresponding to the WIM dentry @dentry.  */
-static int
-do_set_reparse_point(const struct wim_dentry *dentry,
-		     const struct reparse_buffer_disk *rpbuf, u16 rpbuflen,
-		     struct win32_apply_ctx *ctx)
-{
-	NTSTATUS status;
-	HANDLE h;
-
-	status = create_file(&h, GENERIC_WRITE, NULL,
-			     0, FILE_OPEN, 0, dentry, ctx);
-	if (!NT_SUCCESS(status))
-		goto fail;
-
-	status = (*func_NtFsControlFile)(h, NULL, NULL, NULL,
-					 &ctx->iosb, FSCTL_SET_REPARSE_POINT,
-					 (void *)rpbuf, rpbuflen,
-					 NULL, 0);
-	(*func_NtClose)(h);
-
-	if (NT_SUCCESS(status))
-		return 0;
-
-	/* On Windows, by default only the Administrator can create symbolic
-	 * links for some reason.  By default we just issue a warning if this
-	 * appears to be the problem.  Use WIMLIB_EXTRACT_FLAG_STRICT_SYMLINKS
-	 * to get a hard error.  */
-	if (!(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_SYMLINKS)
-	    && (status == STATUS_PRIVILEGE_NOT_HELD ||
-		status == STATUS_ACCESS_DENIED)
-	    && (dentry->d_inode->i_reparse_tag == WIM_IO_REPARSE_TAG_SYMLINK ||
-		dentry->d_inode->i_reparse_tag == WIM_IO_REPARSE_TAG_MOUNT_POINT))
-	{
-		WARNING("Can't create symbolic link \"%ls\"!              \n"
-			"          (Need Administrator rights, or at least "
-			"the\n"
-			"          SeCreateSymbolicLink privilege.)",
-			current_path(ctx));
-		return 0;
-	}
-
-fail:
-	winnt_error(status, L"Can't set reparse data on \"%ls\"",
-		    current_path(ctx));
-	return WIMLIB_ERR_SET_REPARSE_DATA;
 }
 
 /* Given a Windows NT namespace path, such as \??\e:\Windows\System32, return a
