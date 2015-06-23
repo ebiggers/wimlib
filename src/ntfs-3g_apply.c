@@ -320,33 +320,61 @@ out_close:
 	return ret;
 }
 
+static int
+ntfs_3g_restore_reparse_point(ntfs_inode *ni, const struct wim_inode *inode,
+			      unsigned blob_size, struct ntfs_3g_apply_ctx *ctx)
+{
+	complete_reparse_point(&ctx->rpbuf, inode, blob_size);
+
+	if (ntfs_set_ntfs_reparse_data(ni, (const char *)&ctx->rpbuf,
+				       REPARSE_DATA_OFFSET + blob_size, 0))
+	{
+		ERROR_WITH_ERRNO("Failed to set reparse data on \"%s\"",
+				 dentry_full_path(
+					inode_first_extraction_dentry(inode)));
+		return WIMLIB_ERR_SET_REPARSE_DATA;
+	}
+
+	return 0;
+}
+
+
 /*
- * Create empty named data streams for the specified file, if there are any.
+ * Create empty attributes (named data streams and potentially a reparse point)
+ * for the specified file, if there are any.
  *
  * Since these won't have blob descriptors, they won't show up in the call to
  * extract_blob_list().  Hence the need for the special case.
  */
 static int
-ntfs_3g_create_empty_named_data_streams(ntfs_inode *ni,
-					const struct wim_inode *inode,
-					const struct ntfs_3g_apply_ctx *ctx)
+ntfs_3g_create_empty_attributes(ntfs_inode *ni,
+				const struct wim_inode *inode,
+				struct ntfs_3g_apply_ctx *ctx)
 {
+
 	for (unsigned i = 0; i < inode->i_num_streams; i++) {
 
 		const struct wim_inode_stream *strm = &inode->i_streams[i];
+		int ret;
 
-		if (!stream_is_named_data_stream(strm) ||
-		    stream_blob_resolved(strm) != NULL)
+		if (stream_blob_resolved(strm) != NULL)
 			continue;
 
-		if (ntfs_attr_add(ni, AT_DATA, strm->stream_name,
-				  utf16le_len_chars(strm->stream_name),
-				  NULL, 0))
-		{
-			ERROR_WITH_ERRNO("Failed to create named data stream "
-					 "of \"%s\"", dentry_full_path(
-						inode_first_extraction_dentry(inode)));
-			return WIMLIB_ERR_NTFS_3G;
+		if (strm->stream_type == STREAM_TYPE_REPARSE_POINT) {
+			ret = ntfs_3g_restore_reparse_point(ni, inode, 0, ctx);
+			if (ret)
+				return ret;
+		} else if (stream_is_named_data_stream(strm)) {
+			if (ntfs_attr_add(ni, AT_DATA, strm->stream_name,
+					  utf16le_len_chars(strm->stream_name),
+					  NULL, 0))
+			{
+				ERROR_WITH_ERRNO("Failed to create named data "
+						 "stream of \"%s\"",
+						 dentry_full_path(
+					inode_first_extraction_dentry(inode)));
+				return WIMLIB_ERR_NTFS_3G;
+			}
 		}
 	}
 	return 0;
@@ -451,7 +479,7 @@ ntfs_3g_create_dirs_recursive(ntfs_inode *dir_ni, struct wim_dentry *dir,
 		if (!ret)
 			ret = ntfs_3g_set_metadata(ni, child->d_inode, ctx);
 		if (!ret)
-			ret = ntfs_3g_create_empty_named_data_streams(ni, child->d_inode, ctx);
+			ret = ntfs_3g_create_empty_attributes(ni, child->d_inode, ctx);
 		if (!ret)
 			ret = ntfs_3g_create_dirs_recursive(ni, child, ctx);
 
@@ -563,7 +591,7 @@ fail:
 
 static int
 ntfs_3g_create_nondirectory(struct wim_inode *inode,
-			    const struct ntfs_3g_apply_ctx *ctx)
+			    struct ntfs_3g_apply_ctx *ctx)
 {
 	struct wim_dentry *first_dentry;
 	ntfs_inode *dir_ni;
@@ -636,7 +664,7 @@ ntfs_3g_create_nondirectory(struct wim_inode *inode,
 	if (ret)
 		goto out_close_ni;
 
-	ret = ntfs_3g_create_empty_named_data_streams(ni, inode, ctx);
+	ret = ntfs_3g_create_empty_attributes(ni, inode, ctx);
 
 out_close_ni:
 	/* Close the inode.  */
@@ -847,22 +875,11 @@ ntfs_3g_end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
 	}
 
 	for (u32 i = 0; i < ctx->num_reparse_inodes; i++) {
-		struct wim_inode *inode = ctx->wim_reparse_inodes[i];
-
-		complete_reparse_point(&ctx->rpbuf, inode, blob->size);
-
-		if (ntfs_set_ntfs_reparse_data(ctx->ntfs_reparse_inodes[i],
-					       (const char *)&ctx->rpbuf,
-					       REPARSE_DATA_OFFSET + blob->size,
-					       0))
-		{
-			ERROR_WITH_ERRNO("Failed to set reparse "
-					 "data on \"%s\"",
-					 dentry_full_path(
-						inode_first_extraction_dentry(inode)));
-			ret = WIMLIB_ERR_SET_REPARSE_DATA;
+		ret = ntfs_3g_restore_reparse_point(ctx->ntfs_reparse_inodes[i],
+						    ctx->wim_reparse_inodes[i],
+						    blob->size, ctx);
+		if (ret)
 			goto out;
-		}
 	}
 	ret = 0;
 out:
