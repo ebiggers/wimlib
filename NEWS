@@ -1,11 +1,25 @@
 Version 1.8.2-BETA:
-	Fixed a bug: on 32-bit systems, the library would enter an infinite loop
-	if WIM image metadata was malformed in a very specific way.
+	This release contains various minor bug fixes and improvements,
+	including:
 
-	Reduced the stack space used by directory tree scans.
+		Reduced the stack space used by directory tree scans.
 
-	Windows symbolic links and junctions in mounted WIM images are now
-	automatically rewritten to be valid in the mounted location.
+		Fixed a bug where on 32-bit systems, the library could enter an
+		infinite loop if a WIM file was malformed in a specific way.
+
+		Windows symbolic links and junctions in mounted WIM images are
+		now automatically rewritten to be valid in the mounted location.
+
+		Reparse point fixes: correctly handle the "ReparseReserved"
+		field, and correctly handle "empty" (data-less) reparse points.
+
+		Improved validation of filenames.
+
+		Fixed the test scripts to work in a Turkish locale.
+
+		Fixed handling of EINTR during data I/O.
+
+		Optimized memory usage of some data structures.
 
 Version 1.8.1:
 	Fixed a bug in the LZX decompressor: malicious input data could cause
