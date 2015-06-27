@@ -207,6 +207,32 @@ echo 1 > file:aa
 call :do_test
 if %errorlevel% neq 0 goto :fail
 
+call :msg "empty reparse point"
+type nul > file
+%SET_REPARSE_POINT% file 0
+call :do_test
+if %errorlevel% neq 0 goto :fail
+
+call :msg "empty reparse point with unnamed data stream"
+echo hello > file
+%SET_REPARSE_POINT% file 0
+call :do_test
+if %errorlevel% neq 0 goto :fail
+
+call :msg "empty reparse point with unnamed data stream and named data streams"
+echo hello > file
+echo hello > file:ads1
+type nul > file:ads2
+%SET_REPARSE_POINT% file 0
+call :do_test
+if %errorlevel% neq 0 goto :fail
+
+call :msg "maximum length reparse point"
+type nul > file
+%SET_REPARSE_POINT% file 16376
+call :do_test
+if %errorlevel% neq 0 goto :fail
+
 call :msg "directory reparse point that is neither a symlink nor a junction"
 md subdir
 %SET_REPARSE_POINT% subdir
