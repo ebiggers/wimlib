@@ -795,8 +795,7 @@ ntfs_3g_open_inode(struct wim_inode *inode, struct ntfs_3g_apply_ctx *ctx)
 	if (unlikely(inode->i_num_streams > 1)) {
 		for (unsigned i = 0; i < ctx->num_open_inodes; i++) {
 			if (ctx->open_inodes[i]->mft_no == inode->i_mft_no) {
-				ni = ctx->open_inodes[i];
-				goto have_inode;
+				return ctx->open_inodes[i];
 			}
 		}
 	}
@@ -809,7 +808,6 @@ ntfs_3g_open_inode(struct wim_inode *inode, struct ntfs_3g_apply_ctx *ctx)
 		return NULL;
 	}
 
-have_inode:
 	ctx->open_inodes[ctx->num_open_inodes++] = ni;
 	return ni;
 }
