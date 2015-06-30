@@ -1547,21 +1547,14 @@ dentry_is_dot_or_dotdot(const struct wim_dentry *dentry)
 
 static int
 read_dentry_tree_recursive(const u8 * restrict buf, size_t buf_len,
-			   struct wim_dentry * restrict dir)
+			   struct wim_dentry * restrict dir, unsigned depth)
 {
 	u64 cur_offset = dir->d_subdir_offset;
 
-	/* Check for cyclic directory structure, which would cause infinite
-	 * recursion if not handled.  */
-	for (struct wim_dentry *d = dir->d_parent;
-	     !dentry_is_root(d); d = d->d_parent)
-	{
-		if (unlikely(d->d_subdir_offset == cur_offset)) {
-			ERROR("Cyclic directory structure detected: children "
-			      "of \"%"TS"\" coincide with children of \"%"TS"\"",
-			      dentry_full_path(dir), dentry_full_path(d));
-			return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
-		}
+	/* Disallow extremely deep or cyclic directory structures  */
+	if (unlikely(depth >= 16384)) {
+		ERROR("Directory structure too deep!");
+		return WIMLIB_ERR_INVALID_METADATA_RESOURCE;
 	}
 
 	for (;;) {
@@ -1614,7 +1607,8 @@ read_dentry_tree_recursive(const u8 * restrict buf, size_t buf_len,
 			if (likely(dentry_is_directory(child))) {
 				ret = read_dentry_tree_recursive(buf,
 								 buf_len,
-								 child);
+								 child,
+								 depth + 1);
 				if (ret)
 					return ret;
 			} else {
@@ -1675,7 +1669,7 @@ read_dentry_tree(const u8 *buf, size_t buf_len,
 		}
 
 		if (likely(root->d_subdir_offset != 0)) {
-			ret = read_dentry_tree_recursive(buf, buf_len, root);
+			ret = read_dentry_tree_recursive(buf, buf_len, root, 0);
 			if (ret)
 				goto err_free_dentry_tree;
 		}
