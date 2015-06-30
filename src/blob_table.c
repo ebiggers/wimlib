@@ -34,6 +34,7 @@
 #include <unistd.h> /* for unlink()  */
 
 #include "wimlib/assert.h"
+#include "wimlib/bitops.h"
 #include "wimlib/blob_table.h"
 #include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
@@ -49,14 +50,24 @@
 struct blob_table {
 	struct hlist_head *array;
 	size_t num_blobs;
-	size_t capacity;
+	size_t mask; /* capacity - 1; capacity is a power of 2  */
 };
+
+static size_t
+next_power_of_2(size_t n)
+{
+	if (n <= 1)
+		return 1;
+	return (size_t)1 << (1 + flsw(n - 1));
+}
 
 struct blob_table *
 new_blob_table(size_t capacity)
 {
 	struct blob_table *table;
 	struct hlist_head *array;
+
+	capacity = next_power_of_2(capacity);
 
 	table = MALLOC(sizeof(struct blob_table));
 	if (table == NULL)
@@ -69,7 +80,7 @@ new_blob_table(size_t capacity)
 	}
 
 	table->num_blobs = 0;
-	table->capacity = capacity;
+	table->mask = capacity - 1;
 	table->array = array;
 	return table;
 
@@ -287,7 +298,7 @@ blob_decrement_num_opened_fds(struct blob_descriptor *blob)
 static void
 blob_table_insert_raw(struct blob_table *table, struct blob_descriptor *blob)
 {
-	size_t i = blob->hash_short % table->capacity;
+	size_t i = blob->hash_short & table->mask;
 
 	hlist_add_head(&blob->hash_list, &table->array[i]);
 }
@@ -301,14 +312,14 @@ enlarge_blob_table(struct blob_table *table)
 	struct hlist_node *tmp;
 	size_t i;
 
-	old_capacity = table->capacity;
+	old_capacity = table->mask + 1;
 	new_capacity = old_capacity * 2;
 	new_array = CALLOC(new_capacity, sizeof(struct hlist_head));
 	if (new_array == NULL)
 		return;
 	old_array = table->array;
 	table->array = new_array;
-	table->capacity = new_capacity;
+	table->mask = new_capacity - 1;
 
 	for (i = 0; i < old_capacity; i++)
 		hlist_for_each_entry_safe(blob, tmp, &old_array[i], hash_list)
@@ -321,7 +332,7 @@ void
 blob_table_insert(struct blob_table *table, struct blob_descriptor *blob)
 {
 	blob_table_insert_raw(table, blob);
-	if (++table->num_blobs > table->capacity)
+	if (table->num_blobs++ > table->mask)
 		enlarge_blob_table(table);
 }
 
@@ -344,7 +355,7 @@ lookup_blob(const struct blob_table *table, const u8 *hash)
 	size_t i;
 	struct blob_descriptor *blob;
 
-	i = load_size_t_unaligned(hash) % table->capacity;
+	i = load_size_t_unaligned(hash) & table->mask;
 	hlist_for_each_entry(blob, &table->array[i], hash_list)
 		if (hashes_equal(hash, blob->hash))
 			return blob;
@@ -361,7 +372,7 @@ for_blob_in_table(struct blob_table *table,
 	struct hlist_node *tmp;
 	int ret;
 
-	for (size_t i = 0; i < table->capacity; i++) {
+	for (size_t i = 0; i <= table->mask; i++) {
 		hlist_for_each_entry_safe(blob, tmp, &table->array[i],
 					  hash_list)
 		{
@@ -860,7 +871,7 @@ read_blob_table(WIMStruct *wim)
 
 	/* Allocate a hash table to map SHA-1 message digests into blob
 	 * descriptors.  This is the in-memory "blob table".  */
-	table = new_blob_table(num_entries * 2 + 1);
+	table = new_blob_table(num_entries);
 	if (!table)
 		goto oom;
 
