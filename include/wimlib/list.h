@@ -140,24 +140,6 @@ list_splice(const struct list_head *list, struct list_head *head)
 		__list_splice(list, head, head->next);
 }
 
-/* Move the entire list @old to the list @new, overwriting it. */
-static inline void
-list_transfer(struct list_head *old, struct list_head *new)
-{
-	struct list_head *prev, *next;
-
-	if (list_empty(old)) {
-		INIT_LIST_HEAD(new);
-	} else {
-		prev = old->prev;
-		next = old->next;
-		new->next = next;
-		new->prev = prev;
-		prev->next = new;
-		next->prev = new;
-	}
-}
-
 /**
  * list_move - delete from one list and add as another's head
  * @list: the entry to move

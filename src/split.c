@@ -44,7 +44,7 @@ struct swm_part_info {
 static void
 copy_part_info(struct swm_part_info *dst, struct swm_part_info *src)
 {
-	list_transfer(&src->blob_list, &dst->blob_list);
+	list_replace(&src->blob_list, &dst->blob_list);
 	dst->size = src->size;
 }
 
