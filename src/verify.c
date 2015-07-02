@@ -44,27 +44,39 @@ struct verify_blob_list_ctx {
 	void *progctx;
 	union wimlib_progress_info *progress;
 	u64 next_progress;
+	u64 cur_blob_offset;
+	u64 cur_blob_size;
 };
 
 static int
-end_verify_blob(struct blob_descriptor *blob, int status, void *_ctx)
+verify_begin_blob(struct blob_descriptor *blob, void *_ctx)
+{
+	struct verify_blob_list_ctx *ctx = _ctx;
+
+	ctx->cur_blob_offset = 0;
+	ctx->cur_blob_size = blob->size;
+	return 0;
+}
+
+static int
+verify_consume_chunk(const void *chunk, size_t size, void *_ctx)
 {
 	struct verify_blob_list_ctx *ctx = _ctx;
 	union wimlib_progress_info *progress = ctx->progress;
 
-	if (status)
-		return status;
+	ctx->cur_blob_offset += size;
+	if (ctx->cur_blob_offset == ctx->cur_blob_size)
+		progress->verify_streams.completed_streams++;
 
-	progress->verify_streams.completed_streams++;
-	progress->verify_streams.completed_bytes += blob->size;
+	progress->verify_streams.completed_bytes += size;
 
 	if (progress->verify_streams.completed_bytes >= ctx->next_progress) {
 
-		status = call_progress(ctx->progfunc,
-				       WIMLIB_PROGRESS_MSG_VERIFY_STREAMS,
-				       progress, ctx->progctx);
-		if (status)
-			return status;
+		int ret = call_progress(ctx->progfunc,
+					WIMLIB_PROGRESS_MSG_VERIFY_STREAMS,
+					progress, ctx->progctx);
+		if (ret)
+			return ret;
 
 		set_next_progress(progress->verify_streams.completed_bytes,
 				  progress->verify_streams.total_bytes,
@@ -98,7 +110,8 @@ wimlib_verify_wim(WIMStruct *wim, int verify_flags)
 	struct verify_blob_list_ctx ctx;
 	struct blob_descriptor *blob;
 	struct read_blob_callbacks cbs = {
-		.end_blob	= end_verify_blob,
+		.begin_blob	= verify_begin_blob,
+		.consume_chunk	= verify_consume_chunk,
 		.ctx		= &ctx,
 	};
 
