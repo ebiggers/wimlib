@@ -13,7 +13,6 @@ struct wim_dentry;
  * cases the inodes are linked by i_hlist_node.  */
 struct wim_inode_table {
 	struct hlist_head *array;
-	size_t num_entries;
 	size_t capacity;
 	struct hlist_head extra_inodes;
 };

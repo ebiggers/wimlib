@@ -37,7 +37,6 @@ init_inode_table(struct wim_inode_table *table, size_t capacity)
 	table->array = CALLOC(capacity, sizeof(table->array[0]));
 	if (!table->array)
 		return WIMLIB_ERR_NOMEM;
-	table->num_entries = 0;
 	table->capacity = capacity;
 	INIT_HLIST_HEAD(&table->extra_inodes);
 	return 0;
@@ -116,7 +115,6 @@ inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
 		}
 
 		/* Inode not found; create it.  */
-		table->num_entries++;
 	}
 
 	ret = new_dentry_with_new_inode(name, false, &dentry);
@@ -162,5 +160,4 @@ inode_table_prepare_inode_list(struct wim_inode_table *table,
 		hlist_add_head(&inode->i_hlist_node, head);
 	}
 	INIT_HLIST_HEAD(&table->extra_inodes);
-	table->num_entries = 0;
 }
