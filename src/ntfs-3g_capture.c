@@ -261,7 +261,6 @@ static int
 scan_ntfs_attr(struct wim_inode *inode,
 	       ntfs_inode *ni,
 	       const char *path,
-	       size_t path_len,
 	       struct list_head *unhashed_blobs,
 	       struct ntfs_volume_wrapper *volume,
 	       ATTR_TYPES type,
@@ -357,7 +356,6 @@ static int
 scan_ntfs_attrs_with_type(struct wim_inode *inode,
 			  ntfs_inode *ni,
 			  const char *path,
-			  size_t path_len,
 			  struct list_head *unhashed_blobs,
 			  struct ntfs_volume_wrapper *volume,
 			  ATTR_TYPES type)
@@ -378,7 +376,6 @@ scan_ntfs_attrs_with_type(struct wim_inode *inode,
 		ret = scan_ntfs_attr(inode,
 				     ni,
 				     path,
-				     path_len,
 				     unhashed_blobs,
 				     volume,
 				     type,
@@ -730,7 +727,7 @@ ntfs_3g_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 
 	if (attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		/* Scan the reparse point stream.  */
-		ret = scan_ntfs_attrs_with_type(inode, ni, path, path_len,
+		ret = scan_ntfs_attrs_with_type(inode, ni, path,
 						params->unhashed_blobs,
 						volume, AT_REPARSE_POINT);
 		if (ret)
@@ -743,8 +740,7 @@ ntfs_3g_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	 * may have named data streams.  Nondirectories (including reparse
 	 * points) can have an unnamed data stream as well as named data
 	 * streams.  */
-	ret = scan_ntfs_attrs_with_type(inode, ni, path, path_len,
-					params->unhashed_blobs,
+	ret = scan_ntfs_attrs_with_type(inode, ni, path, params->unhashed_blobs,
 					volume, AT_DATA);
 	if (ret)
 		goto out;
