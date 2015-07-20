@@ -10,6 +10,8 @@
 #ifndef _WIMLIB_DECOMPRESS_COMMON_H
 #define _WIMLIB_DECOMPRESS_COMMON_H
 
+#include <string.h>
+
 #include "wimlib/compiler.h"
 #include "wimlib/types.h"
 #include "wimlib/unaligned.h"
@@ -157,18 +159,17 @@ bitstream_read_u32(struct input_bitstream *is)
 	return v;
 }
 
-/* Read an array of literal bytes embedded in the bitstream.  Return a pointer
- * to the resulting array, or NULL if the read overflows the input buffer.  */
-static inline const u8 *
-bitstream_read_bytes(struct input_bitstream *is, size_t count)
+/* Read into @dst_buffer an array of literal bytes embedded in the bitstream.
+ * Return either a pointer to the byte past the last written, or NULL if the
+ * read overflows the input buffer.  */
+static inline void *
+bitstream_read_bytes(struct input_bitstream *is, void *dst_buffer, size_t count)
 {
-	const u8 *p;
-
 	if (unlikely(is->end - is->next < count))
 		return NULL;
-	p = is->next;
+	memcpy(dst_buffer, is->next, count);
 	is->next += count;
-	return p;
+	return (u8 *)dst_buffer + count;
 }
 
 /* Align the input bitstream on a coding-unit boundary.  */

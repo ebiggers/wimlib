@@ -583,16 +583,14 @@ lzx_decompress(const void *compressed_data, size_t compressed_size,
 			 * have been encoded as a literal using mainsym 0xe8. */
 			if (dec->tables.maincode_lens[0xe8] != 0)
 				may_have_e8_byte = true;
+
+			out_next += block_size;
 		} else {
 
 			/* Uncompressed block.  */
-			const u8 *p;
-
-			p = bitstream_read_bytes(&istream, block_size);
-			if (!p)
+			out_next = bitstream_read_bytes(&istream, out_next, block_size);
+			if (!out_next)
 				return -1;
-
-			memcpy(out_next, p, block_size);
 
 			/* Re-align the bitstream if an odd number of bytes was
 			 * read.  */
@@ -601,8 +599,6 @@ lzx_decompress(const void *compressed_data, size_t compressed_size,
 
 			may_have_e8_byte = true;
 		}
-
-		out_next += block_size;
 	}
 
 	/* Postprocess the data unless it cannot possibly contain 0xe8 bytes  */
