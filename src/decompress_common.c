@@ -98,9 +98,11 @@
  *   binary tree.
  *
  * @decode_table:
- *	The array in which to create the decoding table.
- *	This must be 16-byte aligned and must have a length of at least
- *	((2**table_bits) + 2 * num_syms) entries.
+ *	The array in which to create the decoding table.  This must be
+ *	16-byte aligned and must have a length of at least
+ *	((2**table_bits) + 2 * num_syms) entries.  This is permitted to
+ *	alias @lens, since all information from @lens is consumed before
+*	anything is written to @decode_table.
  *
  * @num_syms:
  *	The number of symbols in the alphabet; also, the length of the
@@ -115,7 +117,9 @@
  *	An array of length @num_syms, indexable by symbol, that gives the
  *	length of the codeword, in bits, for that symbol.  The length can
  *	be 0, which means that the symbol does not have a codeword
- *	assigned.
+ *	assigned.  This is permitted to alias @decode_table, since all
+ *	information from @lens is consumed before anything is written to
+ *	@decode_table.
  *
  * @max_codeword_len:
  *	The longest codeword length allowed in the compression format.
@@ -126,10 +130,10 @@
  * code.
  */
 int
-make_huffman_decode_table(u16 decode_table[const restrict],
+make_huffman_decode_table(u16 decode_table[const],
 			  const unsigned num_syms,
 			  const unsigned table_bits,
-			  const u8 lens[const restrict],
+			  const u8 lens[const],
 			  const unsigned max_codeword_len)
 {
 	const unsigned table_num_entries = 1 << table_bits;
