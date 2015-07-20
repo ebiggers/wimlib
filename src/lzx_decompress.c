@@ -403,40 +403,34 @@ lzx_read_block_header(struct input_bitstream *istream,
 }
 
 /*
- * Decompress an LZX-compressed block of data.
+ * Decompress a block of LZX-compressed data.
  *
  * @block_type:
  *	The type of the block (LZX_BLOCKTYPE_VERBATIM or LZX_BLOCKTYPE_ALIGNED).
- *
- * @block_size:
- *	The size of the block, in bytes.
- *
- * @window:
- *	Pointer to the beginning of the decompression window.
- *
- * @window_pos:
- *	The position in the window at which the block starts.
- *
+ * @out_begin
+ *	The beginning of the (uncompressed) output buffer.
+ * @out_next
+ *	Pointer to the location in the (uncompressed) output buffer at which
+ *	this block will start.
+ * @out_block_end
+ *	Pointer to the location in the (uncompressed) output buffer at which
+ *	this block will end.
  * @tables:
- *	The Huffman decoding tables for the block.
- *
+ *	The Huffman decoding tables for this block.
  * @queue:
  *	The least-recently-used queue for match offsets.
- *
  * @istream:
  *	The input bitstream, positioned at the start of the block data.
  *
  * Returns 0 on success, or -1 if the data was invalid.
  */
 static int
-lzx_decompress_block(int block_type, u32 block_size,
-		     u8 *window, u32 window_pos,
+lzx_decompress_block(int block_type, u8 * const out_begin,
+		     u8 * out_next, u8 * const out_block_end,
 		     const struct lzx_tables *tables,
 		     struct lzx_lru_queue *queue,
 		     struct input_bitstream *istream)
 {
-	u8 *window_ptr = &window[window_pos];
-	u8 *window_end = window_ptr + block_size;
 	unsigned mainsym;
 	u32 match_len;
 	unsigned offset_slot;
@@ -444,12 +438,12 @@ lzx_decompress_block(int block_type, u32 block_size,
 	unsigned num_extra_bits;
 	unsigned ones_if_aligned = 0U - (block_type == LZX_BLOCKTYPE_ALIGNED);
 
-	while (window_ptr != window_end) {
+	while (out_next != out_block_end) {
 
 		mainsym = read_huffsym_using_maincode(istream, tables);
 		if (mainsym < LZX_NUM_CHARS) {
 			/* Literal  */
-			*window_ptr++ = mainsym;
+			*out_next++ = mainsym;
 			continue;
 		}
 
@@ -512,16 +506,16 @@ lzx_decompress_block(int block_type, u32 block_size,
 
 		/* Validate the match, then copy it to the current position.  */
 
-		if (unlikely(match_len > window_end - window_ptr))
+		if (unlikely(match_len > out_block_end - out_next))
 			return -1;
 
-		if (unlikely(match_offset > window_ptr - window))
+		if (unlikely(match_offset > out_next - out_begin))
 			return -1;
 
-		lz_copy(window_ptr, match_len, match_offset, window_end,
+		lz_copy(out_next, match_len, match_offset, out_block_end,
 			LZX_MIN_MATCH_LEN);
 
-		window_ptr += match_len;
+		out_next += match_len;
 	}
 	return 0;
 }
@@ -534,7 +528,9 @@ lzx_decompress(const void *compressed_data, size_t compressed_size,
 	struct lzx_decompressor *dec = _dec;
 	struct input_bitstream istream;
 	struct lzx_lru_queue queue;
-	u32 window_pos;
+	u8 * const out_begin = uncompressed_data;
+	u8 *out_next = out_begin;
+	u8 * const out_end = out_begin + uncompressed_size;
 	int block_type;
 	u32 block_size;
 	bool may_have_e8_byte;
@@ -558,17 +554,15 @@ lzx_decompress(const void *compressed_data, size_t compressed_size,
 	 * the compressed data has been decompressed, so there are no more
 	 * blocks.  */
 
-	for (window_pos = 0;
-	     window_pos < uncompressed_size;
-	     window_pos += block_size)
-	{
+	while (out_next != out_end) {
+
 		ret = lzx_read_block_header(&istream, dec->num_main_syms,
 					    dec->window_order, &block_type,
 					    &block_size, &dec->tables, &queue);
 		if (ret)
 			return ret;
 
-		if (block_size > uncompressed_size - window_pos)
+		if (block_size > out_end - out_next)
 			return -1;
 
 		if (block_type != LZX_BLOCKTYPE_UNCOMPRESSED) {
@@ -576,9 +570,9 @@ lzx_decompress(const void *compressed_data, size_t compressed_size,
 			/* Compressed block.  */
 
 			ret = lzx_decompress_block(block_type,
-						   block_size,
-						   uncompressed_data,
-						   window_pos,
+						   out_begin,
+						   out_next,
+						   out_next + block_size,
 						   &dec->tables,
 						   &queue,
 						   &istream);
@@ -598,7 +592,7 @@ lzx_decompress(const void *compressed_data, size_t compressed_size,
 			if (!p)
 				return -1;
 
-			memcpy(&((u8*)uncompressed_data)[window_pos], p, block_size);
+			memcpy(out_next, p, block_size);
 
 			/* Re-align the bitstream if an odd number of bytes was
 			 * read.  */
@@ -607,6 +601,8 @@ lzx_decompress(const void *compressed_data, size_t compressed_size,
 
 			may_have_e8_byte = true;
 		}
+
+		out_next += block_size;
 	}
 
 	/* Postprocess the data unless it cannot possibly contain 0xe8 bytes  */
