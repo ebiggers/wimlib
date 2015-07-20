@@ -430,9 +430,7 @@ lzms_ensure_bits(struct lzms_input_bitstream *is, unsigned num_bits)
 static inline bitbuf_t
 lzms_peek_bits(struct lzms_input_bitstream *is, unsigned num_bits)
 {
-	if (unlikely(num_bits == 0))
-		return 0;
-	return is->bitbuf >> (sizeof(is->bitbuf) * 8 - num_bits);
+	return (is->bitbuf >> 1) >> (sizeof(is->bitbuf) * 8 - num_bits - 1);
 }
 
 /* Remove @num_bits bits from the bitbuffer variable.  */

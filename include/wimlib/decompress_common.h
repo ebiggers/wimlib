@@ -90,9 +90,7 @@ overflow:
 static inline u32
 bitstream_peek_bits(const struct input_bitstream *is, const unsigned num_bits)
 {
-	if (unlikely(num_bits == 0))
-		return 0;
-	return is->bitbuf >> (32 - num_bits);
+	return (is->bitbuf >> 1) >> (sizeof(is->bitbuf) * 8 - num_bits - 1);
 }
 
 /* Remove @num_bits from the bitstream.  There must be at least @num_bits
