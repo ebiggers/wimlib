@@ -132,10 +132,12 @@ xpress_decompress(const void *compressed_data, size_t compressed_size,
 		  void *uncompressed_data, size_t uncompressed_size, void *_ctx)
 {
 	const u8 *cdata = compressed_data;
-	u8 lens[XPRESS_NUM_SYMBOLS];
 	u8 *lens_p;
-	u16 decode_table[(1 << XPRESS_TABLEBITS) + 2 * XPRESS_NUM_SYMBOLS]
-			_aligned_attribute(DECODE_TABLE_ALIGNMENT);
+	union {
+		u16 decode_table[(1 << XPRESS_TABLEBITS) + 2 * XPRESS_NUM_SYMBOLS]
+				_aligned_attribute(DECODE_TABLE_ALIGNMENT);
+		u8 lens[XPRESS_NUM_SYMBOLS];
+	} u;
 	struct input_bitstream istream;
 
 	/* XPRESS uses only one Huffman code.  It contains 512 symbols, and the
@@ -144,21 +146,21 @@ xpress_decompress(const void *compressed_data, size_t compressed_size,
 	if (compressed_size < XPRESS_NUM_SYMBOLS / 2)
 		return -1;
 
-	lens_p = lens;
+	lens_p = u.lens;
 	for (unsigned i = 0; i < XPRESS_NUM_SYMBOLS / 2; i++) {
 		*lens_p++ = cdata[i] & 0xf;
 		*lens_p++ = cdata[i] >> 4;
 	}
 
-	if (make_huffman_decode_table(decode_table, XPRESS_NUM_SYMBOLS,
-				      XPRESS_TABLEBITS, lens,
+	if (make_huffman_decode_table(u.decode_table, XPRESS_NUM_SYMBOLS,
+				      XPRESS_TABLEBITS, u.lens,
 				      XPRESS_MAX_CODEWORD_LEN))
 		return -1;
 
 	init_input_bitstream(&istream, cdata + XPRESS_NUM_SYMBOLS / 2,
 			     compressed_size - XPRESS_NUM_SYMBOLS / 2);
 
-	return xpress_decode_window(&istream, decode_table,
+	return xpress_decode_window(&istream, u.decode_table,
 				    uncompressed_data, uncompressed_size);
 }
 
