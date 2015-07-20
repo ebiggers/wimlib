@@ -6,7 +6,7 @@
 
 /*
  *
- * Copyright (C) 2012, 2013 Eric Biggers
+ * Copyright (C) 2012, 2013, 2015 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -75,93 +75,81 @@
 /* This value is chosen for fast decompression.  */
 #define XPRESS_TABLEBITS 12
 
-/* Decode the matches and literal bytes in a region of XPRESS-encoded data.  */
-static int
-xpress_decode_window(struct input_bitstream *istream, const u16 *decode_table,
-		     u8 *window, unsigned window_size)
-{
-	u8 *window_ptr = window;
-	u8 *window_end = &window[window_size];
-	unsigned sym;
-	unsigned match_len;
-	unsigned offset_high_bit;
-	unsigned match_offset;
-
-	while (window_ptr != window_end) {
-
-		sym = read_huffsym(istream, decode_table,
-				   XPRESS_TABLEBITS, XPRESS_MAX_CODEWORD_LEN);
-		if (sym < XPRESS_NUM_CHARS) {
-			/* Literal  */
-			*window_ptr++ = sym;
-			continue;
-		}
-
-		/* Match  */
-		match_len = sym & 0xf;
-		offset_high_bit = (sym >> 4) & 0xf;
-
-		bitstream_ensure_bits(istream, 16);
-
-		match_offset = (1 << offset_high_bit) |
-				bitstream_pop_bits(istream, offset_high_bit);
-
-		if (match_len == 0xf) {
-			match_len += bitstream_read_byte(istream);
-			if (match_len == 0xf + 0xff)
-				match_len = bitstream_read_u16(istream);
-		}
-		match_len += XPRESS_MIN_MATCH_LEN;
-
-		if (unlikely(match_offset > window_ptr - window))
-			return -1;
-
-		if (unlikely(match_len > window_end - window_ptr))
-			return -1;
-
-		lz_copy(window_ptr, match_len, match_offset, window_end,
-			XPRESS_MIN_MATCH_LEN);
-
-		window_ptr += match_len;
-	}
-	return 0;
-}
-
 static int
 xpress_decompress(const void *compressed_data, size_t compressed_size,
 		  void *uncompressed_data, size_t uncompressed_size, void *_ctx)
 {
-	const u8 *cdata = compressed_data;
-	u8 *lens_p;
+	const u8 * const in_begin = compressed_data;
+	u8 * const out_begin = uncompressed_data;
+	u8 *out_next = out_begin;
+	u8 * const out_end = out_begin + uncompressed_size;
 	union {
 		u16 decode_table[(1 << XPRESS_TABLEBITS) + 2 * XPRESS_NUM_SYMBOLS]
 				_aligned_attribute(DECODE_TABLE_ALIGNMENT);
 		u8 lens[XPRESS_NUM_SYMBOLS];
 	} u;
-	struct input_bitstream istream;
+	struct input_bitstream is;
 
-	/* XPRESS uses only one Huffman code.  It contains 512 symbols, and the
-	 * code lengths of these symbols are given literally as 4-bit integers
-	 * in the first 256 bytes of the compressed data.  */
+	/* Read the Huffman codeword lengths.  */
 	if (compressed_size < XPRESS_NUM_SYMBOLS / 2)
 		return -1;
-
-	lens_p = u.lens;
-	for (unsigned i = 0; i < XPRESS_NUM_SYMBOLS / 2; i++) {
-		*lens_p++ = cdata[i] & 0xf;
-		*lens_p++ = cdata[i] >> 4;
+	for (int i = 0; i < XPRESS_NUM_SYMBOLS / 2; i++) {
+		u.lens[2 * i + 0] = in_begin[i] & 0xf;
+		u.lens[2 * i + 1] = in_begin[i] >> 4;
 	}
 
+	/* Build a decoding table for the Huffman code.  */
 	if (make_huffman_decode_table(u.decode_table, XPRESS_NUM_SYMBOLS,
 				      XPRESS_TABLEBITS, u.lens,
 				      XPRESS_MAX_CODEWORD_LEN))
 		return -1;
 
-	init_input_bitstream(&istream, cdata + XPRESS_NUM_SYMBOLS / 2,
+	/* Decode the matches and literals.  */
+
+	init_input_bitstream(&is, in_begin + XPRESS_NUM_SYMBOLS / 2,
 			     compressed_size - XPRESS_NUM_SYMBOLS / 2);
 
-	return xpress_decode_window(&istream, u.decode_table,
-				    uncompressed_data, uncompressed_size);
+	while (out_next != out_end) {
+		unsigned sym;
+		unsigned log2_offset;
+		u32 length;
+		u32 offset;
+
+		sym = read_huffsym(&is, u.decode_table,
+				   XPRESS_TABLEBITS, XPRESS_MAX_CODEWORD_LEN);
+		if (sym < XPRESS_NUM_CHARS) {
+			/* Literal  */
+			*out_next++ = sym;
+		} else {
+			/* Match  */
+			length = sym & 0xf;
+			log2_offset = (sym >> 4) & 0xf;
+
+			bitstream_ensure_bits(&is, 16);
+
+			offset = ((u32)1 << log2_offset) |
+				 bitstream_pop_bits(&is, log2_offset);
+
+			if (length == 0xf) {
+				length += bitstream_read_byte(&is);
+				if (length == 0xf + 0xff)
+					length = bitstream_read_u16(&is);
+			}
+			length += XPRESS_MIN_MATCH_LEN;
+
+			if (unlikely(offset > out_next - out_begin))
+				return -1;
+
+			if (unlikely(length > out_end - out_next))
+				return -1;
+
+			lz_copy(out_next, length, offset, out_end,
+				XPRESS_MIN_MATCH_LEN);
+
+			out_next += length;
+		}
+	}
+	return 0;
 }
 
 static int
