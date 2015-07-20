@@ -116,7 +116,7 @@ struct lzx_decompressor {
 };
 
 /* Read a Huffman-encoded symbol using the precode.  */
-static inline u16
+static inline unsigned
 read_huffsym_using_precode(struct input_bitstream *istream,
 			   const u16 precode_decode_table[])
 {
@@ -125,7 +125,7 @@ read_huffsym_using_precode(struct input_bitstream *istream,
 }
 
 /* Read a Huffman-encoded symbol using the main code.  */
-static inline u16
+static inline unsigned
 read_huffsym_using_maincode(struct input_bitstream *istream,
 			    const struct lzx_tables *tables)
 {
@@ -134,7 +134,7 @@ read_huffsym_using_maincode(struct input_bitstream *istream,
 }
 
 /* Read a Huffman-encoded symbol using the length code.  */
-static inline u16
+static inline unsigned
 read_huffsym_using_lencode(struct input_bitstream *istream,
 			   const struct lzx_tables *tables)
 {
@@ -143,7 +143,7 @@ read_huffsym_using_lencode(struct input_bitstream *istream,
 }
 
 /* Read a Huffman-encoded symbol using the aligned offset code.  */
-static inline u16
+static inline unsigned
 read_huffsym_using_alignedcode(struct input_bitstream *istream,
 			       const struct lzx_tables *tables)
 {

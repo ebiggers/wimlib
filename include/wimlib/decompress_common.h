@@ -214,7 +214,7 @@ bitstream_align(struct input_bitstream *is)
  *
  * XXX: This is mostly duplicated in lzms_decode_huffman_symbol() in
  * lzms_decompress.c.  */
-static inline u16
+static inline unsigned
 read_huffsym(struct input_bitstream *istream, const u16 decode_table[],
 	     unsigned table_bits, unsigned max_codeword_len)
 {
