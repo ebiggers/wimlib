@@ -147,6 +147,7 @@ enum {
 	IMAGEX_CHUNK_SIZE_OPTION,
 	IMAGEX_COMMAND_OPTION,
 	IMAGEX_COMMIT_OPTION,
+	IMAGEX_COMPACT_OPTION,
 	IMAGEX_COMPRESS_OPTION,
 	IMAGEX_COMPRESS_SLOW_OPTION,
 	IMAGEX_CONFIG_OPTION,
@@ -216,6 +217,7 @@ static const struct option apply_options[] = {
 	/* --resume is undocumented for now as it needs improvement.  */
 	{T("resume"),      no_argument,       NULL, IMAGEX_RESUME_OPTION},
 	{T("wimboot"),     no_argument,       NULL, IMAGEX_WIMBOOT_OPTION},
+	{T("compact"),     required_argument, NULL, IMAGEX_COMPACT_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -310,6 +312,7 @@ static const struct option extract_options[] = {
 	{T("nullglob"),     no_argument,      NULL, IMAGEX_NULLGLOB_OPTION},
 	{T("preserve-dir-structure"), no_argument, NULL, IMAGEX_PRESERVE_DIR_STRUCTURE_OPTION},
 	{T("wimboot"),     no_argument,       NULL, IMAGEX_WIMBOOT_OPTION},
+	{T("compact"),     required_argument, NULL, IMAGEX_COMPACT_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -546,6 +549,37 @@ get_compression_type(tchar *optarg)
 		wimlib_set_default_compression_level(ctype, compression_level);
 	return ctype;
 }
+
+/* Parse the argument to --compact */
+static int
+set_compact_mode(const tchar *arg, int *extract_flags)
+{
+	int flag = 0;
+	if (!tstrcasecmp(arg, T("xpress4k")))
+		flag = WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS4K;
+	else if (!tstrcasecmp(arg, T("xpress8k")))
+		flag = WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS8K;
+	else if (!tstrcasecmp(arg, T("xpress16k")))
+		flag = WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS16K;
+	else if (!tstrcasecmp(arg, T("lzx")))
+		flag = WIMLIB_EXTRACT_FLAG_COMPACT_LZX;
+
+	if (flag) {
+		*extract_flags |= flag;
+		return 0;
+	}
+
+	imagex_error(T(
+"\"%"TS"\" is not a recognized System Compression format.  The options are:"
+"\n"
+"    --compact=xpress4k\n"
+"    --compact=xpress8k\n"
+"    --compact=xpress16k\n"
+"    --compact=lzx\n"
+	), arg);
+	return -1;
+}
+
 
 static void
 set_compress_slow(void)
@@ -1610,6 +1644,11 @@ imagex_apply(int argc, tchar **argv, int cmd)
 			break;
 		case IMAGEX_WIMBOOT_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_WIMBOOT;
+			break;
+		case IMAGEX_COMPACT_OPTION:
+			ret = set_compact_mode(optarg, &extract_flags);
+			if (ret)
+				goto out_free_refglobs;
 			break;
 		default:
 			goto out_usage;
@@ -3029,6 +3068,11 @@ imagex_extract(int argc, tchar **argv, int cmd)
 		case IMAGEX_WIMBOOT_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_WIMBOOT;
 			break;
+		case IMAGEX_COMPACT_OPTION:
+			ret = set_compact_mode(optarg, &extract_flags);
+			if (ret)
+				goto out_free_refglobs;
+			break;
 		default:
 			goto out_usage;
 		}
@@ -4212,6 +4256,7 @@ T(
 "                    [--check] [--ref=\"GLOB\"] [--no-acls] [--strict-acls]\n"
 "                    [--no-attributes] [--rpfix] [--norpfix]\n"
 "                    [--include-invalid-names] [--wimboot] [--unix-data]\n"
+"                    [--compact=FORMAT]\n"
 ),
 [CMD_CAPTURE] =
 T(

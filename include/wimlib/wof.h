@@ -1,9 +1,10 @@
 /*
  * wof.h
  *
- * Definitions for Windows Overlay File System Filter (WOF) ioctls.  See
+ * Definitions for the Windows Overlay File System Filter (WOF) ioctls, as well
+ * some definitions for associated undocumented data structures.  See
  * http://msdn.microsoft.com/en-us/library/windows/hardware/ff540367(v=vs.85).aspx
- * for more information.
+ * for more information about the documented ioctls.
  *
  * The author dedicates this file to the public domain.
  * You can do whatever you want with this file.
@@ -15,9 +16,55 @@
 #include "wimlib/compiler.h"
 #include "wimlib/types.h"
 
-#define WOF_CURRENT_VERSION	1
-#define WOF_PROVIDER_WIM	1
-#define WIM_PROVIDER_CURRENT_VERSION 1
+/*
+ * The Windows Overlay FileSystem Filter (WOF, a.k.a. wof.sys) is a filesystem
+ * filter driver, available in Windows 8.1 and later, which allows files to be
+ * "externally backed", meaning that their data is stored in another location,
+ * possibly in compressed form.
+ *
+ * WOF implements a plug-in mechanism by which a specific "provider" is
+ * responsible for actually externally backing a given file.  The currently
+ * known providers are:
+ *
+ *	- The WIM provider: allows a file to be externally backed by a
+ *	  compressed resource in a WIM archive
+ *	- The file provider: allows a file to be "externally backed" by a named
+ *	  data stream stored with the file itself, where that named data stream
+ *	  has the format of a compressed WIM resource
+ *
+ * For both of these providers, externally backed files are effectively
+ * read-only.  If you try to write to such a file, Windows automatically
+ * decompresses it and turns it into a regular, non-externally-backed file.
+ *
+ * WOF provides various ioctls that control its operation.  For example,
+ * FSCTL_SET_EXTERNAL_BACKING sets up a file as externally backed.
+ *
+ * WOF external backings are implemented using reparse points.  One consequence
+ * of this is that WOF external backings can only be set on files that do not
+ * already have a reparse point set.  Another consequence of this is that it is
+ * possible to create a WOF external backing by manually creating the reparse
+ * point, although this requires dealing with undocumented data structures and
+ * it only works when the WOF driver is not currently attached to the volume.
+ *
+ * Note that only the unnamed data stream portion of a file can be externally
+ * backed.  Other NTFS streams and metadata are not externally backed.
+ */
+
+
+/* Current version of the WOF driver/protocol  */
+#define WOF_CURRENT_VERSION		1
+
+/* Specifies the WIM backing provider  */
+#define WOF_PROVIDER_WIM		1
+
+/* Specifies the "file" backing provider (a.k.a. System Compression)  */
+#define WOF_PROVIDER_FILE		2
+
+/* The current version of the WIM backing provider  */
+#define WIM_PROVIDER_CURRENT_VERSION	1
+
+/* The current version of the file backing provider  */
+#define FILE_PROVIDER_CURRENT_VERSION	1
 
 /* Identifies a backing provider for a specific overlay service version.  */
 struct wof_external_info {
@@ -31,25 +78,16 @@ struct wof_external_info {
 	u32 provider;
 };
 
-/* On Windows, WOF reparse points can only be directly created when the WOF
- * driver is NOT running on the volume.  Otherwise, the WOF ioctl
- * (FSCTL_SET_EXTERNAL_BACKING, FSCTL_GET_EXTERNAL_BACKING,
- * FSCTL_DELETE_EXTERNAL_BACKING) must be used instead.  */
 
 /*
- * Format of the reparse data of WoF (Windows Overlay File System Filter)
- * reparse points.  These include WIMBoot "pointer files".
+ * Format of the WIM provider reparse data.  This is the data which follows the
+ * portion of the reparse point common to WOF.  (The common portion consists of
+ * a reparse point header where the reparse tag is 0x80000017, then a 'struct
+ * wof_external_info' which specifies the provider.)
  *
- * This is not documented by Microsoft!!!
- *
- * Notes:
- *	- 'struct wim_provider_rpdata' must be preceded by
- *	  'struct wof_external_info'.
- *	- Reparse tag is 0x80000017
- *	- Don't make these if the file has no unnamed data stream, has an empty
- *	  unnamed data stream, or already is a reparse point.
- *	- There is nowhere to put named data streams.  They have to copied
- *	  literally to the reparse point file.
+ * Note that Microsoft does not document any of the reparse point formats for
+ * WOF, although they document the structures which must be passed into the
+ * ioctls, which are often similar.
  */
 struct wim_provider_rpdata {
 	/* Set to 2.  Uncertain meaning.  */
@@ -295,6 +333,18 @@ struct wim_provider_external_info {
 
 	/* SHA-1 message digest of the file's unnamed data stream.  */
 	u8 unnamed_data_stream_hash[20];
+};
+
+struct file_provider_external_info {
+
+	/* Set to FILE_PROVIDER_CURRENT_VERSION.  */
+	u32 version;
+
+	u32 compression_format;
+#define FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS4K	0
+#define FILE_PROVIDER_COMPRESSION_FORMAT_LZX		1
+#define FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS8K	2
+#define FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS16K	3
 };
 
 /*****************************************************************************

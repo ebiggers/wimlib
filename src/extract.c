@@ -84,7 +84,12 @@
 	 WIMLIB_EXTRACT_FLAG_STRICT_GLOB		|	\
 	 WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES		|	\
 	 WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE  |	\
-	 WIMLIB_EXTRACT_FLAG_WIMBOOT)
+	 WIMLIB_EXTRACT_FLAG_WIMBOOT			|	\
+	 WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS4K		|	\
+	 WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS8K		|	\
+	 WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS16K		|	\
+	 WIMLIB_EXTRACT_FLAG_COMPACT_LZX			\
+	 )
 
 /* Send WIMLIB_PROGRESS_MSG_EXTRACT_FILE_STRUCTURE or
  * WIMLIB_PROGRESS_MSG_EXTRACT_METADATA.  */
@@ -973,10 +978,11 @@ ref_stream_if_needed(struct wim_dentry *dentry, struct wim_inode *inode,
 			 * - file is a directory
 			 * - file is encrypted
 			 * - backend needs to create the file as UNIX symlink
-			 * - backend will extract the stream as externally backed
+			 * - backend will extract the stream as externally
+			 *   backed from the WIM archive itself
 			 */
-			if (ctx->apply_ops->will_externally_back) {
-				int ret = (*ctx->apply_ops->will_externally_back)(dentry, ctx);
+			if (ctx->apply_ops->will_back_from_wim) {
+				int ret = (*ctx->apply_ops->will_back_from_wim)(dentry, ctx);
 				if (ret > 0) /* Error?  */
 					return ret;
 				if (ret < 0) /* Won't externally back?  */
@@ -1477,6 +1483,34 @@ check_extract_flags(const WIMStruct *wim, int *extract_flags_p)
 		ERROR("WIMBoot extraction is only supported on Windows!");
 		return WIMLIB_ERR_UNSUPPORTED;
 #endif
+	}
+
+	if (extract_flags & (WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS4K |
+			     WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS8K |
+			     WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS16K |
+			     WIMLIB_EXTRACT_FLAG_COMPACT_LZX))
+	{
+	#ifdef __WIN32__
+		int count = 0;
+		count += ((extract_flags & WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS4K) != 0);
+		count += ((extract_flags & WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS8K) != 0);
+		count += ((extract_flags & WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS16K) != 0);
+		count += ((extract_flags & WIMLIB_EXTRACT_FLAG_COMPACT_LZX) != 0);
+		if (count != 1) {
+			ERROR("Only one compression format can be specified "
+			      "for compact-mode extraction!");
+			return WIMLIB_ERR_INVALID_PARAM;
+		}
+		if (extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT) {
+			ERROR("Compact-mode extraction and WIMBoot-mode "
+			      "extraction are mutually exclusive!");
+			return WIMLIB_ERR_INVALID_PARAM;
+		}
+	#else
+		ERROR("Compact-mode extraction (System Compression) "
+		      "is only supported on Windows!");
+		return WIMLIB_ERR_UNSUPPORTED;
+	#endif
 	}
 
 

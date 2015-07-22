@@ -387,6 +387,18 @@ WIM files that use XPRESS chunks of size 8192, 16384, and 32768, or LZX chunks
 of size 32768, in addition to the default XPRESS chunks of size 4096 that are
 created when \fBwimlib-imagex capture\fR is run with the \fB--wimboot\fR
 option.
+.TP
+\fB--compact\fR=\fIFORMAT\fR
+EXPERIMENTAL and only works on Windows 10 or later: compress the extracted files
+using the System Compression feature, when possible.  System Compression is only
+supported by Windows 10 or later.  Several different compression formats may be
+used with System Compression, and one must be specified as \fIFORMAT\fR.  The
+choices are: xpress4k, xpress8k, xpress16k, and lzx.
+.IP ""
+Exclusions are handled in the same way as with the \fB--wimboot\fR option.
+That is: if it exists, the [PrepopulateList] section of the file
+\\Windows\\System32\\WimBootCompress.ini in the WIM image will be read, and
+files matching any of the patterns in this section will not be compressed.
 .SH NOTES
 \fIData integrity\fR:  WIM files include SHA1 message digests for file data.
 \fBwimlib-imagex apply\fR calculates the SHA1 message digest of every file

@@ -1944,6 +1944,30 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  */
 #define WIMLIB_EXTRACT_FLAG_WIMBOOT			0x00400000
 
+/** EXPERIMENTAL and only works on Windows 10 and later: compress the extracted
+ * files using the System Compression feature (when possible).  System
+ * Compression is only supported by Windows 10 or later.  Several different
+ * compression formats may be used with System Compression; this particular flag
+ * selects the XPRESS compression format with 4096 byte chunks.  <b>This flag is
+ * currently experimental and may be changed or removed in future releases of
+ * wimlib.</b>  */
+#define WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS4K		0x01000000
+
+/** Like ::WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS4K, but use XPRESS compression with
+ * 8192 byte chunks.  <b>This flag is currently experimental and may be changed
+ * or removed in future releases of wimlib.</b>  */
+#define WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS8K		0x02000000
+
+/** Like ::WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS4K, but use XPRESS compression with
+ * 16384 byte chunks.  <b>This flag is currently experimental and may be changed
+ * or removed in future releases of wimlib.</b>  */
+#define WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS16K		0x04000000
+
+/** Like ::WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS4K, but use LZX compression with
+ * 32768 byte chunks.  <b>This flag is currently experimental and may be changed
+ * or removed in future releases of wimlib.</b>  */
+#define WIMLIB_EXTRACT_FLAG_COMPACT_LZX			0x08000000
+
 /** @} */
 /** @addtogroup G_mounting_wim_images
  * @{ */

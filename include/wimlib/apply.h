@@ -220,9 +220,10 @@ struct apply_operations {
 
 	/*
 	 * Query whether the unnamed data stream of the specified file will be
-	 * extracted as "externally backed".  If so, the extraction backend is
-	 * assumed to handle this separately, and the common extraction code
-	 * will not register a usage of the unnamed data stream's blob.
+	 * extracted as "externally backed" from the WIM archive itself.  If so,
+	 * then the extraction backend is assumed to handle this separately, and
+	 * the common extraction code will not register a usage of the unnamed
+	 * data stream's blob.
 	 *
 	 * This routine is optional.
 	 *
@@ -231,7 +232,7 @@ struct apply_operations {
 	 *	= 0 if the file will be externally backed.
 	 *	> 0 (wimlib error code) if another error occurred.
 	 */
-	int (*will_externally_back)(struct wim_dentry *dentry, struct apply_ctx *ctx);
+	int (*will_back_from_wim)(struct wim_dentry *dentry, struct apply_ctx *ctx);
 
 	/*
 	 * Size of the backend-specific extraction context.  It must contain

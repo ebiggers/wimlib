@@ -41,6 +41,7 @@
 #include "wimlib/textfile.h"
 #include "wimlib/xml.h"
 #include "wimlib/wimboot.h"
+#include "wimlib/wof.h"
 
 struct win32_apply_ctx {
 
@@ -59,16 +60,17 @@ struct win32_apply_ctx {
 			u8 blob_table_hash[SHA1_HASH_SIZE];
 		} *wims;
 		size_t num_wims;
-		struct string_set *prepopulate_pats;
-		void *mem_prepopulate_pats;
 		bool wof_running;
-		bool tried_to_load_prepopulate_list;
-
 		bool have_wrong_version_wims;
 		bool have_uncompressed_wims;
 		bool have_unsupported_compressed_resources;
 		bool have_huge_resources;
 	} wimboot;
+
+	/* External backing information  */
+	struct string_set *prepopulate_pats;
+	void *mem_prepopulate_pats;
+	bool tried_to_load_prepopulate_list;
 
 	/* Open handle to the target directory  */
 	HANDLE h_target;
@@ -145,6 +147,9 @@ struct win32_apply_ctx {
 
 	/* Number of files for which we couldn't remove the short name.  */
 	unsigned long num_remove_short_name_failures;
+
+	/* Number of files on which we couldn't set System Compression.  */
+	unsigned long num_system_compression_failures;
 
 	/* Have we tried to enable short name support on the target volume yet?
 	 */
@@ -282,8 +287,22 @@ win32_get_supported_features(const wchar_t *target,
 	return 0;
 }
 
-/* Load the patterns from [PrepopulateList] of WimBootCompress.ini in the WIM
- * image being extracted.  */
+#define COMPACT_FLAGS	(WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS4K |		\
+			 WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS8K |		\
+			 WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS16K |	\
+			 WIMLIB_EXTRACT_FLAG_COMPACT_LZX)
+
+
+
+/*
+ * If not done already, load the patterns from the [PrepopulateList] section of
+ * WimBootCompress.ini in the WIM image being extracted.
+ *
+ * Note: WimBootCompress.ini applies to both types of "external backing":
+ *
+ *	- WIM backing ("WIMBoot" - Windows 8.1 and later)
+ *	- File backing ("System Compression" - Windows 10 and later)
+ */
 static int
 load_prepopulate_pats(struct win32_apply_ctx *ctx)
 {
@@ -296,7 +315,10 @@ load_prepopulate_pats(struct win32_apply_ctx *ctx)
 	void *mem;
 	struct text_file_section sec;
 
-	ctx->wimboot.tried_to_load_prepopulate_list = true;
+	if (ctx->tried_to_load_prepopulate_list)
+		return 0;
+
+	ctx->tried_to_load_prepopulate_list = true;
 
 	dentry = get_dentry(ctx->common.wim, path, WIMLIB_CASE_INSENSITIVE);
 	if (!dentry ||
@@ -336,8 +358,8 @@ load_prepopulate_pats(struct win32_apply_ctx *ctx)
 		FREE(s);
 		return ret;
 	}
-	ctx->wimboot.prepopulate_pats = s;
-	ctx->wimboot.mem_prepopulate_pats = mem;
+	ctx->prepopulate_pats = s;
+	ctx->mem_prepopulate_pats = mem;
 	return 0;
 }
 
@@ -348,8 +370,7 @@ can_externally_back_path(const wchar_t *path, const struct win32_apply_ctx *ctx)
 {
 	/* Does the path match a pattern given in the [PrepopulateList] section
 	 * of WimBootCompress.ini?  */
-	if (ctx->wimboot.prepopulate_pats &&
-	    match_pattern_list(path, ctx->wimboot.prepopulate_pats))
+	if (ctx->prepopulate_pats && match_pattern_list(path, ctx->prepopulate_pats))
 		return false;
 
 	/* Since we attempt to modify the SYSTEM registry after it's extracted
@@ -367,6 +388,8 @@ can_externally_back_path(const wchar_t *path, const struct win32_apply_ctx *ctx)
 	return true;
 }
 
+/* Can the specified WIM resource be used as the source of an external backing
+ * for the wof.sys WIM provider?  */
 static bool
 is_resource_valid_for_external_backing(const struct wim_resource_descriptor *rdesc,
 				       struct win32_apply_ctx *ctx)
@@ -436,17 +459,37 @@ is_resource_valid_for_external_backing(const struct wim_resource_descriptor *rde
 	return true;
 }
 
-#define WIM_BACKING_NOT_ENABLED		-1
-#define WIM_BACKING_NOT_POSSIBLE	-2
-#define WIM_BACKING_EXCLUDED		-3
+#define EXTERNAL_BACKING_NOT_ENABLED		-1
+#define EXTERNAL_BACKING_NOT_POSSIBLE		-2
+#define EXTERNAL_BACKING_EXCLUDED		-3
 
+/*
+ * Determines whether the specified file will be externally backed.  Returns a
+ * negative status code if no, 0 if yes, or a positive wimlib error code on
+ * error.  If the file is excluded from external backing based on its path, then
+ * *excluded_dentry_ret is set to the dentry for the path that matched the
+ * exclusion rule.
+ *
+ * Note that this logic applies to both types of "external backing":
+ *
+ *	- WIM backing ("WIMBoot" - Windows 8.1 and later)
+ *	- File backing ("System Compression" - Windows 10 and later)
+ *
+ * However, in the case of WIM backing we also need to validate that the WIM
+ * resource that would be the source of the backing is supported by the wof.sys
+ * WIM provider.
+ */
 static int
 will_externally_back_inode(struct wim_inode *inode, struct win32_apply_ctx *ctx,
-			   const struct wim_dentry **excluded_dentry_ret)
+			   const struct wim_dentry **excluded_dentry_ret,
+			   bool wimboot_mode)
 {
 	struct wim_dentry *dentry;
 	struct blob_descriptor *blob;
 	int ret;
+
+	if (load_prepopulate_pats(ctx) == WIMLIB_ERR_NOMEM)
+		return WIMLIB_ERR_NOMEM;
 
 	if (inode->i_can_externally_back)
 		return 0;
@@ -459,13 +502,17 @@ will_externally_back_inode(struct wim_inode *inode, struct win32_apply_ctx *ctx,
 	if (inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
 				   FILE_ATTRIBUTE_REPARSE_POINT |
 				   FILE_ATTRIBUTE_ENCRYPTED))
-		return WIM_BACKING_NOT_POSSIBLE;
+		return EXTERNAL_BACKING_NOT_POSSIBLE;
 
 	blob = inode_get_blob_for_unnamed_data_stream_resolved(inode);
 
-	if (!blob || blob->blob_location != BLOB_IN_WIM ||
-	    !is_resource_valid_for_external_backing(blob->rdesc, ctx))
-		return WIM_BACKING_NOT_POSSIBLE;
+	if (!blob)
+		return EXTERNAL_BACKING_NOT_POSSIBLE;
+
+	if (wimboot_mode &&
+	    (blob->blob_location != BLOB_IN_WIM ||
+	     !is_resource_valid_for_external_backing(blob->rdesc, ctx)))
+		return EXTERNAL_BACKING_NOT_POSSIBLE;
 
 	/*
 	 * We need to check the patterns in [PrepopulateList] against every name
@@ -481,7 +528,7 @@ will_externally_back_inode(struct wim_inode *inode, struct win32_apply_ctx *ctx,
 		if (!can_externally_back_path(dentry->d_full_path, ctx)) {
 			if (excluded_dentry_ret)
 				*excluded_dentry_ret = dentry;
-			return WIM_BACKING_EXCLUDED;
+			return EXTERNAL_BACKING_EXCLUDED;
 		}
 	}
 
@@ -490,22 +537,19 @@ will_externally_back_inode(struct wim_inode *inode, struct win32_apply_ctx *ctx,
 }
 
 /*
- * Determines if the unnamed data stream of a file will be created as an
- * external backing, as opposed to a standard extraction.
+ * Determines if the unnamed data stream of a file will be created as a WIM
+ * external backing (a "WIMBoot pointer file"), as opposed to a standard
+ * extraction.
  */
 static int
-win32_will_externally_back(struct wim_dentry *dentry, struct apply_ctx *_ctx)
+win32_will_back_from_wim(struct wim_dentry *dentry, struct apply_ctx *_ctx)
 {
 	struct win32_apply_ctx *ctx = (struct win32_apply_ctx *)_ctx;
 
 	if (!(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT))
-		return WIM_BACKING_NOT_ENABLED;
+		return EXTERNAL_BACKING_NOT_ENABLED;
 
-	if (!ctx->wimboot.tried_to_load_prepopulate_list)
-		if (load_prepopulate_pats(ctx) == WIMLIB_ERR_NOMEM)
-			return WIMLIB_ERR_NOMEM;
-
-	return will_externally_back_inode(dentry->d_inode, ctx, NULL);
+	return will_externally_back_inode(dentry->d_inode, ctx, NULL, true);
 }
 
 /* Find the WOF registration information for the specified WIM file.  */
@@ -521,21 +565,21 @@ find_wimboot_wim(WIMStruct *wim_to_find, struct win32_apply_ctx *ctx)
 }
 
 static int
-set_external_backing(HANDLE h, struct wim_inode *inode, struct win32_apply_ctx *ctx)
+set_backed_from_wim(HANDLE h, struct wim_inode *inode, struct win32_apply_ctx *ctx)
 {
 	int ret;
 	const struct wim_dentry *excluded_dentry;
 	const struct blob_descriptor *blob;
 	const struct wimboot_wim *wimboot_wim;
 
-	ret = will_externally_back_inode(inode, ctx, &excluded_dentry);
+	ret = will_externally_back_inode(inode, ctx, &excluded_dentry, true);
 	if (ret > 0) /* Error.  */
 		return ret;
 
-	if (ret < 0 && ret != WIM_BACKING_EXCLUDED)
+	if (ret < 0 && ret != EXTERNAL_BACKING_EXCLUDED)
 		return 0; /* Not externally backing, other than due to exclusion.  */
 
-	if (unlikely(ret == WIM_BACKING_EXCLUDED)) {
+	if (unlikely(ret == EXTERNAL_BACKING_EXCLUDED)) {
 		/* Not externally backing due to exclusion.  */
 		union wimlib_progress_info info;
 
@@ -615,18 +659,13 @@ register_wim_with_wof(WIMStruct *wim, struct win32_apply_ctx *ctx)
 	return 0;
 }
 
-/* Prepare for doing a "WIMBoot" extraction by loading patterns from
- * [PrepopulateList] of WimBootCompress.ini and registering each source WIM file
+/* Prepare for doing a "WIMBoot" extraction by registering each source WIM file
  * with WOF on the target volume.  */
 static int
 start_wimboot_extraction(struct list_head *dentry_list, struct win32_apply_ctx *ctx)
 {
 	int ret;
 	struct wim_dentry *dentry;
-
-	if (!ctx->wimboot.tried_to_load_prepopulate_list)
-		if (load_prepopulate_pats(ctx) == WIMLIB_ERR_NOMEM)
-			return WIMLIB_ERR_NOMEM;
 
 	if (!wim_info_get_wimboot(ctx->common.wim->wim_info,
 				  ctx->common.wim->current_image))
@@ -637,7 +676,7 @@ start_wimboot_extraction(struct list_head *dentry_list, struct win32_apply_ctx *
 	list_for_each_entry(dentry, dentry_list, d_extraction_list_node) {
 		struct blob_descriptor *blob;
 
-		ret = win32_will_externally_back(dentry, &ctx->common);
+		ret = win32_will_back_from_wim(dentry, &ctx->common);
 		if (ret > 0) /* Error */
 			return ret;
 		if (ret < 0) /* Won't externally back */
@@ -1780,7 +1819,7 @@ create_nondirectory(struct wim_inode *inode, struct win32_apply_ctx *ctx)
 
 	/* "WIMBoot" extraction: set external backing by the WIM file if needed.  */
 	if (!ret && unlikely(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT))
-		ret = set_external_backing(h, inode, ctx);
+		ret = set_backed_from_wim(h, inode, ctx);
 
 	(*func_NtClose)(h);
 	return ret;
@@ -2210,6 +2249,123 @@ extract_chunk(const void *chunk, size_t size, void *_ctx)
 	return 0;
 }
 
+static int
+get_system_compression_format(int extract_flags)
+{
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS4K)
+		return FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS4K;
+
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS8K)
+		return FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS8K;
+
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS16K)
+		return FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS16K;
+
+	return FILE_PROVIDER_COMPRESSION_FORMAT_LZX;
+}
+
+static DWORD
+set_system_compression(HANDLE h, int format)
+{
+	DWORD bytes_returned;
+	DWORD err;
+	struct {
+		struct wof_external_info wof_info;
+		struct file_provider_external_info file_info;
+	} in = {
+		.wof_info = {
+			.version = WOF_CURRENT_VERSION,
+			.provider = WOF_PROVIDER_FILE,
+		},
+		.file_info = {
+			.version = FILE_PROVIDER_CURRENT_VERSION,
+			.compression_format = format,
+		},
+	};
+
+	if (DeviceIoControl(h, FSCTL_SET_EXTERNAL_BACKING, &in, sizeof(in),
+			    NULL, 0, &bytes_returned, NULL))
+		return 0;
+
+	err = GetLastError();
+
+	if (err == 344) /* "Compressing this object would not save space."  */
+		return 0;
+
+	return err;
+}
+
+/*
+ * This function is called when doing a "compact-mode" extraction and we just
+ * finished extracting a blob to one or more locations.  For each location that
+ * was the unnamed data stream of a file, this function compresses the
+ * corresponding file using System Compression, if allowed.
+ *
+ * Note: we're doing the compression immediately after extracting the data
+ * rather than during a separate compression pass.  This way should be faster
+ * since the operating system should still have the file's data cached.
+ *
+ * Note: we're having the operating system do the compression, which is not
+ * ideal because wimlib could create the compressed data faster and more
+ * efficiently (the compressed data format is identical to a WIM resource).  But
+ * we seemingly don't have a choice because WOF prevents applications from
+ * creating its reparse points.
+ */
+static void
+handle_system_compression(struct blob_descriptor *blob, struct win32_apply_ctx *ctx)
+{
+	const struct blob_extraction_target *targets = blob_extraction_targets(blob);
+
+	const int format = get_system_compression_format(ctx->common.extract_flags);
+
+	for (u32 i = 0; i < blob->out_refcnt; i++) {
+		struct wim_inode *inode = targets[i].inode;
+		struct wim_inode_stream *strm = targets[i].stream;
+		HANDLE h;
+		NTSTATUS status;
+		DWORD err;
+
+		if (!stream_is_unnamed_data_stream(strm))
+			continue;
+
+		if (will_externally_back_inode(inode, ctx, NULL, false) != 0)
+			continue;
+
+		status = create_file(&h, GENERIC_READ | GENERIC_WRITE, NULL,
+				     0, FILE_OPEN, 0,
+				     inode_first_extraction_dentry(inode), ctx);
+
+		if (NT_SUCCESS(status)) {
+			err = set_system_compression(h, format);
+			(*func_NtClose)(h);
+		} else {
+			err = (*func_RtlNtStatusToDosError)(status);
+		}
+
+		if (err == ERROR_INVALID_FUNCTION) {
+			WARNING(
+	  "The request to compress the extracted files using System Compression\n"
+"          will not be honored because the operating system or target volume\n"
+"          does not support it.  System Compression is only supported on\n"
+"          Windows 10 and later, and only on NTFS volumes.");
+			ctx->common.extract_flags &= ~COMPACT_FLAGS;
+			return;
+		}
+
+		if (err) {
+			ctx->num_system_compression_failures++;
+			if (ctx->num_system_compression_failures < 10) {
+				win32_warning(err, L"\"%ls\": Failed to compress "
+					      "extracted file using System Compression",
+					      current_path(ctx));
+			} else if (ctx->num_system_compression_failures == 10) {
+				WARNING("Suppressing further warnings about "
+					"System Compression failures.");
+			}
+		}
+	}
+}
+
 /* Called when a blob has been fully read for extraction on Windows  */
 static int
 end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
@@ -2222,6 +2378,9 @@ end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
 
 	if (status)
 		return status;
+
+	if (unlikely(ctx->common.extract_flags & COMPACT_FLAGS))
+		handle_system_compression(blob, ctx);
 
 	if (likely(!ctx->data_buffer_ptr))
 		return 0;
@@ -2676,11 +2835,11 @@ out:
 	FREE(ctx->pathbuf.Buffer);
 	FREE(ctx->print_buffer);
 	FREE(ctx->wimboot.wims);
-	if (ctx->wimboot.prepopulate_pats) {
-		FREE(ctx->wimboot.prepopulate_pats->strings);
-		FREE(ctx->wimboot.prepopulate_pats);
+	if (ctx->prepopulate_pats) {
+		FREE(ctx->prepopulate_pats->strings);
+		FREE(ctx->prepopulate_pats);
 	}
-	FREE(ctx->wimboot.mem_prepopulate_pats);
+	FREE(ctx->mem_prepopulate_pats);
 	FREE(ctx->data_buffer);
 	return ret;
 }
@@ -2689,7 +2848,7 @@ const struct apply_operations win32_apply_ops = {
 	.name			= "Windows",
 	.get_supported_features = win32_get_supported_features,
 	.extract                = win32_extract,
-	.will_externally_back   = win32_will_externally_back,
+	.will_back_from_wim     = win32_will_back_from_wim,
 	.context_size           = sizeof(struct win32_apply_ctx),
 };
 
