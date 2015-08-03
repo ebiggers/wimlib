@@ -7,8 +7,8 @@ Build-Depends: debhelper (>= 8.9.7), autotools-dev, pkg-config,
 Build-Depends-Indep: doxygen
 Standards-Version: 3.9.3
 Section: libs
-Homepage: http://sourceforge.net/projects/wimlib
-Vcs-Git: git://git.code.sf.net/p/wimlib/code
+Homepage: http://wimlib.net
+Vcs-Git: git://wimlib.net/wimlib
 
 Package: wimlib15
 Section: libs

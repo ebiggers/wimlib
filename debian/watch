@@ -3,5 +3,4 @@
 # Compulsory line, this is a version 3 file
 version=3
 
-# Find new files on sourceforge, for devscripts >= 2.9
-http://sf.net/wimlib/wimlib-(.*)\.tar\.gz
+http://wimlib.net/downloads/wimlib-(.*)\.tar\.gz
