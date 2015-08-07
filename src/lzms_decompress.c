@@ -301,6 +301,8 @@ struct lzms_input_bitstream {
 	const le16 *begin;
 };
 
+#define BITBUF_NBITS	(8 * sizeof(bitbuf_t))
+
 /* Bookkeeping information for an adaptive Huffman code  */
 struct lzms_huffman_rebuild_info {
 	unsigned num_syms_until_rebuild;
@@ -410,25 +412,35 @@ lzms_input_bitstream_init(struct lzms_input_bitstream *is,
 static inline void
 lzms_ensure_bits(struct lzms_input_bitstream *is, unsigned num_bits)
 {
+	unsigned avail;
+
 	if (is->bitsleft >= num_bits)
 		return;
 
-	if (likely(is->next != is->begin))
-		is->bitbuf |= (bitbuf_t)le16_to_cpu(*--is->next)
-				<< (sizeof(is->bitbuf) * 8 - is->bitsleft - 16);
-	is->bitsleft += 16;
+	avail = BITBUF_NBITS - is->bitsleft;
 
-	if (likely(is->next != is->begin))
-		is->bitbuf |= (bitbuf_t)le16_to_cpu(*--is->next)
-				<< (sizeof(is->bitbuf) * 8 - is->bitsleft - 16);
-	is->bitsleft += 16;
+	if (UNALIGNED_ACCESS_IS_FAST && CPU_IS_LITTLE_ENDIAN &&
+	    WORDSIZE == 8 && likely((u8 *)is->next - (u8 *)is->begin >= 8))
+	{
+		is->next -= avail >> 4;
+		is->bitbuf |= load_u64_unaligned(is->next) << (avail & 15);
+		is->bitsleft += avail & ~15;
+	} else {
+		if (likely(is->next != is->begin))
+			is->bitbuf |= (bitbuf_t)le16_to_cpu(*--is->next)
+					<< (avail - 16);
+		if (likely(is->next != is->begin))
+			is->bitbuf |=(bitbuf_t)le16_to_cpu(*--is->next)
+					<< (avail - 32);
+		is->bitsleft += 32;
+	}
 }
 
 /* Get @num_bits bits from the bitbuffer variable.  */
 static inline bitbuf_t
 lzms_peek_bits(struct lzms_input_bitstream *is, unsigned num_bits)
 {
-	return (is->bitbuf >> 1) >> (sizeof(is->bitbuf) * 8 - num_bits - 1);
+	return (is->bitbuf >> 1) >> (BITBUF_NBITS - num_bits - 1);
 }
 
 /* Remove @num_bits bits from the bitbuffer variable.  */
