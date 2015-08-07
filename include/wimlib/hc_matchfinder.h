@@ -218,8 +218,11 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 		for (;;) {
 			matchptr = &in_begin[cur_node];
 
-			/* Already found a length 3 match.  Try for a longer match;
-			 * start by checking the last 2 bytes and the first 4 bytes.  */
+			/* Already found a length 3 match.  Try for a longer
+			 * match; start by checking either the last 4 bytes and
+			 * the first 4 bytes, or the last byte.  (The last byte,
+			 * the one which would extend the match length by 1, is
+			 * the most important.)  */
 		#if UNALIGNED_ACCESS_IS_FAST
 			if ((load_u32_unaligned(matchptr + best_len - 3) ==
 			     load_u32_unaligned(in_next + best_len - 3)) &&
