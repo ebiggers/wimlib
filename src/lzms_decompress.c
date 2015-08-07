@@ -335,22 +335,18 @@ struct lzms_decompressor {
 	/* States and probability entries for item type disambiguation  */
 
 	u32 main_state;
-	struct lzms_probability_entry main_probs[LZMS_NUM_MAIN_PROBS];
-
 	u32 match_state;
-	struct lzms_probability_entry match_probs[LZMS_NUM_MATCH_PROBS];
-
 	u32 lz_state;
-	struct lzms_probability_entry lz_probs[LZMS_NUM_LZ_PROBS];
-
 	u32 delta_state;
-	struct lzms_probability_entry delta_probs[LZMS_NUM_DELTA_PROBS];
-
 	u32 lz_rep_states[LZMS_NUM_LZ_REP_DECISIONS];
+	u32 delta_rep_states[LZMS_NUM_DELTA_REP_DECISIONS];
+
+	struct lzms_probability_entry main_probs[LZMS_NUM_MAIN_PROBS];
+	struct lzms_probability_entry match_probs[LZMS_NUM_MATCH_PROBS];
+	struct lzms_probability_entry lz_probs[LZMS_NUM_LZ_PROBS];
+	struct lzms_probability_entry delta_probs[LZMS_NUM_DELTA_PROBS];
 	struct lzms_probability_entry lz_rep_probs[LZMS_NUM_LZ_REP_DECISIONS]
 						  [LZMS_NUM_LZ_REP_PROBS];
-
-	u32 delta_rep_states[LZMS_NUM_DELTA_REP_DECISIONS];
 	struct lzms_probability_entry delta_rep_probs[LZMS_NUM_DELTA_REP_DECISIONS]
 						     [LZMS_NUM_DELTA_REP_PROBS];
 
