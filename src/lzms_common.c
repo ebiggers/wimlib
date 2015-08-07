@@ -25,6 +25,11 @@
 
 #include "wimlib/lzms_common.h"
 #include "wimlib/unaligned.h"
+#include "wimlib/x86_cpu_features.h"
+
+#ifdef __x86_64__
+#  include <emmintrin.h>
+#endif
 
 /* Table: offset slot => offset slot base value  */
 const u32 lzms_offset_slot_base[LZMS_MAX_NUM_OFFSET_SYMS + 1] = {
@@ -368,8 +373,32 @@ lzms_dilute_symbol_frequencies(u32 freqs[], unsigned num_syms)
 		freqs[sym] = (freqs[sym] >> 1) + 1;
 }
 
+
+#ifdef __x86_64__
 static inline u8 *
-find_next_opcode(u8 *p)
+find_next_opcode_sse4_2(u8 *p)
+{
+	const __v16qi potential_opcodes = (__v16qi) {0x48, 0x4C, 0xE8, 0xE9, 0xF0, 0xFF};
+	__asm__(
+		"  pcmpestri $0x0, (%[p]), %[potential_opcodes]      \n"
+		"  jc 2f                                             \n"
+		"1:                                                  \n"
+		"  add $0x10, %[p]                                   \n"
+		"  pcmpestri $0x0, (%[p]), %[potential_opcodes]      \n"
+		"  jnc 1b                                            \n"
+		"2:                                                  \n"
+		"  add %%rcx, %[p]                                   \n"
+		: [p] "+r" (p)
+		: [potential_opcodes] "x" (potential_opcodes), "a" (6), "d" (16)
+		: "rcx", "cc"
+	       );
+
+	return p;
+}
+#endif /* __x86_64__ */
+
+static inline u8 *
+find_next_opcode_default(u8 *p)
 {
 	/*
 	 * The following table is used to accelerate the common case where the
@@ -541,8 +570,7 @@ lzms_x86_filter(u8 data[restrict], s32 size,
 
 	u8 *p;
 	u8 *tail_ptr;
-	u8 saved_byte;
-	s32 last_x86_pos;
+	s32 last_x86_pos = -LZMS_X86_MAX_TRANSLATION_OFFSET - 1;
 
 	if (size <= 17)
 		return;
@@ -565,21 +593,36 @@ lzms_x86_filter(u8 data[restrict], s32 size,
 	 *     data[(size - 16) + 7] and have no effect on the result, as long
 	 *     as we restore those bytes later.
 	 */
-	tail_ptr = &data[size - 16];
-	saved_byte = *(tail_ptr + 8);
-	*(tail_ptr + 8) = 0xE8;
-	last_x86_pos = -LZMS_X86_MAX_TRANSLATION_OFFSET - 1;
 
 	/* Note: the very first byte must be ignored completely!  */
 	p = data + 1;
-	for (;;) {
-		p = find_next_opcode(p);
+	tail_ptr = &data[size - 16];
 
-		if (p >= tail_ptr)
-			break;
-
-		p = translate_if_needed(data, p, &last_x86_pos, last_target_usages, undo);
+#ifdef __x86_64__
+	if (x86_have_cpu_feature(X86_CPU_FEATURE_SSE4_2)) {
+		u8 saved_byte = *tail_ptr;
+		*tail_ptr = 0xE8;
+		for (;;) {
+			u8 *new_p = find_next_opcode_sse4_2(p);
+			if (new_p >= tail_ptr - 8)
+				break;
+			p = new_p;
+			p = translate_if_needed(data, p, &last_x86_pos,
+						last_target_usages, undo);
+		}
+		*tail_ptr = saved_byte;
 	}
-
-	*(tail_ptr + 8) = saved_byte;
+#endif
+	{
+		u8 saved_byte = *(tail_ptr + 8);
+		*(tail_ptr + 8) = 0xE8;
+		for (;;) {
+			p = find_next_opcode_default(p);
+			if (p >= tail_ptr)
+				break;
+			p = translate_if_needed(data, p, &last_x86_pos,
+						last_target_usages, undo);
+		}
+		*(tail_ptr + 8) = saved_byte;
+	}
 }
