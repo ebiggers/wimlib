@@ -411,58 +411,62 @@ translate_if_needed(u8 *data, u8 *p, s32 *last_x86_pos,
 
 	max_trans_offset = LZMS_X86_MAX_TRANSLATION_OFFSET;
 
-	switch (*p) {
-	case 0x48:
-		if (*(p + 1) == 0x8B) {
-			if (*(p + 2) == 0x5 || *(p + 2) == 0xD) {
-				/* Load relative (x86_64)  */
-				opcode_nbytes = 3;
-				goto have_opcode;
-			}
-		} else if (*(p + 1) == 0x8D) {
-			if ((*(p + 2) & 0x7) == 0x5) {
-				/* Load effective address relative (x86_64)  */
-				opcode_nbytes = 3;
-				goto have_opcode;
-			}
-		}
-		break;
-	case 0x4C:
-		if (*(p + 1) == 0x8D) {
-			if ((*(p + 2) & 0x7) == 0x5) {
-				/* Load effective address relative (x86_64)  */
-				opcode_nbytes = 3;
-				goto have_opcode;
-			}
-		}
-		break;
-	case 0xE8:
-		/* Call relative.  Note: 'max_trans_offset' must be
-		 * halved for this instruction.  This means that we must
-		 * be more confident that we are in a region of x86
-		 * machine code before we will do a translation for this
-		 * particular instruction.  */
-		opcode_nbytes = 1;
-		max_trans_offset /= 2;
-		goto have_opcode;
-	case 0xE9:
-		/* Jump relative  */
-		p += 4;
-		break;
-	case 0xF0:
-		if (*(p + 1) == 0x83 && *(p + 2) == 0x05) {
-			/* Lock add relative  */
-			opcode_nbytes = 3;
+	if ((*p & 0xFE) == 0xE8) {
+		if (*p & 0x01) {
+			/* 0xE9: Jump relative  */
+			p += 4;
+		} else {
+			/* 0xE8: Call relative.  Note: 'max_trans_offset' must
+			 * be halved for this instruction.  This means that we
+			 * must be more confident that we are in a region of x86
+			 * machine code before we will do a translation for this
+			 * particular instruction.  */
+			opcode_nbytes = 1;
+			max_trans_offset /= 2;
 			goto have_opcode;
 		}
-		break;
-	case 0xFF:
-		if (*(p + 1) == 0x15) {
-			/* Call indirect  */
-			opcode_nbytes = 2;
-			goto have_opcode;
+	} else if ((*p & 0xFB) == 0x48) {
+		if (*p & 0x04) {
+			/* 0x4C */
+			if (*(p + 1) == 0x8D) {
+				if ((*(p + 2) & 0x7) == 0x5) {
+					/* Load effective address relative (x86_64)  */
+					opcode_nbytes = 3;
+					goto have_opcode;
+				}
+			}
+		} else {
+			/* 0x48 */
+			if (*(p + 1) == 0x8B) {
+				if (*(p + 2) == 0x5 || *(p + 2) == 0xD) {
+					/* Load relative (x86_64)  */
+					opcode_nbytes = 3;
+					goto have_opcode;
+				}
+			} else if (*(p + 1) == 0x8D) {
+				if ((*(p + 2) & 0x7) == 0x5) {
+					/* Load effective address relative (x86_64)  */
+					opcode_nbytes = 3;
+					goto have_opcode;
+				}
+			}
 		}
-		break;
+	} else {
+		if (*p & 0x0F) {
+			/* 0xFF */
+			if (*(p + 1) == 0x15) {
+				/* Call indirect  */
+				opcode_nbytes = 2;
+				goto have_opcode;
+			}
+		} else {
+			/* 0xF0 */
+			if (*(p + 1) == 0x83 && *(p + 2) == 0x05) {
+				/* Lock add relative  */
+				opcode_nbytes = 3;
+				goto have_opcode;
+			}
+		}
 	}
 
 	return p + 1;
