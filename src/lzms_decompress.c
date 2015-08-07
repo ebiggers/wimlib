@@ -737,22 +737,22 @@ lzms_decode_items(struct lzms_decompressor * const restrict d,
 			u32 offset;
 			u32 length;
 
-			if (d->pending_lz_offset != 0 &&
-			    out_next != d->lz_offset_still_pending)
-			{
-				BUILD_BUG_ON(LZMS_NUM_LZ_REPS != 3);
-				d->recent_lz_offsets[3] = d->recent_lz_offsets[2];
-				d->recent_lz_offsets[2] = d->recent_lz_offsets[1];
-				d->recent_lz_offsets[1] = d->recent_lz_offsets[0];
-				d->recent_lz_offsets[0] = d->pending_lz_offset;
-				d->pending_lz_offset = 0;
-			}
-
 			if (!lzms_decode_lz_bit(d)) {
 				/* Explicit offset  */
 				offset = lzms_decode_lz_offset(d);
 			} else {
 				/* Repeat offset  */
+
+				if (d->pending_lz_offset != 0 &&
+				    out_next != d->lz_offset_still_pending)
+				{
+					BUILD_BUG_ON(LZMS_NUM_LZ_REPS != 3);
+					d->recent_lz_offsets[3] = d->recent_lz_offsets[2];
+					d->recent_lz_offsets[2] = d->recent_lz_offsets[1];
+					d->recent_lz_offsets[1] = d->recent_lz_offsets[0];
+					d->recent_lz_offsets[0] = d->pending_lz_offset;
+					d->pending_lz_offset = 0;
+				}
 
 				BUILD_BUG_ON(LZMS_NUM_LZ_REPS != 3);
 				if (!lzms_decode_lz_rep_bit(d, 0)) {
@@ -802,17 +802,6 @@ lzms_decode_items(struct lzms_decompressor * const restrict d,
 			const u8 *matchptr;
 			u32 length;
 
-			if (d->pending_delta_pair != 0 &&
-			    out_next != d->delta_pair_still_pending)
-			{
-				BUILD_BUG_ON(LZMS_NUM_DELTA_REPS != 3);
-				d->recent_delta_pairs[3] = d->recent_delta_pairs[2];
-				d->recent_delta_pairs[2] = d->recent_delta_pairs[1];
-				d->recent_delta_pairs[1] = d->recent_delta_pairs[0];
-				d->recent_delta_pairs[0] = d->pending_delta_pair;
-				d->pending_delta_pair = 0;
-			}
-
 			if (!lzms_decode_delta_bit(d)) {
 				/* Explicit offset  */
 				power = lzms_decode_delta_power(d);
@@ -820,6 +809,17 @@ lzms_decode_items(struct lzms_decompressor * const restrict d,
 			} else {
 				/* Repeat offset  */
 				u64 val;
+
+				if (d->pending_delta_pair != 0 &&
+				    out_next != d->delta_pair_still_pending)
+				{
+					BUILD_BUG_ON(LZMS_NUM_DELTA_REPS != 3);
+					d->recent_delta_pairs[3] = d->recent_delta_pairs[2];
+					d->recent_delta_pairs[2] = d->recent_delta_pairs[1];
+					d->recent_delta_pairs[1] = d->recent_delta_pairs[0];
+					d->recent_delta_pairs[0] = d->pending_delta_pair;
+					d->pending_delta_pair = 0;
+				}
 
 				BUILD_BUG_ON(LZMS_NUM_DELTA_REPS != 3);
 				if (!lzms_decode_delta_rep_bit(d, 0)) {
