@@ -492,10 +492,6 @@ lzms_decode_bit(struct lzms_range_decoder *rd, u32 *state_p, u32 num_states,
 	/* Load the probability entry corresponding to the current state.  */
 	prob_entry = &probs[*state_p];
 
-	/* Get the probability (out of LZMS_PROBABILITY_DENOMINATOR) that the
-	 * next bit is 0.  */
-	prob = lzms_get_probability(prob_entry);
-
 	/* Normalize if needed.  */
 	if (rd->range <= 0xffff) {
 		rd->range <<= 16;
@@ -503,6 +499,10 @@ lzms_decode_bit(struct lzms_range_decoder *rd, u32 *state_p, u32 num_states,
 		if (likely(rd->next != rd->end))
 			rd->code |= le16_to_cpu(*rd->next++);
 	}
+
+	/* Get the probability (out of LZMS_PROBABILITY_DENOMINATOR) that the
+	 * next bit is 0.  */
+	prob = lzms_get_probability(prob_entry);
 
 	/* Based on the probability, calculate the bound between the 0-bit
 	 * region and the 1-bit region of the range.  */
