@@ -88,6 +88,7 @@ libwim_la_SOURCES =		\
 	src/verify.c		\
 	src/wim.c		\
 	src/write.c		\
+	src/x86_cpu_features.c	\
 	src/xml.c		\
 	src/xpress_compress.c	\
 	src/xpress_decompress.c \
@@ -150,6 +151,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/util.h		\
 	include/wimlib/wim.h		\
 	include/wimlib/write.h		\
+	include/wimlib/x86_cpu_features.h	\
 	include/wimlib/xml.h		\
 	include/wimlib/xpress_constants.h
 
