@@ -314,6 +314,17 @@ struct lzms_huffman_rebuild_info {
 	unsigned table_bits;
 };
 
+struct lzms_probabilites {
+	struct lzms_probability_entry main[LZMS_NUM_MAIN_PROBS];
+	struct lzms_probability_entry match[LZMS_NUM_MATCH_PROBS];
+	struct lzms_probability_entry lz[LZMS_NUM_LZ_PROBS];
+	struct lzms_probability_entry delta[LZMS_NUM_DELTA_PROBS];
+	struct lzms_probability_entry lz_rep[LZMS_NUM_LZ_REP_DECISIONS]
+					    [LZMS_NUM_LZ_REP_PROBS];
+	struct lzms_probability_entry delta_rep[LZMS_NUM_DELTA_REP_DECISIONS]
+					       [LZMS_NUM_DELTA_REP_PROBS];
+};
+
 struct lzms_decompressor {
 
 	/* 'last_target_usages' is in union with everything else because it is
@@ -321,36 +332,7 @@ struct lzms_decompressor {
 	union {
 	struct {
 
-	struct lzms_range_decoder rd;
-	struct lzms_input_bitstream is;
-
-	/* LRU queues for match sources  */
-	u32 recent_lz_offsets[LZMS_NUM_LZ_REPS + 1];
-	u64 recent_delta_pairs[LZMS_NUM_DELTA_REPS + 1];
-	u32 pending_lz_offset;
-	u64 pending_delta_pair;
-	const u8 *lz_offset_still_pending;
-	const u8 *delta_pair_still_pending;
-
-	/* States and probability entries for item type disambiguation  */
-
-	u32 main_state;
-	u32 match_state;
-	u32 lz_state;
-	u32 delta_state;
-	u32 lz_rep_states[LZMS_NUM_LZ_REP_DECISIONS];
-	u32 delta_rep_states[LZMS_NUM_DELTA_REP_DECISIONS];
-
-	struct lzms_probability_entry main_probs[LZMS_NUM_MAIN_PROBS];
-	struct lzms_probability_entry match_probs[LZMS_NUM_MATCH_PROBS];
-	struct lzms_probability_entry lz_probs[LZMS_NUM_LZ_PROBS];
-	struct lzms_probability_entry delta_probs[LZMS_NUM_DELTA_PROBS];
-	struct lzms_probability_entry lz_rep_probs[LZMS_NUM_LZ_REP_DECISIONS]
-						  [LZMS_NUM_LZ_REP_PROBS];
-	struct lzms_probability_entry delta_rep_probs[LZMS_NUM_DELTA_REP_DECISIONS]
-						     [LZMS_NUM_DELTA_REP_PROBS];
-
-	/* Huffman decoding  */
+	struct lzms_probabilites probs;
 
 	u16 literal_decode_table[(1 << LZMS_LITERAL_TABLEBITS) +
 				 (2 * LZMS_NUM_LITERAL_SYMS)]
@@ -528,48 +510,6 @@ lzms_decode_bit(struct lzms_range_decoder *rd, u32 *state_p, u32 num_states,
 	}
 }
 
-static inline int
-lzms_decode_main_bit(struct lzms_decompressor *d)
-{
-	return lzms_decode_bit(&d->rd, &d->main_state,
-			       LZMS_NUM_MAIN_PROBS, d->main_probs);
-}
-
-static inline int
-lzms_decode_match_bit(struct lzms_decompressor *d)
-{
-	return lzms_decode_bit(&d->rd, &d->match_state,
-			       LZMS_NUM_MATCH_PROBS, d->match_probs);
-}
-
-static inline int
-lzms_decode_lz_bit(struct lzms_decompressor *d)
-{
-	return lzms_decode_bit(&d->rd, &d->lz_state,
-			       LZMS_NUM_LZ_PROBS, d->lz_probs);
-}
-
-static inline int
-lzms_decode_delta_bit(struct lzms_decompressor *d)
-{
-	return lzms_decode_bit(&d->rd, &d->delta_state,
-			       LZMS_NUM_DELTA_PROBS, d->delta_probs);
-}
-
-static inline int
-lzms_decode_lz_rep_bit(struct lzms_decompressor *d, int idx)
-{
-	return lzms_decode_bit(&d->rd, &d->lz_rep_states[idx],
-			       LZMS_NUM_LZ_REP_PROBS, d->lz_rep_probs[idx]);
-}
-
-static inline int
-lzms_decode_delta_rep_bit(struct lzms_decompressor *d, int idx)
-{
-	return lzms_decode_bit(&d->rd, &d->delta_rep_states[idx],
-			       LZMS_NUM_DELTA_REP_PROBS, d->delta_rep_probs[idx]);
-}
-
 static void
 lzms_build_huffman_code(struct lzms_huffman_rebuild_info *rebuild_info)
 {
@@ -602,6 +542,50 @@ lzms_init_huffman_code(struct lzms_huffman_rebuild_info *rebuild_info,
 	rebuild_info->table_bits = table_bits;
 	lzms_init_symbol_frequencies(freqs, num_syms);
 	lzms_build_huffman_code(rebuild_info);
+}
+
+static void
+lzms_init_huffman_codes(struct lzms_decompressor *d, unsigned num_offset_slots)
+{
+	lzms_init_huffman_code(&d->literal_rebuild_info,
+			       LZMS_NUM_LITERAL_SYMS,
+			       LZMS_LITERAL_CODE_REBUILD_FREQ,
+			       d->codewords,
+			       d->literal_freqs,
+			       d->literal_decode_table,
+			       LZMS_LITERAL_TABLEBITS);
+
+	lzms_init_huffman_code(&d->lz_offset_rebuild_info,
+			       num_offset_slots,
+			       LZMS_LZ_OFFSET_CODE_REBUILD_FREQ,
+			       d->codewords,
+			       d->lz_offset_freqs,
+			       d->lz_offset_decode_table,
+			       LZMS_LZ_OFFSET_TABLEBITS);
+
+	lzms_init_huffman_code(&d->length_rebuild_info,
+			       LZMS_NUM_LENGTH_SYMS,
+			       LZMS_LENGTH_CODE_REBUILD_FREQ,
+			       d->codewords,
+			       d->length_freqs,
+			       d->length_decode_table,
+			       LZMS_LENGTH_TABLEBITS);
+
+	lzms_init_huffman_code(&d->delta_offset_rebuild_info,
+			       num_offset_slots,
+			       LZMS_DELTA_OFFSET_CODE_REBUILD_FREQ,
+			       d->codewords,
+			       d->delta_offset_freqs,
+			       d->delta_offset_decode_table,
+			       LZMS_DELTA_OFFSET_TABLEBITS);
+
+	lzms_init_huffman_code(&d->delta_power_rebuild_info,
+			       LZMS_NUM_DELTA_POWER_SYMS,
+			       LZMS_DELTA_POWER_CODE_REBUILD_FREQ,
+			       d->codewords,
+			       d->delta_power_freqs,
+			       d->delta_power_decode_table,
+			       LZMS_DELTA_POWER_TABLEBITS);
 }
 
 static noinline void
@@ -651,9 +635,10 @@ lzms_decode_huffman_symbol(struct lzms_input_bitstream *is, u16 decode_table[],
 }
 
 static inline unsigned
-lzms_decode_literal(struct lzms_decompressor *d)
+lzms_decode_literal(struct lzms_decompressor *d,
+		    struct lzms_input_bitstream *is)
 {
-	return lzms_decode_huffman_symbol(&d->is,
+	return lzms_decode_huffman_symbol(is,
 					  d->literal_decode_table,
 					  LZMS_LITERAL_TABLEBITS,
 					  d->literal_freqs,
@@ -661,21 +646,23 @@ lzms_decode_literal(struct lzms_decompressor *d)
 }
 
 static inline u32
-lzms_decode_lz_offset(struct lzms_decompressor *d)
+lzms_decode_lz_offset(struct lzms_decompressor *d,
+		      struct lzms_input_bitstream *is)
 {
-	unsigned slot = lzms_decode_huffman_symbol(&d->is,
+	unsigned slot = lzms_decode_huffman_symbol(is,
 						   d->lz_offset_decode_table,
 						   LZMS_LZ_OFFSET_TABLEBITS,
 						   d->lz_offset_freqs,
 						   &d->lz_offset_rebuild_info);
 	return lzms_offset_slot_base[slot] +
-	       lzms_read_bits(&d->is, lzms_extra_offset_bits[slot]);
+	       lzms_read_bits(is, lzms_extra_offset_bits[slot]);
 }
 
 static inline u32
-lzms_decode_length(struct lzms_decompressor *d)
+lzms_decode_length(struct lzms_decompressor *d,
+		   struct lzms_input_bitstream *is)
 {
-	unsigned slot = lzms_decode_huffman_symbol(&d->is,
+	unsigned slot = lzms_decode_huffman_symbol(is,
 						   d->length_decode_table,
 						   LZMS_LENGTH_TABLEBITS,
 						   d->length_freqs,
@@ -684,284 +671,32 @@ lzms_decode_length(struct lzms_decompressor *d)
 	unsigned num_extra_bits = lzms_extra_length_bits[slot];
 	/* Usually most lengths are short and have no extra bits.  */
 	if (num_extra_bits)
-		length += lzms_read_bits(&d->is, num_extra_bits);
+		length += lzms_read_bits(is, num_extra_bits);
 	return length;
 }
 
 static inline u32
-lzms_decode_delta_offset(struct lzms_decompressor *d)
+lzms_decode_delta_offset(struct lzms_decompressor *d,
+			 struct lzms_input_bitstream *is)
 {
-	unsigned slot = lzms_decode_huffman_symbol(&d->is,
+	unsigned slot = lzms_decode_huffman_symbol(is,
 						   d->delta_offset_decode_table,
 						   LZMS_DELTA_OFFSET_TABLEBITS,
 						   d->delta_offset_freqs,
 						   &d->delta_offset_rebuild_info);
 	return lzms_offset_slot_base[slot] +
-	       lzms_read_bits(&d->is, lzms_extra_offset_bits[slot]);
+	       lzms_read_bits(is, lzms_extra_offset_bits[slot]);
 }
 
 static inline unsigned
-lzms_decode_delta_power(struct lzms_decompressor *d)
+lzms_decode_delta_power(struct lzms_decompressor *d,
+			struct lzms_input_bitstream *is)
 {
-	return lzms_decode_huffman_symbol(&d->is,
+	return lzms_decode_huffman_symbol(is,
 					  d->delta_power_decode_table,
 					  LZMS_DELTA_POWER_TABLEBITS,
 					  d->delta_power_freqs,
 					  &d->delta_power_rebuild_info);
-}
-
-/* Decode the series of literals and matches from the LZMS-compressed data.
- * Return 0 if successful or -1 if the compressed data is invalid.  */
-static int
-lzms_decode_items(struct lzms_decompressor * const restrict d,
-		  u8 * const restrict out, const size_t out_nbytes)
-{
-	u8 *out_next = out;
-	u8 * const out_end = out + out_nbytes;
-
-	while (out_next != out_end) {
-
-		if (!lzms_decode_main_bit(d)) {
-
-			/* Literal  */
-			*out_next++ = lzms_decode_literal(d);
-
-		} else if (!lzms_decode_match_bit(d)) {
-
-			/* LZ match  */
-
-			u32 offset;
-			u32 length;
-
-			if (!lzms_decode_lz_bit(d)) {
-				/* Explicit offset  */
-				offset = lzms_decode_lz_offset(d);
-			} else {
-				/* Repeat offset  */
-
-				if (d->pending_lz_offset != 0 &&
-				    out_next != d->lz_offset_still_pending)
-				{
-					BUILD_BUG_ON(LZMS_NUM_LZ_REPS != 3);
-					d->recent_lz_offsets[3] = d->recent_lz_offsets[2];
-					d->recent_lz_offsets[2] = d->recent_lz_offsets[1];
-					d->recent_lz_offsets[1] = d->recent_lz_offsets[0];
-					d->recent_lz_offsets[0] = d->pending_lz_offset;
-					d->pending_lz_offset = 0;
-				}
-
-				BUILD_BUG_ON(LZMS_NUM_LZ_REPS != 3);
-				if (!lzms_decode_lz_rep_bit(d, 0)) {
-					offset = d->recent_lz_offsets[0];
-					d->recent_lz_offsets[0] = d->recent_lz_offsets[1];
-					d->recent_lz_offsets[1] = d->recent_lz_offsets[2];
-					d->recent_lz_offsets[2] = d->recent_lz_offsets[3];
-				} else if (!lzms_decode_lz_rep_bit(d, 1)) {
-					offset = d->recent_lz_offsets[1];
-					d->recent_lz_offsets[1] = d->recent_lz_offsets[2];
-					d->recent_lz_offsets[2] = d->recent_lz_offsets[3];
-				} else {
-					offset = d->recent_lz_offsets[2];
-					d->recent_lz_offsets[2] = d->recent_lz_offsets[3];
-				}
-			}
-
-			if (d->pending_lz_offset != 0) {
-				BUILD_BUG_ON(LZMS_NUM_LZ_REPS != 3);
-				d->recent_lz_offsets[3] = d->recent_lz_offsets[2];
-				d->recent_lz_offsets[2] = d->recent_lz_offsets[1];
-				d->recent_lz_offsets[1] = d->recent_lz_offsets[0];
-				d->recent_lz_offsets[0] = d->pending_lz_offset;
-			}
-			d->pending_lz_offset = offset;
-
-			length = lzms_decode_length(d);
-
-			if (unlikely(length > out_end - out_next))
-				return -1;
-			if (unlikely(offset > out_next - out))
-				return -1;
-
-			lz_copy(out_next, length, offset, out_end, LZMS_MIN_MATCH_LENGTH);
-			out_next += length;
-
-			d->lz_offset_still_pending = out_next;
-		} else {
-			/* Delta match  */
-
-			/* (See beginning of file for more information.)  */
-
-			u32 power;
-			u32 raw_offset;
-			u32 span;
-			u32 offset;
-			const u8 *matchptr;
-			u32 length;
-
-			if (!lzms_decode_delta_bit(d)) {
-				/* Explicit offset  */
-				power = lzms_decode_delta_power(d);
-				raw_offset = lzms_decode_delta_offset(d);
-			} else {
-				/* Repeat offset  */
-				u64 val;
-
-				if (d->pending_delta_pair != 0 &&
-				    out_next != d->delta_pair_still_pending)
-				{
-					BUILD_BUG_ON(LZMS_NUM_DELTA_REPS != 3);
-					d->recent_delta_pairs[3] = d->recent_delta_pairs[2];
-					d->recent_delta_pairs[2] = d->recent_delta_pairs[1];
-					d->recent_delta_pairs[1] = d->recent_delta_pairs[0];
-					d->recent_delta_pairs[0] = d->pending_delta_pair;
-					d->pending_delta_pair = 0;
-				}
-
-				BUILD_BUG_ON(LZMS_NUM_DELTA_REPS != 3);
-				if (!lzms_decode_delta_rep_bit(d, 0)) {
-					val = d->recent_delta_pairs[0];
-					d->recent_delta_pairs[0] = d->recent_delta_pairs[1];
-					d->recent_delta_pairs[1] = d->recent_delta_pairs[2];
-					d->recent_delta_pairs[2] = d->recent_delta_pairs[3];
-				} else if (!lzms_decode_delta_rep_bit(d, 1)) {
-					val = d->recent_delta_pairs[1];
-					d->recent_delta_pairs[1] = d->recent_delta_pairs[2];
-					d->recent_delta_pairs[2] = d->recent_delta_pairs[3];
-				} else {
-					val = d->recent_delta_pairs[2];
-					d->recent_delta_pairs[2] = d->recent_delta_pairs[3];
-				}
-				power = val >> 32;
-				raw_offset = (u32)val;
-			}
-
-			if (d->pending_delta_pair != 0) {
-				BUILD_BUG_ON(LZMS_NUM_DELTA_REPS != 3);
-				d->recent_delta_pairs[3] = d->recent_delta_pairs[2];
-				d->recent_delta_pairs[2] = d->recent_delta_pairs[1];
-				d->recent_delta_pairs[1] = d->recent_delta_pairs[0];
-				d->recent_delta_pairs[0] = d->pending_delta_pair;
-			}
-			d->pending_delta_pair = raw_offset | ((u64)power << 32);
-
-			length = lzms_decode_length(d);
-
-			span = (u32)1 << power;
-			offset = raw_offset << power;
-
-			/* raw_offset<<power overflows?  */
-			if (unlikely(offset >> power != raw_offset))
-				return -1;
-
-			/* offset+span overflows?  */
-			if (unlikely(offset + span < offset))
-				return -1;
-
-			/* buffer underrun?  */
-			if (unlikely(offset + span > out_next - out))
-				return -1;
-
-			/* buffer overrun?  */
-			if (unlikely(length > out_end - out_next))
-				return -1;
-
-			matchptr = out_next - offset;
-			do {
-				*out_next = *matchptr + *(out_next - span) -
-					    *(matchptr - span);
-				out_next++;
-				matchptr++;
-			} while (--length);
-
-			d->delta_pair_still_pending = out_next;
-		}
-	}
-	return 0;
-}
-
-static void
-lzms_init_decompressor(struct lzms_decompressor *d, const void *in,
-		       size_t in_nbytes, unsigned num_offset_slots)
-{
-	/* Match offset LRU queues  */
-	for (int i = 0; i < LZMS_NUM_LZ_REPS + 1; i++)
-		d->recent_lz_offsets[i] = i + 1;
-	for (int i = 0; i < LZMS_NUM_DELTA_REPS + 1; i++)
-		d->recent_delta_pairs[i] = i + 1;
-	d->pending_lz_offset = 0;
-	d->pending_delta_pair = 0;
-
-	/* Range decoding  */
-
-	lzms_range_decoder_init(&d->rd, in, in_nbytes / sizeof(le16));
-
-	d->main_state = 0;
-	lzms_init_probability_entries(d->main_probs, LZMS_NUM_MAIN_PROBS);
-
-	d->match_state = 0;
-	lzms_init_probability_entries(d->match_probs, LZMS_NUM_MATCH_PROBS);
-
-	d->lz_state = 0;
-	lzms_init_probability_entries(d->lz_probs, LZMS_NUM_LZ_PROBS);
-
-	for (int i = 0; i < LZMS_NUM_LZ_REP_DECISIONS; i++) {
-		d->lz_rep_states[i] = 0;
-		lzms_init_probability_entries(d->lz_rep_probs[i],
-					      LZMS_NUM_LZ_REP_PROBS);
-	}
-
-	d->delta_state = 0;
-	lzms_init_probability_entries(d->delta_probs, LZMS_NUM_DELTA_PROBS);
-
-	for (int i = 0; i < LZMS_NUM_DELTA_REP_DECISIONS; i++) {
-		d->delta_rep_states[i] = 0;
-		lzms_init_probability_entries(d->delta_rep_probs[i],
-					      LZMS_NUM_DELTA_REP_PROBS);
-	}
-
-	/* Huffman decoding  */
-
-	lzms_input_bitstream_init(&d->is, in, in_nbytes / sizeof(le16));
-
-	lzms_init_huffman_code(&d->literal_rebuild_info,
-			       LZMS_NUM_LITERAL_SYMS,
-			       LZMS_LITERAL_CODE_REBUILD_FREQ,
-			       d->codewords,
-			       d->literal_freqs,
-			       d->literal_decode_table,
-			       LZMS_LITERAL_TABLEBITS);
-
-	lzms_init_huffman_code(&d->lz_offset_rebuild_info,
-			       num_offset_slots,
-			       LZMS_LZ_OFFSET_CODE_REBUILD_FREQ,
-			       d->codewords,
-			       d->lz_offset_freqs,
-			       d->lz_offset_decode_table,
-			       LZMS_LZ_OFFSET_TABLEBITS);
-
-	lzms_init_huffman_code(&d->length_rebuild_info,
-			       LZMS_NUM_LENGTH_SYMS,
-			       LZMS_LENGTH_CODE_REBUILD_FREQ,
-			       d->codewords,
-			       d->length_freqs,
-			       d->length_decode_table,
-			       LZMS_LENGTH_TABLEBITS);
-
-	lzms_init_huffman_code(&d->delta_offset_rebuild_info,
-			       num_offset_slots,
-			       LZMS_DELTA_OFFSET_CODE_REBUILD_FREQ,
-			       d->codewords,
-			       d->delta_offset_freqs,
-			       d->delta_offset_decode_table,
-			       LZMS_DELTA_OFFSET_TABLEBITS);
-
-	lzms_init_huffman_code(&d->delta_power_rebuild_info,
-			       LZMS_NUM_DELTA_POWER_SYMS,
-			       LZMS_DELTA_POWER_CODE_REBUILD_FREQ,
-			       d->codewords,
-			       d->delta_power_freqs,
-			       d->delta_power_decode_table,
-			       LZMS_DELTA_POWER_TABLEBITS);
 }
 
 static int
@@ -987,10 +722,31 @@ lzms_create_decompressor(size_t max_bufsize, void **d_ret)
  * successful or -1 if the compressed data is invalid.
  */
 static int
-lzms_decompress(const void *in, size_t in_nbytes, void *out, size_t out_nbytes,
-		void *_d)
+lzms_decompress(const void * const restrict in, const size_t in_nbytes,
+		void * const restrict out, const size_t out_nbytes,
+		void * const restrict _d)
 {
 	struct lzms_decompressor *d = _d;
+	u8 *out_next = out;
+	u8 * const out_end = out + out_nbytes;
+	struct lzms_range_decoder rd;
+	struct lzms_input_bitstream is;
+
+	/* LRU queues for match sources  */
+	u32 recent_lz_offsets[LZMS_NUM_LZ_REPS + 1];
+	u64 recent_delta_pairs[LZMS_NUM_DELTA_REPS + 1];
+	u32 pending_lz_offset = 0;
+	u64 pending_delta_pair = 0;
+	const u8 *lz_offset_still_pending;
+	const u8 *delta_pair_still_pending;
+
+	/* States and probability entries for item type disambiguation  */
+	u32 main_state = 0;
+	u32 match_state = 0;
+	u32 lz_state = 0;
+	u32 delta_state = 0;
+	u32 lz_rep_states[LZMS_NUM_LZ_REP_DECISIONS] = {};
+	u32 delta_rep_states[LZMS_NUM_DELTA_REP_DECISIONS] = {};
 
 	/*
 	 * Requirements on the compressed data:
@@ -1005,11 +761,200 @@ lzms_decompress(const void *in, size_t in_nbytes, void *out, size_t out_nbytes,
 	if ((in_nbytes & 1) || ((uintptr_t)in & 1) || (in_nbytes < 4))
 		return -1;
 
-	lzms_init_decompressor(d, in, in_nbytes,
-			       lzms_get_num_offset_slots(out_nbytes));
+	lzms_range_decoder_init(&rd, in, in_nbytes / sizeof(le16));
 
-	if (lzms_decode_items(d, out, out_nbytes))
-		return -1;
+	lzms_input_bitstream_init(&is, in, in_nbytes / sizeof(le16));
+
+	lzms_init_probability_entries((struct lzms_probability_entry *)&d->probs,
+				      sizeof(d->probs) /
+					sizeof(struct lzms_probability_entry));
+
+	lzms_init_huffman_codes(d, lzms_get_num_offset_slots(out_nbytes));
+
+	for (int i = 0; i < LZMS_NUM_LZ_REPS + 1; i++)
+		recent_lz_offsets[i] = i + 1;
+
+	for (int i = 0; i < LZMS_NUM_DELTA_REPS + 1; i++)
+		recent_delta_pairs[i] = i + 1;
+
+	/* Main decode loop  */
+	while (out_next != out_end) {
+
+		if (!lzms_decode_bit(&rd, &main_state,
+				     LZMS_NUM_MAIN_PROBS, d->probs.main))
+		{
+			/* Literal  */
+			*out_next++ = lzms_decode_literal(d, &is);
+
+		} else if (!lzms_decode_bit(&rd, &match_state,
+					    LZMS_NUM_MATCH_PROBS,
+					    d->probs.match))
+		{
+			/* LZ match  */
+
+			u32 offset;
+			u32 length;
+
+			if (!lzms_decode_bit(&rd, &lz_state,
+					     LZMS_NUM_LZ_PROBS, d->probs.lz))
+			{
+				/* Explicit offset  */
+				offset = lzms_decode_lz_offset(d, &is);
+			} else {
+				/* Repeat offset  */
+
+				if (pending_lz_offset != 0 &&
+				    out_next != lz_offset_still_pending)
+				{
+					BUILD_BUG_ON(LZMS_NUM_LZ_REPS != 3);
+					recent_lz_offsets[3] = recent_lz_offsets[2];
+					recent_lz_offsets[2] = recent_lz_offsets[1];
+					recent_lz_offsets[1] = recent_lz_offsets[0];
+					recent_lz_offsets[0] = pending_lz_offset;
+					pending_lz_offset = 0;
+				}
+
+				BUILD_BUG_ON(LZMS_NUM_LZ_REPS != 3);
+				if (!lzms_decode_bit(&rd, &lz_rep_states[0],
+						     LZMS_NUM_LZ_REP_PROBS,
+						     d->probs.lz_rep[0]))
+				{
+					offset = recent_lz_offsets[0];
+					recent_lz_offsets[0] = recent_lz_offsets[1];
+					recent_lz_offsets[1] = recent_lz_offsets[2];
+					recent_lz_offsets[2] = recent_lz_offsets[3];
+				} else if (!lzms_decode_bit(&rd, &lz_rep_states[1],
+							    LZMS_NUM_LZ_REP_PROBS,
+							    d->probs.lz_rep[1]))
+				{
+					offset = recent_lz_offsets[1];
+					recent_lz_offsets[1] = recent_lz_offsets[2];
+					recent_lz_offsets[2] = recent_lz_offsets[3];
+				} else {
+					offset = recent_lz_offsets[2];
+					recent_lz_offsets[2] = recent_lz_offsets[3];
+				}
+			}
+
+			if (pending_lz_offset != 0) {
+				BUILD_BUG_ON(LZMS_NUM_LZ_REPS != 3);
+				recent_lz_offsets[3] = recent_lz_offsets[2];
+				recent_lz_offsets[2] = recent_lz_offsets[1];
+				recent_lz_offsets[1] = recent_lz_offsets[0];
+				recent_lz_offsets[0] = pending_lz_offset;
+			}
+			pending_lz_offset = offset;
+
+			length = lzms_decode_length(d, &is);
+
+			if (unlikely(length > out_end - out_next))
+				return -1;
+			if (unlikely(offset > out_next - (u8 *)out))
+				return -1;
+
+			lz_copy(out_next, length, offset, out_end, LZMS_MIN_MATCH_LENGTH);
+			out_next += length;
+
+			lz_offset_still_pending = out_next;
+		} else {
+			/* Delta match  */
+
+			/* (See beginning of file for more information.)  */
+
+			u32 power;
+			u32 raw_offset;
+			u32 span;
+			u32 offset;
+			const u8 *matchptr;
+			u32 length;
+
+			if (!lzms_decode_bit(&rd, &delta_state,
+					     LZMS_NUM_DELTA_PROBS,
+					     d->probs.delta))
+			{
+				/* Explicit offset  */
+				power = lzms_decode_delta_power(d, &is);
+				raw_offset = lzms_decode_delta_offset(d, &is);
+			} else {
+				/* Repeat offset  */
+				u64 val;
+
+				if (pending_delta_pair != 0 &&
+				    out_next != delta_pair_still_pending)
+				{
+					BUILD_BUG_ON(LZMS_NUM_DELTA_REPS != 3);
+					recent_delta_pairs[3] = recent_delta_pairs[2];
+					recent_delta_pairs[2] = recent_delta_pairs[1];
+					recent_delta_pairs[1] = recent_delta_pairs[0];
+					recent_delta_pairs[0] = pending_delta_pair;
+					pending_delta_pair = 0;
+				}
+
+				BUILD_BUG_ON(LZMS_NUM_DELTA_REPS != 3);
+				if (!lzms_decode_bit(&rd, &delta_rep_states[0],
+						     LZMS_NUM_DELTA_REP_PROBS,
+						     d->probs.delta_rep[0]))
+				{
+					val = recent_delta_pairs[0];
+					recent_delta_pairs[0] = recent_delta_pairs[1];
+					recent_delta_pairs[1] = recent_delta_pairs[2];
+					recent_delta_pairs[2] = recent_delta_pairs[3];
+				} else if (!lzms_decode_bit(&rd, &delta_rep_states[1],
+							    LZMS_NUM_DELTA_REP_PROBS,
+							    d->probs.delta_rep[1]))
+				{
+					val = recent_delta_pairs[1];
+					recent_delta_pairs[1] = recent_delta_pairs[2];
+					recent_delta_pairs[2] = recent_delta_pairs[3];
+				} else {
+					val = recent_delta_pairs[2];
+					recent_delta_pairs[2] = recent_delta_pairs[3];
+				}
+				power = val >> 32;
+				raw_offset = (u32)val;
+			}
+
+			if (pending_delta_pair != 0) {
+				BUILD_BUG_ON(LZMS_NUM_DELTA_REPS != 3);
+				recent_delta_pairs[3] = recent_delta_pairs[2];
+				recent_delta_pairs[2] = recent_delta_pairs[1];
+				recent_delta_pairs[1] = recent_delta_pairs[0];
+				recent_delta_pairs[0] = pending_delta_pair;
+			}
+			pending_delta_pair = raw_offset | ((u64)power << 32);
+
+			length = lzms_decode_length(d, &is);
+
+			span = (u32)1 << power;
+			offset = raw_offset << power;
+
+			/* raw_offset<<power overflows?  */
+			if (unlikely(offset >> power != raw_offset))
+				return -1;
+
+			/* offset+span overflows?  */
+			if (unlikely(offset + span < offset))
+				return -1;
+
+			/* buffer underrun?  */
+			if (unlikely(offset + span > out_next - (u8 *)out))
+				return -1;
+
+			/* buffer overrun?  */
+			if (unlikely(length > out_end - out_next))
+				return -1;
+
+			matchptr = out_next - offset;
+			do {
+				*out_next = *matchptr + *(out_next - span) -
+					    *(matchptr - span);
+				out_next++;
+				matchptr++;
+			} while (--length);
+
+			delta_pair_still_pending = out_next;
+		}
+	}
 
 	lzms_x86_filter(out, out_nbytes, d->last_target_usages, true);
 	return 0;
