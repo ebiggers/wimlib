@@ -368,6 +368,127 @@ lzms_dilute_symbol_frequencies(u32 freqs[], unsigned num_syms)
 		freqs[sym] = (freqs[sym] >> 1) + 1;
 }
 
+static inline s32
+find_next_opcode(const u8 *data, s32 i)
+{
+	/*
+	 * The following table is used to accelerate the common case where the
+	 * byte has nothing to do with x86 translation and must simply be
+	 * skipped.  This was faster than the following alternatives:
+	 *	- Jump table with 256 entries
+	 *	- Switch statement with default
+	 */
+	static const u8 is_potential_opcode[256] = {
+		[0x48] = 1, [0x4C] = 1, [0xE8] = 1,
+		[0xE9] = 1, [0xF0] = 1, [0xFF] = 1,
+	};
+
+	for (;;) {
+		if (is_potential_opcode[data[++i]])
+			break;
+		if (is_potential_opcode[data[++i]])
+			break;
+		if (is_potential_opcode[data[++i]])
+			break;
+		if (is_potential_opcode[data[++i]])
+			break;
+	}
+	return i;
+}
+
+static inline s32
+translate_if_needed(u8 *data, s32 i, s32 *last_x86_pos,
+		    s32 last_target_usages[], bool undo)
+{
+	s32 max_trans_offset;
+	s32 opcode_nbytes;
+	u16 target16;
+
+	max_trans_offset = LZMS_X86_MAX_TRANSLATION_OFFSET;
+
+	switch (data[i]) {
+	case 0x48:
+		if (data[i + 1] == 0x8B) {
+			if (data[i + 2] == 0x5 || data[i + 2] == 0xD) {
+				/* Load relative (x86_64)  */
+				opcode_nbytes = 3;
+				goto have_opcode;
+			}
+		} else if (data[i + 1] == 0x8D) {
+			if ((data[i + 2] & 0x7) == 0x5) {
+				/* Load effective address relative (x86_64)  */
+				opcode_nbytes = 3;
+				goto have_opcode;
+			}
+		}
+		break;
+	case 0x4C:
+		if (data[i + 1] == 0x8D) {
+			if ((data[i + 2] & 0x7) == 0x5) {
+				/* Load effective address relative (x86_64)  */
+				opcode_nbytes = 3;
+				goto have_opcode;
+			}
+		}
+		break;
+	case 0xE8:
+		/* Call relative.  Note: 'max_trans_offset' must be
+		 * halved for this instruction.  This means that we must
+		 * be more confident that we are in a region of x86
+		 * machine code before we will do a translation for this
+		 * particular instruction.  */
+		opcode_nbytes = 1;
+		max_trans_offset /= 2;
+		goto have_opcode;
+	case 0xE9:
+		/* Jump relative  */
+		i += 4;
+		break;
+	case 0xF0:
+		if (data[i + 1] == 0x83 && data[i + 2] == 0x05) {
+			/* Lock add relative  */
+			opcode_nbytes = 3;
+			goto have_opcode;
+		}
+		break;
+	case 0xFF:
+		if (data[i + 1] == 0x15) {
+			/* Call indirect  */
+			opcode_nbytes = 2;
+			goto have_opcode;
+		}
+		break;
+	}
+
+	return i;
+
+have_opcode:
+	if (undo) {
+		if (i - *last_x86_pos <= max_trans_offset) {
+			void *p32 = &data[i + opcode_nbytes];
+			u32 n = get_unaligned_u32_le(p32);
+			put_unaligned_u32_le(n - i, p32);
+		}
+		target16 = i + get_unaligned_u16_le(&data[i + opcode_nbytes]);
+	} else {
+		target16 = i + get_unaligned_u16_le(&data[i + opcode_nbytes]);
+		if (i - *last_x86_pos <= max_trans_offset) {
+			void *p32 = &data[i + opcode_nbytes];
+			u32 n = get_unaligned_u32_le(p32);
+			put_unaligned_u32_le(n + i, p32);
+		}
+	}
+
+	i += opcode_nbytes + sizeof(le32) - 1;
+
+	if (i - last_target_usages[target16] <= LZMS_X86_ID_WINDOW_SIZE)
+		*last_x86_pos = i;
+
+	last_target_usages[target16] = i;
+
+	return i;
+}
+
 /*
  * Translate relative addresses embedded in x86 instructions into absolute
  * addresses (@undo == %false), or undo this translation (@undo == %true).
@@ -443,120 +564,12 @@ lzms_x86_filter(u8 data[restrict], s32 size,
 	/* Note: the very first byte must be ignored completely!  */
 	i = 0;
 	for (;;) {
-		s32 max_trans_offset;
-		s32 opcode_nbytes;
-		u16 target16;
-
-		/*
-		 * The following table is used to accelerate the common case
-		 * where the byte has nothing to do with x86 translation and
-		 * must simply be skipped.  This is the fastest (at least on
-		 * x86_64) of the implementations I tested.  The other
-		 * implementations I tested were:
-		 *	- Jump table with 256 entries
-		 *	- Switch statement with default
-		 */
-		static const u8 is_potential_opcode[256] = {
-			[0x48] = 1, [0x4C] = 1, [0xE8] = 1,
-			[0xE9] = 1, [0xF0] = 1, [0xFF] = 1,
-		};
-
-		for (;;) {
-			if (is_potential_opcode[data[++i]])
-				break;
-			if (is_potential_opcode[data[++i]])
-				break;
-			if (is_potential_opcode[data[++i]])
-				break;
-			if (is_potential_opcode[data[++i]])
-				break;
-		}
+		i = find_next_opcode(data, i);
 
 		if (i >= tail_idx)
 			break;
 
-		max_trans_offset = LZMS_X86_MAX_TRANSLATION_OFFSET;
-		switch (data[i]) {
-		case 0x48:
-			if (data[i + 1] == 0x8B) {
-				if (data[i + 2] == 0x5 || data[i + 2] == 0xD) {
-					/* Load relative (x86_64)  */
-					opcode_nbytes = 3;
-					goto have_opcode;
-				}
-			} else if (data[i + 1] == 0x8D) {
-				if ((data[i + 2] & 0x7) == 0x5) {
-					/* Load effective address relative (x86_64)  */
-					opcode_nbytes = 3;
-					goto have_opcode;
-				}
-			}
-			break;
-		case 0x4C:
-			if (data[i + 1] == 0x8D) {
-				if ((data[i + 2] & 0x7) == 0x5) {
-					/* Load effective address relative (x86_64)  */
-					opcode_nbytes = 3;
-					goto have_opcode;
-				}
-			}
-			break;
-		case 0xE8:
-			/* Call relative.  Note: 'max_trans_offset' must be
-			 * halved for this instruction.  This means that we must
-			 * be more confident that we are in a region of x86
-			 * machine code before we will do a translation for this
-			 * particular instruction.  */
-			opcode_nbytes = 1;
-			max_trans_offset /= 2;
-			goto have_opcode;
-		case 0xE9:
-			/* Jump relative  */
-			i += 4;
-			break;
-		case 0xF0:
-			if (data[i + 1] == 0x83 && data[i + 2] == 0x05) {
-				/* Lock add relative  */
-				opcode_nbytes = 3;
-				goto have_opcode;
-			}
-			break;
-		case 0xFF:
-			if (data[i + 1] == 0x15) {
-				/* Call indirect  */
-				opcode_nbytes = 2;
-				goto have_opcode;
-			}
-			break;
-		}
-
-		continue;
-
-	have_opcode:
-		if (undo) {
-			if (i - last_x86_pos <= max_trans_offset) {
-				void *p32 = &data[i + opcode_nbytes];
-				u32 n = get_unaligned_u32_le(p32);
-				put_unaligned_u32_le(n - i, p32);
-			}
-			target16 = i + get_unaligned_u16_le(&data[i + opcode_nbytes]);
-		} else {
-			target16 = i + get_unaligned_u16_le(&data[i + opcode_nbytes]);
-			if (i - last_x86_pos <= max_trans_offset) {
-				void *p32 = &data[i + opcode_nbytes];
-				u32 n = get_unaligned_u32_le(p32);
-				put_unaligned_u32_le(n + i, p32);
-			}
-		}
-
-		i += opcode_nbytes + sizeof(le32) - 1;
-
-		if (i - last_target_usages[target16] <= LZMS_X86_ID_WINDOW_SIZE)
-			last_x86_pos = i;
-
-		last_target_usages[target16] = i;
-
-		continue;
+		i = translate_if_needed(data, i, &last_x86_pos, last_target_usages, undo);
 	}
 
 	data[tail_idx + 8] = saved_byte;
