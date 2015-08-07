@@ -368,8 +368,8 @@ lzms_dilute_symbol_frequencies(u32 freqs[], unsigned num_syms)
 		freqs[sym] = (freqs[sym] >> 1) + 1;
 }
 
-static inline s32
-find_next_opcode(const u8 *data, s32 i)
+static inline u8 *
+find_next_opcode(u8 *p)
 {
 	/*
 	 * The following table is used to accelerate the common case where the
@@ -384,38 +384,43 @@ find_next_opcode(const u8 *data, s32 i)
 	};
 
 	for (;;) {
-		if (is_potential_opcode[data[++i]])
+		if (is_potential_opcode[*p])
 			break;
-		if (is_potential_opcode[data[++i]])
+		p++;
+		if (is_potential_opcode[*p])
 			break;
-		if (is_potential_opcode[data[++i]])
+		p++;
+		if (is_potential_opcode[*p])
 			break;
-		if (is_potential_opcode[data[++i]])
+		p++;
+		if (is_potential_opcode[*p])
 			break;
+		p++;
 	}
-	return i;
+	return p;
 }
 
-static inline s32
-translate_if_needed(u8 *data, s32 i, s32 *last_x86_pos,
+static inline u8 *
+translate_if_needed(u8 *data, u8 *p, s32 *last_x86_pos,
 		    s32 last_target_usages[], bool undo)
 {
 	s32 max_trans_offset;
 	s32 opcode_nbytes;
 	u16 target16;
+	s32 i;
 
 	max_trans_offset = LZMS_X86_MAX_TRANSLATION_OFFSET;
 
-	switch (data[i]) {
+	switch (*p) {
 	case 0x48:
-		if (data[i + 1] == 0x8B) {
-			if (data[i + 2] == 0x5 || data[i + 2] == 0xD) {
+		if (*(p + 1) == 0x8B) {
+			if (*(p + 2) == 0x5 || *(p + 2) == 0xD) {
 				/* Load relative (x86_64)  */
 				opcode_nbytes = 3;
 				goto have_opcode;
 			}
-		} else if (data[i + 1] == 0x8D) {
-			if ((data[i + 2] & 0x7) == 0x5) {
+		} else if (*(p + 1) == 0x8D) {
+			if ((*(p + 2) & 0x7) == 0x5) {
 				/* Load effective address relative (x86_64)  */
 				opcode_nbytes = 3;
 				goto have_opcode;
@@ -423,8 +428,8 @@ translate_if_needed(u8 *data, s32 i, s32 *last_x86_pos,
 		}
 		break;
 	case 0x4C:
-		if (data[i + 1] == 0x8D) {
-			if ((data[i + 2] & 0x7) == 0x5) {
+		if (*(p + 1) == 0x8D) {
+			if ((*(p + 2) & 0x7) == 0x5) {
 				/* Load effective address relative (x86_64)  */
 				opcode_nbytes = 3;
 				goto have_opcode;
@@ -442,17 +447,17 @@ translate_if_needed(u8 *data, s32 i, s32 *last_x86_pos,
 		goto have_opcode;
 	case 0xE9:
 		/* Jump relative  */
-		i += 4;
+		p += 4;
 		break;
 	case 0xF0:
-		if (data[i + 1] == 0x83 && data[i + 2] == 0x05) {
+		if (*(p + 1) == 0x83 && *(p + 2) == 0x05) {
 			/* Lock add relative  */
 			opcode_nbytes = 3;
 			goto have_opcode;
 		}
 		break;
 	case 0xFF:
-		if (data[i + 1] == 0x15) {
+		if (*(p + 1) == 0x15) {
 			/* Call indirect  */
 			opcode_nbytes = 2;
 			goto have_opcode;
@@ -460,22 +465,22 @@ translate_if_needed(u8 *data, s32 i, s32 *last_x86_pos,
 		break;
 	}
 
-	return i;
+	return p + 1;
 
 have_opcode:
+	i = p - data;
+	p += opcode_nbytes;
 	if (undo) {
 		if (i - *last_x86_pos <= max_trans_offset) {
-			void *p32 = &data[i + opcode_nbytes];
-			u32 n = get_unaligned_u32_le(p32);
-			put_unaligned_u32_le(n - i, p32);
+			u32 n = get_unaligned_u32_le(p);
+			put_unaligned_u32_le(n - i, p);
 		}
-		target16 = i + get_unaligned_u16_le(&data[i + opcode_nbytes]);
+		target16 = i + get_unaligned_u16_le(p);
 	} else {
-		target16 = i + get_unaligned_u16_le(&data[i + opcode_nbytes]);
+		target16 = i + get_unaligned_u16_le(p);
 		if (i - *last_x86_pos <= max_trans_offset) {
-			void *p32 = &data[i + opcode_nbytes];
-			u32 n = get_unaligned_u32_le(p32);
-			put_unaligned_u32_le(n + i, p32);
+			u32 n = get_unaligned_u32_le(p);
+			put_unaligned_u32_le(n + i, p);
 		}
 	}
 
@@ -486,7 +491,7 @@ have_opcode:
 
 	last_target_usages[target16] = i;
 
-	return i;
+	return p + sizeof(le32);
 }
 
 /*
@@ -530,15 +535,15 @@ lzms_x86_filter(u8 data[restrict], s32 size,
 	 * low-order 2 bytes of each address are considered significant.
 	 */
 
-	s32 i;
-	s32 tail_idx;
+	u8 *p;
+	u8 *tail_ptr;
 	u8 saved_byte;
 	s32 last_x86_pos;
 
 	if (size <= 17)
 		return;
 
-	for (i = 0; i < 65536; i++)
+	for (s32 i = 0; i < 65536; i++)
 		last_target_usages[i] = -(s32)LZMS_X86_ID_WINDOW_SIZE - 1;
 
 	/*
@@ -556,21 +561,21 @@ lzms_x86_filter(u8 data[restrict], s32 size,
 	 *     data[(size - 16) + 7] and have no effect on the result, as long
 	 *     as we restore those bytes later.
 	 */
-	tail_idx = size - 16;
-	saved_byte = data[tail_idx + 8];
-	data[tail_idx + 8] = 0xE8;
+	tail_ptr = &data[size - 16];
+	saved_byte = *(tail_ptr + 8);
+	*(tail_ptr + 8) = 0xE8;
 	last_x86_pos = -LZMS_X86_MAX_TRANSLATION_OFFSET - 1;
 
 	/* Note: the very first byte must be ignored completely!  */
-	i = 0;
+	p = data + 1;
 	for (;;) {
-		i = find_next_opcode(data, i);
+		p = find_next_opcode(p);
 
-		if (i >= tail_idx)
+		if (p >= tail_ptr)
 			break;
 
-		i = translate_if_needed(data, i, &last_x86_pos, last_target_usages, undo);
+		p = translate_if_needed(data, p, &last_x86_pos, last_target_usages, undo);
 	}
 
-	data[tail_idx + 8] = saved_byte;
+	*(tail_ptr + 8) = saved_byte;
 }
