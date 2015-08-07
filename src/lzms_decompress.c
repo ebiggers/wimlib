@@ -481,15 +481,24 @@ lzms_range_decoder_init(struct lzms_range_decoder *rd,
 }
 
 /*
- * Decode and return the next bit from the range decoder.
- *
- * @prob is the probability out of LZMS_PROBABILITY_DENOMINATOR that the next
- * bit is 0 rather than 1.
+ * Decode a bit using the range coder.  The current state specifies the
+ * probability entry to use.  The state and probability entry will be updated
+ * based on the decoded bit.
  */
 static inline int
-lzms_range_decode_bit(struct lzms_range_decoder *rd, u32 prob)
+lzms_decode_bit(struct lzms_range_decoder *rd, u32 *state_p, u32 num_states,
+		struct lzms_probability_entry *probs)
 {
+	struct lzms_probability_entry *prob_entry;
+	u32 prob;
 	u32 bound;
+
+	/* Load the probability entry corresponding to the current state.  */
+	prob_entry = &probs[*state_p];
+
+	/* Get the probability (out of LZMS_PROBABILITY_DENOMINATOR) that the
+	 * next bit is 0.  */
+	prob = lzms_get_probability(prob_entry);
 
 	/* Normalize if needed.  */
 	if (rd->range <= 0xffff) {
@@ -506,42 +515,21 @@ lzms_range_decode_bit(struct lzms_range_decoder *rd, u32 prob)
 	if (rd->code < bound) {
 		/* Current code is in the 0-bit region of the range.  */
 		rd->range = bound;
+
+		/* Update the state and probability entry based on the decoded bit.  */
+		*state_p = ((*state_p << 1) | 0) & (num_states - 1);
+		lzms_update_probability_entry(prob_entry, 0);
 		return 0;
 	} else {
 		/* Current code is in the 1-bit region of the range.  */
 		rd->range -= bound;
 		rd->code -= bound;
+
+		/* Update the state and probability entry based on the decoded bit.  */
+		*state_p = ((*state_p << 1) | 1) & (num_states - 1);
+		lzms_update_probability_entry(prob_entry, 1);
 		return 1;
 	}
-}
-
-/*
- * Decode a bit.  This wraps around lzms_range_decode_bit() to handle using and
- * updating the state and its corresponding probability entry.
- */
-static inline int
-lzms_decode_bit(struct lzms_range_decoder *rd, u32 *state_p, u32 num_states,
-		struct lzms_probability_entry *probs)
-{
-	struct lzms_probability_entry *prob_entry;
-	u32 prob;
-	int bit;
-
-	/* Load the probability entry corresponding to the current state.  */
-	prob_entry = &probs[*state_p];
-
-	/* Get the probability that the next bit is 0.  */
-	prob = lzms_get_probability(prob_entry);
-
-	/* Decode the next bit.  */
-	bit = lzms_range_decode_bit(rd, prob);
-
-	/* Update the state and probability entry based on the decoded bit.  */
-	*state_p = ((*state_p << 1) | bit) & (num_states - 1);
-	lzms_update_probability_entry(prob_entry, bit);
-
-	/* Return the decoded bit.  */
-	return bit;
 }
 
 static int
