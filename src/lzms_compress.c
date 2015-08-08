@@ -328,14 +328,7 @@ struct lzms_compressor {
 	unsigned lz_rep_states[LZMS_NUM_LZ_REP_DECISIONS];
 	unsigned delta_state;
 	unsigned delta_rep_states[LZMS_NUM_DELTA_REP_DECISIONS];
-	struct lzms_probability_entry main_probs[LZMS_NUM_MAIN_PROBS];
-	struct lzms_probability_entry match_probs[LZMS_NUM_MATCH_PROBS];
-	struct lzms_probability_entry lz_probs[LZMS_NUM_LZ_PROBS];
-	struct lzms_probability_entry lz_rep_probs[LZMS_NUM_LZ_REP_DECISIONS]
-						  [LZMS_NUM_LZ_REP_PROBS];
-	struct lzms_probability_entry delta_probs[LZMS_NUM_DELTA_PROBS];
-	struct lzms_probability_entry delta_rep_probs[LZMS_NUM_DELTA_REP_DECISIONS]
-						     [LZMS_NUM_DELTA_REP_PROBS];
+	struct lzms_probabilites probs;
 
 	/* Huffman codes  */
 
@@ -587,42 +580,42 @@ static void
 lzms_encode_main_bit(struct lzms_compressor *c, int bit)
 {
 	lzms_encode_bit(bit, &c->main_state, LZMS_NUM_MAIN_PROBS,
-			c->main_probs, &c->rc);
+			c->probs.main, &c->rc);
 }
 
 static void
 lzms_encode_match_bit(struct lzms_compressor *c, int bit)
 {
 	lzms_encode_bit(bit, &c->match_state, LZMS_NUM_MATCH_PROBS,
-			c->match_probs, &c->rc);
+			c->probs.match, &c->rc);
 }
 
 static void
 lzms_encode_lz_bit(struct lzms_compressor *c, int bit)
 {
 	lzms_encode_bit(bit, &c->lz_state, LZMS_NUM_LZ_PROBS,
-			c->lz_probs, &c->rc);
+			c->probs.lz, &c->rc);
 }
 
 static void
 lzms_encode_lz_rep_bit(struct lzms_compressor *c, int bit, int idx)
 {
 	lzms_encode_bit(bit, &c->lz_rep_states[idx], LZMS_NUM_LZ_REP_PROBS,
-			c->lz_rep_probs[idx], &c->rc);
+			c->probs.lz_rep[idx], &c->rc);
 }
 
 static void
 lzms_encode_delta_bit(struct lzms_compressor *c, int bit)
 {
 	lzms_encode_bit(bit, &c->delta_state, LZMS_NUM_DELTA_PROBS,
-			c->delta_probs, &c->rc);
+			c->probs.delta, &c->rc);
 }
 
 static void
 lzms_encode_delta_rep_bit(struct lzms_compressor *c, int bit, int idx)
 {
 	lzms_encode_bit(bit, &c->delta_rep_states[idx], LZMS_NUM_DELTA_REP_PROBS,
-			c->delta_rep_probs[idx], &c->rc);
+			c->probs.delta_rep[idx], &c->rc);
 }
 
 /******************************************************************************
@@ -1023,7 +1016,7 @@ lzms_bit_1_cost(unsigned state, const struct lzms_probability_entry *probs)
 static inline u32
 lzms_literal_cost(struct lzms_compressor *c, unsigned main_state, unsigned literal)
 {
-	return lzms_bit_0_cost(main_state, c->main_probs) +
+	return lzms_bit_0_cost(main_state, c->probs.main) +
 		((u32)c->literal_lens[literal] << COST_SHIFT);
 }
 
@@ -1380,19 +1373,19 @@ begin:
 
 				u32 base_cost = cur_node->cost +
 						lzms_bit_1_cost(cur_node->state.main_state,
-								c->main_probs) +
+								c->probs.main) +
 						lzms_bit_0_cost(cur_node->state.match_state,
-								c->match_probs) +
+								c->probs.match) +
 						lzms_bit_1_cost(cur_node->state.lz_state,
-								c->lz_probs);
+								c->probs.lz);
 
 				for (int i = 0; i < rep_idx; i++)
 					base_cost += lzms_bit_1_cost(cur_node->state.lz_rep_states[i],
-								     c->lz_rep_probs[i]);
+								     c->probs.lz_rep[i]);
 
 				if (rep_idx < LZMS_NUM_LZ_REP_DECISIONS)
 					base_cost += lzms_bit_0_cost(cur_node->state.lz_rep_states[rep_idx],
-								     c->lz_rep_probs[rep_idx]);
+								     c->probs.lz_rep[rep_idx]);
 
 				u32 len = 2;
 				do {
@@ -1442,10 +1435,10 @@ begin:
 					main_state = ((main_state << 1) | 0) % LZMS_NUM_MAIN_PROBS;
 
 					/* add LZ-rep0 cost  */
-					cost += lzms_bit_1_cost(main_state, c->main_probs) +
-						lzms_bit_0_cost(match_state, c->match_probs) +
-						lzms_bit_1_cost(lz_state, c->lz_probs) +
-						lzms_bit_0_cost(lz_rep0_state, c->lz_rep_probs[0]) +
+					cost += lzms_bit_1_cost(main_state, c->probs.main) +
+						lzms_bit_0_cost(match_state, c->probs.match) +
+						lzms_bit_1_cost(lz_state, c->probs.lz) +
+						lzms_bit_0_cost(lz_rep0_state, c->probs.lz_rep[0]) +
 						lzms_fast_length_cost(c, rep0_len);
 
 					const u32 total_len = rep_len + 1 + rep0_len;
@@ -1532,19 +1525,19 @@ begin:
 
 				u32 base_cost = cur_node->cost +
 						lzms_bit_1_cost(cur_node->state.main_state,
-								c->main_probs) +
+								c->probs.main) +
 						lzms_bit_1_cost(cur_node->state.match_state,
-								c->match_probs) +
+								c->probs.match) +
 						lzms_bit_1_cost(cur_node->state.delta_state,
-								c->delta_probs);
+								c->probs.delta);
 
 				for (int i = 0; i < rep_idx; i++)
 					base_cost += lzms_bit_1_cost(cur_node->state.delta_rep_states[i],
-								     c->delta_rep_probs[i]);
+								     c->probs.delta_rep[i]);
 
 				if (rep_idx < LZMS_NUM_DELTA_REP_DECISIONS)
 					base_cost += lzms_bit_0_cost(cur_node->state.delta_rep_states[rep_idx],
-								     c->delta_rep_probs[rep_idx]);
+								     c->probs.delta_rep[rep_idx]);
 
 				u32 len = 2;
 				do {
@@ -1601,11 +1594,11 @@ begin:
 
 			u32 base_cost = cur_node->cost +
 					lzms_bit_1_cost(cur_node->state.main_state,
-							c->main_probs) +
+							c->probs.main) +
 					lzms_bit_0_cost(cur_node->state.match_state,
-							c->match_probs) +
+							c->probs.match) +
 					lzms_bit_0_cost(cur_node->state.lz_state,
-							c->lz_probs);
+							c->probs.lz);
 
 			if (c->try_lzmatch_lit_lzrep0 &&
 			    likely(in_end - (in_next + c->matches[0].length) >= 3))
@@ -1661,11 +1654,11 @@ begin:
 					main_state = ((main_state << 1) | 0) % LZMS_NUM_MAIN_PROBS;
 
 					/* add LZ-rep0 cost  */
-					cost += lzms_bit_1_cost(main_state, c->main_probs) +
-						lzms_bit_0_cost(match_state, c->match_probs) +
-						lzms_bit_1_cost(lz_state, c->lz_probs) +
+					cost += lzms_bit_1_cost(main_state, c->probs.main) +
+						lzms_bit_0_cost(match_state, c->probs.match) +
+						lzms_bit_1_cost(lz_state, c->probs.lz) +
 						lzms_bit_0_cost(cur_node->state.lz_rep_states[0],
-								c->lz_rep_probs[0]) +
+								c->probs.lz_rep[0]) +
 						lzms_fast_length_cost(c, rep0_len);
 
 					const u32 total_len = len + 1 + rep0_len;
@@ -1800,11 +1793,11 @@ begin:
 
 				u32 base_cost = cur_node->cost +
 						lzms_bit_1_cost(cur_node->state.main_state,
-								c->main_probs) +
+								c->probs.main) +
 						lzms_bit_1_cost(cur_node->state.match_state,
-								c->match_probs) +
+								c->probs.match) +
 						lzms_bit_0_cost(cur_node->state.delta_state,
-								c->delta_probs) +
+								c->probs.delta) +
 						lzms_delta_source_cost(c, power, raw_offset);
 
 				u32 l = NBYTES_HASHED_FOR_DELTA;
@@ -1858,13 +1851,13 @@ begin:
 
 				/* Add cost of LZ-rep0  */
 				const u32 cost = cur_and_lit_cost +
-						 lzms_bit_1_cost(main_state, c->main_probs) +
+						 lzms_bit_1_cost(main_state, c->probs.main) +
 						 lzms_bit_0_cost(cur_node->state.match_state,
-								 c->match_probs) +
+								 c->probs.match) +
 						 lzms_bit_1_cost(cur_node->state.lz_state,
-								 c->lz_probs) +
+								 c->probs.lz) +
 						 lzms_bit_0_cost(cur_node->state.lz_rep_states[0],
-								 c->lz_rep_probs[0]) +
+								 c->probs.lz_rep[0]) +
 						 lzms_fast_length_cost(c, rep0_len);
 
 				const u32 total_len = 1 + rep0_len;
@@ -2023,14 +2016,7 @@ lzms_init_states_and_probabilities(struct lzms_compressor *c)
 	for (int i = 0; i < LZMS_NUM_DELTA_REP_DECISIONS; i++)
 		c->delta_rep_states[i] = 0;
 
-	lzms_init_probability_entries(c->main_probs, LZMS_NUM_MAIN_PROBS);
-	lzms_init_probability_entries(c->match_probs, LZMS_NUM_MATCH_PROBS);
-	lzms_init_probability_entries(c->lz_probs, LZMS_NUM_LZ_PROBS);
-	for (int i = 0; i < LZMS_NUM_LZ_REP_DECISIONS; i++)
-		lzms_init_probability_entries(c->lz_rep_probs[i], LZMS_NUM_LZ_REP_PROBS);
-	lzms_init_probability_entries(c->delta_probs, LZMS_NUM_DELTA_PROBS);
-	for (int i = 0; i < LZMS_NUM_DELTA_REP_DECISIONS; i++)
-		lzms_init_probability_entries(c->delta_rep_probs[i], LZMS_NUM_DELTA_REP_PROBS);
+	lzms_init_probabilities(&c->probs);
 }
 
 static void

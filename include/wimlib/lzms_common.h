@@ -56,8 +56,19 @@ struct lzms_probability_entry {
 	u64 recent_bits;
 };
 
+struct lzms_probabilites {
+	struct lzms_probability_entry main[LZMS_NUM_MAIN_PROBS];
+	struct lzms_probability_entry match[LZMS_NUM_MATCH_PROBS];
+	struct lzms_probability_entry lz[LZMS_NUM_LZ_PROBS];
+	struct lzms_probability_entry delta[LZMS_NUM_DELTA_PROBS];
+	struct lzms_probability_entry lz_rep[LZMS_NUM_LZ_REP_DECISIONS]
+					    [LZMS_NUM_LZ_REP_PROBS];
+	struct lzms_probability_entry delta_rep[LZMS_NUM_DELTA_REP_DECISIONS]
+					       [LZMS_NUM_DELTA_REP_PROBS];
+};
+
 extern void
-lzms_init_probability_entries(struct lzms_probability_entry *entries, size_t count);
+lzms_init_probabilities(struct lzms_probabilites *probs);
 
 /* Given a decoded or encoded bit, update the probability entry.  */
 static inline void

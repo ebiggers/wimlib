@@ -351,9 +351,13 @@ lzms_get_num_offset_slots(size_t uncompressed_size)
 }
 
 void
-lzms_init_probability_entries(struct lzms_probability_entry *entries, size_t count)
+lzms_init_probabilities(struct lzms_probabilites *probs)
 {
-	for (size_t i = 0; i < count; i++) {
+	struct lzms_probability_entry *entries =
+		(struct lzms_probability_entry *)probs;
+	size_t num_entries = sizeof(struct lzms_probabilites) /
+			     sizeof(struct lzms_probability_entry);
+	for (size_t i = 0; i < num_entries; i++) {
 		entries[i].num_recent_zero_bits = LZMS_INITIAL_PROBABILITY;
 		entries[i].recent_bits = LZMS_INITIAL_RECENT_BITS;
 	}

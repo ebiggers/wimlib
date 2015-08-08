@@ -314,17 +314,6 @@ struct lzms_huffman_rebuild_info {
 	unsigned table_bits;
 };
 
-struct lzms_probabilites {
-	struct lzms_probability_entry main[LZMS_NUM_MAIN_PROBS];
-	struct lzms_probability_entry match[LZMS_NUM_MATCH_PROBS];
-	struct lzms_probability_entry lz[LZMS_NUM_LZ_PROBS];
-	struct lzms_probability_entry delta[LZMS_NUM_DELTA_PROBS];
-	struct lzms_probability_entry lz_rep[LZMS_NUM_LZ_REP_DECISIONS]
-					    [LZMS_NUM_LZ_REP_PROBS];
-	struct lzms_probability_entry delta_rep[LZMS_NUM_DELTA_REP_DECISIONS]
-					       [LZMS_NUM_DELTA_REP_PROBS];
-};
-
 struct lzms_decompressor {
 
 	/* 'last_target_usages' is in union with everything else because it is
@@ -765,9 +754,7 @@ lzms_decompress(const void * const restrict in, const size_t in_nbytes,
 
 	lzms_input_bitstream_init(&is, in, in_nbytes / sizeof(le16));
 
-	lzms_init_probability_entries((struct lzms_probability_entry *)&d->probs,
-				      sizeof(d->probs) /
-					sizeof(struct lzms_probability_entry));
+	lzms_init_probabilities(&d->probs);
 
 	lzms_init_huffman_codes(d, lzms_get_num_offset_slots(out_nbytes));
 
