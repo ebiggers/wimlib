@@ -21,6 +21,10 @@ Version 1.8.2-BETA:
 
 		Optimized memory usage of some data structures.
 
+		Improved LZMS decompression speed.
+
+		The configure script now honors alternate pkg-config settings.
+
 	In addition, *experimental* support has been added for compressing
 	extracted files using System Compression on Windows 10.  This
 	functionality is available through the new '--compact' option to
