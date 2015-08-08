@@ -190,10 +190,10 @@ platform-dependent way:
 
 For both platforms the code for NTFS capture and extraction is complete enough
 that it is possible to apply an image from the "install.wim" contained in recent
-Windows installation media (Vista, Windows 7, or Windows 8) directly to an NTFS
-filesystem, and then boot Windows from it after preparing the Boot Configuration
-Data.  In addition, a Windows installation can be captured (or backed up) into a
-WIM file, and then re-applied later.
+Windows installation media (Vista or later) directly to an NTFS filesystem, and
+then boot Windows from it after preparing the Boot Configuration Data.  In
+addition, a Windows installation can be captured (or backed up) into a WIM file,
+and then re-applied later.
 
                                    WINDOWS PE
 
@@ -207,12 +207,11 @@ and can be used to install Windows from local media or a network drive or
 perform maintenance.  It is the operating system that runs when you boot from
 the Windows installation media.
 
-You can find Windows PE on the installation DVD for Windows Vista, Windows 7, or
-Windows 8, in the file `sources/boot.wim'.  Windows PE can also be found in the
-Windows Automated Installation Kit (WAIK), which is free to download from
-Microsoft, inside the `WinPE.cab' file, which you can extract natively on
-Windows, or on UNIX-like systems if you install either the `cabextract' or
-`p7zip' programs.
+You can find Windows PE on the installation media for Windows (Vista or later)
+as the file `sources/boot.wim'.  Windows PE can also be found in the Windows
+Automated Installation Kit (WAIK), which is free to download from Microsoft,
+inside the `WinPE.cab' file, which you can extract natively on Windows, or on
+UNIX-like systems if you install either the `cabextract' or `p7zip' programs.
 
 In addition, Windows installations and recovery partitions frequently contain a
 WIM containing an image of the Windows Recovery Environment, which is similar to

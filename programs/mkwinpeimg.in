@@ -87,20 +87,23 @@ Usage: $script_name [OPTIONS] IMAGE
   -i, --iso                Make an ISO image instead of a disk image.
   -o, --only-wim           Make neither a disk image nor an ISO image;
                               instead, only make a modified boot.wim file.
-  -W, --windows-dir=DIR    Use DIR as the location of the mounted Windows 7
-                              or Windows 8 DVD.  Default is /mnt/windows,
-                              then /mnt/windows7, then /mnt/windows8.
-  -A, --waik-dir=DIR       Get the boot files and boot.wim from the ISO of the
-                              Windows Automated Installation Kit mounted on DIR
-                              instead of from the Windows 7 or Windows 8 DVD.
-                              This also works if the mounted ISO is for the
-                              WAIK supplement rather than the WAIK itself.
+  -W, --windows-dir=DIR    Use DIR as the location of the mounted Windows
+                              installation ISO image.  If not specified, then
+                              the script tries the following locations:
+                              /mnt/windows, /mnt/windows7, /mnt/windows8,
+                              /mnt/windows10.
+  -A, --waik-dir=DIR       Get the boot files and boot.wim from the ISO image
+                              of the Windows Automated Installation Kit (WAIK)
+                              mounted on DIR instead of from a Windows
+                              installation ISO.  This also works if the mounted
+                              ISO is for the WAIK supplement rather than for the
+                              WAIK itself.
   -s, --start-script=FILE  Add FILE to the root directory of Windows PE image
                               and adjust \Windows\System32\winpeshl.ini to
                               execute FILE when Windows PE starts up.
   -w, --wim=WIM            Use WIM as the boot.wim file.  This defaults to the
-                              appropriate WIM file from the Windows DVD, WAIK,
-                              or WAIK supplement.
+                              appropriate WIM file from the Windows or WAIK
+                              directory.
   -O, --overlay=DIR        Adds all the files in DIR to the Windows PE image.
   -t, --tmp-dir=DIR        Use DIR as the temporary base of the ISO filesystem.
                               Defaults to making one using "mktemp -d".
@@ -227,7 +230,9 @@ process_command_line() {
 
 find_windows_dir() {
 	if [ -z "$windows_dir_specified" ]; then
-		for windows_dir in /mnt/windows /mnt/windows7 /mnt/windows8; do
+		for windows_dir in /mnt/windows /mnt/windows7		\
+				   /mnt/windows8 /mnt/windows10;	\
+		do
 			if [ -d "$windows_dir"/sources ]; then
 				break
 			fi
@@ -236,8 +241,8 @@ find_windows_dir() {
 	if [ ! -d "$windows_dir" ]; then
 		if [ -z "$windows_dir_specified" ]; then
 			cat 1>&2 << EOF
-ERROR: Could not find the directory that the Windows 7 or 8 ISO image is mounted
-on!  Please specify this directory using the --windows-dir option.
+ERROR: Could not find the directory that the Windows (Vista or later) ISO image
+is mounted on!  Please specify this directory using the --windows-dir option.
 EOF
 		else
 			echo 1>&2 "ERROR: Could not find the directory \"$windows_dir\"!"
@@ -246,8 +251,9 @@ EOF
 	fi
 	if [ ! -d "$windows_dir/sources" ]; then
 		cat 1>&2 << EOF
-ERROR: The directory "$windows_dir" exists, but it seems that the Windows 7 or 8
-ISO image is not mounted on it.  Please mount the image to continue.
+ERROR: The directory "$windows_dir" exists, but it seems that a Windows
+(Vista or later) installation ISO image is not mounted on it.  Please mount
+the image to continue.
 EOF
 		exit 1
 	fi
@@ -341,7 +347,7 @@ get_primary_boot_files() {
 	else
 		# Get boot files from the Windows ISO
 
-		stat_busy "Copying primary boot files from mounted Windows DVD ($windows_dir)"
+		stat_busy "Copying primary boot files from mounted Windows ISO ($windows_dir)"
 		if [ $make = iso ]; then
 			cp "$windows_dir"/boot/etfsboot.com "$tmp_dir" || stat_fail
 		fi
@@ -354,11 +360,11 @@ get_primary_boot_files() {
 get_boot_wim() {
 	boot_wim="$1"
 	# Copy the WIM over, or export the 2nd image in the WIM in the case of boot.wim
-	# from the Windows DVD.
+	# from the Windows ISO.
 	remove_setup=
 	if [ -z "$wim" ]; then
 
-		# WIM file unspecified- grab it from the WAIK or the Windows DVD
+		# WIM file unspecified- grab it from the WAIK or the Windows ISO
 		if [ -n "$waik_dir" ]; then
 			# WAIK
 			if [ -f "$waik_dir/WinPE.cab" ]; then
@@ -373,7 +379,7 @@ get_boot_wim() {
 			fi
 			stat_done
 		else
-			# Windows DVD
+			# Windows ISO
 			remove_setup=yes
 			wim="$windows_dir/sources/boot.wim"
 			stat_busy "Exporting image from \"$wim\""

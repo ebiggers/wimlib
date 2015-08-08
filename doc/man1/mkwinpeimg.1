@@ -6,21 +6,20 @@ mkwinpeimg \- Make a customized bootable image of Windows PE
 [\fIOPTIONS\fR] \fIIMAGE\fR
 .SH DESCRIPTION
 \fBmkwinpeimg\fR is able to make a bootable image of Windows PE by taking files
-from a mounted Windows DVD (Windows Vista, Windows 7 or Windows 8) or the
-mounted ISO image for the Windows Automated Installation Kit (WAIK) or the WAIK
-supplement.  The
-\fB--windows-dir\fR and \fB--waik-dir\fR options are used to specify the
-locations of these mounted ISOs.  You only need one or the other.  The files
-that \fBmkwinpeimg\fR will retrieve are \fIboot.wim\fR, \fIbootmgr\fR,
+from a mounted Windows installation ISO image (Vista or later) or the mounted
+ISO image for the Windows Automated Installation Kit (WAIK) or the WAIK
+supplement.  The \fB--windows-dir\fR and \fB--waik-dir\fR options are used to
+specify the locations of these mounted ISOs.  You only need one or the other.
+The files that \fBmkwinpeimg\fR will retrieve are \fIboot.wim\fR, \fIbootmgr\fR,
 \fIboot.sdi\fR, and \fIbcd\fR.  If making an ISO image, the file
 \fIetfsboot.com\fR is also retrieved.  Microsoft owns the rights to these files
 and they are not distributed with wimlib.
 .PP
-\fBmkwinpeimg\fR can currently make two types of bootable images.  The default
-is to make a bootable disk image.  The image is not partitioned and is formatted
-into a FAT filesystem.  \fBsyslinux\fR(1) is required to make this type of
-image, as it is used to chainload \fIbootmgr\fR. Also, \fBmtools\fR(1) is
-required so that the FAT filesystem can be created without root privileges.
+\fBmkwinpeimg\fR can make two types of bootable images.  The default is to make
+a bootable disk image.  The image is not partitioned and is formatted into a FAT
+filesystem.  \fBsyslinux\fR(1) is required to make this type of image, as it is
+used to chainload \fIbootmgr\fR. Also, \fBmtools\fR(1) is required so that the
+FAT filesystem can be created without root privileges.
 .PP
 The other type of bootable image that \fBmkwinpeimg\fR can make is a bootable
 ISO image.  To make this type of image, give the \fB--iso\fR option.
@@ -44,10 +43,6 @@ option.  However, for more extensive modifications, consider modifying the
 .PP
 \fBmkwinpeimg\fR can also make only a modified \fIboot.wim\fR, rather than a
 bootable ISO or disk image, if the \fB--only-wim\fR option is given.
-.PP
-The Windows PE WIMs provided in Windows 7, Windows 8, and the WAIK are not the
-same, but are all similar.  The best one to use is likely the one from the WAIK,
-as that one is the smallest.
 .SH OPTIONS
 .TP 6
 \fB\-i\fR, \fB\-\-iso\fR
@@ -58,12 +53,14 @@ Make neither a disk image nor an ISO image; instead, only make a modified
 \fIboot.wim\fR file.
 .TP
 \fB\-W\fR, \fB\-\-windows\-dir\fR=\fIDIR\fR
-Use DIR as the location of the mounted Windows 7 or Windows 8 DVD.  Default is
-/mnt/windows, then /mnt/windows7, then /mnt/windows8.
+Use DIR as the location of the mounted Windows installation ISO image.  If
+neither \fB\-\-windows\-dir\fR nor \fB\-\-waik\-dir\fR is specified, then
+the script looks for the mounted ISO in the following default locations:
+/mnt/windows, /mnt/windows7, /mnt/windows8, and /mnt/windows10.
 .TP
 \fB\-A\fR, \fB\-\-waik\-dir\fR=\fIDIR\fR
 Get the boot files and boot.wim from the ISO of the Windows Automated
-Installation Kit mounted on DIR instead of from the Windows 7 or Windows 8 DVD.
+Installation Kit mounted on DIR instead of from a Windows installation ISO.
 This also works if the mounted ISO is for the WAIK supplement rather than the
 WAIK itself.
 .TP
@@ -73,7 +70,7 @@ Add FILE to the root directory of Windows PE image and adjust
 .TP
 \fB\-w\fR, \fB\-\-wim\fR=\fIWIM\fR
 Use WIM as the "boot.wim" file.  This defaults to the appropriate WIM file from
-the Windows DVD, WAIK, or WAIK supplement.
+the Windows ISO, WAIK, or WAIK supplement.
 .TP
 \fB\-O\fR, \fB\-\-overlay\fR=\fIDIR\fR
 Adds all the files in DIR to the Windows PE image.
@@ -94,7 +91,7 @@ Display help.
 \fB\-v\fR, \fB\-\-version\fR
 Show version information.
 .SH EXAMPLES
-Create a bootable disk image of Windows PE from the Windows Vista, 7, or 8
+Create a bootable disk image of Windows PE from the Windows (Vista or later)
 installation media mounted on /media/windows:
 .RS
 .PP
