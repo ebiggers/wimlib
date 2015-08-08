@@ -7,12 +7,12 @@
 # versions) and a windeps.wim containing the following images:
 #
 # 	- libxml2-2.9.2	[contents of ftp://xmlsoft.org/libxml2/libxml2-2.9.2.tar.gz]
-# 	- winpthreads-3.3.0 [directory mingw-w64-libraries/winpthreads from http://downloads.sourceforge.net/mingw-w64/mingw-w64/mingw-w64-release/mingw-w64-v3.3.0.tar.bz2]
+# 	- winpthreads-4.0.4 [directory mingw-w64-libraries/winpthreads from http://downloads.sourceforge.net/mingw-w64/mingw-w64/mingw-w64-release/mingw-w64-v4.0.4.tar.bz2]
 # 	- win-iconv-0.0.6 [contents of https://win-iconv.googlecode.com/files/win-iconv-0.0.6.tar.bz2]
 
 ARCHITECTURES		:= i686 x86_64
 LIBXML_VERSION		:= 2-2.9.2
-WINPTHREADS_VERSION	:= -3.3.0
+WINPTHREADS_VERSION	:= -4.0.4
 WINICONV_VERSION	:= -0.0.6
 
 LIBXML_SRCDIR		:= libxml$(LIBXML_VERSION)
