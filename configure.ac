@@ -98,8 +98,6 @@ AC_CHECK_MEMBER([struct stat.st_mtim],
 AX_PTHREAD([], [AC_MSG_ERROR(["cannot find pthreads library"])])
 
 # ------------------------------ libxml2 --------------------------------------
-AC_CHECK_LIB([xml2], [xmlReadMemory], [],
-	     [AC_MSG_ERROR(["cannot find libxml2"])])
 PKG_CHECK_MODULES([LIBXML2], [libxml-2.0])
 PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES libxml-2.0"
 
@@ -130,26 +128,16 @@ AC_ARG_WITH([ntfs-3g],
 AC_MSG_RESULT([$WITH_NTFS_3G])
 
 if test "$WITH_NTFS_3G" = "yes"; then
-	# This effectively checks for NTFS-3g 2011.4.12 or later
-	AC_CHECK_LIB([ntfs-3g], [ntfs_xattr_system_setxattr], [],
-		     [AC_MSG_ERROR([Cannot find libntfs-3g version 2011-4-12
-	or later!  Without libntfs-3g, wimlib cannot include support for
-	capturing or applying a WIM image directly from/to an unmounted NTFS
-	volume while preserving NTFS-specific data such as security descriptors
-	and named data streams.  Either install libntfs-3g, or configure
-	--without-ntfs-3g to disable this feature.])])
-
-	# This checks a definition that was changed in NTFS-3g 2013.1.13
-	AC_CHECK_DECL([NTFS_MNT_RDONLY],
-		      [AC_DEFINE([HAVE_NTFS_MNT_RDONLY], [1],
-				 [Define to 1 if ntfs_mount() takes the flag
-				  NTFS_MNT_RDONLY])],
-		      [],
-		      [#include <ntfs-3g/volume.h>])
-
-	AC_DEFINE([WITH_NTFS_3G], [1], [Define to 1 if using NTFS-3g support])
-	PKG_CHECK_MODULES([LIBNTFS_3G], [libntfs-3g])
+	PKG_CHECK_MODULES([LIBNTFS_3G], [libntfs-3g >= 2011.4.12], [],
+		[AC_MSG_ERROR([Cannot find libntfs-3g version 2011-4-12 or
+		 later!  Without libntfs-3g, wimlib cannot include support for
+		 capturing or applying a WIM image directly from/to an unmounted
+		 NTFS volume while preserving NTFS-specific data such as
+		 security descriptors and named data streams.  Either install
+		 libntfs-3g, or configure --without-ntfs-3g to disable this
+		 feature.])])
 	PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES libntfs-3g"
+	AC_DEFINE([WITH_NTFS_3G], [1], [Define to 1 if using NTFS-3g support])
 fi
 AM_CONDITIONAL([WITH_NTFS_3G], [test "$WITH_NTFS_3G" = "yes"])
 
@@ -165,11 +153,14 @@ AC_ARG_WITH([fuse],
 AC_MSG_RESULT([$WITH_FUSE])
 
 if test "$WITH_FUSE" = "yes"; then
-	AC_CHECK_LIB([fuse], [fuse_main_real], [],
-		     [AC_MSG_ERROR([Cannot find libfuse!
-	Without libfuse, wimlib cannot include support for mounting WIM images.
-	Either install libfuse, or configure --without-fuse to disable this
-	feature.])])
+
+	PKG_CHECK_MODULES([LIBFUSE], [fuse], [],
+		[AC_MSG_ERROR([Cannot find libfuse!
+		Without libfuse, wimlib cannot include support for mounting WIM
+		images.  Either install libfuse, or configure --without-fuse to
+		disable this feature.])])
+	PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES fuse"
+	AC_DEFINE([WITH_FUSE], [1], [Define to 1 if using FUSE support])
 
 	AC_CHECK_LIB([rt], [mq_open], [],
 		     [AC_MSG_ERROR([Cannot find librt (the POSIX.1b Realtime
@@ -184,9 +175,6 @@ if test "$WITH_FUSE" = "yes"; then
 	in the code for mounting WIM images.  Either install this library, or
 	configure --without-fuse to disable support for mounting WIM images.])])
 
-	AC_DEFINE([WITH_FUSE], [1], [Define to 1 if using FUSE support])
-	PKG_CHECK_MODULES([LIBFUSE], [fuse])
-	PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES fuse"
 	PKGCONFIG_PRIVATE_LIBS="$PKGCONFIG_PRIVATE_LIBS -lrt"
 	AC_SUBST([LIBRT_LIBS], [-lrt])
 fi
@@ -220,22 +208,21 @@ if test "$ENABLE_SSSE3_SHA1" = "yes" ; then
 	AC_SUBST([NASM_PLATFORM_FLAGS], [$NASM_PLATFORM_FLAGS])
 	AC_SUBST([NASM_SYMBOL_PREFIX], [$NASM_SYMBOL_PREFIX])
 else
+	AC_MSG_CHECKING([whether to use SHA-1 implementation from system libcrypto])
 	AC_ARG_WITH([libcrypto],
 		    [AS_HELP_STRING([--without-libcrypto],
 				    [build in the SHA-1 algorithm, rather than
 				     use external libcrypto from OpenSSL
 				     (default is autodetect)])],
 		    [WITH_LIBCRYPTO=$withval],
-		    [AC_CHECK_LIB([crypto], [SHA1], [WITH_LIBCRYPTO=yes],
-				  [AC_MSG_WARN([Cannot find libcrypto: using
-						stand-alone SHA-1 code instead of OpenSSL])
-					WITH_LIBCRYPTO=no])])
-	AC_MSG_CHECKING([whether to use SHA-1 implementation from system libcrypto])
+		    [WITH_LIBCRYPTO=auto])
 	AC_MSG_RESULT([$WITH_LIBCRYPTO])
-	if test "$WITH_LIBCRYPTO" = "yes"; then
-		AC_DEFINE([WITH_LIBCRYPTO], [1], [Define to 1 if using libcrypto SHA-1])
-		PKG_CHECK_MODULES([LIBCRYPTO], [libcrypto])
-		PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES libcrypto"
+	if test "$WITH_LIBCRYPTO" != "no"; then
+		PKG_CHECK_MODULES([LIBCRYPTO], [libcrypto], [
+			PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES libcrypto"
+			AC_DEFINE([WITH_LIBCRYPTO], [1],
+				  [Define to 1 if using libcrypto SHA-1])
+		], [AC_MSG_WARN([Cannot find libcrypto: using stand-alone SHA-1 code instead])])
 	fi
 fi
 AM_CONDITIONAL([ENABLE_SSSE3_SHA1], [test "$ENABLE_SSSE3_SHA1" = "yes"])
