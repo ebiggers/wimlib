@@ -48,6 +48,15 @@
 #include "wimlib/reparse.h"
 #include "wimlib/security.h"
 
+/* NTFS-3g 2013 renamed MS_RDONLY to NTFS_MNT_RDONLY.  We can't check for the
+ * existence of NTFS_MNT_RDONLY at compilation time because it's an enum.  We
+ * also can't check for MS_RDONLY being missing because it's also a system
+ * constant.  So check if the NTFS-3g specific MS_IGNORE_HIBERFILE is defined;
+ * if yes, then we need to use the old MS_RDONLY.  */
+#ifdef MS_IGNORE_HIBERFILE
+#  define NTFS_MNT_RDONLY MS_RDONLY
+#endif
+
 /* A reference-counted NTFS volume than is automatically unmounted when the
  * reference count reaches 0  */
 struct ntfs_volume_wrapper {
@@ -800,23 +809,7 @@ ntfs_3g_build_dentry_tree(struct wim_dentry **root_ret,
 	if (!volume)
 		return WIMLIB_ERR_NOMEM;
 
-	/* NTFS-3g 2013 renamed the "read-only" mount flag from MS_RDONLY to
-	 * NTFS_MNT_RDONLY.
-	 *
-	 * Unfortunately we can't check for defined(NTFS_MNT_RDONLY) because
-	 * NTFS_MNT_RDONLY is an enumerated constant.  Also, the NTFS-3g headers
-	 * don't seem to contain any explicit version information.  So we have
-	 * to rely on a test done at configure time to detect whether
-	 * NTFS_MNT_RDONLY should be used.  */
-#ifdef HAVE_NTFS_MNT_RDONLY
-	/* NTFS-3g 2013 */
 	vol = ntfs_mount(device, NTFS_MNT_RDONLY);
-#elif defined(MS_RDONLY)
-	/* NTFS-3g 2011, 2012 */
-	vol = ntfs_mount(device, MS_RDONLY);
-#else
-  #error "Can't find NTFS_MNT_RDONLY or MS_RDONLY flags"
-#endif
 	if (!vol) {
 		ERROR_WITH_ERRNO("Failed to mount NTFS volume \"%s\" read-only",
 				 device);
