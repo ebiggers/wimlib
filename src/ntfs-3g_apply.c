@@ -30,6 +30,7 @@
 #  include "config.h"
 #endif
 
+#include <errno.h>
 #include <locale.h>
 #include <string.h>
 
@@ -415,15 +416,24 @@ ntfs_3g_set_metadata(ntfs_inode *ni, const struct wim_inode *inode,
 		desc_size = sd->sizes[inode->i_security_id];
 
 		ret = ntfs_3g_set_security_descriptor(ni, desc, desc_size);
-		if (ret) {
-			if (wimlib_print_errors) {
-				ERROR_WITH_ERRNO("Failed to set security descriptor "
-						 "on \"%s\" in NTFS volume",
-						 dentry_full_path(one_dentry));
+
+		if (unlikely(ret)) {
+			int err = errno;
+			ERROR_WITH_ERRNO("Failed to set security descriptor on "
+					 "\"%s\" in NTFS volume",
+					 dentry_full_path(one_dentry));
+			if (err == EINVAL && wimlib_print_errors) {
 				fprintf(wimlib_error_file,
 					"The security descriptor is: ");
 				print_byte_field(desc, desc_size, wimlib_error_file);
 				fprintf(wimlib_error_file, "\n");
+				fprintf(wimlib_error_file,
+					"\nThis error occurred because libntfs-3g thinks "
+					"the security descriptor is invalid.  If you "
+					"are extracting a Windows 10 image, this may be "
+					"caused by a known bug in libntfs-3g.  See: "
+					"http://wimlib.net/forums/viewtopic.php?f=1&t=4 "
+					"for more information.\n\n");
 			}
 			return ret;
 		}
