@@ -265,6 +265,44 @@ set_attr_sort_key(ntfs_inode *ni, struct ntfs_location *loc)
 	return 0;
 }
 
+/*
+ * Add a new stream to the specified inode, with duplicate checking.
+ *
+ * This works around a problem where NTFS-3g can list multiple unnamed data
+ * streams for a single file.  In this case we can only keep one.  We'll prefer
+ * one that is nonempty.
+ */
+static int
+add_stream(struct wim_inode *inode, const char *path, int stream_type,
+	   const utf16lechar *stream_name, struct blob_descriptor **blob_p,
+	   struct list_head *unhashed_blobs)
+{
+	struct blob_descriptor *blob = *blob_p;
+	struct wim_inode_stream *strm;
+
+	strm = inode_get_stream(inode, stream_type, stream_name);
+	if (unlikely(strm)) {
+		/* Stream already existed.  */
+		if (!blob)
+			return 0;
+		if (stream_blob_resolved(strm)) {
+			WARNING("\"%s\" has multiple nonempty streams "
+				"with the same type and name!  Only the first "
+				"will be saved.", path);
+			return 0;
+		}
+		inode_replace_stream_blob(inode, strm, blob, NULL);
+	} else {
+		strm = inode_add_stream(inode, stream_type, stream_name, blob);
+		if (unlikely(!strm))
+			return WIMLIB_ERR_NOMEM;
+	}
+	prepare_unhashed_blob(blob, inode, strm->stream_id, unhashed_blobs);
+	*blob_p = NULL;
+	return 0;
+
+}
+
 /* Save information about an NTFS attribute (stream) to a WIM inode.  */
 static int
 scan_ntfs_attr(struct wim_inode *inode,
@@ -279,7 +317,6 @@ scan_ntfs_attr(struct wim_inode *inode,
 	const u32 name_nchars = record->name_length;
 	struct blob_descriptor *blob = NULL;
 	utf16lechar *stream_name = NULL;
-	struct wim_inode_stream *strm;
 	int ret;
 
 	if (unlikely(name_nchars)) {
@@ -343,17 +380,9 @@ scan_ntfs_attr(struct wim_inode *inode,
 			goto out_cleanup;
 	}
 
-	strm = inode_add_stream(inode,
-				attr_type_to_wimlib_stream_type(type),
-				stream_name ? stream_name : NO_STREAM_NAME,
-				blob);
-	if (unlikely(!strm)) {
-		ret = WIMLIB_ERR_NOMEM;
-		goto out_cleanup;
-	}
-	prepare_unhashed_blob(blob, inode, strm->stream_id, unhashed_blobs);
-	blob = NULL;
-	ret = 0;
+	ret = add_stream(inode, path, attr_type_to_wimlib_stream_type(type),
+			 stream_name ? stream_name : NO_STREAM_NAME,
+			 &blob, unhashed_blobs);
 out_cleanup:
 	free_blob_descriptor(blob);
 	FREE(stream_name);
