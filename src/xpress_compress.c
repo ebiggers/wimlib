@@ -1135,8 +1135,8 @@ oom0:
 }
 
 static size_t
-xpress_compress(const void *in, size_t in_nbytes,
-		void *out, size_t out_nbytes_avail, void *_c)
+xpress_compress(const void *restrict in, size_t in_nbytes,
+		void *restrict out, size_t out_nbytes_avail, void *restrict _c)
 {
 	struct xpress_compressor *c = _c;
 

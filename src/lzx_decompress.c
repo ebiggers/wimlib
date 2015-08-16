@@ -521,9 +521,9 @@ lzx_decompress_block(int block_type, u8 * const out_begin,
 }
 
 static int
-lzx_decompress(const void *compressed_data, size_t compressed_size,
-	       void *uncompressed_data, size_t uncompressed_size,
-	       void *_dec)
+lzx_decompress(const void *restrict compressed_data, size_t compressed_size,
+	       void *restrict uncompressed_data, size_t uncompressed_size,
+	       void *restrict _dec)
 {
 	struct lzx_decompressor *dec = _dec;
 	struct input_bitstream istream;

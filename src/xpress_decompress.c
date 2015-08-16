@@ -76,8 +76,9 @@
 #define XPRESS_TABLEBITS 12
 
 static int
-xpress_decompress(const void *compressed_data, size_t compressed_size,
-		  void *uncompressed_data, size_t uncompressed_size, void *_ctx)
+xpress_decompress(const void *restrict compressed_data, size_t compressed_size,
+		  void *restrict uncompressed_data, size_t uncompressed_size,
+		  void *restrict _ctx)
 {
 	const u8 * const in_begin = compressed_data;
 	u8 * const out_begin = uncompressed_data;
