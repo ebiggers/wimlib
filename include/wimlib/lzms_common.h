@@ -76,11 +76,34 @@ lzms_update_probability_entry(struct lzms_probability_entry *entry, int bit)
 {
 	BUILD_BUG_ON(LZMS_PROBABILITY_DENOMINATOR != sizeof(entry->recent_bits) * 8);
 
-	s32 delta_zero_bits = (s32)(entry->recent_bits >>
-				    (LZMS_PROBABILITY_DENOMINATOR - 1)) - bit;
+#ifdef __x86_64__
+	if (__builtin_constant_p(bit)) {
+		/* Optimized implementation for x86_64 using carry flag  */
+		if (bit) {
+		       __asm__("shlq %[recent_bits]                          \n"
+			       "adcl $0xffffffff, %[num_recent_zero_bits]    \n"
+			       "orq $0x1, %[recent_bits]                     \n"
+			       : [recent_bits] "+r" (entry->recent_bits),
+				 [num_recent_zero_bits] "+mr" (entry->num_recent_zero_bits)
+			       :
+			       : "cc");
+		} else {
+		       __asm__("shlq %[recent_bits]                          \n"
+			       "adcl $0x0, %[num_recent_zero_bits]           \n"
+			       : [recent_bits] "+m" (entry->recent_bits),
+				 [num_recent_zero_bits] "+mr" (entry->num_recent_zero_bits)
+			       :
+			       : "cc");
+		}
+	} else
+#endif
+	{
+		s32 delta_zero_bits = (s32)(entry->recent_bits >>
+					    (LZMS_PROBABILITY_DENOMINATOR - 1)) - bit;
 
-	entry->num_recent_zero_bits += delta_zero_bits;
-	entry->recent_bits = (entry->recent_bits << 1) | bit;
+		entry->num_recent_zero_bits += delta_zero_bits;
+		entry->recent_bits = (entry->recent_bits << 1) | bit;
+	}
 }
 
 /* Given a probability entry, return the chance out of
@@ -91,10 +114,19 @@ lzms_get_probability(const struct lzms_probability_entry *prob_entry)
 	u32 prob = prob_entry->num_recent_zero_bits;
 
 	/* 0% and 100% probabilities aren't allowed.  */
-	if (prob == 0)
-		prob++;
-	else if (prob == LZMS_PROBABILITY_DENOMINATOR)
-		prob--;
+
+	/*
+	 *	if (prob == 0)
+	 *		prob++;
+	 */
+	prob += (prob - 1) >> 31;
+
+	/*
+	 *	if (prob == LZMS_PROBABILITY_DENOMINATOR)
+	 *		prob--;
+	 */
+	prob -= (prob >> LZMS_PROBABILITY_BITS);
+
 	return prob;
 }
 
