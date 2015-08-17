@@ -444,57 +444,64 @@ translate_if_needed(u8 *data, u8 *p, s32 *last_x86_pos,
 
 	max_trans_offset = LZMS_X86_MAX_TRANSLATION_OFFSET;
 
-	if ((*p & 0xFE) == 0xE8) {
-		if (*p & 0x01) {
-			/* 0xE9: Jump relative  */
+	/*
+	 * p[0] has one of the following values:
+	 *	0xE8 0xE9 0x48 0x4C 0xF0 0xFF
+	 */
+
+	if ((p[0] & 0xFE) == 0xE8) {
+		if (p[0] & 0x01) {
+			/* 0xE9: Jump relative.  Theoretically this would be
+			 * useful to translate, but in fact it's explicitly
+			 * excluded.  Most likely it creates too many false
+			 * positives for the detection algorithm.  */
 			p += 4;
 		} else {
-			/* 0xE8: Call relative.  Note: 'max_trans_offset' must
-			 * be halved for this instruction.  This means that we
-			 * must be more confident that we are in a region of x86
-			 * machine code before we will do a translation for this
-			 * particular instruction.  */
+			/* 0xE8: Call relative.  This is a common case, so it
+			 * uses a reduced max_trans_offset.  In other words, we
+			 * have to be more confident that the data actually is
+			 * x86 machine code before we'll do the translation.  */
 			opcode_nbytes = 1;
-			max_trans_offset /= 2;
+			max_trans_offset >>= 1;
 			goto have_opcode;
 		}
-	} else if ((*p & 0xFB) == 0x48) {
-		if (*p & 0x04) {
-			/* 0x4C */
-			if (*(p + 1) == 0x8D) {
-				if ((*(p + 2) & 0x7) == 0x5) {
-					/* Load effective address relative (x86_64)  */
-					opcode_nbytes = 3;
-					goto have_opcode;
-				}
-			}
-		} else {
-			/* 0x48 */
-			if (*(p + 1) == 0x8B) {
-				if (*(p + 2) == 0x5 || *(p + 2) == 0xD) {
-					/* Load relative (x86_64)  */
-					opcode_nbytes = 3;
-					goto have_opcode;
-				}
-			} else if (*(p + 1) == 0x8D) {
-				if ((*(p + 2) & 0x7) == 0x5) {
-					/* Load effective address relative (x86_64)  */
-					opcode_nbytes = 3;
-					goto have_opcode;
-				}
+	} else if ((p[0] & 0xFB) == 0x48) {
+
+		/* 0x48 or 0x4C.  In 64-bit code this is a REX prefix byte with
+		 * W=1, R=[01], X=0, and B=0, and it will be followed by the
+		 * actual opcode, then additional bytes depending on the opcode.
+		 * We are most interested in several common instructions that
+		 * access data relative to the instruction pointer.  These use a
+		 * 1-byte opcode, followed by a ModR/M byte, followed by a
+		 * 4-byte displacement.  */
+
+		/* Test: does the ModR/M byte indicate RIP-relative addressing?
+		 * Note: there seems to be a mistake in the format here; the
+		 * mask really should be 0xC7 instead of 0x07 so that both the
+		 * MOD and R/M fields of ModR/M are tested, not just R/M.  */
+		if ((p[2] & 0x07) == 0x05) {
+			/* Check for the LEA (load effective address) or MOV
+			 * (move) opcodes.  For MOV there are additional
+			 * restrictions, although it seems they are only helpful
+			 * due to the overly lax ModR/M test.  */
+			if (p[1] == 0x8D ||
+			    (p[1] == 0x8B && !(p[0] & 0x04) && !(p[2] & 0xF0)))
+			{
+				opcode_nbytes = 3;
+				goto have_opcode;
 			}
 		}
 	} else {
-		if (*p & 0x0F) {
-			/* 0xFF */
-			if (*(p + 1) == 0x15) {
-				/* Call indirect  */
+		if (p[0] & 0x0F) {
+			/* 0xFF (instruction group)  */
+			if (p[1] == 0x15) {
+				/* Call indirect relative  */
 				opcode_nbytes = 2;
 				goto have_opcode;
 			}
 		} else {
-			/* 0xF0 */
-			if (*(p + 1) == 0x83 && *(p + 2) == 0x05) {
+			/* 0xF0 (lock prefix)  */
+			if (p[1] == 0x83 && p[2] == 0x05) {
 				/* Lock add relative  */
 				opcode_nbytes = 3;
 				goto have_opcode;
