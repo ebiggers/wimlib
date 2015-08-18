@@ -62,17 +62,21 @@ out:
 static bool
 win32_modify_capture_privileges(bool enable)
 {
-	return win32_modify_privilege(SE_BACKUP_NAME, enable)
-	    && win32_modify_privilege(SE_SECURITY_NAME, enable);
+	bool ok = true;
+	ok &= win32_modify_privilege(SE_BACKUP_NAME, enable);
+	ok &= win32_modify_privilege(SE_SECURITY_NAME, enable);
+	return ok;
 }
 
 static bool
 win32_modify_apply_privileges(bool enable)
 {
-	return win32_modify_privilege(SE_RESTORE_NAME, enable)
-	    && win32_modify_privilege(SE_SECURITY_NAME, enable)
-	    && win32_modify_privilege(SE_TAKE_OWNERSHIP_NAME, enable)
-	    && win32_modify_privilege(SE_MANAGE_VOLUME_NAME, enable);
+	bool ok = true;
+	ok &= win32_modify_privilege(SE_RESTORE_NAME, enable);
+	ok &= win32_modify_privilege(SE_SECURITY_NAME, enable);
+	ok &= win32_modify_privilege(SE_TAKE_OWNERSHIP_NAME, enable);
+	ok &= win32_modify_privilege(SE_MANAGE_VOLUME_NAME, enable);
+	return ok;
 }
 
 static void
