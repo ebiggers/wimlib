@@ -389,11 +389,12 @@ created when \fBwimlib-imagex capture\fR is run with the \fB--wimboot\fR
 option.
 .TP
 \fB--compact\fR=\fIFORMAT\fR
-EXPERIMENTAL and only works on Windows 10 or later: compress the extracted files
-using the System Compression feature, when possible.  System Compression is only
-supported by Windows 10 or later.  Several different compression formats may be
-used with System Compression, and one must be specified as \fIFORMAT\fR.  The
-choices are: xpress4k, xpress8k, xpress16k, and lzx.
+EXPERIMENTAL, Windows-only: compress the extracted files using System
+Compression, when possible.  This only works on either Windows 10 or later, or
+on an older Windows to which Microsoft's wofadk.sys driver has been added.
+Several different compression formats may be used with System Compression, and
+one must be specified as \fIFORMAT\fR.  The choices are: xpress4k, xpress8k,
+xpress16k, and lzx.
 .IP ""
 Exclusions are handled in the same way as with the \fB--wimboot\fR option.
 That is: if it exists, the [PrepopulateList] section of the file
