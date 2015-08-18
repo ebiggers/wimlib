@@ -71,7 +71,8 @@ win32_modify_apply_privileges(bool enable)
 {
 	return win32_modify_privilege(SE_RESTORE_NAME, enable)
 	    && win32_modify_privilege(SE_SECURITY_NAME, enable)
-	    && win32_modify_privilege(SE_TAKE_OWNERSHIP_NAME, enable);
+	    && win32_modify_privilege(SE_TAKE_OWNERSHIP_NAME, enable)
+	    && win32_modify_privilege(SE_MANAGE_VOLUME_NAME, enable);
 }
 
 static void
