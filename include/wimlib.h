@@ -11,7 +11,7 @@
 /**
  * @mainpage
  *
- * This is the documentation for the library interface of wimlib 1.8.1, a C
+ * This is the documentation for the library interface of wimlib 1.8.2, a C
  * library for creating, modifying, extracting, and mounting files in the
  * Windows Imaging Format.  This documentation is intended for developers only.
  * If you have installed wimlib and want to know how to use the @b wimlib-imagex
@@ -379,7 +379,7 @@
 #define WIMLIB_MINOR_VERSION 8
 
 /** Patch version of the library (for example, the 5 in 1.2.5). */
-#define WIMLIB_PATCH_VERSION 1
+#define WIMLIB_PATCH_VERSION 2
 
 #ifdef __cplusplus
 extern "C" {
