@@ -2,10 +2,13 @@ Version 1.8.2-BETA:
 	This release primarily contains various minor bug fixes and
 	improvements, including:
 
-		Reduced the stack space used by directory tree scans.
+		Improved handling of deep directory structures.
 
 		Fixed a bug where on 32-bit systems, the library could enter an
 		infinite loop if a WIM file was malformed in a specific way.
+
+		Added a workaround for a case where libntfs-3g may report
+		duplicate streams in an NTFS file.
 
 		Windows symbolic links and junctions in mounted WIM images are
 		now automatically rewritten to be valid in the mounted location.
@@ -13,19 +16,19 @@ Version 1.8.2-BETA:
 		Reparse point fixes: correctly handle the "ReparseReserved"
 		field, and correctly handle "empty" (data-less) reparse points.
 
+		On Windows, wimlib now acquires SeManageVolumePrivilege, which
+		is needed to create externally backed files using the
+		"wofadk.sys" driver.
+
 		Improved validation of filenames.
-
-		Fixed the test scripts to work in a Turkish locale.
-
-		Fixed handling of EINTR during data I/O.
-
-		Optimized memory usage of some data structures.
 
 		Improved LZMS decompression speed.
 
 		The configure script now honors alternate pkg-config settings.
 
-	In addition, *experimental* support has been added for compressing
+		Links have been updated to point to the new website.
+
+	In addition, experimental support has been added for compressing
 	extracted files using System Compression on Windows 10.  This
 	functionality is available through the new '--compact' option to
 	'wimapply' and 'wimextract' as well as new library flags.
