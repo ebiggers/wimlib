@@ -47,7 +47,9 @@ read_xcr(u32 index)
 {
 	u32 edx, eax;
 
-	__asm__ ("xgetbv" : "=d" (edx), "=a" (eax) : "c" (index));
+	/* Execute the "xgetbv" instruction.  Old versions of binutils do not
+	 * recognize this instruction, so list the raw bytes instead.  */
+	__asm__ (".byte 0x0f, 0x01, 0xd0" : "=d" (edx), "=a" (eax) : "c" (index));
 
 	return ((u64)edx << 32) | eax;
 }
