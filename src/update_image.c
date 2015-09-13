@@ -689,7 +689,7 @@ attach_branch(struct wim_dentry *branch, const tchar *target_tstr,
 	if (ret)
 		goto out_free_branch;
 
-	BUILD_BUG_ON(WIM_PATH_SEPARATOR != OS_PREFERRED_PATH_SEPARATOR);
+	STATIC_ASSERT(WIM_PATH_SEPARATOR == OS_PREFERRED_PATH_SEPARATOR);
 	ret = dentry_set_name(branch, path_basename(target_tstr));
 	if (ret)
 		goto out_free_target;

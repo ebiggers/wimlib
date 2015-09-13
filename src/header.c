@@ -76,7 +76,7 @@ read_wim_header(WIMStruct *wim, struct wim_header *hdr)
 		filename = pipe_str;
 	}
 
-	BUILD_BUG_ON(sizeof(struct wim_header_disk) != WIM_HEADER_DISK_SIZE);
+	STATIC_ASSERT(sizeof(struct wim_header_disk) == WIM_HEADER_DISK_SIZE);
 
 	ret = full_read(in_fd, &disk_hdr, sizeof(disk_hdr));
 	if (ret)

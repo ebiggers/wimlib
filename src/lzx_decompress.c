@@ -498,7 +498,7 @@ lzx_decompress_block(int block_type, u8 * const out_begin,
 			match_offset -= LZX_OFFSET_ADJUSTMENT;
 
 			/* Update the match offset LRU queue.  */
-			BUILD_BUG_ON(LZX_NUM_RECENT_OFFSETS != 3);
+			STATIC_ASSERT(LZX_NUM_RECENT_OFFSETS == 3);
 			queue->R[2] = queue->R[1];
 			queue->R[1] = queue->R[0];
 			queue->R[0] = match_offset;

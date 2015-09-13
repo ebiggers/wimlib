@@ -1394,7 +1394,7 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 	u64 calculated_size;
 	int ret;
 
-	BUILD_BUG_ON(sizeof(struct wim_dentry_on_disk) != WIM_DENTRY_DISK_SIZE);
+	STATIC_ASSERT(sizeof(struct wim_dentry_on_disk) == WIM_DENTRY_DISK_SIZE);
 
 	/* Before reading the whole dentry, we need to read just the length.
 	 * This is because a dentry of length 8 (that is, just the length field)

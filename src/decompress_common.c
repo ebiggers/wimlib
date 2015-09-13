@@ -281,7 +281,7 @@ make_huffman_decode_table(u16 decode_table[const],
 			aliased_word_t *p;
 			unsigned n;
 
-			BUILD_BUG_ON(WORDSIZE != 4 && WORDSIZE != 8);
+			STATIC_ASSERT(WORDSIZE == 4 || WORDSIZE == 8);
 
 			v = MAKE_DIRECT_ENTRY(sorted_syms[sym_idx], codeword_len);
 			v |= v << 16;

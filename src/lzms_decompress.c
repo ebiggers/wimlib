@@ -796,7 +796,7 @@ lzms_decompress(const void * const restrict in, const size_t in_nbytes,
 				if (pending_lz_offset != 0 &&
 				    out_next != lz_offset_still_pending)
 				{
-					BUILD_BUG_ON(LZMS_NUM_LZ_REPS != 3);
+					STATIC_ASSERT(LZMS_NUM_LZ_REPS == 3);
 					recent_lz_offsets[3] = recent_lz_offsets[2];
 					recent_lz_offsets[2] = recent_lz_offsets[1];
 					recent_lz_offsets[1] = recent_lz_offsets[0];
@@ -804,7 +804,7 @@ lzms_decompress(const void * const restrict in, const size_t in_nbytes,
 					pending_lz_offset = 0;
 				}
 
-				BUILD_BUG_ON(LZMS_NUM_LZ_REPS != 3);
+				STATIC_ASSERT(LZMS_NUM_LZ_REPS == 3);
 				if (!lzms_decode_bit(&rd, &lz_rep_states[0],
 						     LZMS_NUM_LZ_REP_PROBS,
 						     d->probs.lz_rep[0]))
@@ -827,7 +827,7 @@ lzms_decompress(const void * const restrict in, const size_t in_nbytes,
 			}
 
 			if (pending_lz_offset != 0) {
-				BUILD_BUG_ON(LZMS_NUM_LZ_REPS != 3);
+				STATIC_ASSERT(LZMS_NUM_LZ_REPS == 3);
 				recent_lz_offsets[3] = recent_lz_offsets[2];
 				recent_lz_offsets[2] = recent_lz_offsets[1];
 				recent_lz_offsets[1] = recent_lz_offsets[0];
@@ -872,7 +872,7 @@ lzms_decompress(const void * const restrict in, const size_t in_nbytes,
 				if (pending_delta_pair != 0 &&
 				    out_next != delta_pair_still_pending)
 				{
-					BUILD_BUG_ON(LZMS_NUM_DELTA_REPS != 3);
+					STATIC_ASSERT(LZMS_NUM_DELTA_REPS == 3);
 					recent_delta_pairs[3] = recent_delta_pairs[2];
 					recent_delta_pairs[2] = recent_delta_pairs[1];
 					recent_delta_pairs[1] = recent_delta_pairs[0];
@@ -880,7 +880,7 @@ lzms_decompress(const void * const restrict in, const size_t in_nbytes,
 					pending_delta_pair = 0;
 				}
 
-				BUILD_BUG_ON(LZMS_NUM_DELTA_REPS != 3);
+				STATIC_ASSERT(LZMS_NUM_DELTA_REPS == 3);
 				if (!lzms_decode_bit(&rd, &delta_rep_states[0],
 						     LZMS_NUM_DELTA_REP_PROBS,
 						     d->probs.delta_rep[0]))
@@ -905,7 +905,7 @@ lzms_decompress(const void * const restrict in, const size_t in_nbytes,
 			}
 
 			if (pending_delta_pair != 0) {
-				BUILD_BUG_ON(LZMS_NUM_DELTA_REPS != 3);
+				STATIC_ASSERT(LZMS_NUM_DELTA_REPS == 3);
 				recent_delta_pairs[3] = recent_delta_pairs[2];
 				recent_delta_pairs[2] = recent_delta_pairs[1];
 				recent_delta_pairs[1] = recent_delta_pairs[0];

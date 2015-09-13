@@ -93,8 +93,11 @@
 #  define _force_attr
 #endif
 
-#ifndef BUILD_BUG_ON
-#  define BUILD_BUG_ON(expr)	((void)sizeof(char[1 - 2*!!(expr)]))
+/* STATIC_ASSERT() - verify the truth of an expression at compilation time.  */
+#if __STDC_VERSION__ >= 201112L
+#  define STATIC_ASSERT(expr)	_Static_assert((expr), "")
+#else
+#  define STATIC_ASSERT(expr)	((void)sizeof(char[1 - 2 * !(expr)]))
 #endif
 
 #endif /* _WIMLIB_COMPILER_H */

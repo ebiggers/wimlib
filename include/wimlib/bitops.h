@@ -44,7 +44,7 @@ fls64(u64 v)
 static inline unsigned
 flsw(machine_word_t v)
 {
-	BUILD_BUG_ON(WORDSIZE != 4 && WORDSIZE != 8);
+	STATIC_ASSERT(WORDSIZE == 4 || WORDSIZE == 8);
 	if (WORDSIZE == 4)
 		return fls32(v);
 	else
@@ -82,7 +82,7 @@ ffs64(u64 v)
 static inline unsigned
 ffsw(machine_word_t v)
 {
-	BUILD_BUG_ON(WORDSIZE != 4 && WORDSIZE != 8);
+	STATIC_ASSERT(WORDSIZE == 4 || WORDSIZE == 8);
 	if (WORDSIZE == 4)
 		return ffs32(v);
 	else

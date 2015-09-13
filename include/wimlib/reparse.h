@@ -52,10 +52,10 @@ struct reparse_buffer_disk {
 static inline void
 check_reparse_buffer_disk(void)
 {
-	BUILD_BUG_ON(offsetof(struct reparse_buffer_disk, rpdata) != 8);
-	BUILD_BUG_ON(offsetof(struct reparse_buffer_disk, link.junction.data) != 16);
-	BUILD_BUG_ON(offsetof(struct reparse_buffer_disk, link.symlink.data) != 20);
-	BUILD_BUG_ON(sizeof(struct reparse_buffer_disk) != REPARSE_POINT_MAX_SIZE);
+	STATIC_ASSERT(offsetof(struct reparse_buffer_disk, rpdata) == 8);
+	STATIC_ASSERT(offsetof(struct reparse_buffer_disk, link.junction.data) == 16);
+	STATIC_ASSERT(offsetof(struct reparse_buffer_disk, link.symlink.data) == 20);
+	STATIC_ASSERT(sizeof(struct reparse_buffer_disk) == REPARSE_POINT_MAX_SIZE);
 }
 
 /* Wrapper around a symbolic link or junction reparse point

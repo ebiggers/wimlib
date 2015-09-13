@@ -294,9 +294,9 @@ struct WimOverlay_dat_entry_2 {
 static inline void
 wof_check_structs(void)
 {
-	BUILD_BUG_ON(sizeof(struct WimOverlay_dat_header) != 24);
-	BUILD_BUG_ON(sizeof(struct WimOverlay_dat_entry_1) != 40);
-	BUILD_BUG_ON(sizeof(struct WimOverlay_dat_entry_2) != 104);
+	STATIC_ASSERT(sizeof(struct WimOverlay_dat_header) == 24);
+	STATIC_ASSERT(sizeof(struct WimOverlay_dat_entry_1) == 40);
+	STATIC_ASSERT(sizeof(struct WimOverlay_dat_entry_2) == 104);
 }
 
 /*****************************************************************************

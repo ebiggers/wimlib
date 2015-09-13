@@ -135,7 +135,7 @@ mangle_pat(tchar *pat, const tchar *path, unsigned long line_no)
 	 * Note: we expect that this function produces patterns that can be used
 	 * for both filesystem paths and WIM paths, so the desired path
 	 * separators must be the same.  */
-	BUILD_BUG_ON(OS_PREFERRED_PATH_SEPARATOR != WIM_PATH_SEPARATOR);
+	STATIC_ASSERT(OS_PREFERRED_PATH_SEPARATOR == WIM_PATH_SEPARATOR);
 	do_canonicalize_path(pat, pat);
 
 	/* Relative patterns can only match file names, so they must be

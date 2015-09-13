@@ -173,7 +173,7 @@ struct lzms_item {
 static inline void
 check_that_powers_fit_in_bitfield(void)
 {
-	BUILD_BUG_ON(LZMS_NUM_DELTA_POWER_SYMS > (1 << (31 - DELTA_SOURCE_POWER_SHIFT)));
+	STATIC_ASSERT(LZMS_NUM_DELTA_POWER_SYMS <= (1 << (31 - DELTA_SOURCE_POWER_SHIFT)));
 }
 
 /* A stripped-down version of the adaptive state in LZMS which excludes the
@@ -975,7 +975,7 @@ static inline void
 check_cost_shift(void)
 {
 	/* lzms_bit_costs is hard-coded to the current COST_SHIFT.  */
-	BUILD_BUG_ON(COST_SHIFT != 6);
+	STATIC_ASSERT(COST_SHIFT == 6);
 }
 
 #if 0
@@ -1180,7 +1180,7 @@ static void
 lzms_init_delta_matchfinder(struct lzms_compressor *c)
 {
 	/* Set all entries to use an invalid power, which will never match.  */
-	BUILD_BUG_ON(NUM_POWERS_TO_CONSIDER >= (1 << (32 - DELTA_SOURCE_POWER_SHIFT)));
+	STATIC_ASSERT(NUM_POWERS_TO_CONSIDER < (1 << (32 - DELTA_SOURCE_POWER_SHIFT)));
 	memset(c->delta_hash_table, 0xFF, sizeof(c->delta_hash_table));
 
 	/* Initialize the next hash code for each power.  We can just use zeroes
@@ -1203,7 +1203,7 @@ lzms_delta_hash(const u8 *p, const u32 pos, u32 span)
 	 * include in the hash code computation the span and the low-order bits
 	 * of the current position.  */
 
-	BUILD_BUG_ON(NBYTES_HASHED_FOR_DELTA != 3);
+	STATIC_ASSERT(NBYTES_HASHED_FOR_DELTA == 3);
 	u8 d0 = *(p + 0) - *(p + 0 - span);
 	u8 d1 = *(p + 1) - *(p + 1 - span);
 	u8 d2 = *(p + 2) - *(p + 2 - span);
@@ -1712,7 +1712,7 @@ begin:
 			const u32 pos = in_next - c->in_buffer;
 
 			/* Consider each possible power (log2 of span)  */
-			BUILD_BUG_ON(NUM_POWERS_TO_CONSIDER > LZMS_NUM_DELTA_POWER_SYMS);
+			STATIC_ASSERT(NUM_POWERS_TO_CONSIDER <= LZMS_NUM_DELTA_POWER_SYMS);
 			for (u32 power = 0; power < NUM_POWERS_TO_CONSIDER; power++) {
 
 				const u32 span = (u32)1 << power;
@@ -1741,7 +1741,7 @@ begin:
 
 				/* Check the first 3 bytes before entering the
 				 * extension loop.  */
-				BUILD_BUG_ON(NBYTES_HASHED_FOR_DELTA != 3);
+				STATIC_ASSERT(NBYTES_HASHED_FOR_DELTA == 3);
 				if (((u8)(*(in_next + 0) - *(in_next + 0 - span)) !=
 				     (u8)(*(matchptr + 0) - *(matchptr + 0 - span))) ||
 				    ((u8)(*(in_next + 1) - *(in_next + 1 - span)) !=

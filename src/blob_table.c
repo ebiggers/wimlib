@@ -110,7 +110,7 @@ free_blob_table(struct blob_table *table)
 struct blob_descriptor *
 new_blob_descriptor(void)
 {
-	BUILD_BUG_ON(BLOB_NONEXISTENT != 0);
+	STATIC_ASSERT(BLOB_NONEXISTENT == 0);
 	return CALLOC(1, sizeof(struct blob_descriptor));
 }
 
@@ -135,8 +135,8 @@ clone_blob_descriptor(const struct blob_descriptor *old)
 #endif
 #ifdef WITH_FUSE
 	case BLOB_IN_STAGING_FILE:
-		BUILD_BUG_ON((void*)&old->file_on_disk !=
-			     (void*)&old->staging_file_name);
+		STATIC_ASSERT((void*)&old->file_on_disk ==
+			      (void*)&old->staging_file_name);
 #endif
 		new->file_on_disk = TSTRDUP(old->file_on_disk);
 		if (new->file_on_disk == NULL)
@@ -178,12 +178,12 @@ blob_release_location(struct blob_descriptor *blob)
 #endif
 #ifdef WITH_FUSE
 	case BLOB_IN_STAGING_FILE:
-		BUILD_BUG_ON((void*)&blob->file_on_disk !=
-			     (void*)&blob->staging_file_name);
+		STATIC_ASSERT((void*)&blob->file_on_disk ==
+			      (void*)&blob->staging_file_name);
 #endif
 	case BLOB_IN_ATTACHED_BUFFER:
-		BUILD_BUG_ON((void*)&blob->file_on_disk !=
-			     (void*)&blob->attached_buffer);
+		STATIC_ASSERT((void*)&blob->file_on_disk ==
+			      (void*)&blob->attached_buffer);
 		FREE(blob->file_on_disk);
 		break;
 #ifdef WITH_NTFS_3G
@@ -638,10 +638,10 @@ do_load_solid_info(WIMStruct *wim, struct wim_resource_descriptor **rdescs,
 
 		/* Compression format numbers must be the same as in
 		 * WIMGAPI to be compatible here.  */
-		BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_NONE != 0);
-		BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_XPRESS != 1);
-		BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_LZX != 2);
-		BUILD_BUG_ON(WIMLIB_COMPRESSION_TYPE_LZMS != 3);
+		STATIC_ASSERT(WIMLIB_COMPRESSION_TYPE_NONE == 0);
+		STATIC_ASSERT(WIMLIB_COMPRESSION_TYPE_XPRESS == 1);
+		STATIC_ASSERT(WIMLIB_COMPRESSION_TYPE_LZX == 2);
+		STATIC_ASSERT(WIMLIB_COMPRESSION_TYPE_LZMS == 3);
 		rdesc->compression_type = le32_to_cpu(hdr.compression_format);
 		rdesc->chunk_size = le32_to_cpu(hdr.chunk_size);
 	}

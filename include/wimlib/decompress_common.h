@@ -261,7 +261,7 @@ repeat_byte(u8 b)
 {
 	machine_word_t v;
 
-	BUILD_BUG_ON(WORDSIZE != 4 && WORDSIZE != 8);
+	STATIC_ASSERT(WORDSIZE == 4 || WORDSIZE == 8);
 
 	v = b;
 	v |= v << 8;

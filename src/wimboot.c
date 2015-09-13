@@ -187,8 +187,8 @@ query_partition_and_disk_info(const wchar_t *path,
 	}
 
 	if (part_info->PartitionStyle == PARTITION_STYLE_GPT) {
-		BUILD_BUG_ON(sizeof(part_info->Gpt.PartitionId) !=
-			     sizeof(drive_info->Gpt.DiskId));
+		STATIC_ASSERT(sizeof(part_info->Gpt.PartitionId) ==
+			      sizeof(drive_info->Gpt.DiskId));
 		if (!memcmp(&part_info->Gpt.PartitionId,
 			    &drive_info->Gpt.DiskId,
 			    sizeof(drive_info->Gpt.DiskId)))
@@ -395,7 +395,7 @@ fill_in_wimoverlay_dat(u8 *buf,
 	new_entry_1->entry_2_length = new_entry_2_size;
 	new_entry_1->wim_type = WIM_BOOT_NOT_OS_WIM;
 	new_entry_1->wim_index = image;
-	BUILD_BUG_ON(sizeof(new_entry_1->guid) != GUID_SIZE);
+	STATIC_ASSERT(sizeof(new_entry_1->guid) == GUID_SIZE);
 	copy_guid(new_entry_1->guid, wim_guid);
 
 	p += sizeof(struct WimOverlay_dat_entry_1);
@@ -438,21 +438,21 @@ fill_in_wimoverlay_dat(u8 *buf,
 		new_entry_2->disk.mbr.padding[1] = 0x00000000;
 		new_entry_2->disk.mbr.padding[2] = 0x00000000;
 	} else {
-		BUILD_BUG_ON(sizeof(new_entry_2->partition.gpt.part_unique_guid) !=
-			     sizeof(part_info->Gpt.PartitionId));
+		STATIC_ASSERT(sizeof(new_entry_2->partition.gpt.part_unique_guid) ==
+			      sizeof(part_info->Gpt.PartitionId));
 		memcpy(new_entry_2->partition.gpt.part_unique_guid,
 		       &part_info->Gpt.PartitionId,
 		       sizeof(part_info->Gpt.PartitionId));
 		new_entry_2->partition_table_type = WIMOVERLAY_PARTITION_TYPE_GPT;
 
-		BUILD_BUG_ON(sizeof(new_entry_2->disk.gpt.disk_guid) !=
-			     sizeof(disk_info->Gpt.DiskId));
+		STATIC_ASSERT(sizeof(new_entry_2->disk.gpt.disk_guid) ==
+			      sizeof(disk_info->Gpt.DiskId));
 		memcpy(new_entry_2->disk.gpt.disk_guid,
 		       &disk_info->Gpt.DiskId,
 		       sizeof(disk_info->Gpt.DiskId));
 
-		BUILD_BUG_ON(sizeof(new_entry_2->disk.gpt.disk_guid) !=
-			     sizeof(new_entry_2->partition.gpt.part_unique_guid));
+		STATIC_ASSERT(sizeof(new_entry_2->disk.gpt.disk_guid) ==
+			      sizeof(new_entry_2->partition.gpt.part_unique_guid));
 	}
 	new_entry_2->unknown_0x58[0] = 0x00000000;
 	new_entry_2->unknown_0x58[1] = 0x00000000;
@@ -1135,9 +1135,9 @@ wimboot_set_pointer(HANDLE h,
 			struct wim_provider_rpdata wim_info;
 		} in;
 
-		BUILD_BUG_ON(sizeof(in) != 8 +
-			     sizeof(struct wof_external_info) +
-			     sizeof(struct wim_provider_rpdata));
+		STATIC_ASSERT(sizeof(in) == 8 +
+			      sizeof(struct wof_external_info) +
+			      sizeof(struct wim_provider_rpdata));
 
 		in.hdr.rptag = WIM_IO_REPARSE_TAG_WOF;
 		in.hdr.rpdatalen = sizeof(in) - sizeof(in.hdr);

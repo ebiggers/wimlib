@@ -74,7 +74,7 @@ lzms_init_probabilities(struct lzms_probabilites *probs);
 static inline void
 lzms_update_probability_entry(struct lzms_probability_entry *entry, int bit)
 {
-	BUILD_BUG_ON(LZMS_PROBABILITY_DENOMINATOR != sizeof(entry->recent_bits) * 8);
+	STATIC_ASSERT(LZMS_PROBABILITY_DENOMINATOR == sizeof(entry->recent_bits) * 8);
 
 #ifdef __x86_64__
 	if (__builtin_constant_p(bit)) {

@@ -352,7 +352,7 @@ load_prepopulate_pats(struct win32_apply_ctx *ctx)
 				LOAD_TEXT_FILE_REMOVE_QUOTES |
 					LOAD_TEXT_FILE_NO_WARNINGS,
 				mangle_pat);
-	BUILD_BUG_ON(OS_PREFERRED_PATH_SEPARATOR != WIM_PATH_SEPARATOR);
+	STATIC_ASSERT(OS_PREFERRED_PATH_SEPARATOR == WIM_PATH_SEPARATOR);
 	FREE(buf);
 	if (ret) {
 		FREE(s);
