@@ -26,6 +26,11 @@ List detailed information about each file.
 \fB--one-file-only\fR
 Show information about one file only.  Intended for use with both \fB--path\fR
 and \fB--detailed\fR.
+.TP
+\fB--ref\fR="\fIGLOB\fR"
+File glob of additional WIMs or split WIM parts to reference resources from.
+This option can be specified multiple times.  This option is only useful when
+\fB--detailed\fR is also specified.
 .SH NOTES
 \fBwimlib-imagex dir\fR supports split WIMs, but it will only work on the
 first part of the split WIM.

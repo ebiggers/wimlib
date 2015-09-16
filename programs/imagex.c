@@ -267,6 +267,7 @@ static const struct option dir_options[] = {
 	{T("path"),     required_argument, NULL, IMAGEX_PATH_OPTION},
 	{T("detailed"), no_argument,       NULL, IMAGEX_DETAILED_OPTION},
 	{T("one-file-only"), no_argument,  NULL, IMAGEX_ONE_FILE_ONLY_OPTION},
+	{T("ref"),      required_argument, NULL, IMAGEX_REF_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -2639,6 +2640,8 @@ imagex_dir(int argc, tchar **argv, int cmd)
 	};
 	int iterate_flags = WIMLIB_ITERATE_DIR_TREE_FLAG_RECURSIVE;
 
+	STRING_SET(refglobs);
+
 	for_opt(c, dir_options) {
 		switch (c) {
 		case IMAGEX_PATH_OPTION:
@@ -2649,6 +2652,11 @@ imagex_dir(int argc, tchar **argv, int cmd)
 			break;
 		case IMAGEX_ONE_FILE_ONLY_OPTION:
 			iterate_flags &= ~WIMLIB_ITERATE_DIR_TREE_FLAG_RECURSIVE;
+			break;
+		case IMAGEX_REF_OPTION:
+			ret = string_set_append(&refglobs, optarg);
+			if (ret)
+				goto out_free_refglobs;
 			break;
 		default:
 			goto out_usage;
@@ -2670,7 +2678,7 @@ imagex_dir(int argc, tchar **argv, int cmd)
 	ret = wimlib_open_wim_with_progress(wimfile, 0, &wim,
 					    imagex_progress_func, NULL);
 	if (ret)
-		goto out;
+		goto out_free_refglobs;
 
 	if (argc >= 2) {
 		image = wimlib_resolve_image(wim, argv[1]);
@@ -2694,17 +2702,24 @@ imagex_dir(int argc, tchar **argv, int cmd)
 		image = 1;
 	}
 
+	if (refglobs.num_strings) {
+		ret = wim_reference_globs(wim, &refglobs, 0);
+		if (ret)
+			goto out_wimlib_free;
+	}
+
 	ret = wimlib_iterate_dir_tree(wim, image, path, iterate_flags,
 				      print_dentry, &options);
 out_wimlib_free:
 	wimlib_free(wim);
-out:
+out_free_refglobs:
+	string_set_destroy(&refglobs);
 	return ret;
 
 out_usage:
 	usage(CMD_DIR, stderr);
 	ret = -1;
-	goto out;
+	goto out_free_refglobs;
 }
 
 /* Exports one, or all, images from a WIM file to a new WIM file or an existing
