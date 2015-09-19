@@ -201,14 +201,28 @@ struct lzx_freqs {
 	u32 aligned[LZX_ALIGNEDCODE_NUM_SYMBOLS];
 };
 
-/* Intermediate LZX match/literal format  */
-struct lzx_item {
+/*
+ * Represents a run of literals followed by a match or end-of-block.  This
+ * struct is needed to temporarily store items chosen by the parser, since items
+ * cannot be written until all items for the block have been chosen and the
+ * block's Huffman codes have been computed.
+ */
+struct lzx_sequence {
 
-	/* Bits 0  -  9: Main symbol
-	 * Bits 10 - 17: Length symbol
-	 * Bits 18 - 22: Number of extra offset bits
-	 * Bits 23+    : Extra offset bits  */
-	u64 data;
+	/* The number of literals in the run.  This may be 0.  The literals are
+	 * not stored explicitly in this structure; instead, they are read
+	 * directly from the uncompressed data.  */
+	u16 litrunlen;
+
+	/* If the next field doesn't indicate end-of-block, then this is the
+	 * match length minus LZX_MIN_MATCH_LEN.  */
+	u16 adjusted_length;
+
+	/* If bit 31 is clear, then this field contains the match header in bits
+	 * 0-8 and the match offset minus LZX_OFFSET_ADJUSTMENT in bits 9-30.
+	 * Otherwise, this sequence's literal run was the last literal run in
+	 * the block, so there is no match that follows it.  */
+	u32 adjusted_offset_and_match_hdr;
 };
 
 /*
@@ -235,7 +249,7 @@ struct lzx_optimum_node {
 	 * This variable is divided into two bitfields.
 	 *
 	 * Literals:
-	 *	Low bits are 1, high bits are the literal.
+	 *	Low bits are 0, high bits are the literal.
 	 *
 	 * Explicit offset matches:
 	 *	Low bits are the match length, high bits are the offset plus 2.
@@ -381,30 +395,18 @@ struct lzx_compressor {
 	struct lzx_codes codes[2];
 	unsigned codes_index;
 
-	/*
-	 * The match/literal sequence the algorithm chose for the current block.
-	 *
-	 * Notes on how large this array actually needs to be:
-	 *
-	 * - In lzx_compress_near_optimal(), the maximum block size is
-	 *   'LZX_DIV_BLOCK_SIZE + LZX_MAX_MATCH_LEN - 1' bytes.  This occurs if
-	 *   a match of the maximum length is found on the last byte.  Although
-	 *   it is impossible for this particular case to actually result in a
-	 *   parse of all literals, we reserve this many spaces anyway.
-	 *
-	 * - The worst case for lzx_compress_lazy() is a block of almost all
-	 *   literals that ends with a series of matches of increasing scores,
-	 *   causing a sequence of literals to be chosen before the last match
-	 *   is finally chosen.  The number of items actually chosen in this
-	 *   scenario is limited by the number of distinct match scores that
-	 *   exist for matches shorter than 'nice_match_length'.  Having
-	 *   'LZX_MAX_MATCH_LEN - 1' extra spaces is plenty for now.
-	 */
-	struct lzx_item chosen_items[LZX_DIV_BLOCK_SIZE + LZX_MAX_MATCH_LEN - 1];
+	/* The matches and literals that the parser has chosen for the current
+	 * block.  The required length of this array is limited by the maximum
+	 * number of matches that can ever be chosen for a single block.  */
+	struct lzx_sequence chosen_sequences[DIV_ROUND_UP(LZX_DIV_BLOCK_SIZE, LZX_MIN_MATCH_LEN)];
 
-	/* Table mapping match offset => offset slot for small offsets  */
-#define LZX_NUM_FAST_OFFSETS 32768
-	u8 offset_slot_fast[LZX_NUM_FAST_OFFSETS];
+	/* Tables for mapping adjusted offsets to offset slots  */
+
+	/* offset slots [0, 29]  */
+	u8 offset_slot_tab_1[32768];
+
+	/* offset slots [30, 49]  */
+	u8 offset_slot_tab_2[128];
 
 	union {
 		/* Data for greedy or lazy parsing  */
@@ -818,61 +820,6 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
 	*(u8 *)(lens + num_lens) = saved;
 }
 
-/* Output a match or literal.  */
-static inline void
-lzx_write_item(struct lzx_output_bitstream *os, struct lzx_item item,
-	       unsigned ones_if_aligned, const struct lzx_codes *codes)
-{
-	u64 data = item.data;
-	unsigned main_symbol;
-	unsigned len_symbol;
-	unsigned num_extra_bits;
-	u32 extra_bits;
-
-	main_symbol = data & 0x3FF;
-
-	lzx_write_varbits(os, codes->codewords.main[main_symbol],
-			  codes->lens.main[main_symbol],
-			  LZX_MAX_MAIN_CODEWORD_LEN);
-
-	if (main_symbol < LZX_NUM_CHARS)  /* Literal?  */
-		return;
-
-	len_symbol = (data >> 10) & 0xFF;
-
-	if (len_symbol != LZX_LENCODE_NUM_SYMBOLS) {
-		lzx_write_varbits(os, codes->codewords.len[len_symbol],
-				  codes->lens.len[len_symbol],
-				  LZX_MAX_LEN_CODEWORD_LEN);
-	}
-
-	num_extra_bits = (data >> 18) & 0x1F;
-	if (num_extra_bits == 0)  /* Small offset or repeat offset match?  */
-		return;
-
-	extra_bits = data >> 23;
-
-	if ((num_extra_bits & ones_if_aligned) >= LZX_NUM_ALIGNED_OFFSET_BITS) {
-
-		/* Aligned offset blocks: The low 3 bits of the extra offset
-		 * bits are Huffman-encoded using the aligned offset code.  The
-		 * remaining bits are output literally.  */
-
-		lzx_write_varbits(os, extra_bits >> LZX_NUM_ALIGNED_OFFSET_BITS,
-				  num_extra_bits - LZX_NUM_ALIGNED_OFFSET_BITS,
-				  17 - LZX_NUM_ALIGNED_OFFSET_BITS);
-
-		lzx_write_varbits(os,
-				  codes->codewords.aligned[extra_bits & LZX_ALIGNED_OFFSET_BITMASK],
-				  codes->lens.aligned[extra_bits & LZX_ALIGNED_OFFSET_BITMASK],
-				  LZX_MAX_ALIGNED_CODEWORD_LEN);
-	} else {
-		/* Verbatim blocks, or fewer than 3 extra bits:  All extra
-		 * offset bits are output literally.  */
-		lzx_write_varbits(os, extra_bits, num_extra_bits, 17);
-	}
-}
-
 /*
  * Write all matches and literal bytes (which were precomputed) in an LZX
  * compressed block to the output bitstream in the final compressed
@@ -883,32 +830,107 @@ lzx_write_item(struct lzx_output_bitstream *os, struct lzx_item item,
  * @block_type
  *	The chosen type of the LZX compressed block (LZX_BLOCKTYPE_ALIGNED or
  *	LZX_BLOCKTYPE_VERBATIM).
- * @items
- *	The array of matches/literals to output.
- * @num_items
- *	Number of matches/literals to output (length of @items).
+ * @block_data
+ *	The uncompressed data of the block.
+ * @sequences
+ *	The matches and literals to output, given as a series of sequences.
  * @codes
  *	The main, length, and aligned offset Huffman codes for the current
  *	LZX compressed block.
  */
 static void
-lzx_write_items(struct lzx_output_bitstream *os, int block_type,
-		const struct lzx_item items[], u32 num_items,
-		const struct lzx_codes *codes)
+lzx_write_sequences(struct lzx_output_bitstream *os, int block_type,
+		    const u8 *block_data, const struct lzx_sequence sequences[],
+		    const struct lzx_codes *codes)
 {
-	unsigned ones_if_aligned = 0U - (block_type == LZX_BLOCKTYPE_ALIGNED);
+	const struct lzx_sequence *seq = sequences;
+	u32 ones_if_aligned = 0 - (block_type == LZX_BLOCKTYPE_ALIGNED);
 
-	for (u32 i = 0; i < num_items; i++)
-		lzx_write_item(os, items[i], ones_if_aligned, codes);
+	for (;;) {
+		/* Output the next sequence.  */
+
+		unsigned litrunlen = seq->litrunlen;
+		unsigned match_hdr;
+		unsigned main_symbol;
+		unsigned adjusted_length;
+		u32 adjusted_offset;
+		unsigned offset_slot;
+		unsigned num_extra_bits;
+		u32 extra_bits;
+
+		/* Output the literal run of the sequence.  */
+
+		if (litrunlen) {
+			do {
+				unsigned lit = *block_data++;
+				lzx_write_varbits(os, codes->codewords.main[lit],
+						  codes->lens.main[lit],
+						  LZX_MAX_MAIN_CODEWORD_LEN);
+			} while (--litrunlen);
+		}
+
+		/* Was this the last literal run?  */
+		if (seq->adjusted_offset_and_match_hdr & 0x80000000)
+			return;
+
+		/* Nope; output the match.  */
+
+		match_hdr = seq->adjusted_offset_and_match_hdr & 0x1FF;
+		main_symbol = LZX_NUM_CHARS + match_hdr;
+		adjusted_length = seq->adjusted_length;
+
+		block_data += adjusted_length + LZX_MIN_MATCH_LEN;
+
+		offset_slot = match_hdr / LZX_NUM_LEN_HEADERS;
+		adjusted_offset = seq->adjusted_offset_and_match_hdr >> 9;
+
+		num_extra_bits = lzx_extra_offset_bits[offset_slot];
+		extra_bits = adjusted_offset - lzx_offset_slot_base[offset_slot];
+
+		/* Output the main symbol for the match.  */
+		lzx_write_varbits(os, codes->codewords.main[main_symbol],
+				  codes->lens.main[main_symbol],
+				  LZX_MAX_MAIN_CODEWORD_LEN);
+
+		/* If needed, output the length symbol for the match.  */
+
+		if (adjusted_length >= LZX_NUM_PRIMARY_LENS) {
+			lzx_write_varbits(os, codes->codewords.len[adjusted_length - LZX_NUM_PRIMARY_LENS],
+					  codes->lens.len[adjusted_length - LZX_NUM_PRIMARY_LENS],
+					  LZX_MAX_LEN_CODEWORD_LEN);
+		}
+
+		/* Output the extra offset bits for the match.  In aligned
+		 * offset blocks, the lowest 3 bits of the adjusted offset are
+		 * Huffman-encoded using the aligned offset code, provided that
+		 * there are at least extra 3 offset bits required.  All other
+		 * extra offset bits are output verbatim.  */
+
+		if ((adjusted_offset & ones_if_aligned) >= 16) {
+
+			lzx_write_varbits(os, extra_bits >> LZX_NUM_ALIGNED_OFFSET_BITS,
+					  num_extra_bits - LZX_NUM_ALIGNED_OFFSET_BITS,
+					  14);
+
+			lzx_write_varbits(os, codes->codewords.aligned[adjusted_offset & LZX_ALIGNED_OFFSET_BITMASK],
+					  codes->lens.aligned[adjusted_offset & LZX_ALIGNED_OFFSET_BITMASK],
+					  LZX_MAX_ALIGNED_CODEWORD_LEN);
+		} else {
+			lzx_write_varbits(os, extra_bits, num_extra_bits, 17);
+		}
+
+		/* Advance to the next sequence.  */
+		seq++;
+	}
 }
 
 static void
-lzx_write_compressed_block(int block_type,
+lzx_write_compressed_block(const u8 *block_begin,
+			   int block_type,
 			   u32 block_size,
 			   unsigned window_order,
 			   unsigned num_main_syms,
-			   const struct lzx_item chosen_items[],
-			   u32 num_chosen_items,
+			   const struct lzx_sequence sequences[],
 			   const struct lzx_codes * codes,
 			   const struct lzx_lens * prev_lens,
 			   struct lzx_output_bitstream * os)
@@ -968,7 +990,7 @@ lzx_write_compressed_block(int block_type,
 				  LZX_LENCODE_NUM_SYMBOLS);
 
 	/* Output the compressed matches and literals.  */
-	lzx_write_items(os, block_type, chosen_items, num_chosen_items, codes);
+	lzx_write_sequences(os, block_type, block_begin, sequences, codes);
 }
 
 /* Given the frequencies of symbols in an LZX-compressed block and the
@@ -999,6 +1021,18 @@ lzx_choose_verbatim_or_aligned(const struct lzx_freqs * freqs,
 }
 
 /*
+ * Return the offset slot for the specified adjusted match offset, using the
+ * compressor's acceleration tables to speed up the mapping.
+ */
+static inline unsigned
+lzx_comp_get_offset_slot(struct lzx_compressor *c, u32 adjusted_offset)
+{
+	if (adjusted_offset < ARRAY_LEN(c->offset_slot_tab_1))
+		return c->offset_slot_tab_1[adjusted_offset];
+	return c->offset_slot_tab_2[adjusted_offset >> 14];
+}
+
+/*
  * Finish an LZX block:
  *
  * - build the Huffman codes
@@ -1008,7 +1042,7 @@ lzx_choose_verbatim_or_aligned(const struct lzx_freqs * freqs,
  */
 static void
 lzx_finish_block(struct lzx_compressor *c, struct lzx_output_bitstream *os,
-		 u32 block_size, u32 num_chosen_items)
+		 const u8 *block_begin, u32 block_size, u32 seq_idx)
 {
 	int block_type;
 
@@ -1016,181 +1050,245 @@ lzx_finish_block(struct lzx_compressor *c, struct lzx_output_bitstream *os,
 
 	block_type = lzx_choose_verbatim_or_aligned(&c->freqs,
 						    &c->codes[c->codes_index]);
-	lzx_write_compressed_block(block_type,
+	lzx_write_compressed_block(block_begin,
+				   block_type,
 				   block_size,
 				   c->window_order,
 				   c->num_main_syms,
-				   c->chosen_items,
-				   num_chosen_items,
+				   &c->chosen_sequences[seq_idx],
 				   &c->codes[c->codes_index],
 				   &c->codes[c->codes_index ^ 1].lens,
 				   os);
 	c->codes_index ^= 1;
 }
 
-/* Return the offset slot for the specified offset, which must be
- * less than LZX_NUM_FAST_OFFSETS.  */
-static inline unsigned
-lzx_get_offset_slot_fast(struct lzx_compressor *c, u32 offset)
+/* Tally the Huffman symbol for a literal and increment the literal run length.
+ */
+static inline void
+lzx_record_literal(struct lzx_compressor *c, unsigned literal, u32 *litrunlen_p)
 {
-	LZX_ASSERT(offset < LZX_NUM_FAST_OFFSETS);
-	return c->offset_slot_fast[offset];
+	c->freqs.main[literal]++;
+	++*litrunlen_p;
 }
 
-/* Tally, and optionally record, the specified literal byte.  */
+/* Tally the Huffman symbol for a match, save the match data and the length of
+ * the preceding literal run in the next lzx_sequence, and update the recent
+ * offsets queue.  */
 static inline void
-lzx_declare_literal(struct lzx_compressor *c, unsigned literal,
-		    struct lzx_item **next_chosen_item)
+lzx_record_match(struct lzx_compressor *c, unsigned length, u32 offset_data,
+		 u32 recent_offsets[LZX_NUM_RECENT_OFFSETS],
+		 u32 *litrunlen_p, struct lzx_sequence **next_seq_p)
 {
-	unsigned main_symbol = lzx_main_symbol_for_literal(literal);
-
-	c->freqs.main[main_symbol]++;
-
-	if (next_chosen_item) {
-		*(*next_chosen_item)++ = (struct lzx_item) {
-			.data = main_symbol,
-		};
-	}
-}
-
-/* Tally, and optionally record, the specified repeat offset match.  */
-static inline void
-lzx_declare_repeat_offset_match(struct lzx_compressor *c,
-				unsigned len, unsigned rep_index,
-				struct lzx_item **next_chosen_item)
-{
-	unsigned len_header;
-	unsigned len_symbol;
-	unsigned main_symbol;
-
-	if (len - LZX_MIN_MATCH_LEN < LZX_NUM_PRIMARY_LENS) {
-		len_header = len - LZX_MIN_MATCH_LEN;
-		len_symbol = LZX_LENCODE_NUM_SYMBOLS;
-	} else {
-		len_header = LZX_NUM_PRIMARY_LENS;
-		len_symbol = len - LZX_MIN_MATCH_LEN - LZX_NUM_PRIMARY_LENS;
-		c->freqs.len[len_symbol]++;
-	}
-
-	main_symbol = lzx_main_symbol_for_match(rep_index, len_header);
-
-	c->freqs.main[main_symbol]++;
-
-	if (next_chosen_item) {
-		*(*next_chosen_item)++ = (struct lzx_item) {
-			.data = (u64)main_symbol | ((u64)len_symbol << 10),
-		};
-	}
-}
-
-/* Tally, and optionally record, the specified explicit offset match.  */
-static inline void
-lzx_declare_explicit_offset_match(struct lzx_compressor *c, unsigned len, u32 offset,
-				  struct lzx_item **next_chosen_item)
-{
-	unsigned len_header;
-	unsigned len_symbol;
-	unsigned main_symbol;
+	u32 litrunlen = *litrunlen_p;
+	struct lzx_sequence *next_seq = *next_seq_p;
 	unsigned offset_slot;
-	unsigned num_extra_bits;
-	u32 extra_bits;
+	unsigned v;
 
-	if (len - LZX_MIN_MATCH_LEN < LZX_NUM_PRIMARY_LENS) {
-		len_header = len - LZX_MIN_MATCH_LEN;
-		len_symbol = LZX_LENCODE_NUM_SYMBOLS;
+	v = length - LZX_MIN_MATCH_LEN;
+
+	/* Save the literal run length and adjusted length.  */
+	next_seq->litrunlen = litrunlen;
+	next_seq->adjusted_length = v;
+
+	/* Compute the length header and tally the length symbol if needed  */
+	if (v >= LZX_NUM_PRIMARY_LENS) {
+		c->freqs.len[v - LZX_NUM_PRIMARY_LENS]++;
+		v = LZX_NUM_PRIMARY_LENS;
+	}
+
+	/* Compute the offset slot  */
+	offset_slot = lzx_comp_get_offset_slot(c, offset_data);
+
+	/* Compute the match header.  */
+	v += offset_slot * LZX_NUM_LEN_HEADERS;
+
+	/* Save the adjusted offset and match header.  */
+	next_seq->adjusted_offset_and_match_hdr = (offset_data << 9) | v;
+
+	/* Tally the main symbol.  */
+	c->freqs.main[LZX_NUM_CHARS + v]++;
+
+	/* Update the recent offsets queue.  */
+	if (offset_data < LZX_NUM_RECENT_OFFSETS) {
+		/* Repeat offset match  */
+		swap(recent_offsets[0], recent_offsets[offset_data]);
 	} else {
-		len_header = LZX_NUM_PRIMARY_LENS;
-		len_symbol = len - LZX_MIN_MATCH_LEN - LZX_NUM_PRIMARY_LENS;
-		c->freqs.len[len_symbol]++;
+		/* Explicit offset match  */
+
+		/* Tally the aligned offset symbol if needed  */
+		if (offset_data >= 16)
+			c->freqs.aligned[offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
+
+		recent_offsets[2] = recent_offsets[1];
+		recent_offsets[1] = recent_offsets[0];
+		recent_offsets[0] = offset_data - LZX_OFFSET_ADJUSTMENT;
 	}
 
-	offset_slot = (offset < LZX_NUM_FAST_OFFSETS) ?
-			lzx_get_offset_slot_fast(c, offset) :
-			lzx_get_offset_slot(offset);
+	/* Reset the literal run length and advance to the next sequence.  */
+	*next_seq_p = next_seq + 1;
+	*litrunlen_p = 0;
+}
 
-	main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
+/* Finish the last lzx_sequence.  The last lzx_sequence is just a literal run;
+ * there is no match.  This literal run may be empty.  */
+static inline void
+lzx_finish_sequence(struct lzx_sequence *last_seq, u32 litrunlen)
+{
+	last_seq->litrunlen = litrunlen;
 
-	c->freqs.main[main_symbol]++;
+	/* Special value to mark last sequence  */
+	last_seq->adjusted_offset_and_match_hdr = 0x80000000;
+}
 
-	num_extra_bits = lzx_extra_offset_bits[offset_slot];
+/*
+ * Given the minimum-cost path computed through the item graph for the current
+ * block, walk the path and count how many of each symbol in each Huffman-coded
+ * alphabet would be required to output the items (matches and literals) along
+ * the path.
+ *
+ * Note that the path will be walked backwards (from the end of the block to the
+ * beginning of the block), but this doesn't matter because this function only
+ * computes frequencies.
+ */
+static void
+lzx_tally_item_list(struct lzx_compressor *c, u32 block_size)
+{
+	u32 node_idx = block_size;
+	for (;;) {
+		u32 len;
+		u32 offset_data;
+		unsigned v;
+		unsigned offset_slot;
 
-	if (num_extra_bits >= LZX_NUM_ALIGNED_OFFSET_BITS)
-		c->freqs.aligned[(offset + LZX_OFFSET_ADJUSTMENT) &
-				 LZX_ALIGNED_OFFSET_BITMASK]++;
+		/* Tally literals until either a match or the beginning of the
+		 * block is reached.  */
+		for (;;) {
+			u32 item = c->optimum_nodes[node_idx].item;
 
-	if (next_chosen_item) {
+			len = item & OPTIMUM_LEN_MASK;
+			offset_data = item >> OPTIMUM_OFFSET_SHIFT;
 
-		extra_bits = (offset + LZX_OFFSET_ADJUSTMENT) -
-			     lzx_offset_slot_base[offset_slot];
+			if (len != 0)  /* Not a literal?  */
+				break;
 
-		STATIC_ASSERT(LZX_MAINCODE_MAX_NUM_SYMBOLS <= (1 << 10));
-		STATIC_ASSERT(LZX_LENCODE_NUM_SYMBOLS <= (1 << 8));
-		*(*next_chosen_item)++ = (struct lzx_item) {
-			.data = (u64)main_symbol |
-				((u64)len_symbol << 10) |
-				((u64)num_extra_bits << 18) |
-				((u64)extra_bits << 23),
-		};
+			/* Tally the main symbol for the literal.  */
+			c->freqs.main[offset_data]++;
+
+			if (--node_idx == 0) /* Beginning of block was reached?  */
+				return;
+		}
+
+		node_idx -= len;
+
+		/* Tally a match.  */
+
+		/* Tally the aligned offset symbol if needed.  */
+		if (offset_data >= 16)
+			c->freqs.aligned[offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
+
+		/* Tally the length symbol if needed.  */
+		v = len - LZX_MIN_MATCH_LEN;;
+		if (v >= LZX_NUM_PRIMARY_LENS) {
+			c->freqs.len[v - LZX_NUM_PRIMARY_LENS]++;
+			v = LZX_NUM_PRIMARY_LENS;
+		}
+
+		/* Tally the main symbol.  */
+		offset_slot = lzx_comp_get_offset_slot(c, offset_data);
+		v += offset_slot * LZX_NUM_LEN_HEADERS;
+		c->freqs.main[LZX_NUM_CHARS + v]++;
+
+		if (node_idx == 0) /* Beginning of block was reached?  */
+			return;
 	}
 }
 
-
-/* Tally, and optionally record, the specified match or literal.  */
-static inline void
-lzx_declare_item(struct lzx_compressor *c, u32 item,
-		 struct lzx_item **next_chosen_item)
+/*
+ * Like lzx_tally_item_list(), but this function also generates the list of
+ * lzx_sequences for the minimum-cost path and writes it to c->chosen_sequences,
+ * ready to be output to the bitstream after the Huffman codes are computed.
+ * The lzx_sequences will be written to decreasing memory addresses as the path
+ * is walked backwards, which means they will end up in the expected
+ * first-to-last order.  The return value is the index in c->chosen_sequences at
+ * which the lzx_sequences begin.
+ */
+static u32
+lzx_record_item_list(struct lzx_compressor *c, u32 block_size)
 {
-	u32 len = item & OPTIMUM_LEN_MASK;
-	u32 offset_data = item >> OPTIMUM_OFFSET_SHIFT;
+	u32 node_idx = block_size;
+	u32 seq_idx = ARRAY_LEN(c->chosen_sequences) - 1;
+	u32 lit_start_node;
 
-	if (len == 1)
-		lzx_declare_literal(c, offset_data, next_chosen_item);
-	else if (offset_data < LZX_NUM_RECENT_OFFSETS)
-		lzx_declare_repeat_offset_match(c, len, offset_data,
-						next_chosen_item);
-	else
-		lzx_declare_explicit_offset_match(c, len,
-						  offset_data - LZX_OFFSET_ADJUSTMENT,
-						  next_chosen_item);
-}
+	/* Special value to mark last sequence  */
+	c->chosen_sequences[seq_idx].adjusted_offset_and_match_hdr = 0x80000000;
 
-static inline void
-lzx_record_item_list(struct lzx_compressor *c,
-		     struct lzx_optimum_node *cur_node,
-		     struct lzx_item **next_chosen_item)
-{
-	struct lzx_optimum_node *end_node;
-	u32 saved_item;
-	u32 item;
+	lit_start_node = node_idx;
+	for (;;) {
+		u32 len;
+		u32 offset_data;
+		unsigned v;
+		unsigned offset_slot;
 
-	/* The list is currently in reverse order (last item to first item).
-	 * Reverse it.  */
-	end_node = cur_node;
-	saved_item = cur_node->item;
-	do {
-		item = saved_item;
-		cur_node -= item & OPTIMUM_LEN_MASK;
-		saved_item = cur_node->item;
-		cur_node->item = item;
-	} while (cur_node != c->optimum_nodes);
+		/* Record literals until either a match or the beginning of the
+		 * block is reached.  */
+		for (;;) {
+			u32 item = c->optimum_nodes[node_idx].item;
 
-	/* Walk the list of items from beginning to end, tallying and recording
-	 * each item.  */
-	do {
-		lzx_declare_item(c, cur_node->item, next_chosen_item);
-		cur_node += (cur_node->item) & OPTIMUM_LEN_MASK;
-	} while (cur_node != end_node);
-}
+			len = item & OPTIMUM_LEN_MASK;
+			offset_data = item >> OPTIMUM_OFFSET_SHIFT;
 
-static inline void
-lzx_tally_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_node)
-{
-	/* Since we're just tallying the items, we don't need to reverse the
-	 * list.  Processing the items in reverse order is fine.  */
-	do {
-		lzx_declare_item(c, cur_node->item, NULL);
-		cur_node -= (cur_node->item & OPTIMUM_LEN_MASK);
-	} while (cur_node != c->optimum_nodes);
+			if (len != 0) /* Not a literal?  */
+				break;
+
+			/* Tally the main symbol for the literal.  */
+			c->freqs.main[offset_data]++;
+
+			if (--node_idx == 0) /* Beginning of block was reached?  */
+				goto out;
+		}
+
+		/* Save the literal run length for the next sequence (the
+		 * "previous sequence" when walking backwards).  */
+		c->chosen_sequences[seq_idx--].litrunlen = lit_start_node - node_idx;
+		node_idx -= len;
+		lit_start_node = node_idx;
+
+		/* Record a match.  */
+
+		/* Tally the aligned offset symbol if needed.  */
+		if (offset_data >= 16)
+			c->freqs.aligned[offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
+
+		/* Save the adjusted length.  */
+		v = len - LZX_MIN_MATCH_LEN;
+		c->chosen_sequences[seq_idx].adjusted_length = v;
+
+		/* Tally the length symbol if needed.  */
+		if (v >= LZX_NUM_PRIMARY_LENS) {
+			c->freqs.len[v - LZX_NUM_PRIMARY_LENS]++;
+			v = LZX_NUM_PRIMARY_LENS;
+		}
+
+		/* Tally the main symbol.  */
+		offset_slot = lzx_comp_get_offset_slot(c, offset_data);
+		v += offset_slot * LZX_NUM_LEN_HEADERS;
+		c->freqs.main[LZX_NUM_CHARS + v]++;
+
+		/* Save the adjusted offset and match header.  */
+		c->chosen_sequences[seq_idx].adjusted_offset_and_match_hdr =
+				(offset_data << 9) | v;
+
+		if (node_idx == 0) /* Beginning of block was reached?  */
+			goto out;
+	}
+
+out:
+	/* Save the literal run length for the first sequence.  */
+	c->chosen_sequences[seq_idx].litrunlen = lit_start_node - node_idx;
+
+	/* Return the index in c->chosen_sequences at which the lzx_sequences
+	 * begin.  */
+	return seq_idx;
 }
 
 /*
@@ -1374,9 +1472,7 @@ lzx_find_min_cost_path(struct lzx_compressor * const restrict c,
 			do {
 				u32 offset = cache_ptr->offset;
 				u32 offset_data = offset + LZX_OFFSET_ADJUSTMENT;
-				unsigned offset_slot = (offset < LZX_NUM_FAST_OFFSETS) ?
-						lzx_get_offset_slot_fast(c, offset) :
-						lzx_get_offset_slot(offset);
+				unsigned offset_slot = lzx_comp_get_offset_slot(c, offset_data);
 				do {
 					u32 cost = cur_node->cost +
 						   c->costs.match_cost[offset_slot][
@@ -1417,7 +1513,7 @@ lzx_find_min_cost_path(struct lzx_compressor * const restrict c,
 		if (cost <= cur_node->cost) {
 			/* Literal: queue remains unchanged.  */
 			cur_node->cost = cost;
-			cur_node->item = (literal << OPTIMUM_OFFSET_SHIFT) | 1;
+			cur_node->item = (u32)literal << OPTIMUM_OFFSET_SHIFT;
 			QUEUE(in_next) = QUEUE(in_next - 1);
 		} else {
 			/* Match: queue update is needed.  */
@@ -1544,14 +1640,15 @@ lzx_update_costs(struct lzx_compressor *c)
 }
 
 static struct lzx_lru_queue
-lzx_optimize_and_write_block(struct lzx_compressor *c,
-			     struct lzx_output_bitstream *os,
-			     const u8 *block_begin, const u32 block_size,
+lzx_optimize_and_write_block(struct lzx_compressor * const restrict c,
+			     struct lzx_output_bitstream * const restrict os,
+			     const u8 * const restrict block_begin,
+			     const u32 block_size,
 			     const struct lzx_lru_queue initial_queue)
 {
 	unsigned num_passes_remaining = c->num_optim_passes;
-	struct lzx_item *next_chosen_item;
 	struct lzx_lru_queue new_queue;
+	u32 seq_idx;
 
 	/* The first optimization pass uses a default cost model.  Each
 	 * additional optimization pass uses a cost model derived from the
@@ -1563,16 +1660,15 @@ lzx_optimize_and_write_block(struct lzx_compressor *c,
 		new_queue = lzx_find_min_cost_path(c, block_begin, block_size,
 						   initial_queue);
 		if (num_passes_remaining > 1) {
-			lzx_tally_item_list(c, c->optimum_nodes + block_size);
+			lzx_tally_item_list(c, block_size);
 			lzx_make_huffman_codes(c);
 			lzx_update_costs(c);
 			lzx_reset_symbol_frequencies(c);
 		}
 	} while (--num_passes_remaining);
 
-	next_chosen_item = c->chosen_items;
-	lzx_record_item_list(c, c->optimum_nodes + block_size, &next_chosen_item);
-	lzx_finish_block(c, os, block_size, next_chosen_item - c->chosen_items);
+	seq_idx = lzx_record_item_list(c, block_size);
+	lzx_finish_block(c, os, block_begin, block_size, seq_idx);
 	return new_queue;
 }
 
@@ -1733,7 +1829,7 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 static unsigned
 lzx_find_longest_repeat_offset_match(const u8 * const in_next,
 				     const u32 bytes_remaining,
-				     struct lzx_lru_queue queue,
+				     const u32 recent_offsets[LZX_NUM_RECENT_OFFSETS],
 				     unsigned *rep_max_idx_ret)
 {
 	STATIC_ASSERT(LZX_NUM_RECENT_OFFSETS == 3);
@@ -1746,14 +1842,14 @@ lzx_find_longest_repeat_offset_match(const u8 * const in_next,
 	unsigned rep_max_idx;
 	unsigned rep_len;
 
-	matchptr = in_next - lzx_lru_queue_pop(&queue);
+	matchptr = in_next - recent_offsets[0];
 	if (load_u16_unaligned(matchptr) == next_2_bytes)
 		rep_max_len = lz_extend(in_next, matchptr, 2, max_len);
 	else
 		rep_max_len = 0;
 	rep_max_idx = 0;
 
-	matchptr = in_next - lzx_lru_queue_pop(&queue);
+	matchptr = in_next - recent_offsets[1];
 	if (load_u16_unaligned(matchptr) == next_2_bytes) {
 		rep_len = lz_extend(in_next, matchptr, 2, max_len);
 		if (rep_len > rep_max_len) {
@@ -1762,7 +1858,7 @@ lzx_find_longest_repeat_offset_match(const u8 * const in_next,
 		}
 	}
 
-	matchptr = in_next - lzx_lru_queue_pop(&queue);
+	matchptr = in_next - recent_offsets[2];
 	if (load_u16_unaligned(matchptr) == next_2_bytes) {
 		rep_len = lz_extend(in_next, matchptr, 2, max_len);
 		if (rep_len > rep_max_len) {
@@ -1805,11 +1901,11 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 	const u8 * const in_end  = in_begin + c->in_nbytes;
 	unsigned max_len = LZX_MAX_MATCH_LEN;
 	unsigned nice_len = min(c->nice_match_length, max_len);
-	struct lzx_lru_queue queue;
+	STATIC_ASSERT(LZX_NUM_RECENT_OFFSETS == 3);
+	u32 recent_offsets[3] = {1, 1, 1};
 	u32 next_hashes[2] = {};
 
 	hc_matchfinder_init(&c->hc_mf);
-	lzx_lru_queue_init(&queue);
 
 	do {
 		/* Starting a new block  */
@@ -1817,7 +1913,7 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 		const u8 * const in_block_begin = in_next;
 		const u8 * const in_block_end =
 			in_next + min(LZX_DIV_BLOCK_SIZE, in_end - in_next);
-		struct lzx_item *next_chosen_item = c->chosen_items;
+		struct lzx_sequence *next_seq = c->chosen_sequences;
 		unsigned cur_len;
 		u32 cur_offset;
 		u32 cur_offset_data;
@@ -1830,6 +1926,7 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 		unsigned rep_max_idx;
 		unsigned rep_score;
 		unsigned skip_len;
+		u32 litrunlen = 0;
 
 		lzx_reset_symbol_frequencies(c);
 
@@ -1853,18 +1950,17 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 			if (cur_len < 3 ||
 			    (cur_len == 3 &&
 			     cur_offset >= 8192 - LZX_OFFSET_ADJUSTMENT &&
-			     cur_offset != lzx_lru_queue_R0(queue) &&
-			     cur_offset != lzx_lru_queue_R1(queue) &&
-			     cur_offset != lzx_lru_queue_R2(queue)))
+			     cur_offset != recent_offsets[0] &&
+			     cur_offset != recent_offsets[1] &&
+			     cur_offset != recent_offsets[2]))
 			{
 				/* There was no match found, or the only match found
 				 * was a distant length 3 match.  Output a literal.  */
-				lzx_declare_literal(c, *in_next++,
-						    &next_chosen_item);
+				lzx_record_literal(c, *in_next++, &litrunlen);
 				continue;
 			}
 
-			if (cur_offset == lzx_lru_queue_R0(queue)) {
+			if (cur_offset == recent_offsets[0]) {
 				in_next++;
 				cur_offset_data = 0;
 				skip_len = cur_len - 1;
@@ -1877,7 +1973,7 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 			/* Consider a repeat offset match  */
 			rep_max_len = lzx_find_longest_repeat_offset_match(in_next,
 									   in_end - in_next,
-									   queue,
+									   recent_offsets,
 									   &rep_max_idx);
 			in_next++;
 
@@ -1929,7 +2025,7 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 
 			rep_max_len = lzx_find_longest_repeat_offset_match(in_next,
 									   in_end - in_next,
-									   queue,
+									   recent_offsets,
 									   &rep_max_idx);
 			in_next++;
 
@@ -1941,8 +2037,8 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 				if (rep_score > cur_score) {
 					/* The next match is better, and it's a
 					 * repeat offset match.  */
-					lzx_declare_literal(c, *(in_next - 2),
-							    &next_chosen_item);
+					lzx_record_literal(c, *(in_next - 2),
+							   &litrunlen);
 					cur_len = rep_max_len;
 					cur_offset_data = rep_max_idx;
 					skip_len = cur_len - 1;
@@ -1952,8 +2048,8 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 				if (next_score > cur_score) {
 					/* The next match is better, and it's an
 					 * explicit offset match.  */
-					lzx_declare_literal(c, *(in_next - 2),
-							    &next_chosen_item);
+					lzx_record_literal(c, *(in_next - 2),
+							   &litrunlen);
 					cur_len = next_len;
 					cur_offset_data = next_offset_data;
 					cur_score = next_score;
@@ -1965,43 +2061,46 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 			skip_len = cur_len - 2;
 
 		choose_cur_match:
-			if (cur_offset_data < LZX_NUM_RECENT_OFFSETS) {
-				lzx_declare_repeat_offset_match(c, cur_len,
-								cur_offset_data,
-								&next_chosen_item);
-				queue = lzx_lru_queue_swap(queue, cur_offset_data);
-			} else {
-				lzx_declare_explicit_offset_match(c, cur_len,
-								  cur_offset_data - LZX_OFFSET_ADJUSTMENT,
-								  &next_chosen_item);
-				queue = lzx_lru_queue_push(queue, cur_offset_data - LZX_OFFSET_ADJUSTMENT);
-			}
-
-			hc_matchfinder_skip_positions(&c->hc_mf,
-						      in_begin,
-						      in_next - in_begin,
-						      in_end - in_begin,
-						      skip_len,
-						      next_hashes);
-			in_next += skip_len;
+			lzx_record_match(c, cur_len, cur_offset_data,
+					 recent_offsets, &litrunlen, &next_seq);
+			in_next = hc_matchfinder_skip_positions(&c->hc_mf,
+								in_begin,
+								in_next - in_begin,
+								in_end - in_begin,
+								skip_len,
+								next_hashes);
 		} while (in_next < in_block_end);
 
-		lzx_finish_block(c, os, in_next - in_block_begin,
-				 next_chosen_item - c->chosen_items);
+		lzx_finish_sequence(next_seq, litrunlen);
+
+		lzx_finish_block(c, os, in_block_begin, in_next - in_block_begin, 0);
+
 	} while (in_next != in_end);
 }
 
+/* Generate the acceleration tables for offset slots.  */
 static void
-lzx_init_offset_slot_fast(struct lzx_compressor *c)
+lzx_init_offset_slot_tabs(struct lzx_compressor *c)
 {
-	u8 slot = 0;
+	u32 adjusted_offset = 0;
+	unsigned slot = 0;
 
-	for (u32 offset = 0; offset < LZX_NUM_FAST_OFFSETS; offset++) {
-
-		while (offset + LZX_OFFSET_ADJUSTMENT >= lzx_offset_slot_base[slot + 1])
+	/* slots [0, 29]  */
+	for (; adjusted_offset < ARRAY_LEN(c->offset_slot_tab_1);
+	     adjusted_offset++)
+	{
+		if (adjusted_offset >= lzx_offset_slot_base[slot + 1])
 			slot++;
+		c->offset_slot_tab_1[adjusted_offset] = slot;
+	}
 
-		c->offset_slot_fast[offset] = slot;
+	/* slots [30, 49]  */
+	for (; adjusted_offset < LZX_MAX_WINDOW_SIZE;
+	     adjusted_offset += (u32)1 << 14)
+	{
+		if (adjusted_offset >= lzx_offset_slot_base[slot + 1])
+			slot++;
+		c->offset_slot_tab_2[adjusted_offset >> 14] = slot;
 	}
 }
 
@@ -2113,7 +2212,7 @@ lzx_create_compressor(size_t max_bufsize, unsigned compression_level,
 	if (c->nice_match_length > LZX_MAX_MATCH_LEN)
 		c->nice_match_length = LZX_MAX_MATCH_LEN;
 
-	lzx_init_offset_slot_fast(c);
+	lzx_init_offset_slot_tabs(c);
 	*c_ret = c;
 	return 0;
 
