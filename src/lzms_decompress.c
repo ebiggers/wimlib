@@ -727,10 +727,14 @@ lzms_decompress(const void * const restrict in, const size_t in_nbytes,
 	/* LRU queues for match sources  */
 	u32 recent_lz_offsets[LZMS_NUM_LZ_REPS + 1];
 	u64 recent_delta_pairs[LZMS_NUM_DELTA_REPS + 1];
-	u32 pending_lz_offset = 0;
-	u64 pending_delta_pair = 0;
-	const u8 *lz_offset_still_pending;
-	const u8 *delta_pair_still_pending;
+
+	/* Previous item type: 0 = literal, 1 = LZ match, 2 = delta match.
+	 * This is used to handle delayed updates of the LRU queues.  Instead of
+	 * actually delaying the updates, we can check when decoding each rep
+	 * match whether a delayed update needs to be taken into account, and if
+	 * so get the match source from slot 'rep_idx + 1' instead of from slot
+	 * 'rep_idx'.  */
+	unsigned prev_item_type = 0;
 
 	/* States and probability entries for item type disambiguation  */
 	u32 main_state = 0;
@@ -775,6 +779,7 @@ lzms_decompress(const void * const restrict in, const size_t in_nbytes,
 		{
 			/* Literal  */
 			*out_next++ = lzms_decode_literal(d, &is);
+			prev_item_type = 0;
 
 		} else if (!lzms_decode_bit(&rd, &match_state,
 					    LZMS_NUM_MATCH_PROBS,
@@ -785,55 +790,42 @@ lzms_decompress(const void * const restrict in, const size_t in_nbytes,
 			u32 offset;
 			u32 length;
 
+			STATIC_ASSERT(LZMS_NUM_LZ_REPS == 3);
+
 			if (!lzms_decode_bit(&rd, &lz_state,
 					     LZMS_NUM_LZ_PROBS, d->probs.lz))
 			{
 				/* Explicit offset  */
 				offset = lzms_decode_lz_offset(d, &is);
+
+				recent_lz_offsets[3] = recent_lz_offsets[2];
+				recent_lz_offsets[2] = recent_lz_offsets[1];
+				recent_lz_offsets[1] = recent_lz_offsets[0];
 			} else {
 				/* Repeat offset  */
 
-				if (pending_lz_offset != 0 &&
-				    out_next != lz_offset_still_pending)
-				{
-					STATIC_ASSERT(LZMS_NUM_LZ_REPS == 3);
-					recent_lz_offsets[3] = recent_lz_offsets[2];
-					recent_lz_offsets[2] = recent_lz_offsets[1];
-					recent_lz_offsets[1] = recent_lz_offsets[0];
-					recent_lz_offsets[0] = pending_lz_offset;
-					pending_lz_offset = 0;
-				}
-
-				STATIC_ASSERT(LZMS_NUM_LZ_REPS == 3);
 				if (!lzms_decode_bit(&rd, &lz_rep_states[0],
 						     LZMS_NUM_LZ_REP_PROBS,
 						     d->probs.lz_rep[0]))
 				{
-					offset = recent_lz_offsets[0];
-					recent_lz_offsets[0] = recent_lz_offsets[1];
-					recent_lz_offsets[1] = recent_lz_offsets[2];
-					recent_lz_offsets[2] = recent_lz_offsets[3];
+					offset = recent_lz_offsets[0 + (prev_item_type & 1)];
+					recent_lz_offsets[0 + (prev_item_type & 1)] = recent_lz_offsets[0];
 				} else if (!lzms_decode_bit(&rd, &lz_rep_states[1],
 							    LZMS_NUM_LZ_REP_PROBS,
 							    d->probs.lz_rep[1]))
 				{
-					offset = recent_lz_offsets[1];
-					recent_lz_offsets[1] = recent_lz_offsets[2];
-					recent_lz_offsets[2] = recent_lz_offsets[3];
+					offset = recent_lz_offsets[1 + (prev_item_type & 1)];
+					recent_lz_offsets[1 + (prev_item_type & 1)] = recent_lz_offsets[1];
+					recent_lz_offsets[1] = recent_lz_offsets[0];
 				} else {
-					offset = recent_lz_offsets[2];
-					recent_lz_offsets[2] = recent_lz_offsets[3];
+					offset = recent_lz_offsets[2 + (prev_item_type & 1)];
+					recent_lz_offsets[2 + (prev_item_type & 1)] = recent_lz_offsets[2];
+					recent_lz_offsets[2] = recent_lz_offsets[1];
+					recent_lz_offsets[1] = recent_lz_offsets[0];
 				}
 			}
-
-			if (pending_lz_offset != 0) {
-				STATIC_ASSERT(LZMS_NUM_LZ_REPS == 3);
-				recent_lz_offsets[3] = recent_lz_offsets[2];
-				recent_lz_offsets[2] = recent_lz_offsets[1];
-				recent_lz_offsets[1] = recent_lz_offsets[0];
-				recent_lz_offsets[0] = pending_lz_offset;
-			}
-			pending_lz_offset = offset;
+			recent_lz_offsets[0] = offset;
+			prev_item_type = 1;
 
 			length = lzms_decode_length(d, &is);
 
@@ -844,8 +836,6 @@ lzms_decompress(const void * const restrict in, const size_t in_nbytes,
 
 			lz_copy(out_next, length, offset, out_end, LZMS_MIN_MATCH_LENGTH);
 			out_next += length;
-
-			lz_offset_still_pending = out_next;
 		} else {
 			/* Delta match  */
 
@@ -857,6 +847,9 @@ lzms_decompress(const void * const restrict in, const size_t in_nbytes,
 			u32 offset;
 			const u8 *matchptr;
 			u32 length;
+			u64 pair;
+
+			STATIC_ASSERT(LZMS_NUM_DELTA_REPS == 3);
 
 			if (!lzms_decode_bit(&rd, &delta_state,
 					     LZMS_NUM_DELTA_PROBS,
@@ -865,53 +858,37 @@ lzms_decompress(const void * const restrict in, const size_t in_nbytes,
 				/* Explicit offset  */
 				power = lzms_decode_delta_power(d, &is);
 				raw_offset = lzms_decode_delta_offset(d, &is);
+
+				pair = ((u64)power << 32) | raw_offset;
+				recent_delta_pairs[3] = recent_delta_pairs[2];
+				recent_delta_pairs[2] = recent_delta_pairs[1];
+				recent_delta_pairs[1] = recent_delta_pairs[0];
 			} else {
-				/* Repeat offset  */
-				u64 val;
-
-				if (pending_delta_pair != 0 &&
-				    out_next != delta_pair_still_pending)
-				{
-					STATIC_ASSERT(LZMS_NUM_DELTA_REPS == 3);
-					recent_delta_pairs[3] = recent_delta_pairs[2];
-					recent_delta_pairs[2] = recent_delta_pairs[1];
-					recent_delta_pairs[1] = recent_delta_pairs[0];
-					recent_delta_pairs[0] = pending_delta_pair;
-					pending_delta_pair = 0;
-				}
-
-				STATIC_ASSERT(LZMS_NUM_DELTA_REPS == 3);
 				if (!lzms_decode_bit(&rd, &delta_rep_states[0],
 						     LZMS_NUM_DELTA_REP_PROBS,
 						     d->probs.delta_rep[0]))
 				{
-					val = recent_delta_pairs[0];
-					recent_delta_pairs[0] = recent_delta_pairs[1];
-					recent_delta_pairs[1] = recent_delta_pairs[2];
-					recent_delta_pairs[2] = recent_delta_pairs[3];
+					pair = recent_delta_pairs[0 + (prev_item_type >> 1)];
+					recent_delta_pairs[0 + (prev_item_type >> 1)] = recent_delta_pairs[0];
 				} else if (!lzms_decode_bit(&rd, &delta_rep_states[1],
 							    LZMS_NUM_DELTA_REP_PROBS,
 							    d->probs.delta_rep[1]))
 				{
-					val = recent_delta_pairs[1];
-					recent_delta_pairs[1] = recent_delta_pairs[2];
-					recent_delta_pairs[2] = recent_delta_pairs[3];
+					pair = recent_delta_pairs[1 + (prev_item_type >> 1)];
+					recent_delta_pairs[1 + (prev_item_type >> 1)] = recent_delta_pairs[1];
+					recent_delta_pairs[1] = recent_delta_pairs[0];
 				} else {
-					val = recent_delta_pairs[2];
-					recent_delta_pairs[2] = recent_delta_pairs[3];
+					pair = recent_delta_pairs[2 + (prev_item_type >> 1)];
+					recent_delta_pairs[2 + (prev_item_type >> 1)] = recent_delta_pairs[2];
+					recent_delta_pairs[2] = recent_delta_pairs[1];
+					recent_delta_pairs[1] = recent_delta_pairs[0];
 				}
-				power = val >> 32;
-				raw_offset = (u32)val;
-			}
 
-			if (pending_delta_pair != 0) {
-				STATIC_ASSERT(LZMS_NUM_DELTA_REPS == 3);
-				recent_delta_pairs[3] = recent_delta_pairs[2];
-				recent_delta_pairs[2] = recent_delta_pairs[1];
-				recent_delta_pairs[1] = recent_delta_pairs[0];
-				recent_delta_pairs[0] = pending_delta_pair;
+				power = pair >> 32;
+				raw_offset = (u32)pair;
 			}
-			pending_delta_pair = raw_offset | ((u64)power << 32);
+			recent_delta_pairs[0] = pair;
+			prev_item_type = 2;
 
 			length = lzms_decode_length(d, &is);
 
@@ -941,8 +918,6 @@ lzms_decompress(const void * const restrict in, const size_t in_nbytes,
 				out_next++;
 				matchptr++;
 			} while (--length);
-
-			delta_pair_still_pending = out_next;
 		}
 	}
 
