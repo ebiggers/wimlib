@@ -178,7 +178,7 @@ bt_matchfinder_get_matches(struct bt_matchfinder * const restrict mf,
 	*next_hash = bt_matchfinder_hash_3_bytes(in_next + 1);
 	cur_node = mf->hash_tab[hash];
 	mf->hash_tab[hash] = in_next - in_begin;
-	prefetch(&mf->hash_tab[*next_hash]);
+	prefetchw(&mf->hash_tab[*next_hash]);
 
 	pending_lt_ptr = bt_left_child(mf, in_next - in_begin);
 	pending_gt_ptr = bt_right_child(mf, in_next - in_begin);
@@ -285,7 +285,7 @@ bt_matchfinder_skip_position(struct bt_matchfinder * const restrict mf,
 	*next_hash = bt_matchfinder_hash_3_bytes(in_next + 1);
 	cur_node = mf->hash_tab[hash];
 	mf->hash_tab[hash] = in_next - in_begin;
-	prefetch(&mf->hash_tab[*next_hash]);
+	prefetchw(&mf->hash_tab[*next_hash]);
 
 	depth_remaining = max_search_depth;
 	pending_lt_ptr = bt_left_child(mf, in_next - in_begin);

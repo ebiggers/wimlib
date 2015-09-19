@@ -38,8 +38,14 @@
 #  define unlikely(expr)	(expr)
 #endif
 
-#ifndef prefetch
-#  define prefetch(addr)
+/* prefetchr() - prefetch into L1 cache for read  */
+#ifndef prefetchr
+#  define prefetchr(addr)
+#endif
+
+/* prefetchw() - prefetch into L1 cache for write  */
+#ifndef prefetchw
+#  define prefetchw(addr)
 #endif
 
 #ifndef _cold_attribute

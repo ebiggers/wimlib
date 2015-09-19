@@ -1248,7 +1248,7 @@ lzms_delta_matchfinder_skip_bytes(struct lzms_compressor *c,
 			c->delta_hash_table[hash] =
 				(power << DELTA_SOURCE_POWER_SHIFT) | pos;
 			c->next_delta_hashes[power] = next_hash;
-			prefetch(&c->delta_hash_table[next_hash]);
+			prefetchw(&c->delta_hash_table[next_hash]);
 		}
 	} while (in_next++, pos++, --count);
 }
@@ -1726,7 +1726,7 @@ begin:
 
 				c->delta_hash_table[hash] = (power << DELTA_SOURCE_POWER_SHIFT) | pos;
 				c->next_delta_hashes[power] = next_hash;
-				prefetch(&c->delta_hash_table[next_hash]);
+				prefetchw(&c->delta_hash_table[next_hash]);
 
 				if (power != cur_match >> DELTA_SOURCE_POWER_SHIFT)
 					continue;

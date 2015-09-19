@@ -78,7 +78,7 @@ build_LCP(u32 SA_and_LCP[restrict], const u32 ISA[restrict],
 	u32 h = 0;
 	for (u32 i = 0; i < n; i++) {
 		const u32 r = ISA[i];
-		prefetch(&SA_and_LCP[ISA[i + PREFETCH_SAFETY]]);
+		prefetchw(&SA_and_LCP[ISA[i + PREFETCH_SAFETY]]);
 		if (r > 0) {
 			const u32 j = SA_and_LCP[r - 1] & POS_MASK;
 			const u32 lim = min(n - i, n - j);
@@ -170,7 +170,7 @@ build_LCPIT(u32 intervals[restrict], u32 pos_data[restrict], const u32 n)
 		const u32 next_lcp = SA_and_LCP[r] & LCP_MASK;
 		const u32 top_lcp = *top & LCP_MASK;
 
-		prefetch(&pos_data[SA_and_LCP[r + PREFETCH_SAFETY] & POS_MASK]);
+		prefetchw(&pos_data[SA_and_LCP[r + PREFETCH_SAFETY] & POS_MASK]);
 
 		if (next_lcp == top_lcp) {
 			/* Continuing the deepest open interval  */
@@ -290,7 +290,7 @@ lcpit_advance_one_byte(const u32 cur_pos,
 	ref = pos_data[cur_pos];
 
 	/* Prefetch the deepest lcp-interval containing the *next* suffix. */
-	prefetch(&intervals[pos_data[cur_pos + 1] & POS_MASK]);
+	prefetchw(&intervals[pos_data[cur_pos + 1] & POS_MASK]);
 
 	/* There is no "next suffix" after the current one.  */
 	pos_data[cur_pos] = 0;
@@ -364,7 +364,7 @@ build_LCP_huge(u64 SA_and_LCP64[restrict], const u32 ISA[restrict],
 	u32 h = 0;
 	for (u32 i = 0; i < n; i++) {
 		const u32 r = ISA[i];
-		prefetch(&SA_and_LCP64[ISA[i + PREFETCH_SAFETY]]);
+		prefetchw(&SA_and_LCP64[ISA[i + PREFETCH_SAFETY]]);
 		if (r > 0) {
 			const u32 j = SA_and_LCP64[r - 1] & HUGE_POS_MASK;
 			const u32 lim = min(n - i, n - j);
@@ -411,7 +411,7 @@ build_LCPIT_huge(u64 intervals64[restrict], u32 pos_data[restrict], const u32 n)
 		const u64 next_lcp = SA_and_LCP64[r] & HUGE_LCP_MASK;
 		const u64 top_lcp = intervals64[*top];
 
-		prefetch(&pos_data[SA_and_LCP64[r + PREFETCH_SAFETY] & HUGE_POS_MASK]);
+		prefetchw(&pos_data[SA_and_LCP64[r + PREFETCH_SAFETY] & HUGE_POS_MASK]);
 
 		if (next_lcp == top_lcp) {
 			/* Continuing the deepest open interval  */
@@ -476,8 +476,8 @@ lcpit_advance_one_byte_huge(const u32 cur_pos,
 	struct lz_match *matchptr;
 
 	interval_idx = pos_data[cur_pos];
-	prefetch(&pos_data[intervals64[pos_data[cur_pos + 1]] & HUGE_POS_MASK]);
-	prefetch(&intervals64[pos_data[cur_pos + 2]]);
+	prefetchw(&pos_data[intervals64[pos_data[cur_pos + 1]] & HUGE_POS_MASK]);
+	prefetchw(&intervals64[pos_data[cur_pos + 2]]);
 	pos_data[cur_pos] = 0;
 
 	while ((next = intervals64[interval_idx]) & HUGE_UNVISITED_TAG) {

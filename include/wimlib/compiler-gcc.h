@@ -19,7 +19,8 @@
 #define _may_alias_attribute	__attribute__((may_alias))
 #define likely(expr)		__builtin_expect(!!(expr), 1)
 #define unlikely(expr)		__builtin_expect(!!(expr), 0)
-#define prefetch(addr)		__builtin_prefetch(addr)
+#define prefetchr(addr)		__builtin_prefetch((addr), 0)
+#define prefetchw(addr)		__builtin_prefetch((addr), 1)
 #if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 4)
 #  define _cold_attribute	__attribute__((cold))
 #endif
