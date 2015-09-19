@@ -147,11 +147,6 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 	u32 len;
 	u32 best_len = 2;
 
-	if (unlikely(max_len < LOAD_U24_REQUIRED_NBYTES + 1)) {
-		*best_len_ret = best_len;
-		return lz_matchptr;
-	}
-
 	hash3 = *next_hash;
 	*next_hash = lz_hash(load_u24_unaligned(in_next + 1), BT_MATCHFINDER_HASH3_ORDER);
 	prefetchw(&mf->hash3_tab[*next_hash]);
@@ -246,7 +241,7 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
  *	The current position in the input buffer (the position of the sequence
  *	being matched against).
  * @max_len
- *	The maximum permissible match length at this position.
+ *	The maximum permissible match length at this position.  Must be >= 5.
  * @nice_len
  *	Stop searching if a match of at least this length is found.
  *	Must be <= @max_len.
@@ -305,7 +300,7 @@ TEMPLATED(bt_matchfinder_get_matches)(struct TEMPLATED(bt_matchfinder) *mf,
  * @cur_pos
  *	The current position in the input buffer.
  * @max_len
- *	The maximum permissible match length at this position.
+ *	The maximum permissible match length at this position.  Must be >= 5.
  * @nice_len
  *	Stop searching if a match of at least this length is found.
  * @max_search_depth

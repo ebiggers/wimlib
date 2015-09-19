@@ -1779,8 +1779,8 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 	const u8 * const in_begin = c->in_buffer;
 	const u8 *	 in_next = in_begin;
 	const u8 * const in_end  = in_begin + c->in_nbytes;
-	unsigned max_len = LZX_MAX_MATCH_LEN;
-	unsigned nice_len = min(c->nice_match_length, max_len);
+	u32 max_len = LZX_MAX_MATCH_LEN;
+	u32 nice_len = min(c->nice_match_length, max_len);
 	u32 next_hash = 0;
 	struct lzx_lru_queue queue;
 
@@ -1797,20 +1797,14 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 		struct lz_match *cache_ptr = c->match_cache;
 		do {
 			struct lz_match *lz_matchptr;
-			unsigned best_len;
+			u32 best_len;
 
 			/* If approaching the end of the input buffer, adjust
 			 * 'max_len' and 'nice_len' accordingly.  */
 			if (unlikely(max_len > in_end - in_next)) {
 				max_len = in_end - in_next;
 				nice_len = min(max_len, nice_len);
-
-				/* This extra check is needed to ensure that we
-				 * never output a length 2 match of the very
-				 * last two bytes with the very first two bytes,
-				 * since such a match has an offset too large to
-				 * be represented.  */
-				if (unlikely(max_len < 3)) {
+				if (unlikely(max_len < 5)) {
 					in_next++;
 					cache_ptr->length = 0;
 					cache_ptr++;
@@ -1850,7 +1844,7 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 					if (unlikely(max_len > in_end - in_next)) {
 						max_len = in_end - in_next;
 						nice_len = min(max_len, nice_len);
-						if (unlikely(max_len < 3)) {
+						if (unlikely(max_len < 5)) {
 							in_next++;
 							cache_ptr->length = 0;
 							cache_ptr++;

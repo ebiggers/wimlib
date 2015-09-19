@@ -906,27 +906,22 @@ xpress_find_matches(struct xpress_compressor * restrict c,
 {
 	const u8 * const in_begin = in;
 	const u8 *in_next = in_begin;
-	const u8 * const in_end = in_begin + in_nbytes;
 	struct lz_match *cache_ptr = c->match_cache;
 	u32 next_hash = 0;
+	u32 max_len = in_nbytes;
+	u32 nice_len = min(max_len, c->nice_match_length);
 
 	bt_matchfinder_init(&c->bt_mf);
 
-	do {
+	for (;;) {
 		struct lz_match *matches;
-		unsigned best_len;
+		u32 best_len;
 
 		/* If we've found so many matches that the cache might overflow
 		 * if we keep finding more, then stop finding matches.  This
 		 * case is very unlikely.  */
-		if (unlikely(cache_ptr >= c->cache_overflow_mark)) {
-			do {
-				cache_ptr->length = 0;
-				cache_ptr->offset = *in_next++;
-				cache_ptr++;
-			} while (in_next != in_end);
-			return cache_ptr;
-		}
+		if (unlikely(cache_ptr >= c->cache_overflow_mark || max_len < 5))
+			break;
 
 		matches = cache_ptr;
 
@@ -937,16 +932,17 @@ xpress_find_matches(struct xpress_compressor * restrict c,
 			bt_matchfinder_get_matches(&c->bt_mf,
 						   in_begin,
 						   in_next - in_begin,
-						   in_end - in_next,
-						   min(in_end - in_next, c->nice_match_length),
+						   max_len,
+						   nice_len,
 						   c->max_search_depth,
 						   &next_hash,
 						   &best_len,
 						   cache_ptr);
 		cache_ptr->length = cache_ptr - matches;
-		cache_ptr->offset = *in_next;
-		in_next++;
+		cache_ptr->offset = *in_next++;
 		cache_ptr++;
+		max_len--;
+		nice_len = min(nice_len, max_len);
 
 		/*
 		 * If there was a very long match found, then don't cache any
@@ -958,24 +954,32 @@ xpress_find_matches(struct xpress_compressor * restrict c,
 		 * very much.  If there's a long match, then the data must be
 		 * highly compressible, so it doesn't matter as much what we do.
 		 */
-		if (best_len >= c->nice_match_length) {
+		if (best_len >= nice_len) {
+			if (unlikely(best_len + 5 >= max_len))
+				break;
 			--best_len;
 			do {
 				bt_matchfinder_skip_position(&c->bt_mf,
 							     in_begin,
 							     in_next - in_begin,
-							     in_end - in_next,
-							     min(in_end - in_next,
-								 c->nice_match_length),
+							     max_len,
+							     nice_len,
 							     c->max_search_depth,
 							     &next_hash);
-
 				cache_ptr->length = 0;
 				cache_ptr->offset = *in_next++;
 				cache_ptr++;
+				max_len--;
+				nice_len = min(nice_len, max_len);
 			} while (--best_len);
 		}
-	} while (in_next != in_end);
+	}
+
+	while (max_len--) {
+		cache_ptr->length = 0;
+		cache_ptr->offset = *in_next++;
+		cache_ptr++;
+	}
 
 	return cache_ptr;
 }
