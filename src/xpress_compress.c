@@ -394,11 +394,11 @@ xpress_write_item_list(struct xpress_output_bitstream *os,
 		       struct xpress_optimum_node *optimum_nodes,
 		       size_t count, const u32 codewords[], const u8 lens[])
 {
-	struct xpress_optimum_node *cur_optimum_ptr = optimum_nodes;
-	struct xpress_optimum_node *end_optimum_ptr = optimum_nodes + count;
+	struct xpress_optimum_node *cur_node = optimum_nodes;
+	struct xpress_optimum_node *end_node = optimum_nodes + count;
 	do {
-		unsigned length = cur_optimum_ptr->item & OPTIMUM_LEN_MASK;
-		unsigned offset = cur_optimum_ptr->item >> OPTIMUM_OFFSET_SHIFT;
+		unsigned length = cur_node->item & OPTIMUM_LEN_MASK;
+		unsigned offset = cur_node->item >> OPTIMUM_OFFSET_SHIFT;
 
 		if (length == 1) {
 			/* Literal  */
@@ -408,22 +408,22 @@ xpress_write_item_list(struct xpress_output_bitstream *os,
 		} else {
 			/* Match  */
 			unsigned adjusted_len;
-			unsigned offset_high_bit;
+			unsigned log2_offset;
 			unsigned len_hdr;
 			unsigned sym;
 
 			adjusted_len = length - XPRESS_MIN_MATCH_LEN;
-			offset_high_bit = fls32(offset);
+			log2_offset = fls32(offset);
 			len_hdr = min(0xF, adjusted_len);
-			sym = XPRESS_NUM_CHARS + ((offset_high_bit << 4) | len_hdr);
+			sym = XPRESS_NUM_CHARS + ((log2_offset << 4) | len_hdr);
 
 			xpress_write_bits(os, codewords[sym], lens[sym]);
 			xpress_write_extra_length_bytes(os, adjusted_len);
-			xpress_write_bits(os, offset - (1U << offset_high_bit),
-					  offset_high_bit);
+			xpress_write_bits(os, offset - (1U << log2_offset),
+					  log2_offset);
 		}
-		cur_optimum_ptr += length;
-	} while (cur_optimum_ptr != end_optimum_ptr);
+		cur_node += length;
+	} while (cur_node != end_node);
 }
 #endif /* SUPPORT_NEAR_OPTIMAL_PARSING */
 
@@ -501,16 +501,16 @@ xpress_record_match(struct xpress_compressor *c, unsigned length, unsigned offse
 {
 	unsigned adjusted_len = length - XPRESS_MIN_MATCH_LEN;
 	unsigned len_hdr = min(adjusted_len, 0xF);
-	unsigned offset_high_bit = fls32(offset);
-	unsigned sym = XPRESS_NUM_CHARS + ((offset_high_bit << 4) | len_hdr);
+	unsigned log2_offset = fls32(offset);
+	unsigned sym = XPRESS_NUM_CHARS + ((log2_offset << 4) | len_hdr);
 
 	c->freqs[sym]++;
 
 	return (struct xpress_item) {
 		.data = (u64)sym |
 			((u64)adjusted_len << 9) |
-			((u64)offset_high_bit << 25) |
-			((u64)(offset ^ (1U << offset_high_bit)) << 29),
+			((u64)log2_offset << 25) |
+			((u64)(offset ^ (1U << log2_offset)) << 29),
 	};
 }
 
@@ -734,13 +734,13 @@ xpress_update_costs(struct xpress_compressor *c)
  */
 static void
 xpress_tally_item_list(struct xpress_compressor *c,
-		       struct xpress_optimum_node *end_optimum_ptr)
+		       struct xpress_optimum_node *end_node)
 {
-	struct xpress_optimum_node *cur_optimum_ptr = c->optimum_nodes;
+	struct xpress_optimum_node *cur_node = c->optimum_nodes;
 
 	do {
-		unsigned length = cur_optimum_ptr->item & OPTIMUM_LEN_MASK;
-		unsigned offset = cur_optimum_ptr->item >> OPTIMUM_OFFSET_SHIFT;
+		unsigned length = cur_node->item & OPTIMUM_LEN_MASK;
+		unsigned offset = cur_node->item >> OPTIMUM_OFFSET_SHIFT;
 
 		if (length == 1) {
 			/* Literal  */
@@ -750,19 +750,19 @@ xpress_tally_item_list(struct xpress_compressor *c,
 		} else {
 			/* Match  */
 			unsigned adjusted_len;
-			unsigned offset_high_bit;
+			unsigned log2_offset;
 			unsigned len_hdr;
 			unsigned sym;
 
 			adjusted_len = length - XPRESS_MIN_MATCH_LEN;
-			offset_high_bit = fls32(offset);
+			log2_offset = fls32(offset);
 			len_hdr = min(0xF, adjusted_len);
-			sym = XPRESS_NUM_CHARS + ((offset_high_bit << 4) | len_hdr);
+			sym = XPRESS_NUM_CHARS + ((log2_offset << 4) | len_hdr);
 
 			c->freqs[sym]++;
 		}
-		cur_optimum_ptr += length;
-	} while (cur_optimum_ptr != end_optimum_ptr);
+		cur_node += length;
+	} while (cur_node != end_node);
 }
 
 /*
@@ -781,10 +781,10 @@ static void
 xpress_find_min_cost_path(struct xpress_compressor *c, size_t in_nbytes,
 			  struct lz_match *end_cache_ptr)
 {
-	struct xpress_optimum_node *cur_optimum_ptr = c->optimum_nodes + in_nbytes;
+	struct xpress_optimum_node *cur_node = c->optimum_nodes + in_nbytes;
 	struct lz_match *cache_ptr = end_cache_ptr;
 
-	cur_optimum_ptr->cost_to_end = 0;
+	cur_node->cost_to_end = 0;
 	do {
 		unsigned literal;
 		u32 best_item;
@@ -793,7 +793,7 @@ xpress_find_min_cost_path(struct xpress_compressor *c, size_t in_nbytes,
 		struct lz_match *match;
 		unsigned len;
 
-		cur_optimum_ptr--;
+		cur_node--;
 		cache_ptr--;
 
 		literal = cache_ptr->offset;
@@ -801,14 +801,14 @@ xpress_find_min_cost_path(struct xpress_compressor *c, size_t in_nbytes,
 		/* Consider coding a literal.  */
 		best_item = ((u32)literal << OPTIMUM_OFFSET_SHIFT) | 1;
 		best_cost_to_end = c->costs[literal] +
-				   (cur_optimum_ptr + 1)->cost_to_end;
+				   (cur_node + 1)->cost_to_end;
 
 		num_matches = cache_ptr->length;
 
 		if (num_matches == 0) {
 			/* No matches; the only choice is the literal.  */
-			cur_optimum_ptr->cost_to_end = best_cost_to_end;
-			cur_optimum_ptr->item = best_item;
+			cur_node->cost_to_end = best_cost_to_end;
+			cur_node->item = best_item;
 			continue;
 		}
 
@@ -827,12 +827,12 @@ xpress_find_min_cost_path(struct xpress_compressor *c, size_t in_nbytes,
 			/* All lengths are small.  Optimize accordingly.  */
 			do {
 				unsigned offset;
-				unsigned offset_high_bit;
+				unsigned log2_offset;
 				u32 offset_cost;
 
 				offset = match->offset;
-				offset_high_bit = fls32(offset);
-				offset_cost = offset_high_bit;
+				log2_offset = fls32(offset);
+				offset_cost = log2_offset;
 				do {
 					unsigned len_hdr;
 					unsigned sym;
@@ -840,10 +840,10 @@ xpress_find_min_cost_path(struct xpress_compressor *c, size_t in_nbytes,
 
 					len_hdr = len - XPRESS_MIN_MATCH_LEN;
 					sym = XPRESS_NUM_CHARS +
-					      ((offset_high_bit << 4) | len_hdr);
+					      ((log2_offset << 4) | len_hdr);
 					cost_to_end =
 						offset_cost + c->costs[sym] +
-						(cur_optimum_ptr + len)->cost_to_end;
+						(cur_node + len)->cost_to_end;
 					if (cost_to_end < best_cost_to_end) {
 						best_cost_to_end = cost_to_end;
 						best_item =
@@ -856,12 +856,12 @@ xpress_find_min_cost_path(struct xpress_compressor *c, size_t in_nbytes,
 			/* Some lengths are big.  */
 			do {
 				unsigned offset;
-				unsigned offset_high_bit;
+				unsigned log2_offset;
 				u32 offset_cost;
 
 				offset = match->offset;
-				offset_high_bit = fls32(offset);
-				offset_cost = offset_high_bit;
+				log2_offset = fls32(offset);
+				offset_cost = log2_offset;
 				do {
 					unsigned adjusted_len;
 					unsigned len_hdr;
@@ -871,10 +871,10 @@ xpress_find_min_cost_path(struct xpress_compressor *c, size_t in_nbytes,
 					adjusted_len = len - XPRESS_MIN_MATCH_LEN;
 					len_hdr = min(adjusted_len, 0xF);
 					sym = XPRESS_NUM_CHARS +
-					      ((offset_high_bit << 4) | len_hdr);
+					      ((log2_offset << 4) | len_hdr);
 					cost_to_end =
 						offset_cost + c->costs[sym] +
-						(cur_optimum_ptr + len)->cost_to_end;
+						(cur_node + len)->cost_to_end;
 					if (adjusted_len >= 0xF) {
 						cost_to_end += 8;
 						if (adjusted_len - 0xF >= 0xFF)
@@ -890,9 +890,9 @@ xpress_find_min_cost_path(struct xpress_compressor *c, size_t in_nbytes,
 			} while (++match != cache_ptr);
 		}
 		cache_ptr -= num_matches;
-		cur_optimum_ptr->cost_to_end = best_cost_to_end;
-		cur_optimum_ptr->item = best_item;
-	} while (cur_optimum_ptr != c->optimum_nodes);
+		cur_node->cost_to_end = best_cost_to_end;
+		cur_node->item = best_item;
+	} while (cur_node != c->optimum_nodes);
 }
 
 /*
