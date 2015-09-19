@@ -89,8 +89,10 @@ lzx_get_window_order(size_t max_bufsize)
 	return max(order, LZX_MIN_WINDOW_ORDER);
 }
 
+/* Given a valid LZX window order, return the number of symbols that will exist
+ * in the main Huffman code.  */
 unsigned
-lzx_get_num_offset_slots(unsigned window_order)
+lzx_get_num_main_syms(unsigned window_order)
 {
 	/* Note: one would expect that the maximum match offset would be
 	 * 'window_size - LZX_MIN_MATCH_LEN', which would occur if the first two
@@ -98,17 +100,13 @@ lzx_get_num_offset_slots(unsigned window_order)
 	 * disallows this case.  This reduces the number of needed offset slots
 	 * by 1.  */
 	u32 window_size = (u32)1 << window_order;
-	u32 max_offset = window_size - LZX_MIN_MATCH_LEN - 1;
-	return 1 + lzx_get_offset_slot(max_offset);
-}
+	u32 max_adjusted_offset = (window_size - LZX_MIN_MATCH_LEN - 1) +
+				  LZX_OFFSET_ADJUSTMENT;
+	unsigned num_offset_slots = 30;
+	while (max_adjusted_offset >= lzx_offset_slot_base[num_offset_slots])
+		num_offset_slots++;
 
-/* Given a valid LZX window order, return the number of symbols that will exist
- * in the main Huffman code.  */
-unsigned
-lzx_get_num_main_syms(unsigned window_order)
-{
-	return LZX_NUM_CHARS + (lzx_get_num_offset_slots(window_order) *
-				LZX_NUM_LEN_HEADERS);
+	return LZX_NUM_CHARS + (num_offset_slots * LZX_NUM_LEN_HEADERS);
 }
 
 static void

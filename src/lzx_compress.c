@@ -1585,8 +1585,7 @@ lzx_find_min_cost_path(struct lzx_compressor * const restrict c,
 		 * of coding the literal is integrated into the queue update
 		 * code below.  */
 		literal = *in_next++;
-		cost = cur_node->cost +
-		       c->costs.main[lzx_main_symbol_for_literal(literal)];
+		cost = cur_node->cost + c->costs.main[literal];
 
 		/* Advance to the next position.  */
 		cur_node++;
@@ -1626,13 +1625,13 @@ lzx_find_min_cost_path(struct lzx_compressor * const restrict c,
 static void
 lzx_compute_match_costs(struct lzx_compressor *c)
 {
-	unsigned num_offset_slots = lzx_get_num_offset_slots(c->window_order);
+	unsigned num_offset_slots = (c->num_main_syms - LZX_NUM_CHARS) / LZX_NUM_LEN_HEADERS;
 	struct lzx_costs *costs = &c->costs;
 
 	for (unsigned offset_slot = 0; offset_slot < num_offset_slots; offset_slot++) {
 
 		u32 extra_cost = (u32)lzx_extra_offset_bits[offset_slot] * LZX_BIT_COST;
-		unsigned main_symbol = lzx_main_symbol_for_match(offset_slot, 0);
+		unsigned main_symbol = LZX_NUM_CHARS + (offset_slot * LZX_NUM_LEN_HEADERS);
 		unsigned i;
 
 	#if LZX_CONSIDER_ALIGNED_COSTS
