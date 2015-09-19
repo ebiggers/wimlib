@@ -126,13 +126,12 @@
 #define LZX_MAX_FAST_LEVEL	34
 
 /*
- * LZX_HASH2_ORDER is the log base 2 of the number of entries in the hash table
- * for finding length 2 matches.  This can be as high as 16 (in which case the
- * hash function is trivial), but using a smaller hash table speeds up
- * compression due to reduced cache pressure.
+ * BT_MATCHFINDER_HASH2_ORDER is the log base 2 of the number of entries in the
+ * hash table for finding length 2 matches.  This could be as high as 16, but
+ * using a smaller hash table speeds up compression due to reduced cache
+ * pressure.
  */
-#define LZX_HASH2_ORDER		12
-#define LZX_HASH2_LENGTH	(1UL << LZX_HASH2_ORDER)
+#define BT_MATCHFINDER_HASH2_ORDER	12
 
 /*
  * These are the compressor-side limits on the codeword lengths for each Huffman
@@ -484,9 +483,6 @@ struct lzx_compressor {
 			struct lz_match match_cache[LZX_CACHE_LENGTH +
 						    LZX_MAX_MATCHES_PER_POS +
 						    LZX_MAX_MATCH_LEN - 1];
-
-			/* Hash table for finding length 2 matches  */
-			u32 hash2_tab[LZX_HASH2_LENGTH];
 
 			/* Binary trees matchfinder (MUST BE LAST!!!)  */
 			union {
@@ -1787,12 +1783,10 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 	const u8 * const in_end  = in_begin + c->in_nbytes;
 	unsigned max_len = LZX_MAX_MATCH_LEN;
 	unsigned nice_len = min(c->nice_match_length, max_len);
-	u32 next_hash;
+	u32 next_hash = 0;
 	struct lzx_lru_queue queue;
 
 	CALL_BT_MF(is_16_bit, c, bt_matchfinder_init);
-	memset(c->hash2_tab, 0, sizeof(c->hash2_tab));
-	next_hash = bt_matchfinder_hash_3_bytes(in_next);
 	lzx_lru_queue_init(&queue);
 
 	do {
@@ -1805,8 +1799,6 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 		struct lz_match *cache_ptr = c->match_cache;
 		do {
 			struct lz_match *lz_matchptr;
-			u32 hash2;
-			pos_t cur_match;
 			unsigned best_len;
 
 			/* If approaching the end of the input buffer, adjust
@@ -1828,33 +1820,16 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 				}
 			}
 
-			lz_matchptr = cache_ptr + 1;
-
-			/* Check for a length 2 match.  */
-			hash2 = lz_hash_2_bytes(in_next, LZX_HASH2_ORDER);
-			cur_match = c->hash2_tab[hash2];
-			c->hash2_tab[hash2] = in_next - in_begin;
-			if (cur_match != 0 &&
-			    (LZX_HASH2_ORDER == 16 ||
-			     load_u16_unaligned(&in_begin[cur_match]) ==
-			     load_u16_unaligned(in_next)))
-			{
-				lz_matchptr->length = 2;
-				lz_matchptr->offset = in_next - &in_begin[cur_match];
-				lz_matchptr++;
-			}
-
-			/* Check for matches of length >= 3.  */
+			/* Check for matches.  */
 			lz_matchptr = CALL_BT_MF(is_16_bit, c, bt_matchfinder_get_matches,
 						 in_begin,
-						 in_next,
-						 3,
+						 in_next - in_begin,
 						 max_len,
 						 nice_len,
 						 c->max_search_depth,
 						 &next_hash,
 						 &best_len,
-						 lz_matchptr);
+						 cache_ptr + 1);
 			in_next++;
 			cache_ptr->length = lz_matchptr - (cache_ptr + 1);
 			cache_ptr = lz_matchptr;
@@ -1884,12 +1859,10 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 							continue;
 						}
 					}
-					c->hash2_tab[lz_hash_2_bytes(in_next, LZX_HASH2_ORDER)] =
-						in_next - in_begin;
 					CALL_BT_MF(is_16_bit, c, bt_matchfinder_skip_position,
 						   in_begin,
-						   in_next,
-						   in_end,
+						   in_next - in_begin,
+						   max_len,
 						   nice_len,
 						   c->max_search_depth,
 						   &next_hash);

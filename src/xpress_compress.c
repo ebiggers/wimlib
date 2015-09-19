@@ -908,10 +908,9 @@ xpress_find_matches(struct xpress_compressor * restrict c,
 	const u8 *in_next = in_begin;
 	const u8 * const in_end = in_begin + in_nbytes;
 	struct lz_match *cache_ptr = c->match_cache;
-	u32 next_hash;
+	u32 next_hash = 0;
 
 	bt_matchfinder_init(&c->bt_mf);
-	next_hash = bt_matchfinder_hash_3_bytes(in_next);
 
 	do {
 		struct lz_match *matches;
@@ -937,8 +936,7 @@ xpress_find_matches(struct xpress_compressor * restrict c,
 		cache_ptr =
 			bt_matchfinder_get_matches(&c->bt_mf,
 						   in_begin,
-						   in_next,
-						   XPRESS_MIN_MATCH_LEN,
+						   in_next - in_begin,
 						   in_end - in_next,
 						   min(in_end - in_next, c->nice_match_length),
 						   c->max_search_depth,
@@ -965,8 +963,8 @@ xpress_find_matches(struct xpress_compressor * restrict c,
 			do {
 				bt_matchfinder_skip_position(&c->bt_mf,
 							     in_begin,
-							     in_next,
-							     in_end,
+							     in_next - in_begin,
+							     in_end - in_next,
 							     min(in_end - in_next,
 								 c->nice_match_length),
 							     c->max_search_depth,
