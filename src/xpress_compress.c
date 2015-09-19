@@ -46,10 +46,10 @@
 #define MIN_LEVEL_FOR_NEAR_OPTIMAL	60
 
 /*
- * The maximum window order for the matchfinder.  This must be the base 2
- * logarithm of the maximum buffer size.
+ * Matchfinder definitions.  For XPRESS, only a 16-bit matchfinder is needed.
  */
-#define MATCHFINDER_MAX_WINDOW_ORDER	16
+#define pos_t u16
+#define MF_SUFFIX
 
 /*
  * Note: although XPRESS can potentially use a sliding window, it isn't well
@@ -58,8 +58,6 @@
  * match offsets (no sliding window).  This simplifies the code and allows some
  * optimizations.
  */
-
-#include <string.h>
 
 #include "wimlib/bitops.h"
 #include "wimlib/compress_common.h"

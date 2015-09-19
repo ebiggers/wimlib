@@ -45,61 +45,32 @@
  * ----------------------------------------------------------------------------
  */
 
-#ifndef _BT_MATCHFINDER_H
-#define _BT_MATCHFINDER_H
-
-#ifndef MATCHFINDER_MAX_WINDOW_ORDER
-#  error "MATCHFINDER_MAX_WINDOW_ORDER must be defined!"
-#endif
 
 #include <string.h>
 
 #include "wimlib/lz_extend.h"
 #include "wimlib/lz_hash.h"
 
-#if MATCHFINDER_MAX_WINDOW_ORDER < 13
-#  define BT_MATCHFINDER_HASH_ORDER 14
-#elif MATCHFINDER_MAX_WINDOW_ORDER < 15
-#  define BT_MATCHFINDER_HASH_ORDER 15
-#else
-#  define BT_MATCHFINDER_HASH_ORDER 16
-#endif
+#define BT_MATCHFINDER_HASH_ORDER 16
 
-#if MATCHFINDER_MAX_WINDOW_ORDER <= 16
-typedef u16 pos_t;
-#else
-typedef u32 pos_t;
-#endif
+/* TEMPLATED functions and structures have MF_SUFFIX appended to their name.  */
+#undef TEMPLATED
+#define TEMPLATED(name)		CONCAT(name, MF_SUFFIX)
+
+#ifndef _WIMLIB_BT_MATCHFINDER_H
+#define _WIMLIB_BT_MATCHFINDER_H
+
+/* Non-templated definitions  */
 
 /* Representation of a match found by the bt_matchfinder  */
 struct lz_match {
 
 	/* The number of bytes matched.  */
-	pos_t length;
+	u32 length;
 
 	/* The offset back from the current position that was matched.  */
-	pos_t offset;
+	u32 offset;
 };
-
-struct bt_matchfinder {
-	pos_t hash_tab[1UL << BT_MATCHFINDER_HASH_ORDER];
-	pos_t child_tab[];
-};
-
-/* Return the number of bytes that must be allocated for a 'bt_matchfinder' that
- * can work with buffers up to the specified size.  */
-static inline size_t
-bt_matchfinder_size(size_t max_bufsize)
-{
-	return sizeof(struct bt_matchfinder) + (2 * max_bufsize * sizeof(pos_t));
-}
-
-/* Prepare the matchfinder for a new input buffer.  */
-static inline void
-bt_matchfinder_init(struct bt_matchfinder *mf)
-{
-	memset(mf, 0, sizeof(*mf));
-}
 
 static inline u32
 bt_matchfinder_hash_3_bytes(const u8 *in_next)
@@ -107,27 +78,45 @@ bt_matchfinder_hash_3_bytes(const u8 *in_next)
 	return lz_hash_3_bytes(in_next, BT_MATCHFINDER_HASH_ORDER);
 }
 
-static inline pos_t *
-bt_child(struct bt_matchfinder *mf, pos_t node, int offset)
+#endif /* _WIMLIB_BT_MATCHFINDER_H */
+
+struct TEMPLATED(bt_matchfinder) {
+	pos_t hash_tab[1UL << BT_MATCHFINDER_HASH_ORDER];
+	pos_t child_tab[];
+};
+
+/* Return the number of bytes that must be allocated for a 'bt_matchfinder' that
+ * can work with buffers up to the specified size.  */
+static inline size_t
+TEMPLATED(bt_matchfinder_size)(size_t max_bufsize)
 {
-	if (MATCHFINDER_MAX_WINDOW_ORDER < sizeof(pos_t) * 8) {
-		/* no cast needed */
-		return &mf->child_tab[(node << 1) + offset];
-	} else {
-		return &mf->child_tab[((size_t)node << 1) + offset];
-	}
+	return sizeof(struct TEMPLATED(bt_matchfinder)) +
+		(2 * max_bufsize * sizeof(pos_t));
+}
+
+/* Prepare the matchfinder for a new input buffer.  */
+static inline void
+TEMPLATED(bt_matchfinder_init)(struct TEMPLATED(bt_matchfinder) *mf)
+{
+	memset(mf, 0, sizeof(*mf));
 }
 
 static inline pos_t *
-bt_left_child(struct bt_matchfinder *mf, pos_t node)
+TEMPLATED(bt_child)(struct TEMPLATED(bt_matchfinder) *mf, pos_t node, int offset)
 {
-	return bt_child(mf, node, 0);
+	return &mf->child_tab[(node << 1) + offset];
 }
 
 static inline pos_t *
-bt_right_child(struct bt_matchfinder *mf, pos_t node)
+TEMPLATED(bt_left_child)(struct TEMPLATED(bt_matchfinder) *mf, pos_t node)
 {
-	return bt_child(mf, node, 1);
+	return TEMPLATED(bt_child)(mf, node, 0);
+}
+
+static inline pos_t *
+TEMPLATED(bt_right_child)(struct TEMPLATED(bt_matchfinder) *mf, pos_t node)
+{
+	return TEMPLATED(bt_child)(mf, node, 1);
 }
 
 /*
@@ -168,16 +157,16 @@ bt_right_child(struct bt_matchfinder *mf, pos_t node)
  * array.  (If no matches were found, this will be the same as @lz_matchptr.)
  */
 static inline struct lz_match *
-bt_matchfinder_get_matches(struct bt_matchfinder * const restrict mf,
-			   const u8 * const in_begin,
-			   const u8 * const in_next,
-			   const unsigned min_len,
-			   const unsigned max_len,
-			   const unsigned nice_len,
-			   const unsigned max_search_depth,
-			   u32 * restrict next_hash,
-			   unsigned * restrict best_len_ret,
-			   struct lz_match * restrict lz_matchptr)
+TEMPLATED(bt_matchfinder_get_matches)(struct TEMPLATED(bt_matchfinder) * const restrict mf,
+				      const u8 * const in_begin,
+				      const u8 * const in_next,
+				      const unsigned min_len,
+				      const unsigned max_len,
+				      const unsigned nice_len,
+				      const unsigned max_search_depth,
+				      u32 * restrict next_hash,
+				      unsigned * restrict best_len_ret,
+				      struct lz_match * restrict lz_matchptr)
 {
 	unsigned depth_remaining = max_search_depth;
 	u32 hash;
@@ -199,8 +188,8 @@ bt_matchfinder_get_matches(struct bt_matchfinder * const restrict mf,
 	mf->hash_tab[hash] = in_next - in_begin;
 	prefetchw(&mf->hash_tab[*next_hash]);
 
-	pending_lt_ptr = bt_left_child(mf, in_next - in_begin);
-	pending_gt_ptr = bt_right_child(mf, in_next - in_begin);
+	pending_lt_ptr = TEMPLATED(bt_left_child)(mf, in_next - in_begin);
+	pending_gt_ptr = TEMPLATED(bt_right_child)(mf, in_next - in_begin);
 	best_lt_len = 0;
 	best_gt_len = 0;
 	len = 0;
@@ -223,8 +212,8 @@ bt_matchfinder_get_matches(struct bt_matchfinder * const restrict mf,
 				lz_matchptr->offset = in_next - matchptr;
 				lz_matchptr++;
 				if (len >= nice_len) {
-					*pending_lt_ptr = *bt_left_child(mf, cur_node);
-					*pending_gt_ptr = *bt_right_child(mf, cur_node);
+					*pending_lt_ptr = *TEMPLATED(bt_left_child)(mf, cur_node);
+					*pending_gt_ptr = *TEMPLATED(bt_right_child)(mf, cur_node);
 					*best_len_ret = best_len;
 					return lz_matchptr;
 				}
@@ -233,14 +222,14 @@ bt_matchfinder_get_matches(struct bt_matchfinder * const restrict mf,
 
 		if (matchptr[len] < in_next[len]) {
 			*pending_lt_ptr = cur_node;
-			pending_lt_ptr = bt_right_child(mf, cur_node);
+			pending_lt_ptr = TEMPLATED(bt_right_child)(mf, cur_node);
 			cur_node = *pending_lt_ptr;
 			best_lt_len = len;
 			if (best_gt_len < len)
 				len = best_gt_len;
 		} else {
 			*pending_gt_ptr = cur_node;
-			pending_gt_ptr = bt_left_child(mf, cur_node);
+			pending_gt_ptr = TEMPLATED(bt_left_child)(mf, cur_node);
 			cur_node = *pending_gt_ptr;
 			best_gt_len = len;
 			if (best_lt_len < len)
@@ -281,13 +270,13 @@ bt_matchfinder_get_matches(struct bt_matchfinder * const restrict mf,
  * actually record any matches.
  */
 static inline void
-bt_matchfinder_skip_position(struct bt_matchfinder * const restrict mf,
-			     const u8 * const in_begin,
-			     const u8 * const in_next,
-			     const u8 * const in_end,
-			     const unsigned nice_len,
-			     const unsigned max_search_depth,
-			     u32 * restrict next_hash)
+TEMPLATED(bt_matchfinder_skip_position)(struct TEMPLATED(bt_matchfinder) * const restrict mf,
+					const u8 * const in_begin,
+					const u8 * const in_next,
+					const u8 * const in_end,
+					const unsigned nice_len,
+					const unsigned max_search_depth,
+					u32 * restrict next_hash)
 {
 	unsigned depth_remaining = max_search_depth;
 	u32 hash;
@@ -307,8 +296,8 @@ bt_matchfinder_skip_position(struct bt_matchfinder * const restrict mf,
 	prefetchw(&mf->hash_tab[*next_hash]);
 
 	depth_remaining = max_search_depth;
-	pending_lt_ptr = bt_left_child(mf, in_next - in_begin);
-	pending_gt_ptr = bt_right_child(mf, in_next - in_begin);
+	pending_lt_ptr = TEMPLATED(bt_left_child)(mf, in_next - in_begin);
+	pending_gt_ptr = TEMPLATED(bt_right_child)(mf, in_next - in_begin);
 	best_lt_len = 0;
 	best_gt_len = 0;
 	len = 0;
@@ -325,22 +314,22 @@ bt_matchfinder_skip_position(struct bt_matchfinder * const restrict mf,
 		if (matchptr[len] == in_next[len]) {
 			len = lz_extend(in_next, matchptr, len + 1, nice_len);
 			if (len == nice_len) {
-				*pending_lt_ptr = *bt_left_child(mf, cur_node);
-				*pending_gt_ptr = *bt_right_child(mf, cur_node);
+				*pending_lt_ptr = *TEMPLATED(bt_left_child)(mf, cur_node);
+				*pending_gt_ptr = *TEMPLATED(bt_right_child)(mf, cur_node);
 				return;
 			}
 		}
 
 		if (matchptr[len] < in_next[len]) {
 			*pending_lt_ptr = cur_node;
-			pending_lt_ptr = bt_right_child(mf, cur_node);
+			pending_lt_ptr = TEMPLATED(bt_right_child)(mf, cur_node);
 			cur_node = *pending_lt_ptr;
 			best_lt_len = len;
 			if (best_gt_len < len)
 				len = best_gt_len;
 		} else {
 			*pending_gt_ptr = cur_node;
-			pending_gt_ptr = bt_left_child(mf, cur_node);
+			pending_gt_ptr = TEMPLATED(bt_left_child)(mf, cur_node);
 			cur_node = *pending_gt_ptr;
 			best_gt_len = len;
 			if (best_lt_len < len)
@@ -354,5 +343,3 @@ bt_matchfinder_skip_position(struct bt_matchfinder * const restrict mf,
 		}
 	}
 }
-
-#endif /* _BT_MATCHFINDER_H */

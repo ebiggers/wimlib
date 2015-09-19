@@ -106,4 +106,9 @@
 #  define STATIC_ASSERT(expr)	((void)sizeof(char[1 - 2 * !(expr)]))
 #endif
 
+#define CONCAT_IMPL(s1, s2)	s1##s2
+
+/* CONCAT() - concatenate two tokens at preprocessing time.  */
+#define CONCAT(s1, s2)		CONCAT_IMPL(s1, s2)
+
 #endif /* _WIMLIB_COMPILER_H */
