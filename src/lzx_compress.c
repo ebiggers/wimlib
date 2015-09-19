@@ -164,8 +164,8 @@ struct lzx_codewords {
 /* Codeword lengths (in bits) for the LZX Huffman codes.
  * A zero length means the corresponding codeword has zero frequency.  */
 struct lzx_lens {
-	u8 main[LZX_MAINCODE_MAX_NUM_SYMBOLS];
-	u8 len[LZX_LENCODE_NUM_SYMBOLS];
+	u8 main[LZX_MAINCODE_MAX_NUM_SYMBOLS + 1];
+	u8 len[LZX_LENCODE_NUM_SYMBOLS + 1];
 	u8 aligned[LZX_ALIGNEDCODE_NUM_SYMBOLS];
 };
 
@@ -641,7 +641,6 @@ lzx_reset_symbol_frequencies(struct lzx_compressor *c)
 static unsigned
 lzx_compute_precode_items(const u8 lens[restrict],
 			  const u8 prev_lens[restrict],
-			  const unsigned num_lens,
 			  u32 precode_freqs[restrict],
 			  unsigned precode_items[restrict])
 {
@@ -654,16 +653,17 @@ lzx_compute_precode_items(const u8 lens[restrict],
 
 	itemptr = precode_items;
 	run_start = 0;
-	do {
-		/* Find the next run of codeword lengths.  */
+
+	while (!((len = lens[run_start]) & 0x80)) {
 
 		/* len = the length being repeated  */
-		len = lens[run_start];
+
+		/* Find the next run of codeword lengths.  */
 
 		run_end = run_start + 1;
 
 		/* Fast case for a single length.  */
-		if (likely(run_end == num_lens || len != lens[run_end])) {
+		if (likely(len != lens[run_end])) {
 			delta = prev_lens[run_start] - len;
 			if (delta < 0)
 				delta += 17;
@@ -676,7 +676,7 @@ lzx_compute_precode_items(const u8 lens[restrict],
 		/* Extend the run.  */
 		do {
 			run_end++;
-		} while (run_end != num_lens && len == lens[run_end]);
+		} while (len == lens[run_end]);
 
 		if (len == 0) {
 			/* Run of zeroes.  */
@@ -722,7 +722,7 @@ lzx_compute_precode_items(const u8 lens[restrict],
 			*itemptr++ = delta;
 			run_start++;
 		}
-	} while (run_start != num_lens);
+	}
 
 	return itemptr - precode_items;
 }
@@ -770,6 +770,8 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
 	unsigned precode_item;
 	unsigned precode_sym;
 	unsigned i;
+	u8 saved = lens[num_lens];
+	*(u8 *)(lens + num_lens) = 0x80;
 
 	for (i = 0; i < LZX_PRECODE_NUM_SYMBOLS; i++)
 		precode_freqs[i] = 0;
@@ -778,7 +780,6 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
 	 * the codeword lengths in the larger code will be output.  */
 	num_precode_items = lzx_compute_precode_items(lens,
 						      prev_lens,
-						      num_lens,
 						      precode_freqs,
 						      precode_items);
 
@@ -813,6 +814,8 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
 			}
 		}
 	}
+
+	*(u8 *)(lens + num_lens) = saved;
 }
 
 /* Output a match or literal.  */
