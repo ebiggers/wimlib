@@ -1,3 +1,9 @@
+Version 1.8.3-BETA:
+	Fixed a bug with libntfs-3g extraction present since v1.8.1.  Sometimes,
+	some Microsoft software would not correctly recognize data in the
+	resulting filesystem.  Users of the (UNIX-only) NTFS-3g based WIM
+	extraction support should not use wimlib v1.8.1 or wimlib v1.8.2.
+
 Version 1.8.2:
 	This release primarily contains various minor bug fixes and
 	improvements, including:
