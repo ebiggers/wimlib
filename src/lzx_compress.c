@@ -466,8 +466,7 @@ struct lzx_compressor {
 						    LZX_MAX_MATCH_LEN - 1];
 
 			/* Hash table for finding length 2 matches  */
-			pos_t hash2_tab[LZX_HASH2_LENGTH]
-				_aligned_attribute(MATCHFINDER_ALIGNMENT);
+			pos_t hash2_tab[LZX_HASH2_LENGTH];
 
 			/* Binary trees matchfinder (MUST BE LAST!!!)  */
 			struct bt_matchfinder bt_mf;
@@ -1600,7 +1599,7 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 	struct lzx_lru_queue queue;
 
 	bt_matchfinder_init(&c->bt_mf);
-	matchfinder_init(c->hash2_tab, LZX_HASH2_LENGTH);
+	memset(c->hash2_tab, 0, sizeof(c->hash2_tab));
 	next_hash = bt_matchfinder_hash_3_bytes(in_next);
 	lzx_lru_queue_init(&queue);
 
@@ -1643,7 +1642,7 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 			hash2 = lz_hash_2_bytes(in_next, LZX_HASH2_ORDER);
 			cur_match = c->hash2_tab[hash2];
 			c->hash2_tab[hash2] = in_next - in_begin;
-			if (matchfinder_node_valid(cur_match) &&
+			if (cur_match != 0 &&
 			    (LZX_HASH2_ORDER == 16 ||
 			     load_u16_unaligned(&in_begin[cur_match]) ==
 			     load_u16_unaligned(in_next)))
@@ -2037,9 +2036,7 @@ lzx_create_compressor(size_t max_bufsize, unsigned compression_level,
 	if (window_order == 0)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	c = ALIGNED_MALLOC(lzx_get_compressor_size(max_bufsize,
-						   compression_level),
-			   MATCHFINDER_ALIGNMENT);
+	c = MALLOC(lzx_get_compressor_size(max_bufsize, compression_level));
 	if (!c)
 		goto oom0;
 
@@ -2114,7 +2111,7 @@ lzx_create_compressor(size_t max_bufsize, unsigned compression_level,
 	return 0;
 
 oom1:
-	ALIGNED_FREE(c);
+	FREE(c);
 oom0:
 	return WIMLIB_ERR_NOMEM;
 }
@@ -2163,7 +2160,7 @@ lzx_free_compressor(void *_c)
 
 	if (!c->destructive)
 		FREE(c->in_buffer);
-	ALIGNED_FREE(c);
+	FREE(c);
 }
 
 const struct compressor_ops lzx_compressor_ops = {

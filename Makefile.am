@@ -129,9 +129,6 @@ libwim_la_SOURCES =		\
 	include/wimlib/lzms_constants.h	\
 	include/wimlib/lzx_common.h	\
 	include/wimlib/lzx_constants.h	\
-	include/wimlib/matchfinder_avx2.h	\
-	include/wimlib/matchfinder_common.h	\
-	include/wimlib/matchfinder_sse2.h	\
 	include/wimlib/metadata.h	\
 	include/wimlib/pathlist.h	\
 	include/wimlib/paths.h		\

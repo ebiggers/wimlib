@@ -54,9 +54,8 @@
  * (and therefore reduced cache pressure), the code only uses 32-bit integers if
  * they are needed to represent all possible positions.
  *
- * You must allocate the 'struct hc_matchfinder' on a
- * MATCHFINDER_ALIGNMENT-aligned boundary, and its necessary allocation size
- * must be gotten by calling hc_matchfinder_size().
+ * The number of bytes that must be allocated for a given 'struct
+ * hc_matchfinder' must be gotten by calling hc_matchfinder_size().
  *
  * ----------------------------------------------------------------------------
  *
@@ -96,9 +95,14 @@
 #ifndef _HC_MATCHFINDER_H
 #define _HC_MATCHFINDER_H
 
+#ifndef MATCHFINDER_MAX_WINDOW_ORDER
+#  error "MATCHFINDER_MAX_WINDOW_ORDER must be defined!"
+#endif
+
+#include <string.h>
+
 #include "wimlib/lz_extend.h"
 #include "wimlib/lz_hash.h"
-#include "wimlib/matchfinder_common.h"
 #include "wimlib/unaligned.h"
 
 #if MATCHFINDER_MAX_WINDOW_ORDER < 14
@@ -107,26 +111,30 @@
 #  define HC_MATCHFINDER_HASH_ORDER 15
 #endif
 
-#define HC_MATCHFINDER_HASH_LENGTH	(1UL << HC_MATCHFINDER_HASH_ORDER)
+#if MATCHFINDER_MAX_WINDOW_ORDER <= 16
+typedef u16 pos_t;
+#else
+typedef u32 pos_t;
+#endif
 
 struct hc_matchfinder {
-	pos_t hash_tab[HC_MATCHFINDER_HASH_LENGTH];
+	pos_t hash_tab[1UL << HC_MATCHFINDER_HASH_ORDER];
 	pos_t next_tab[];
-} _aligned_attribute(MATCHFINDER_ALIGNMENT);
+};
 
 /* Return the number of bytes that must be allocated for a 'hc_matchfinder' that
  * can work with buffers up to the specified size.  */
 static inline size_t
 hc_matchfinder_size(size_t max_bufsize)
 {
-	return sizeof(pos_t) * (HC_MATCHFINDER_HASH_LENGTH + max_bufsize);
+	return sizeof(struct hc_matchfinder) + (max_bufsize * sizeof(pos_t));
 }
 
 /* Prepare the matchfinder for a new input buffer.  */
 static inline void
 hc_matchfinder_init(struct hc_matchfinder *mf)
 {
-	matchfinder_init(mf->hash_tab, HC_MATCHFINDER_HASH_LENGTH);
+	memset(mf, 0, sizeof(*mf));
 }
 
 /*
@@ -186,7 +194,7 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 
 	/* Search the appropriate linked list for matches.  */
 
-	if (!(matchfinder_node_valid(cur_node)))
+	if (!cur_node)
 		goto out;
 
 	if (best_len < 3) {
@@ -200,7 +208,7 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 
 			/* The first 3 bytes did not match.  Keep trying.  */
 			cur_node = mf->next_tab[cur_node];
-			if (!matchfinder_node_valid(cur_node) || !--depth_remaining)
+			if (!cur_node || !--depth_remaining)
 				goto out;
 		}
 
@@ -210,7 +218,7 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 		if (best_len >= nice_len)
 			goto out;
 		cur_node = mf->next_tab[cur_node];
-		if (!matchfinder_node_valid(cur_node) || !--depth_remaining)
+		if (!cur_node || !--depth_remaining)
 			goto out;
 	}
 
@@ -234,7 +242,7 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 				break;
 
 			cur_node = mf->next_tab[cur_node];
-			if (!matchfinder_node_valid(cur_node) || !--depth_remaining)
+			if (!cur_node || !--depth_remaining)
 				goto out;
 		}
 
@@ -251,7 +259,7 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 				goto out;
 		}
 		cur_node = mf->next_tab[cur_node];
-		if (!matchfinder_node_valid(cur_node) || !--depth_remaining)
+		if (!cur_node || !--depth_remaining)
 			goto out;
 	}
 out:

@@ -1068,8 +1068,7 @@ xpress_create_compressor(size_t max_bufsize, unsigned compression_level,
 	if (max_bufsize > XPRESS_MAX_BUFSIZE)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	c = ALIGNED_MALLOC(xpress_get_compressor_size(max_bufsize, compression_level),
-			   MATCHFINDER_ALIGNMENT);
+	c = MALLOC(xpress_get_compressor_size(max_bufsize, compression_level));
 	if (!c)
 		goto oom0;
 
@@ -1129,7 +1128,7 @@ xpress_create_compressor(size_t max_bufsize, unsigned compression_level,
 	return 0;
 
 oom1:
-	ALIGNED_FREE(c);
+	FREE(c);
 oom0:
 	return WIMLIB_ERR_NOMEM;
 }
@@ -1164,7 +1163,7 @@ xpress_free_compressor(void *_c)
 	} else
 #endif
 		FREE(c->chosen_items);
-	ALIGNED_FREE(c);
+	FREE(c);
 }
 
 const struct compressor_ops xpress_compressor_ops = {

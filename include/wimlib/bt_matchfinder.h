@@ -48,9 +48,14 @@
 #ifndef _BT_MATCHFINDER_H
 #define _BT_MATCHFINDER_H
 
+#ifndef MATCHFINDER_MAX_WINDOW_ORDER
+#  error "MATCHFINDER_MAX_WINDOW_ORDER must be defined!"
+#endif
+
+#include <string.h>
+
 #include "wimlib/lz_extend.h"
 #include "wimlib/lz_hash.h"
-#include "wimlib/matchfinder_common.h"
 
 #if MATCHFINDER_MAX_WINDOW_ORDER < 13
 #  define BT_MATCHFINDER_HASH_ORDER 14
@@ -60,26 +65,40 @@
 #  define BT_MATCHFINDER_HASH_ORDER 16
 #endif
 
-#define BT_MATCHFINDER_HASH_LENGTH	(1UL << BT_MATCHFINDER_HASH_ORDER)
+#if MATCHFINDER_MAX_WINDOW_ORDER <= 16
+typedef u16 pos_t;
+#else
+typedef u32 pos_t;
+#endif
+
+/* Representation of a match found by the bt_matchfinder  */
+struct lz_match {
+
+	/* The number of bytes matched.  */
+	pos_t length;
+
+	/* The offset back from the current position that was matched.  */
+	pos_t offset;
+};
 
 struct bt_matchfinder {
-	pos_t hash_tab[BT_MATCHFINDER_HASH_LENGTH];
+	pos_t hash_tab[1UL << BT_MATCHFINDER_HASH_ORDER];
 	pos_t child_tab[];
-} _aligned_attribute(MATCHFINDER_ALIGNMENT);
+};
 
 /* Return the number of bytes that must be allocated for a 'bt_matchfinder' that
  * can work with buffers up to the specified size.  */
 static inline size_t
 bt_matchfinder_size(size_t max_bufsize)
 {
-	return sizeof(pos_t) * (BT_MATCHFINDER_HASH_LENGTH + (2 * max_bufsize));
+	return sizeof(struct bt_matchfinder) + (2 * max_bufsize * sizeof(pos_t));
 }
 
 /* Prepare the matchfinder for a new input buffer.  */
 static inline void
 bt_matchfinder_init(struct bt_matchfinder *mf)
 {
-	matchfinder_init(mf->hash_tab, BT_MATCHFINDER_HASH_LENGTH);
+	memset(mf, 0, sizeof(*mf));
 }
 
 static inline u32
@@ -186,9 +205,9 @@ bt_matchfinder_get_matches(struct bt_matchfinder * const restrict mf,
 	best_gt_len = 0;
 	len = 0;
 
-	if (!matchfinder_node_valid(cur_node)) {
-		*pending_lt_ptr = MATCHFINDER_NULL;
-		*pending_gt_ptr = MATCHFINDER_NULL;
+	if (!cur_node) {
+		*pending_lt_ptr = 0;
+		*pending_gt_ptr = 0;
 		*best_len_ret = best_len;
 		return lz_matchptr;
 	}
@@ -228,9 +247,9 @@ bt_matchfinder_get_matches(struct bt_matchfinder * const restrict mf,
 				len = best_lt_len;
 		}
 
-		if (!matchfinder_node_valid(cur_node) || !--depth_remaining) {
-			*pending_lt_ptr = MATCHFINDER_NULL;
-			*pending_gt_ptr = MATCHFINDER_NULL;
+		if (!cur_node || !--depth_remaining) {
+			*pending_lt_ptr = 0;
+			*pending_gt_ptr = 0;
 			*best_len_ret = best_len;
 			return lz_matchptr;
 		}
@@ -294,9 +313,9 @@ bt_matchfinder_skip_position(struct bt_matchfinder * const restrict mf,
 	best_gt_len = 0;
 	len = 0;
 
-	if (!matchfinder_node_valid(cur_node)) {
-		*pending_lt_ptr = MATCHFINDER_NULL;
-		*pending_gt_ptr = MATCHFINDER_NULL;
+	if (!cur_node) {
+		*pending_lt_ptr = 0;
+		*pending_gt_ptr = 0;
 		return;
 	}
 
@@ -328,9 +347,9 @@ bt_matchfinder_skip_position(struct bt_matchfinder * const restrict mf,
 				len = best_lt_len;
 		}
 
-		if (!matchfinder_node_valid(cur_node) || !--depth_remaining) {
-			*pending_lt_ptr = MATCHFINDER_NULL;
-			*pending_gt_ptr = MATCHFINDER_NULL;
+		if (!cur_node || !--depth_remaining) {
+			*pending_lt_ptr = 0;
+			*pending_gt_ptr = 0;
 			return;
 		}
 	}
