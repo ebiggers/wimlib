@@ -1019,9 +1019,6 @@ lzx_write_compressed_block(const u8 *block_begin,
 			   const struct lzx_lens * prev_lens,
 			   struct lzx_output_bitstream * os)
 {
-	LZX_ASSERT(block_type == LZX_BLOCKTYPE_ALIGNED ||
-		   block_type == LZX_BLOCKTYPE_VERBATIM);
-
 	/* The first three bits indicate the type of block and are one of the
 	 * LZX_BLOCKTYPE_* constants.  */
 	lzx_write_bits(os, block_type, 3);
@@ -1913,7 +1910,6 @@ lzx_find_longest_repeat_offset_match(const u8 * const in_next,
 				     unsigned *rep_max_idx_ret)
 {
 	STATIC_ASSERT(LZX_NUM_RECENT_OFFSETS == 3);
-	LZX_ASSERT(bytes_remaining >= 2);
 
 	const unsigned max_len = min(bytes_remaining, LZX_MAX_MATCH_LEN);
 	const u16 next_2_bytes = load_u16_unaligned(in_next);

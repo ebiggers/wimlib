@@ -11,14 +11,6 @@
 #include "wimlib/lzx_constants.h"
 #include "wimlib/types.h"
 
-//#define ENABLE_LZX_DEBUG
-#ifdef ENABLE_LZX_DEBUG
-#  include "wimlib/assert.h"
-#  define LZX_ASSERT wimlib_assert
-#else
-#  define LZX_ASSERT(...)
-#endif
-
 extern const u32 lzx_offset_slot_base[LZX_MAX_OFFSET_SLOTS + 1];
 
 extern const u8 lzx_extra_offset_bits[LZX_MAX_OFFSET_SLOTS];
