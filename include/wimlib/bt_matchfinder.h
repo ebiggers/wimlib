@@ -78,17 +78,17 @@ struct TEMPLATED(bt_matchfinder) {
 
 	/* The hash table for finding length 2 matches, if enabled  */
 #ifdef BT_MATCHFINDER_HASH2_ORDER
-	pos_t hash2_tab[1UL << BT_MATCHFINDER_HASH2_ORDER];
+	mf_pos_t hash2_tab[1UL << BT_MATCHFINDER_HASH2_ORDER];
 #endif
 
 	/* The hash table which contains the roots of the binary trees for
 	 * finding length 3 matches  */
-	pos_t hash3_tab[1UL << BT_MATCHFINDER_HASH3_ORDER];
+	mf_pos_t hash3_tab[1UL << BT_MATCHFINDER_HASH3_ORDER];
 
 	/* The child node references for the binary trees.  The left and right
 	 * children of the node for the sequence with position 'pos' are
 	 * 'child_tab[pos * 2]' and 'child_tab[pos * 2 + 1]', respectively.  */
-	pos_t child_tab[];
+	mf_pos_t child_tab[];
 };
 
 /* Return the number of bytes that must be allocated for a 'bt_matchfinder' that
@@ -97,7 +97,7 @@ static inline size_t
 TEMPLATED(bt_matchfinder_size)(size_t max_bufsize)
 {
 	return sizeof(struct TEMPLATED(bt_matchfinder)) +
-		(2 * max_bufsize * sizeof(pos_t));
+		(2 * max_bufsize * sizeof(mf_pos_t));
 }
 
 /* Prepare the matchfinder for a new input buffer.  */
@@ -107,13 +107,13 @@ TEMPLATED(bt_matchfinder_init)(struct TEMPLATED(bt_matchfinder) *mf)
 	memset(mf, 0, sizeof(*mf));
 }
 
-static inline pos_t *
+static inline mf_pos_t *
 TEMPLATED(bt_left_child)(struct TEMPLATED(bt_matchfinder) *mf, u32 node)
 {
 	return &mf->child_tab[(node << 1) + 0];
 }
 
-static inline pos_t *
+static inline mf_pos_t *
 TEMPLATED(bt_right_child)(struct TEMPLATED(bt_matchfinder) *mf, u32 node)
 {
 	return &mf->child_tab[(node << 1) + 1];
@@ -142,7 +142,7 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 	u32 hash3;
 	u32 cur_node;
 	const u8 *matchptr;
-	pos_t *pending_lt_ptr, *pending_gt_ptr;
+	mf_pos_t *pending_lt_ptr, *pending_gt_ptr;
 	u32 best_lt_len, best_gt_len;
 	u32 len;
 	u32 best_len = 2;

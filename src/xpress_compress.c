@@ -48,7 +48,7 @@
 /*
  * Matchfinder definitions.  For XPRESS, only a 16-bit matchfinder is needed.
  */
-#define pos_t u16
+#define mf_pos_t	u16
 #define MF_SUFFIX
 
 /*

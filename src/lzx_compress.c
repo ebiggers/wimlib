@@ -153,16 +153,16 @@
 #include "wimlib/util.h"
 
 /* Matchfinders with 16-bit positions  */
-#define pos_t	u16
-#define MF_SUFFIX _16
+#define mf_pos_t	u16
+#define MF_SUFFIX	_16
 #include "wimlib/bt_matchfinder.h"
 #include "wimlib/hc_matchfinder.h"
 
 /* Matchfinders with 32-bit positions  */
-#undef pos_t
+#undef mf_pos_t
 #undef MF_SUFFIX
-#define pos_t	u32
-#define MF_SUFFIX _32
+#define mf_pos_t	u32
+#define MF_SUFFIX	_32
 #include "wimlib/bt_matchfinder.h"
 #include "wimlib/hc_matchfinder.h"
 
