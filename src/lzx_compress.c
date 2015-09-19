@@ -114,10 +114,9 @@
 #define LZX_BIT_COST		16
 
 /*
- * Consideration of aligned offset costs is disabled for now, due to
- * insufficient benefit gained from the time spent.
+ * Should the compressor take into account the costs of aligned offset symbols?
  */
-#define LZX_CONSIDER_ALIGNED_COSTS	0
+#define LZX_CONSIDER_ALIGNED_COSTS	1
 
 /*
  * LZX_MAX_FAST_LEVEL is the maximum compression level at which we use the
@@ -1557,16 +1556,18 @@ lzx_find_min_cost_path(struct lzx_compressor * const restrict c,
 				u32 offset_data = offset + LZX_OFFSET_ADJUSTMENT;
 				unsigned offset_slot = lzx_comp_get_offset_slot(c, offset_data,
 										is_16_bit);
+				u32 base_cost = cur_node->cost;
+
+			#if LZX_CONSIDER_ALIGNED_COSTS
+				if (offset_data >= 16)
+					base_cost += c->costs.aligned[offset_data &
+								      LZX_ALIGNED_OFFSET_BITMASK];
+			#endif
+
 				do {
-					u32 cost = cur_node->cost +
+					u32 cost = base_cost +
 						   c->costs.match_cost[offset_slot][
 								next_len - LZX_MIN_MATCH_LEN];
-				#if LZX_CONSIDER_ALIGNED_COSTS
-					if (lzx_extra_offset_bits[offset_slot] >=
-					    LZX_NUM_ALIGNED_OFFSET_BITS)
-						cost += c->costs.aligned[offset_data &
-									 LZX_ALIGNED_OFFSET_BITMASK];
-				#endif
 					if (cost < (cur_node + next_len)->cost) {
 						(cur_node + next_len)->cost = cost;
 						(cur_node + next_len)->item =
@@ -1635,7 +1636,7 @@ lzx_compute_match_costs(struct lzx_compressor *c)
 		unsigned i;
 
 	#if LZX_CONSIDER_ALIGNED_COSTS
-		if (lzx_extra_offset_bits[offset_slot] >= LZX_NUM_ALIGNED_OFFSET_BITS)
+		if (offset_slot >= 8)
 			extra_cost -= LZX_NUM_ALIGNED_OFFSET_BITS * LZX_BIT_COST;
 	#endif
 
