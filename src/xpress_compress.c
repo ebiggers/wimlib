@@ -1090,12 +1090,12 @@ xpress_create_compressor(size_t max_bufsize, unsigned compression_level,
 
 		if (compression_level < 30) {
 			c->impl = xpress_compress_greedy;
-			c->max_search_depth = (compression_level * 24) / 16;
-			c->nice_match_length = (compression_level * 48) / 16;
+			c->max_search_depth = (compression_level * 30) / 16;
+			c->nice_match_length = (compression_level * 60) / 16;
 		} else {
 			c->impl = xpress_compress_lazy;
-			c->max_search_depth = (compression_level * 24) / 32;
-			c->nice_match_length = (compression_level * 48) / 32;
+			c->max_search_depth = (compression_level * 30) / 32;
+			c->nice_match_length = (compression_level * 60) / 32;
 
 			/* xpress_compress_lazy() needs max_search_depth >= 2
 			 * because it halves the max_search_depth when
@@ -1122,8 +1122,8 @@ xpress_create_compressor(size_t max_bufsize, unsigned compression_level,
 			&c->match_cache[max_bufsize * CACHE_RESERVE_PER_POS];
 
 		c->impl = xpress_compress_near_optimal;
-		c->max_search_depth = (compression_level * 32) / 100;
-		c->nice_match_length = (compression_level * 50) / 100;
+		c->max_search_depth = (compression_level * 28) / 100;
+		c->nice_match_length = (compression_level * 56) / 100;
 		c->num_optim_passes = compression_level / 40;
 	}
 #endif /* SUPPORT_NEAR_OPTIMAL_PARSING */
