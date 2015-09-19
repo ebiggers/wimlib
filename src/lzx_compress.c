@@ -2257,8 +2257,8 @@ lzx_create_compressor(size_t max_bufsize, unsigned compression_level,
 			c->impl = lzx_compress_lazy_16;
 		else
 			c->impl = lzx_compress_lazy_32;
-		c->max_search_depth = (36 * compression_level) / 20;
-		c->nice_match_length = (72 * compression_level) / 20;
+		c->max_search_depth = (60 * compression_level) / 20;
+		c->nice_match_length = (80 * compression_level) / 20;
 
 		/* lzx_compress_lazy() needs max_search_depth >= 2 because it
 		 * halves the max_search_depth when attempting a lazy match, and
@@ -2277,7 +2277,7 @@ lzx_create_compressor(size_t max_bufsize, unsigned compression_level,
 		/* Scale nice_match_length and max_search_depth with the
 		 * compression level.  */
 		c->max_search_depth = (24 * compression_level) / 50;
-		c->nice_match_length = (32 * compression_level) / 50;
+		c->nice_match_length = (48 * compression_level) / 50;
 
 		/* Set a number of optimization passes appropriate for the
 		 * compression level.  */
