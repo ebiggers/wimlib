@@ -21,9 +21,9 @@ extern unsigned
 lzx_get_num_main_syms(unsigned window_order);
 
 extern void
-lzx_do_e8_preprocessing(u8 *data, u32 size);
+lzx_preprocess(u8 *data, u32 size);
 
 extern void
-lzx_undo_e8_preprocessing(u8 *data, u32 size);
+lzx_postprocess(u8 *data, u32 size);
 
 #endif /* _LZX_COMMON_H */

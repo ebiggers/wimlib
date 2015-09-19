@@ -603,7 +603,7 @@ lzx_decompress(const void *restrict compressed_data, size_t compressed_size,
 
 	/* Postprocess the data unless it cannot possibly contain 0xe8 bytes  */
 	if (may_have_e8_byte)
-		lzx_undo_e8_preprocessing(uncompressed_data, uncompressed_size);
+		lzx_postprocess(uncompressed_data, uncompressed_size);
 
 	return 0;
 }

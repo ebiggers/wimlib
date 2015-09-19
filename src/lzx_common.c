@@ -323,13 +323,13 @@ lzx_e8_filter(u8 *data, u32 size, void (*process_target)(void *, s32))
 }
 
 void
-lzx_do_e8_preprocessing(u8 *data, u32 size)
+lzx_preprocess(u8 *data, u32 size)
 {
 	lzx_e8_filter(data, size, do_translate_target);
 }
 
 void
-lzx_undo_e8_preprocessing(u8 *data, u32 size)
+lzx_postprocess(u8 *data, u32 size)
 {
 	lzx_e8_filter(data, size, undo_translate_target);
 }

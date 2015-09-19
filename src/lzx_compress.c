@@ -2338,7 +2338,7 @@ lzx_compress(const void *restrict in, size_t in_nbytes,
 	else
 		memcpy(c->in_buffer, in, in_nbytes);
 	c->in_nbytes = in_nbytes;
-	lzx_do_e8_preprocessing(c->in_buffer, in_nbytes);
+	lzx_preprocess(c->in_buffer, in_nbytes);
 
 	/* Initially, the previous Huffman codeword lengths are all zeroes.  */
 	c->codes_index = 0;
@@ -2353,7 +2353,7 @@ lzx_compress(const void *restrict in, size_t in_nbytes,
 	/* Flush the output bitstream and return the compressed size or 0.  */
 	result = lzx_flush_output(&os);
 	if (!result && c->destructive)
-		lzx_undo_e8_preprocessing(c->in_buffer, c->in_nbytes);
+		lzx_postprocess(c->in_buffer, c->in_nbytes);
 	return result;
 }
 
