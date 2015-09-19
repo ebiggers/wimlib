@@ -147,7 +147,7 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 	u32 len;
 	u32 best_len = 2;
 
-	if (unlikely(max_len < LZ_HASH3_REQUIRED_NBYTES + 1)) {
+	if (unlikely(max_len < LOAD_U24_REQUIRED_NBYTES + 1)) {
 		*best_len_ret = best_len;
 		return lz_matchptr;
 	}
