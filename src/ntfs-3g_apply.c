@@ -714,6 +714,7 @@ ntfs_3g_begin_extract_blob_instance(struct blob_descriptor *blob,
 				    struct ntfs_3g_apply_ctx *ctx)
 {
 	struct wim_dentry *one_dentry = inode_first_extraction_dentry(inode);
+	ntfschar *stream_name;
 	size_t stream_name_nchars;
 	ntfs_attr *attr;
 
@@ -736,22 +737,29 @@ ntfs_3g_begin_extract_blob_instance(struct blob_descriptor *blob,
 	/* It's a data stream (may be unnamed or named).  */
 	wimlib_assert(strm->stream_type == STREAM_TYPE_DATA);
 
-	stream_name_nchars = utf16le_len_chars(strm->stream_name);
+	if (unlikely(stream_is_named(strm))) {
+		stream_name = strm->stream_name;
+		stream_name_nchars = utf16le_len_chars(stream_name);
 
-	if (stream_name_nchars &&
-	    (ntfs_attr_add(ni, AT_DATA, strm->stream_name,
-			   stream_name_nchars, NULL, 0)))
-	{
-		ERROR_WITH_ERRNO("Failed to create named data stream of \"%s\"",
-				 dentry_full_path(one_dentry));
-		return WIMLIB_ERR_NTFS_3G;
+		if (ntfs_attr_add(ni, AT_DATA, stream_name,
+				  stream_name_nchars, NULL, 0))
+		{
+			ERROR_WITH_ERRNO("Failed to create named data stream of \"%s\"",
+					 dentry_full_path(one_dentry));
+			return WIMLIB_ERR_NTFS_3G;
+		}
+	} else {
+		/* Don't pass an empty string other than AT_UNNAMED to
+		 * ntfs_attr_open() --- it violates assumptions made by
+		 * libntfs-3g.  */
+		stream_name = AT_UNNAMED;
+		stream_name_nchars = 0;
 	}
 
 	/* This should be ensured by extract_blob_list()  */
 	wimlib_assert(ctx->num_open_attrs < MAX_OPEN_FILES);
 
-	attr = ntfs_attr_open(ni, AT_DATA, strm->stream_name,
-			      stream_name_nchars);
+	attr = ntfs_attr_open(ni, AT_DATA, stream_name, stream_name_nchars);
 	if (!attr) {
 		ERROR_WITH_ERRNO("Failed to open data stream of \"%s\"",
 				 dentry_full_path(one_dentry));

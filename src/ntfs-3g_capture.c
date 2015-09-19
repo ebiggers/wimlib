@@ -70,7 +70,7 @@ struct ntfs_location {
 	u64 mft_no;
 	ATTR_TYPES attr_type;
 	u32 attr_name_nchars;
-	utf16lechar *attr_name;
+	ntfschar *attr_name;
 	u64 sort_key;
 };
 
@@ -167,7 +167,8 @@ void
 free_ntfs_location(struct ntfs_location *loc)
 {
 	put_ntfs_volume(loc->volume);
-	FREE(loc->attr_name);
+	if (loc->attr_name != AT_UNNAMED)
+		FREE(loc->attr_name);
 	FREE(loc);
 }
 
@@ -177,7 +178,7 @@ clone_ntfs_location(const struct ntfs_location *loc)
 	struct ntfs_location *new = memdup(loc, sizeof(*loc));
 	if (!new)
 		goto err0;
-	if (loc->attr_name) {
+	if (loc->attr_name != AT_UNNAMED) {
 		new->attr_name = utf16le_dup(loc->attr_name);
 		if (!new->attr_name)
 			goto err1;
@@ -316,7 +317,7 @@ scan_ntfs_attr(struct wim_inode *inode,
 	u64 data_size = ntfs_get_attribute_value_length(record);
 	const u32 name_nchars = record->name_length;
 	struct blob_descriptor *blob = NULL;
-	utf16lechar *stream_name = NULL;
+	utf16lechar *stream_name = (utf16lechar *)NO_STREAM_NAME;
 	int ret;
 
 	if (unlikely(name_nchars)) {
@@ -354,7 +355,7 @@ scan_ntfs_attr(struct wim_inode *inode,
 			goto out_cleanup;
 		}
 
-		blob->ntfs_loc = CALLOC(1, sizeof(struct ntfs_location));
+		blob->ntfs_loc = MALLOC(sizeof(struct ntfs_location));
 		if (unlikely(!blob->ntfs_loc)) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto out_cleanup;
@@ -363,16 +364,19 @@ scan_ntfs_attr(struct wim_inode *inode,
 		blob->blob_location = BLOB_IN_NTFS_VOLUME;
 		blob->size = data_size;
 		blob->ntfs_loc->volume = get_ntfs_volume(volume);
-		blob->ntfs_loc->attr_type = type;
 		blob->ntfs_loc->mft_no = ni->mft_no;
+		blob->ntfs_loc->attr_type = type;
 
 		if (unlikely(name_nchars)) {
+			blob->ntfs_loc->attr_name_nchars = name_nchars;
 			blob->ntfs_loc->attr_name = utf16le_dup(stream_name);
 			if (!blob->ntfs_loc->attr_name) {
 				ret = WIMLIB_ERR_NOMEM;
 				goto out_cleanup;
 			}
-			blob->ntfs_loc->attr_name_nchars = name_nchars;
+		} else {
+			blob->ntfs_loc->attr_name_nchars = 0;
+			blob->ntfs_loc->attr_name = AT_UNNAMED;
 		}
 
 		ret = set_attr_sort_key(ni, blob->ntfs_loc);
@@ -381,11 +385,11 @@ scan_ntfs_attr(struct wim_inode *inode,
 	}
 
 	ret = add_stream(inode, path, attr_type_to_wimlib_stream_type(type),
-			 stream_name ? stream_name : NO_STREAM_NAME,
-			 &blob, unhashed_blobs);
+			 stream_name, &blob, unhashed_blobs);
 out_cleanup:
 	free_blob_descriptor(blob);
-	FREE(stream_name);
+	if (stream_name != NO_STREAM_NAME)
+		FREE(stream_name);
 	return ret;
 }
 
