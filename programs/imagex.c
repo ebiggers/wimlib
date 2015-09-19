@@ -662,6 +662,17 @@ do_resource_not_found_warning(const tchar *wimfile,
 	}
 }
 
+static void
+do_metadata_not_found_warning(const tchar *wimfile,
+			      const struct wimlib_wim_info *info)
+{
+	if (info->part_number != 1) {
+		imagex_error(T("\"%"TS"\" is not the first part of the split WIM.\n"
+			       "       You must specify the first part."),
+			       wimfile);
+	}
+}
+
 /* Returns the size of a file given its name, or -1 if the file does not exist
  * or its size cannot be determined.  */
 static off_t
@@ -1758,6 +1769,8 @@ imagex_apply(int argc, tchar **argv, int cmd)
 				       "       make sure you have "
 				       "concatenated together all parts."));
 		}
+	} else if (ret == WIMLIB_ERR_METADATA_NOT_FOUND) {
+		do_metadata_not_found_warning(wimfile, &info);
 	}
 out_wimlib_free:
 	wimlib_free(wim);
@@ -2710,6 +2723,12 @@ imagex_dir(int argc, tchar **argv, int cmd)
 
 	ret = wimlib_iterate_dir_tree(wim, image, path, iterate_flags,
 				      print_dentry, &options);
+	if (ret == WIMLIB_ERR_METADATA_NOT_FOUND) {
+		struct wimlib_wim_info info;
+
+		wimlib_get_wim_info(wim, &info);
+		do_metadata_not_found_warning(wimfile, &info);
+	}
 out_wimlib_free:
 	wimlib_free(wim);
 out_free_refglobs:
@@ -2984,6 +3003,8 @@ imagex_export(int argc, tchar **argv, int cmd)
 		if (ret == WIMLIB_ERR_RESOURCE_NOT_FOUND) {
 			do_resource_not_found_warning(src_wimfile,
 						      &src_info, &refglobs);
+		} else if (ret == WIMLIB_ERR_METADATA_NOT_FOUND) {
+			do_metadata_not_found_warning(src_wimfile, &src_info);
 		}
 		goto out_free_dest_wim;
 	}
@@ -3181,6 +3202,11 @@ imagex_extract(int argc, tchar **argv, int cmd)
 
 		wimlib_get_wim_info(wim, &info);
 		do_resource_not_found_warning(wimfile, &info, &refglobs);
+	} else if (ret == WIMLIB_ERR_METADATA_NOT_FOUND) {
+		struct wimlib_wim_info info;
+
+		wimlib_get_wim_info(wim, &info);
+		do_metadata_not_found_warning(wimfile, &info);
 	}
 out_wimlib_free:
 	wimlib_free(wim);
@@ -3615,9 +3641,13 @@ imagex_mount_rw_or_ro(int argc, tchar **argv, int cmd)
 
 	ret = wimlib_mount_image(wim, image, dir, mount_flags, staging_dir);
 	if (ret) {
-		imagex_error(T("Failed to mount image %d from \"%"TS"\" "
-			       "on \"%"TS"\""),
-			     image, wimfile, dir);
+		if (ret == WIMLIB_ERR_METADATA_NOT_FOUND) {
+			do_metadata_not_found_warning(wimfile, &info);
+		} else {
+			imagex_error(T("Failed to mount image %d from \"%"TS"\" "
+				       "on \"%"TS"\""),
+				     image, wimfile, dir);
+		}
 	}
 out_free_wim:
 	wimlib_free(wim);
