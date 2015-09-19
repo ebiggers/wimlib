@@ -907,7 +907,7 @@ xpress_find_matches(struct xpress_compressor * restrict c,
 	const u8 * const in_begin = in;
 	const u8 *in_next = in_begin;
 	struct lz_match *cache_ptr = c->match_cache;
-	u32 next_hash = 0;
+	u32 next_hashes[2] = {};
 	u32 max_len = in_nbytes;
 	u32 nice_len = min(max_len, c->nice_match_length);
 
@@ -935,7 +935,7 @@ xpress_find_matches(struct xpress_compressor * restrict c,
 						   max_len,
 						   nice_len,
 						   c->max_search_depth,
-						   &next_hash,
+						   next_hashes,
 						   &best_len,
 						   cache_ptr);
 		cache_ptr->length = cache_ptr - matches;
@@ -965,7 +965,7 @@ xpress_find_matches(struct xpress_compressor * restrict c,
 							     max_len,
 							     nice_len,
 							     c->max_search_depth,
-							     &next_hash);
+							     next_hashes);
 				cache_ptr->length = 0;
 				cache_ptr->offset = *in_next++;
 				cache_ptr++;

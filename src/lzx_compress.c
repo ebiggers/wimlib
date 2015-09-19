@@ -1781,7 +1781,7 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 	const u8 * const in_end  = in_begin + c->in_nbytes;
 	u32 max_len = LZX_MAX_MATCH_LEN;
 	u32 nice_len = min(c->nice_match_length, max_len);
-	u32 next_hash = 0;
+	u32 next_hashes[2] = {};
 	struct lzx_lru_queue queue;
 
 	CALL_BT_MF(is_16_bit, c, bt_matchfinder_init);
@@ -1819,7 +1819,7 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 						 max_len,
 						 nice_len,
 						 c->max_search_depth,
-						 &next_hash,
+						 next_hashes,
 						 &best_len,
 						 cache_ptr + 1);
 			in_next++;
@@ -1857,7 +1857,7 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 						   max_len,
 						   nice_len,
 						   c->max_search_depth,
-						   &next_hash);
+						   next_hashes);
 					in_next++;
 					cache_ptr->length = 0;
 					cache_ptr++;
