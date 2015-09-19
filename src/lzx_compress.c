@@ -134,6 +134,17 @@
 #define LZX_HASH2_ORDER		12
 #define LZX_HASH2_LENGTH	(1UL << LZX_HASH2_ORDER)
 
+/*
+ * These are the compressor-side limits on the codeword lengths for each Huffman
+ * code.  To make outputting bits slightly faster, some of these limits are
+ * lower than the limits defined by the LZX format.  This does not significantly
+ * affect the compression ratio, at least for the block sizes we use.
+ */
+#define MAIN_CODEWORD_LIMIT	12	/* 64-bit: can buffer 4 main symbols  */
+#define LENGTH_CODEWORD_LIMIT	12
+#define ALIGNED_CODEWORD_LIMIT	7
+#define PRE_CODEWORD_LIMIT	7
+
 #include "wimlib/lzx_common.h"
 
 /*
@@ -485,7 +496,7 @@ struct lzx_compressor {
 struct lzx_output_bitstream {
 
 	/* Bits that haven't yet been written to the output buffer.  */
-	u32 bitbuf;
+	machine_word_t bitbuf;
 
 	/* Number of bits currently held in @bitbuf.  */
 	u32 bitcount;
@@ -501,6 +512,10 @@ struct lzx_output_bitstream {
 	 * 2-byte boundary.  */
 	u8 *end;
 };
+
+/* Can the specified number of bits always be added to 'bitbuf' after any
+ * pending 16-bit coding units have been flushed?  */
+#define CAN_BUFFER(n)	((n) <= (8 * sizeof(machine_word_t)) - 16)
 
 /*
  * Initialize the output bitstream.
@@ -522,68 +537,38 @@ lzx_init_output(struct lzx_output_bitstream *os, void *buffer, size_t size)
 	os->end = os->start + (size & ~1);
 }
 
-/*
- * Write some bits to the output bitstream.
- *
- * The bits are given by the low-order @num_bits bits of @bits.  Higher-order
- * bits in @bits cannot be set.  At most 17 bits can be written at once.
- *
- * @max_num_bits is a compile-time constant that specifies the maximum number of
- * bits that can ever be written at the call site.  It is used to optimize away
- * the conditional code for writing a second 16-bit coding unit when writing
- * fewer than 17 bits.
- *
- * If the output buffer space is exhausted, then the bits will be ignored, and
- * lzx_flush_output() will return 0 when it gets called.
- */
+/* Add some bits to the bitbuffer variable of the output bitstream.  The caller
+ * must make sure there is enough room.  */
 static inline void
-lzx_write_varbits(struct lzx_output_bitstream *os,
-		  const u32 bits, const unsigned num_bits,
-		  const unsigned max_num_bits)
+lzx_add_bits(struct lzx_output_bitstream *os, u32 bits, unsigned num_bits)
 {
-	/* This code is optimized for LZX, which never needs to write more than
-	 * 17 bits at once.  */
-	LZX_ASSERT(num_bits <= 17);
-	LZX_ASSERT(num_bits <= max_num_bits);
-	LZX_ASSERT(os->bitcount <= 15);
-
-	/* Add the bits to the bit buffer variable.  @bitcount will be at most
-	 * 15, so there will be just enough space for the maximum possible
-	 * @num_bits of 17.  */
-	os->bitcount += num_bits;
 	os->bitbuf = (os->bitbuf << num_bits) | bits;
-
-	/* Check whether any coding units need to be written.  */
-	if (os->bitcount >= 16) {
-
-		os->bitcount -= 16;
-
-		/* Write a coding unit, unless it would overflow the buffer.  */
-		if (os->next != os->end) {
-			put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next);
-			os->next += 2;
-		}
-
-		/* If writing 17 bits, a second coding unit might need to be
-		 * written.  But because 'max_num_bits' is a compile-time
-		 * constant, the compiler will optimize away this code at most
-		 * call sites.  */
-		if (max_num_bits == 17 && os->bitcount == 16) {
-			if (os->next != os->end) {
-				put_unaligned_u16_le(os->bitbuf, os->next);
-				os->next += 2;
-			}
-			os->bitcount = 0;
-		}
-	}
+	os->bitcount += num_bits;
 }
 
-/* Use when @num_bits is a compile-time constant.  Otherwise use
- * lzx_write_varbits().  */
+/* Flush bits from the bitbuffer variable to the output buffer.  'max_num_bits'
+ * specifies the maximum number of bits that may have been added since the last
+ * flush.  */
+static inline void
+lzx_flush_bits(struct lzx_output_bitstream *os, unsigned max_num_bits)
+{
+	if (os->end - os->next < 6)
+		return;
+	put_unaligned_u16_le(os->bitbuf >> (os->bitcount - 16), os->next + 0);
+	if (max_num_bits > 16)
+		put_unaligned_u16_le(os->bitbuf >> (os->bitcount - 32), os->next + 2);
+	if (max_num_bits > 32)
+		put_unaligned_u16_le(os->bitbuf >> (os->bitcount - 48), os->next + 4);
+	os->next += (os->bitcount >> 4) << 1;
+	os->bitcount &= 15;
+}
+
+/* Add at most 16 bits to the bitbuffer and flush it.  */
 static inline void
 lzx_write_bits(struct lzx_output_bitstream *os, u32 bits, unsigned num_bits)
 {
-	lzx_write_varbits(os, bits, num_bits, num_bits);
+	lzx_add_bits(os, bits, num_bits);
+	lzx_flush_bits(os, 16);
 }
 
 /*
@@ -593,7 +578,7 @@ lzx_write_bits(struct lzx_output_bitstream *os, u32 bits, unsigned num_bits)
 static u32
 lzx_flush_output(struct lzx_output_bitstream *os)
 {
-	if (os->next == os->end)
+	if (os->end - os->next < 6)
 		return 0;
 
 	if (os->bitcount != 0) {
@@ -614,20 +599,27 @@ lzx_make_huffman_codes(struct lzx_compressor *c)
 	const struct lzx_freqs *freqs = &c->freqs;
 	struct lzx_codes *codes = &c->codes[c->codes_index];
 
+	STATIC_ASSERT(MAIN_CODEWORD_LIMIT >= 9 &&
+		      MAIN_CODEWORD_LIMIT <= LZX_MAX_MAIN_CODEWORD_LEN);
+	STATIC_ASSERT(LENGTH_CODEWORD_LIMIT >= 9 &&
+		      LENGTH_CODEWORD_LIMIT <= LZX_MAX_LEN_CODEWORD_LEN);
+	STATIC_ASSERT(ALIGNED_CODEWORD_LIMIT >= LZX_NUM_ALIGNED_OFFSET_BITS &&
+		      ALIGNED_CODEWORD_LIMIT <= LZX_MAX_ALIGNED_CODEWORD_LEN);
+
 	make_canonical_huffman_code(c->num_main_syms,
-				    LZX_MAX_MAIN_CODEWORD_LEN,
+				    MAIN_CODEWORD_LIMIT,
 				    freqs->main,
 				    codes->lens.main,
 				    codes->codewords.main);
 
 	make_canonical_huffman_code(LZX_LENCODE_NUM_SYMBOLS,
-				    LZX_MAX_LEN_CODEWORD_LEN,
+				    LENGTH_CODEWORD_LIMIT,
 				    freqs->len,
 				    codes->lens.len,
 				    codes->codewords.len);
 
 	make_canonical_huffman_code(LZX_ALIGNEDCODE_NUM_SYMBOLS,
-				    LZX_MAX_ALIGNED_CODEWORD_LEN,
+				    ALIGNED_CODEWORD_LIMIT,
 				    freqs->aligned,
 				    codes->lens.aligned,
 				    codes->codewords.aligned);
@@ -786,8 +778,10 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
 						      precode_items);
 
 	/* Build the precode.  */
+	STATIC_ASSERT(PRE_CODEWORD_LIMIT >= 5 &&
+		      PRE_CODEWORD_LIMIT <= LZX_MAX_PRE_CODEWORD_LEN);
 	make_canonical_huffman_code(LZX_PRECODE_NUM_SYMBOLS,
-				    LZX_MAX_PRE_CODEWORD_LEN,
+				    PRE_CODEWORD_LIMIT,
 				    precode_freqs, precode_lens,
 				    precode_codewords);
 
@@ -799,22 +793,22 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
 	for (i = 0; i < num_precode_items; i++) {
 		precode_item = precode_items[i];
 		precode_sym = precode_item & 0x1F;
-		lzx_write_varbits(os, precode_codewords[precode_sym],
-				  precode_lens[precode_sym],
-				  LZX_MAX_PRE_CODEWORD_LEN);
+		lzx_add_bits(os, precode_codewords[precode_sym],
+			     precode_lens[precode_sym]);
 		if (precode_sym >= 17) {
 			if (precode_sym == 17) {
-				lzx_write_bits(os, precode_item >> 5, 4);
+				lzx_add_bits(os, precode_item >> 5, 4);
 			} else if (precode_sym == 18) {
-				lzx_write_bits(os, precode_item >> 5, 5);
+				lzx_add_bits(os, precode_item >> 5, 5);
 			} else {
-				lzx_write_bits(os, (precode_item >> 5) & 1, 1);
+				lzx_add_bits(os, (precode_item >> 5) & 1, 1);
 				precode_sym = precode_item >> 6;
-				lzx_write_varbits(os, precode_codewords[precode_sym],
-						  precode_lens[precode_sym],
-						  LZX_MAX_PRE_CODEWORD_LEN);
+				lzx_add_bits(os, precode_codewords[precode_sym],
+					     precode_lens[precode_sym]);
 			}
 		}
+		STATIC_ASSERT(CAN_BUFFER(2 * PRE_CODEWORD_LIMIT + 1));
+		lzx_flush_bits(os, 2 * PRE_CODEWORD_LIMIT + 1);
 	}
 
 	*(u8 *)(lens + num_lens) = saved;
@@ -860,13 +854,53 @@ lzx_write_sequences(struct lzx_output_bitstream *os, int block_type,
 
 		/* Output the literal run of the sequence.  */
 
-		if (litrunlen) {
-			do {
-				unsigned lit = *block_data++;
-				lzx_write_varbits(os, codes->codewords.main[lit],
-						  codes->lens.main[lit],
-						  LZX_MAX_MAIN_CODEWORD_LEN);
-			} while (--litrunlen);
+		if (litrunlen) {  /* Is the literal run nonempty?  */
+
+			/* Verify optimization is enabled on 64-bit  */
+			STATIC_ASSERT(sizeof(machine_word_t) < 8 ||
+				      CAN_BUFFER(4 * MAIN_CODEWORD_LIMIT));
+
+			if (CAN_BUFFER(4 * MAIN_CODEWORD_LIMIT)) {
+
+				/* 64-bit: write 4 literals at a time.  */
+				while (litrunlen >= 4) {
+					unsigned lit0 = block_data[0];
+					unsigned lit1 = block_data[1];
+					unsigned lit2 = block_data[2];
+					unsigned lit3 = block_data[3];
+					lzx_add_bits(os, codes->codewords.main[lit0], codes->lens.main[lit0]);
+					lzx_add_bits(os, codes->codewords.main[lit1], codes->lens.main[lit1]);
+					lzx_add_bits(os, codes->codewords.main[lit2], codes->lens.main[lit2]);
+					lzx_add_bits(os, codes->codewords.main[lit3], codes->lens.main[lit3]);
+					lzx_flush_bits(os, 4 * MAIN_CODEWORD_LIMIT);
+					block_data += 4;
+					litrunlen -= 4;
+				}
+				if (litrunlen--) {
+					unsigned lit = *block_data++;
+					lzx_add_bits(os, codes->codewords.main[lit], codes->lens.main[lit]);
+					if (litrunlen--) {
+						unsigned lit = *block_data++;
+						lzx_add_bits(os, codes->codewords.main[lit], codes->lens.main[lit]);
+						if (litrunlen--) {
+							unsigned lit = *block_data++;
+							lzx_add_bits(os, codes->codewords.main[lit], codes->lens.main[lit]);
+							lzx_flush_bits(os, 3 * MAIN_CODEWORD_LIMIT);
+						} else {
+							lzx_flush_bits(os, 2 * MAIN_CODEWORD_LIMIT);
+						}
+					} else {
+						lzx_flush_bits(os, 1 * MAIN_CODEWORD_LIMIT);
+					}
+				}
+			} else {
+				/* 32-bit: write 1 literal at a time.  */
+				do {
+					unsigned lit = *block_data++;
+					lzx_add_bits(os, codes->codewords.main[lit], codes->lens.main[lit]);
+					lzx_flush_bits(os, MAIN_CODEWORD_LIMIT);
+				} while (--litrunlen);
+			}
 		}
 
 		/* Was this the last literal run?  */
@@ -887,17 +921,26 @@ lzx_write_sequences(struct lzx_output_bitstream *os, int block_type,
 		num_extra_bits = lzx_extra_offset_bits[offset_slot];
 		extra_bits = adjusted_offset - lzx_offset_slot_base[offset_slot];
 
+	#define MAX_MATCH_BITS	(MAIN_CODEWORD_LIMIT + LENGTH_CODEWORD_LIMIT + \
+				 14 + ALIGNED_CODEWORD_LIMIT)
+
+		/* Verify optimization is enabled on 64-bit  */
+		STATIC_ASSERT(sizeof(machine_word_t) < 8 || CAN_BUFFER(MAX_MATCH_BITS));
+
 		/* Output the main symbol for the match.  */
-		lzx_write_varbits(os, codes->codewords.main[main_symbol],
-				  codes->lens.main[main_symbol],
-				  LZX_MAX_MAIN_CODEWORD_LEN);
+
+		lzx_add_bits(os, codes->codewords.main[main_symbol],
+			     codes->lens.main[main_symbol]);
+		if (!CAN_BUFFER(MAX_MATCH_BITS))
+			lzx_flush_bits(os, MAIN_CODEWORD_LIMIT);
 
 		/* If needed, output the length symbol for the match.  */
 
 		if (adjusted_length >= LZX_NUM_PRIMARY_LENS) {
-			lzx_write_varbits(os, codes->codewords.len[adjusted_length - LZX_NUM_PRIMARY_LENS],
-					  codes->lens.len[adjusted_length - LZX_NUM_PRIMARY_LENS],
-					  LZX_MAX_LEN_CODEWORD_LEN);
+			lzx_add_bits(os, codes->codewords.len[adjusted_length - LZX_NUM_PRIMARY_LENS],
+				     codes->lens.len[adjusted_length - LZX_NUM_PRIMARY_LENS]);
+			if (!CAN_BUFFER(MAX_MATCH_BITS))
+				lzx_flush_bits(os, LENGTH_CODEWORD_LIMIT);
 		}
 
 		/* Output the extra offset bits for the match.  In aligned
@@ -908,16 +951,23 @@ lzx_write_sequences(struct lzx_output_bitstream *os, int block_type,
 
 		if ((adjusted_offset & ones_if_aligned) >= 16) {
 
-			lzx_write_varbits(os, extra_bits >> LZX_NUM_ALIGNED_OFFSET_BITS,
-					  num_extra_bits - LZX_NUM_ALIGNED_OFFSET_BITS,
-					  14);
+			lzx_add_bits(os, extra_bits >> LZX_NUM_ALIGNED_OFFSET_BITS,
+				     num_extra_bits - LZX_NUM_ALIGNED_OFFSET_BITS);
+			if (!CAN_BUFFER(MAX_MATCH_BITS))
+				lzx_flush_bits(os, 14);
 
-			lzx_write_varbits(os, codes->codewords.aligned[adjusted_offset & LZX_ALIGNED_OFFSET_BITMASK],
-					  codes->lens.aligned[adjusted_offset & LZX_ALIGNED_OFFSET_BITMASK],
-					  LZX_MAX_ALIGNED_CODEWORD_LEN);
+			lzx_add_bits(os, codes->codewords.aligned[adjusted_offset & LZX_ALIGNED_OFFSET_BITMASK],
+				     codes->lens.aligned[adjusted_offset & LZX_ALIGNED_OFFSET_BITMASK]);
+			if (!CAN_BUFFER(MAX_MATCH_BITS))
+				lzx_flush_bits(os, ALIGNED_CODEWORD_LIMIT);
 		} else {
-			lzx_write_varbits(os, extra_bits, num_extra_bits, 17);
+			lzx_add_bits(os, extra_bits, num_extra_bits);
+			if (!CAN_BUFFER(MAX_MATCH_BITS))
+				lzx_flush_bits(os, 17);
 		}
+
+		if (CAN_BUFFER(MAX_MATCH_BITS))
+			lzx_flush_bits(os, MAX_MATCH_BITS);
 
 		/* Advance to the next sequence.  */
 		seq++;
