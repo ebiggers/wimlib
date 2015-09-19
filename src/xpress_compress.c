@@ -531,6 +531,7 @@ xpress_compress_greedy(struct xpress_compressor * restrict c,
 	const u8 * const in_end = in_begin + in_nbytes;
 	struct xpress_item *next_chosen_item = c->chosen_items;
 	unsigned len_3_too_far;
+	u32 next_hashes[2] = {};
 
 	if (in_nbytes <= 8192)
 		len_3_too_far = 2048;
@@ -545,11 +546,12 @@ xpress_compress_greedy(struct xpress_compressor * restrict c,
 
 		length = hc_matchfinder_longest_match(&c->hc_mf,
 						      in_begin,
-						      in_next,
+						      in_next - in_begin,
 						      XPRESS_MIN_MATCH_LEN - 1,
 						      in_end - in_next,
 						      min(in_end - in_next, c->nice_match_length),
 						      c->max_search_depth,
+						      next_hashes,
 						      &offset);
 		if (length >= XPRESS_MIN_MATCH_LEN &&
 		    !(length == XPRESS_MIN_MATCH_LEN && offset >= len_3_too_far))
@@ -560,9 +562,10 @@ xpress_compress_greedy(struct xpress_compressor * restrict c,
 			in_next += 1;
 			hc_matchfinder_skip_positions(&c->hc_mf,
 						      in_begin,
-						      in_next,
-						      in_end,
-						      length - 1);
+						      in_next - in_begin,
+						      in_end - in_begin,
+						      length - 1,
+						      next_hashes);
 			in_next += length - 1;
 		} else {
 			/* No match found  */
@@ -591,6 +594,7 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 	const u8 * const in_end = in_begin + in_nbytes;
 	struct xpress_item *next_chosen_item = c->chosen_items;
 	unsigned len_3_too_far;
+	u32 next_hashes[2] = {};
 
 	if (in_nbytes <= 8192)
 		len_3_too_far = 2048;
@@ -608,11 +612,12 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 		/* Find the longest match at the current position.  */
 		cur_len = hc_matchfinder_longest_match(&c->hc_mf,
 						       in_begin,
-						       in_next,
+						       in_next - in_begin,
 						       XPRESS_MIN_MATCH_LEN - 1,
 						       in_end - in_next,
 						       min(in_end - in_next, c->nice_match_length),
 						       c->max_search_depth,
+						       next_hashes,
 						       &cur_offset);
 		in_next += 1;
 
@@ -637,9 +642,10 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 
 			hc_matchfinder_skip_positions(&c->hc_mf,
 						      in_begin,
-						      in_next,
-						      in_end,
-						      cur_len - 1);
+						      in_next - in_begin,
+						      in_end - in_begin,
+						      cur_len - 1,
+						      next_hashes);
 			in_next += cur_len - 1;
 			continue;
 		}
@@ -662,11 +668,12 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 		 */
 		next_len = hc_matchfinder_longest_match(&c->hc_mf,
 							in_begin,
-							in_next,
+							in_next - in_begin,
 							cur_len,
 						        in_end - in_next,
 						        min(in_end - in_next, c->nice_match_length),
 							c->max_search_depth / 2,
+							next_hashes,
 							&next_offset);
 		in_next += 1;
 
@@ -685,9 +692,10 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 				xpress_record_match(c, cur_len, cur_offset);
 			hc_matchfinder_skip_positions(&c->hc_mf,
 						      in_begin,
-						      in_next,
-						      in_end,
-						      cur_len - 2);
+						      in_next - in_begin,
+						      in_end - in_begin,
+						      cur_len - 2,
+						      next_hashes);
 			in_next += cur_len - 2;
 			continue;
 		}

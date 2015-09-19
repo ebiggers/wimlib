@@ -1803,6 +1803,7 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 	unsigned max_len = LZX_MAX_MATCH_LEN;
 	unsigned nice_len = min(c->nice_match_length, max_len);
 	struct lzx_lru_queue queue;
+	u32 next_hashes[2] = {};
 
 	hc_matchfinder_init(&c->hc_mf);
 	lzx_lru_queue_init(&queue);
@@ -1839,11 +1840,12 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 
 			cur_len = hc_matchfinder_longest_match(&c->hc_mf,
 							       in_begin,
-							       in_next,
+							       in_next - in_begin,
 							       2,
 							       max_len,
 							       nice_len,
 							       c->max_search_depth,
+							       next_hashes,
 							       &cur_offset);
 			if (cur_len < 3 ||
 			    (cur_len == 3 &&
@@ -1905,11 +1907,12 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 
 			next_len = hc_matchfinder_longest_match(&c->hc_mf,
 								in_begin,
-								in_next,
+								in_next - in_begin,
 								cur_len - 2,
 								max_len,
 								nice_len,
 								c->max_search_depth / 2,
+								next_hashes,
 								&next_offset);
 
 			if (next_len <= cur_len - 2) {
@@ -1973,9 +1976,10 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 
 			hc_matchfinder_skip_positions(&c->hc_mf,
 						      in_begin,
-						      in_next,
-						      in_end,
-						      skip_len);
+						      in_next - in_begin,
+						      in_end - in_begin,
+						      skip_len,
+						      next_hashes);
 			in_next += skip_len;
 		} while (in_next < in_block_end);
 
