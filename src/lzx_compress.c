@@ -1709,15 +1709,21 @@ lzx_update_costs(struct lzx_compressor *c)
 	unsigned i;
 	const struct lzx_lens *lens = &c->codes[c->codes_index].lens;
 
-	for (i = 0; i < c->num_main_syms; i++)
-		c->costs.main[i] = (lens->main[i] ? lens->main[i] : 15) * LZX_BIT_COST;
+	for (i = 0; i < c->num_main_syms; i++) {
+		c->costs.main[i] = (lens->main[i] ? lens->main[i] :
+				    MAIN_CODEWORD_LIMIT) * LZX_BIT_COST;
+	}
 
-	for (i = 0; i < LZX_LENCODE_NUM_SYMBOLS; i++)
-		c->costs.len[i] = (lens->len[i] ? lens->len[i] : 15) * LZX_BIT_COST;
+	for (i = 0; i < LZX_LENCODE_NUM_SYMBOLS; i++) {
+		c->costs.len[i] = (lens->len[i] ? lens->len[i] :
+				   LENGTH_CODEWORD_LIMIT) * LZX_BIT_COST;
+	}
 
 #if LZX_CONSIDER_ALIGNED_COSTS
-	for (i = 0; i < LZX_ALIGNEDCODE_NUM_SYMBOLS; i++)
-		c->costs.aligned[i] = (lens->aligned[i] ? lens->aligned[i] : 7) * LZX_BIT_COST;
+	for (i = 0; i < LZX_ALIGNEDCODE_NUM_SYMBOLS; i++) {
+		c->costs.aligned[i] = (lens->aligned[i] ? lens->aligned[i] :
+				       ALIGNED_CODEWORD_LIMIT) * LZX_BIT_COST;
+	}
 #endif
 
 	lzx_compute_match_costs(c);
