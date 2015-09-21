@@ -278,6 +278,7 @@ static inline u32
 lcpit_advance_one_byte(const u32 cur_pos,
 		       u32 pos_data[restrict],
 		       u32 intervals[restrict],
+		       u32 next[restrict],
 		       struct lz_match matches[restrict],
 		       const bool record_matches)
 {
@@ -289,8 +290,22 @@ lcpit_advance_one_byte(const u32 cur_pos,
 	/* Get the deepest lcp-interval containing the current suffix. */
 	ref = pos_data[cur_pos];
 
-	/* Prefetch the deepest lcp-interval containing the *next* suffix. */
-	prefetchw(&intervals[pos_data[cur_pos + 1] & POS_MASK]);
+	/* Prefetch upcoming data, up to 3 positions ahead.  Assume the
+	 * intervals are already visited.  */
+
+	/* Prefetch the superinterval via a suffix link for the deepest
+	 * lcp-interval containing the suffix starting 1 position from now.  */
+	prefetchw(&intervals[pos_data[next[0]] & POS_MASK]);
+
+	/* Prefetch suffix link for the deepest lcp-interval containing the
+	 * suffix starting 2 positions from now.  */
+	next[0] = intervals[next[1]] & POS_MASK;
+	prefetchw(&pos_data[next[0]]);
+
+	/* Prefetch the deepest lcp-interval containing the suffix starting 3
+	 * positions from now.  */
+	next[1] = pos_data[cur_pos + 3] & POS_MASK;
+	prefetchw(&intervals[next[1]]);
 
 	/* There is no "next suffix" after the current one.  */
 	pos_data[cur_pos] = 0;
@@ -465,6 +480,7 @@ static inline u32
 lcpit_advance_one_byte_huge(const u32 cur_pos,
 			    u32 pos_data[restrict],
 			    u64 intervals64[restrict],
+			    u32 prefetch_next[restrict],
 			    struct lz_match matches[restrict],
 			    const bool record_matches)
 {
@@ -476,8 +492,15 @@ lcpit_advance_one_byte_huge(const u32 cur_pos,
 	struct lz_match *matchptr;
 
 	interval_idx = pos_data[cur_pos];
-	prefetchw(&pos_data[intervals64[pos_data[cur_pos + 1]] & HUGE_POS_MASK]);
-	prefetchw(&intervals64[pos_data[cur_pos + 2]]);
+
+	prefetchw(&intervals64[pos_data[prefetch_next[0]] & HUGE_POS_MASK]);
+
+	prefetch_next[0] = intervals64[prefetch_next[1]] & HUGE_POS_MASK;
+	prefetchw(&pos_data[prefetch_next[0]]);
+
+	prefetch_next[1] = pos_data[cur_pos + 3] & HUGE_POS_MASK;
+	prefetchw(&intervals64[prefetch_next[1]]);
+
 	pos_data[cur_pos] = 0;
 
 	while ((next = intervals64[interval_idx]) & HUGE_UNVISITED_TAG) {
@@ -651,6 +674,8 @@ lcpit_matchfinder_load_buffer(struct lcpit_matchfinder *mf, const u8 *T, u32 n)
 		mf->huge_mode = true;
 	}
 	mf->cur_pos = 0; /* starting at beginning of input buffer  */
+	for (u32 i = 0; i < ARRAY_LEN(mf->next); i++)
+		mf->next[i] = 0;
 }
 
 /*
@@ -668,10 +693,12 @@ lcpit_matchfinder_get_matches(struct lcpit_matchfinder *mf,
 {
 	if (mf->huge_mode)
 		return lcpit_advance_one_byte_huge(mf->cur_pos++, mf->pos_data,
-						   mf->intervals64, matches, true);
+						   mf->intervals64, mf->next,
+						   matches, true);
 	else
 		return lcpit_advance_one_byte(mf->cur_pos++, mf->pos_data,
-					      mf->intervals, matches, true);
+					      mf->intervals, mf->next,
+					      matches, true);
 }
 
 /*
@@ -684,12 +711,14 @@ lcpit_matchfinder_skip_bytes(struct lcpit_matchfinder *mf, u32 count)
 	if (mf->huge_mode) {
 		do {
 			lcpit_advance_one_byte_huge(mf->cur_pos++, mf->pos_data,
-						    mf->intervals64, NULL, false);
+						    mf->intervals64, mf->next,
+						    NULL, false);
 		} while (--count);
 	} else {
 		do {
 			lcpit_advance_one_byte(mf->cur_pos++, mf->pos_data,
-					       mf->intervals, NULL, false);
+					       mf->intervals, mf->next,
+					       NULL, false);
 		} while (--count);
 	}
 }
