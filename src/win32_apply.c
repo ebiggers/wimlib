@@ -2264,11 +2264,11 @@ get_system_compression_format(int extract_flags)
 	return FILE_PROVIDER_COMPRESSION_FORMAT_LZX;
 }
 
-static DWORD
+static NTSTATUS
 set_system_compression(HANDLE h, int format)
 {
-	DWORD bytes_returned;
-	DWORD err;
+	NTSTATUS status;
+	IO_STATUS_BLOCK iosb;
 	struct {
 		struct wof_external_info wof_info;
 		struct file_provider_external_info file_info;
@@ -2283,16 +2283,20 @@ set_system_compression(HANDLE h, int format)
 		},
 	};
 
-	if (DeviceIoControl(h, FSCTL_SET_EXTERNAL_BACKING, &in, sizeof(in),
-			    NULL, 0, &bytes_returned, NULL))
-		return 0;
+	/* We intentionally use NtFsControlFile() rather than DeviceIoControl()
+	 * here because the "compressing this object would not save space"
+	 * status code does not map to a valid Win32 error code on older
+	 * versions of Windows (before Windows 10?).  This can be a problem if
+	 * the WOFADK driver is being used rather than the regular WOF, since
+	 * WOFADK can be used on older versions of Windows.  */
+	status = (*func_NtFsControlFile)(h, NULL, NULL, NULL, &iosb,
+					 FSCTL_SET_EXTERNAL_BACKING,
+					 &in, sizeof(in), NULL, 0);
 
-	err = GetLastError();
+	if (status == 0xC000046F) /* "Compressing this object would not save space."  */
+		return STATUS_SUCCESS;
 
-	if (err == 344) /* "Compressing this object would not save space."  */
-		return 0;
-
-	return err;
+	return status;
 }
 
 /*
@@ -2323,7 +2327,6 @@ handle_system_compression(struct blob_descriptor *blob, struct win32_apply_ctx *
 		struct wim_inode_stream *strm = targets[i].stream;
 		HANDLE h;
 		NTSTATUS status;
-		DWORD err;
 
 		if (!stream_is_unnamed_data_stream(strm))
 			continue;
@@ -2336,13 +2339,11 @@ handle_system_compression(struct blob_descriptor *blob, struct win32_apply_ctx *
 				     inode_first_extraction_dentry(inode), ctx);
 
 		if (NT_SUCCESS(status)) {
-			err = set_system_compression(h, format);
+			status = set_system_compression(h, format);
 			(*func_NtClose)(h);
-		} else {
-			err = (*func_RtlNtStatusToDosError)(status);
 		}
 
-		if (err == ERROR_INVALID_FUNCTION) {
+		if (status == STATUS_INVALID_DEVICE_REQUEST) {
 			WARNING(
 	  "The request to compress the extracted files using System Compression\n"
 "          will not be honored because the operating system or target volume\n"
@@ -2352,10 +2353,10 @@ handle_system_compression(struct blob_descriptor *blob, struct win32_apply_ctx *
 			return;
 		}
 
-		if (err) {
+		if (!NT_SUCCESS(status)) {
 			ctx->num_system_compression_failures++;
 			if (ctx->num_system_compression_failures < 10) {
-				win32_warning(err, L"\"%ls\": Failed to compress "
+				winnt_warning(status, L"\"%ls\": Failed to compress "
 					      "extracted file using System Compression",
 					      current_path(ctx));
 			} else if (ctx->num_system_compression_failures == 10) {
