@@ -407,7 +407,10 @@ win32_try_to_attach_wof(const wchar_t *drive)
 	if (func_FilterAttach) {
 		HRESULT res;
 
-		res = (*func_FilterAttach)(L"WoF", drive, NULL, 0, NULL);
+		res = (*func_FilterAttach)(L"wof", drive, NULL, 0, NULL);
+
+		if (res != S_OK)
+			res = (*func_FilterAttach)(L"wofadk", drive, NULL, 0, NULL);
 
 		if (res == S_OK)
 			retval = true;
