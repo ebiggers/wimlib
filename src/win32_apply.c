@@ -151,6 +151,11 @@ struct win32_apply_ctx {
 	/* Number of files on which we couldn't set System Compression.  */
 	unsigned long num_system_compression_failures;
 
+	/* The number of files on which we used XPRESS4K System Compression
+	 * rather than a stronger variant, to be compatible with the Windows
+	 * bootloader.  */
+	unsigned long num_xpress4k_forced_files;
+
 	/* Have we tried to enable short name support on the target volume yet?
 	 */
 	bool tried_to_enable_short_names;
@@ -2264,6 +2269,22 @@ get_system_compression_format(int extract_flags)
 	return FILE_PROVIDER_COMPRESSION_FORMAT_LZX;
 }
 
+
+static const wchar_t *
+get_system_compression_format_string(int format)
+{
+	switch (format) {
+	case FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS4K:
+		return L"XPRESS4K";
+	case FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS8K:
+		return L"XPRESS8K";
+	case FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS16K:
+		return L"XPRESS16K";
+	default:
+		return L"LZX";
+	}
+}
+
 static NTSTATUS
 set_system_compression(HANDLE h, int format)
 {
@@ -2299,6 +2320,43 @@ set_system_compression(HANDLE h, int format)
 	return status;
 }
 
+/* Hard-coded list of files which the Windows bootloader needs to access before
+ * the WOF driver has been loaded.  Since the Windows bootloader only supports
+ * the XPRESS4K variant of System Compression, such files should not be
+ * compressed using other variants.  */
+static wchar_t *xpress4k_only_pattern_strings[] = {
+	L"*winload.*",
+	L"*winresume.*",
+	L"\\Windows\\AppPatch\\drvmain.sdb",
+	L"\\Windows\\Fonts\\vgaoem.fon",
+	L"\\Windows\\Fonts\\vgasys.fon",
+	L"\\Windows\\INF\\errata.inf",
+	L"\\Windows\\System32\\config\\*",
+	L"\\Windows\\System32\\ntkrnlpa.exe",
+	L"\\Windows\\System32\\ntoskrnl.exe",
+	L"\\Windows\\System32\\bootvid.dll",
+	L"\\Windows\\System32\\ci.dll",
+	L"\\Windows\\System32\\hal*.dll",
+	L"\\Windows\\System32\\mcupdate_AuthenticAMD.dll",
+	L"\\Windows\\System32\\mcupdate_GenuineIntel.dll",
+	L"\\Windows\\System32\\pshed.dll",
+	L"\\Windows\\System32\\apisetschema.dll",
+	L"\\Windows\\System32\\api-ms-win*.dll",
+	L"\\Windows\\System32\\ext-ms-win*.dll",
+	L"\\Windows\\System32\\KernelBase.dll",
+	L"\\Windows\\System32\\drivers\\*.sys",
+	L"\\Windows\\System32\\*.nls",
+	L"\\Windows\\System32\\kbd*.dll",
+	L"\\Windows\\System32\\kd*.dll",
+	L"\\Windows\\System32\\clfs.sys",
+	L"\\Windows\\System32\\CodeIntegrity\\driver.stl",
+};
+
+static const struct string_set xpress4k_only_patterns = {
+	.strings = xpress4k_only_pattern_strings,
+	.num_strings = ARRAY_LEN(xpress4k_only_pattern_strings),
+};
+
 static NTSTATUS
 set_system_compression_on_inode(struct wim_inode *inode, int format,
 				struct win32_apply_ctx *ctx)
@@ -2306,6 +2364,41 @@ set_system_compression_on_inode(struct wim_inode *inode, int format,
 	bool retried = false;
 	NTSTATUS status;
 	HANDLE h;
+
+	/* If needed, force the XPRESS4K format for this file.  */
+	if (format != FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS4K) {
+		/* We need to check the patterns against every name of the
+		 * inode, in case any of them match.  */
+		struct wim_dentry *dentry;
+		inode_for_each_extraction_alias(dentry, inode) {
+			bool incompatible;
+
+			if (calculate_dentry_full_path(dentry)) {
+				ERROR("Unable to compute file path!");
+				return STATUS_NO_MEMORY;
+			}
+
+			incompatible = match_pattern_list(dentry->d_full_path,
+							  &xpress4k_only_patterns);
+			FREE(dentry->d_full_path);
+			dentry->d_full_path = NULL;
+
+			if (incompatible) {
+				if (ctx->num_xpress4k_forced_files++ == 0) {
+					WARNING("For compatibility with the "
+						"Windows bootloader, some "
+						"files are being\n"
+						"          compacted "
+						"using the XPRESS4K format "
+						"instead of the %"TS" format\n"
+						"          you requested.",
+						get_system_compression_format_string(format));
+				}
+				format = FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS4K;
+				break;
+			}
+		}
+	}
 
 	/* Open the extracted file.  */
 	status = create_file(&h, GENERIC_READ | GENERIC_WRITE, NULL,
