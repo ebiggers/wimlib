@@ -4,6 +4,17 @@ Version 1.8.3-BETA:
 	resulting filesystem.  Users of the (UNIX-only) NTFS-3g based WIM
 	extraction support should not use wimlib v1.8.1 or wimlib v1.8.2.
 
+	Several improvements to System Compression (compact mode) support:
+
+		wof.sys (or wofadk.sys) is now automatically attached to the
+		target volume if needed.
+
+		Compact-mode extractions now work correctly with wofadk.sys on
+		older versions of Windows.
+
+		For compatibility with the Windows bootloader, XPRESS4K
+		compression is now automatically forced on certain files.
+
 Version 1.8.2:
 	This release primarily contains various minor bug fixes and
 	improvements, including:
