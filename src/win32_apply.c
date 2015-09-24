@@ -2299,6 +2299,38 @@ set_system_compression(HANDLE h, int format)
 	return status;
 }
 
+static NTSTATUS
+set_system_compression_on_inode(struct wim_inode *inode, int format,
+				struct win32_apply_ctx *ctx)
+{
+	bool retried = false;
+	NTSTATUS status;
+	HANDLE h;
+
+	/* Open the extracted file.  */
+	status = create_file(&h, GENERIC_READ | GENERIC_WRITE, NULL,
+			     0, FILE_OPEN, 0,
+			     inode_first_extraction_dentry(inode), ctx);
+
+	if (!NT_SUCCESS(status))
+		return status;
+retry:
+	/* Compress the file.  If the attempt fails with "invalid device
+	 * request", then attach wof.sys (or wofadk.sys) and retry.  */
+	status = set_system_compression(h, format);
+	if (unlikely(status == STATUS_INVALID_DEVICE_REQUEST && !retried)) {
+		wchar_t drive_path[7];
+		if (!win32_get_drive_path(ctx->common.target, drive_path) &&
+		    win32_try_to_attach_wof(drive_path + 4)) {
+			retried = true;
+			goto retry;
+		}
+	}
+
+	(*func_NtClose)(h);
+	return status;
+}
+
 /*
  * This function is called when doing a "compact-mode" extraction and we just
  * finished extracting a blob to one or more locations.  For each location that
@@ -2325,7 +2357,6 @@ handle_system_compression(struct blob_descriptor *blob, struct win32_apply_ctx *
 	for (u32 i = 0; i < blob->out_refcnt; i++) {
 		struct wim_inode *inode = targets[i].inode;
 		struct wim_inode_stream *strm = targets[i].stream;
-		HANDLE h;
 		NTSTATUS status;
 
 		if (!stream_is_unnamed_data_stream(strm))
@@ -2334,14 +2365,9 @@ handle_system_compression(struct blob_descriptor *blob, struct win32_apply_ctx *
 		if (will_externally_back_inode(inode, ctx, NULL, false) != 0)
 			continue;
 
-		status = create_file(&h, GENERIC_READ | GENERIC_WRITE, NULL,
-				     0, FILE_OPEN, 0,
-				     inode_first_extraction_dentry(inode), ctx);
-
-		if (NT_SUCCESS(status)) {
-			status = set_system_compression(h, format);
-			(*func_NtClose)(h);
-		}
+		status = set_system_compression_on_inode(inode, format, ctx);
+		if (likely(NT_SUCCESS(status)))
+			continue;
 
 		if (status == STATUS_INVALID_DEVICE_REQUEST) {
 			WARNING(
@@ -2353,16 +2379,14 @@ handle_system_compression(struct blob_descriptor *blob, struct win32_apply_ctx *
 			return;
 		}
 
-		if (!NT_SUCCESS(status)) {
-			ctx->num_system_compression_failures++;
-			if (ctx->num_system_compression_failures < 10) {
-				winnt_warning(status, L"\"%ls\": Failed to compress "
-					      "extracted file using System Compression",
-					      current_path(ctx));
-			} else if (ctx->num_system_compression_failures == 10) {
-				WARNING("Suppressing further warnings about "
-					"System Compression failures.");
-			}
+		ctx->num_system_compression_failures++;
+		if (ctx->num_system_compression_failures < 10) {
+			winnt_warning(status, L"\"%ls\": Failed to compress "
+				      "extracted file using System Compression",
+				      current_path(ctx));
+		} else if (ctx->num_system_compression_failures == 10) {
+			WARNING("Suppressing further warnings about "
+				"System Compression failures.");
 		}
 	}
 }

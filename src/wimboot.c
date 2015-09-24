@@ -866,47 +866,6 @@ out:
 	return ret;
 }
 
-/* Try to attach an instance of the Windows Overlay File System Filter Driver to
- * the specified drive (such as C:)  */
-static bool
-try_to_attach_wof(const wchar_t *drive)
-{
-	HMODULE fltlib;
-	bool retval = false;
-
-	/* Use FilterAttach() from Fltlib.dll.  */
-
-	fltlib = LoadLibrary(L"Fltlib.dll");
-
-	if (!fltlib) {
-		WARNING("Failed to load Fltlib.dll");
-		return retval;
-	}
-
-	HRESULT (WINAPI *func_FilterAttach)(LPCWSTR lpFilterName,
-					    LPCWSTR lpVolumeName,
-					    LPCWSTR lpInstanceName,
-					    DWORD dwCreatedInstanceNameLength,
-					    LPWSTR lpCreatedInstanceName);
-
-	func_FilterAttach = (void *)GetProcAddress(fltlib, "FilterAttach");
-
-	if (func_FilterAttach) {
-		HRESULT res;
-
-		res = (*func_FilterAttach)(L"WoF", drive, NULL, 0, NULL);
-
-		if (res == S_OK)
-			retval = true;
-	} else {
-		WARNING("FilterAttach() does not exist in Fltlib.dll");
-	}
-
-	FreeLibrary(fltlib);
-
-	return retval;
-}
-
 /*
  * Allocate a WOF data source ID for a WIM file.
  *
@@ -1001,7 +960,7 @@ retry_ioctl:
 				CloseHandle(h);
 				h = INVALID_HANDLE_VALUE;
 				tried_to_attach_wof = true;
-				if (try_to_attach_wof(drive_path + 4))
+				if (win32_try_to_attach_wof(drive_path + 4))
 					goto retry_ioctl;
 			}
 			ret = WIMLIB_ERR_UNSUPPORTED;

@@ -379,6 +379,48 @@ win32_get_drive_path(const wchar_t *file_path, wchar_t drive_path[7])
 	return 0;
 }
 
+/* Try to attach an instance of the Windows Overlay File System Filter Driver to
+ * the specified drive (such as C:)  */
+bool
+win32_try_to_attach_wof(const wchar_t *drive)
+{
+	HMODULE fltlib;
+	bool retval = false;
+
+	/* Use FilterAttach() from Fltlib.dll.  */
+
+	fltlib = LoadLibrary(L"Fltlib.dll");
+
+	if (!fltlib) {
+		WARNING("Failed to load Fltlib.dll");
+		return retval;
+	}
+
+	HRESULT (WINAPI *func_FilterAttach)(LPCWSTR lpFilterName,
+					    LPCWSTR lpVolumeName,
+					    LPCWSTR lpInstanceName,
+					    DWORD dwCreatedInstanceNameLength,
+					    LPWSTR lpCreatedInstanceName);
+
+	func_FilterAttach = (void *)GetProcAddress(fltlib, "FilterAttach");
+
+	if (func_FilterAttach) {
+		HRESULT res;
+
+		res = (*func_FilterAttach)(L"WoF", drive, NULL, 0, NULL);
+
+		if (res == S_OK)
+			retval = true;
+	} else {
+		WARNING("FilterAttach() does not exist in Fltlib.dll");
+	}
+
+	FreeLibrary(fltlib);
+
+	return retval;
+}
+
+
 static void
 windows_msg(u32 code, const wchar_t *format, va_list va,
 	    bool is_ntstatus, bool is_error)

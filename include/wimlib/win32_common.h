@@ -154,6 +154,9 @@ win32_path_to_nt_path(const wchar_t *win32_path, UNICODE_STRING *nt_path);
 extern int
 win32_get_drive_path(const wchar_t *file_path, wchar_t drive_path[7]);
 
+extern bool
+win32_try_to_attach_wof(const wchar_t *drive);
+
 extern void
 win32_warning(DWORD err, const wchar_t *format, ...) _cold_attribute;
 
