@@ -920,7 +920,8 @@ xpress_find_matches(struct xpress_compressor * restrict c,
 		/* If we've found so many matches that the cache might overflow
 		 * if we keep finding more, then stop finding matches.  This
 		 * case is very unlikely.  */
-		if (unlikely(cache_ptr >= c->cache_overflow_mark || max_len < 5))
+		if (unlikely(cache_ptr >= c->cache_overflow_mark ||
+			     max_len < BT_MATCHFINDER_REQUIRED_NBYTES))
 			break;
 
 		matches = cache_ptr;
@@ -955,7 +956,8 @@ xpress_find_matches(struct xpress_compressor * restrict c,
 		 * highly compressible, so it doesn't matter as much what we do.
 		 */
 		if (best_len >= nice_len) {
-			if (unlikely(best_len + 5 >= max_len))
+			if (unlikely(best_len +
+				     BT_MATCHFINDER_REQUIRED_NBYTES >= max_len))
 				break;
 			--best_len;
 			do {

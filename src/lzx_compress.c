@@ -1809,7 +1809,7 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 			if (unlikely(max_len > in_end - in_next)) {
 				max_len = in_end - in_next;
 				nice_len = min(max_len, nice_len);
-				if (unlikely(max_len < 5)) {
+				if (unlikely(max_len < BT_MATCHFINDER_REQUIRED_NBYTES)) {
 					in_next++;
 					cache_ptr->length = 0;
 					cache_ptr++;
@@ -1849,7 +1849,7 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 					if (unlikely(max_len > in_end - in_next)) {
 						max_len = in_end - in_next;
 						nice_len = min(max_len, nice_len);
-						if (unlikely(max_len < 5)) {
+						if (unlikely(max_len < BT_MATCHFINDER_REQUIRED_NBYTES)) {
 							in_next++;
 							cache_ptr->length = 0;
 							cache_ptr++;

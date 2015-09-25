@@ -123,6 +123,11 @@ TEMPLATED(bt_right_child)(struct TEMPLATED(bt_matchfinder) *mf, u32 node)
 	return &mf->child_tab[(node << 1) + 1];
 }
 
+/* The minimum permissible value of 'max_len' for bt_matchfinder_get_matches()
+ * and bt_matchfinder_skip_position().  There must be sufficiently many bytes
+ * remaining to load a 32-bit integer from the *next* position.  */
+#define BT_MATCHFINDER_REQUIRED_NBYTES	5
+
 /* Advance the binary tree matchfinder by one byte, optionally recording
  * matches.  @record_matches should be a compile-time constant.  */
 static inline struct lz_match *
@@ -266,7 +271,8 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
  *	The current position in the input buffer (the position of the sequence
  *	being matched against).
  * @max_len
- *	The maximum permissible match length at this position.  Must be >= 5.
+ *	The maximum permissible match length at this position.  Must be >=
+ *	BT_MATCHFINDER_REQUIRED_NBYTES.
  * @nice_len
  *	Stop searching if a match of at least this length is found.
  *	Must be <= @max_len.
