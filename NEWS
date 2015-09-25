@@ -12,8 +12,8 @@ Version 1.8.3-BETA:
 		Compact-mode extractions now work correctly with wofadk.sys on
 		older versions of Windows.
 
-		For compatibility with the Windows bootloader, XPRESS4K
-		compression is now automatically forced on certain files.
+		For compatibility with the Windows bootloader, the requested
+		compression format now is overridden on certain files.
 
 Version 1.8.2:
 	This release primarily contains various minor bug fixes and

@@ -400,10 +400,9 @@ Exclusions are handled in the same way as with the \fB--wimboot\fR option.
 That is: if it exists, the [PrepopulateList] section of the file
 \\Windows\\System32\\WimBootCompress.ini in the WIM image will be read, and
 files matching any of the patterns in this section will not be compressed.
-In addition, wimlib has a hardcoded list of files which it knows to, for
-compatibility with the Windows bootloader which only supports
-XPRESS4K-compressed files, always extract using either XPRESS4K or no
-compression.
+In addition, wimlib has a hardcoded list of files for which it knows, for
+compatibility with the Windows bootloader, to override the requested compression
+format.
 .SH NOTES
 \fIData integrity\fR:  WIM files include SHA1 message digests for file data.
 \fBwimlib-imagex apply\fR calculates the SHA1 message digest of every file

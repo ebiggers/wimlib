@@ -178,6 +178,12 @@ wim_info_get_wimboot(const struct wim_info *info, int image)
 	return info->images[image - 1].wimboot;
 }
 
+u64
+wim_info_get_windows_build_number(const struct wim_info *info, int image)
+{
+	return info->images[image - 1].windows_info.windows_version.build;
+}
+
 /* Architecture constants are from w64 mingw winnt.h  */
 #define PROCESSOR_ARCHITECTURE_INTEL 0
 #define PROCESSOR_ARCHITECTURE_MIPS 1

@@ -151,10 +151,16 @@ struct win32_apply_ctx {
 	/* Number of files on which we couldn't set System Compression.  */
 	unsigned long num_system_compression_failures;
 
-	/* The number of files on which we used XPRESS4K System Compression
-	 * rather than a stronger variant, to be compatible with the Windows
-	 * bootloader.  */
-	unsigned long num_xpress4k_forced_files;
+	/* The number of files which, for compatibility with the Windows
+	 * bootloader, were not compressed using the requested system
+	 * compression format.  This includes matches with the hardcoded pattern
+	 * list only; it does not include matches with patterns in
+	 * [PrepopulateList].  */
+	unsigned long num_system_compression_exclusions;
+
+	/* The Windows build number of the image being applied, or 0 if unknown.
+	 */
+	u64 windows_build_number;
 
 	/* Have we tried to enable short name support on the target volume yet?
 	 */
@@ -216,6 +222,14 @@ get_vol_flags(const wchar_t *target, DWORD *vol_flags_ret,
 		 * MS documentation they are only user-settable on NTFS.  */
 		*short_names_supported_ret = true;
 	}
+}
+
+/* Is the image being extracted an OS image for Windows 10 or later?  */
+static bool
+is_image_windows_10_or_later(struct win32_apply_ctx *ctx)
+{
+	/* Note: if no build number is available, this returns false.  */
+	return ctx->windows_build_number >= 10240;
 }
 
 static const wchar_t *
@@ -2320,11 +2334,9 @@ set_system_compression(HANDLE h, int format)
 	return status;
 }
 
-/* Hard-coded list of files which the Windows bootloader needs to access before
- * the WOF driver has been loaded.  Since the Windows bootloader only supports
- * the XPRESS4K variant of System Compression, such files should not be
- * compressed using other variants.  */
-static wchar_t *xpress4k_only_pattern_strings[] = {
+/* Hard-coded list of files which the Windows bootloader may need to access
+ * before the WOF driver has been loaded.  */
+static wchar_t *bootloader_pattern_strings[] = {
 	L"*winload.*",
 	L"*winresume.*",
 	L"\\Windows\\AppPatch\\drvmain.sdb",
@@ -2355,9 +2367,9 @@ static wchar_t *xpress4k_only_pattern_strings[] = {
 	L"\\Windows\\System32\\CodeIntegrity\\driver.stl",
 };
 
-static const struct string_set xpress4k_only_patterns = {
-	.strings = xpress4k_only_pattern_strings,
-	.num_strings = ARRAY_LEN(xpress4k_only_pattern_strings),
+static const struct string_set bootloader_patterns = {
+	.strings = bootloader_pattern_strings,
+	.num_strings = ARRAY_LEN(bootloader_pattern_strings),
 };
 
 static NTSTATUS
@@ -2368,13 +2380,19 @@ set_system_compression_on_inode(struct wim_inode *inode, int format,
 	NTSTATUS status;
 	HANDLE h;
 
-	/* If needed, force the XPRESS4K format for this file.  */
-	if (format != FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS4K) {
+	/* If it may be needed for compatibility with the Windows bootloader,
+	 * force this file to XPRESS4K or uncompressed format.  The bootloader
+	 * of Windows 10 supports XPRESS4K only; older versions don't support
+	 * system compression at all.  */
+	if (!is_image_windows_10_or_later(ctx) ||
+	    format != FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS4K)
+	{
 		/* We need to check the patterns against every name of the
 		 * inode, in case any of them match.  */
 		struct wim_dentry *dentry;
 		inode_for_each_extraction_alias(dentry, inode) {
 			bool incompatible;
+			bool warned;
 
 			if (calculate_dentry_full_path(dentry)) {
 				ERROR("Unable to compute file path!");
@@ -2382,12 +2400,18 @@ set_system_compression_on_inode(struct wim_inode *inode, int format,
 			}
 
 			incompatible = match_pattern_list(dentry->d_full_path,
-							  &xpress4k_only_patterns);
+							  &bootloader_patterns);
 			FREE(dentry->d_full_path);
 			dentry->d_full_path = NULL;
 
-			if (incompatible) {
-				if (ctx->num_xpress4k_forced_files++ == 0) {
+			if (!incompatible)
+				continue;
+
+			warned = (ctx->num_system_compression_exclusions++ > 0);
+
+			if (is_image_windows_10_or_later(ctx)) {
+				/* Force to XPRESS4K  */
+				if (!warned) {
 					WARNING("For compatibility with the "
 						"Windows bootloader, some "
 						"files are being\n"
@@ -2399,7 +2423,19 @@ set_system_compression_on_inode(struct wim_inode *inode, int format,
 				}
 				format = FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS4K;
 				break;
+			} else {
+				/* Force to uncompressed  */
+				if (!warned) {
+					WARNING("For compatibility with the "
+						"Windows bootloader, some "
+						"files will not\n"
+						"          be compressed with"
+						" system compression "
+						"(\"compacted\").");
+				}
+				return STATUS_SUCCESS;
 			}
+
 		}
 	}
 
@@ -2901,6 +2937,9 @@ win32_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 		if (ret)
 			goto out;
 	}
+
+	ctx->windows_build_number = wim_info_get_windows_build_number(ctx->common.wim->wim_info,
+								      ctx->common.wim->current_image);
 
 	dentry_count = count_dentries(dentry_list);
 
