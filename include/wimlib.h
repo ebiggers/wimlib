@@ -1942,28 +1942,25 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 #define WIMLIB_EXTRACT_FLAG_WIMBOOT			0x00400000
 
 /**
- * EXPERIMENTAL, Windows-only: compress the extracted files using System
- * Compression, when possible.  This only works on either Windows 10 or later,
- * or on an older Windows to which Microsoft's wofadk.sys driver has been added.
- * Several different compression formats may be used with System Compression;
- * this particular flag selects the XPRESS compression format with 4096 byte
- * chunks.  <b>This flag is currently experimental and may be changed or removed
- * in future releases of wimlib.</b>  */
+ * Since wimlib v1.8.2 and Windows-only: compress the extracted files using
+ * System Compression, when possible.  This only works on either Windows 10 or
+ * later, or on an older Windows to which Microsoft's wofadk.sys driver has been
+ * added.  Several different compression formats may be used with System
+ * Compression; this particular flag selects the XPRESS compression format with
+ * 4096 byte chunks.
+ */
 #define WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS4K		0x01000000
 
 /** Like ::WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS4K, but use XPRESS compression with
- * 8192 byte chunks.  <b>This flag is currently experimental and may be changed
- * or removed in future releases of wimlib.</b>  */
+ * 8192 byte chunks.  */
 #define WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS8K		0x02000000
 
 /** Like ::WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS4K, but use XPRESS compression with
- * 16384 byte chunks.  <b>This flag is currently experimental and may be changed
- * or removed in future releases of wimlib.</b>  */
+ * 16384 byte chunks.  */
 #define WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS16K		0x04000000
 
 /** Like ::WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS4K, but use LZX compression with
- * 32768 byte chunks.  <b>This flag is currently experimental and may be changed
- * or removed in future releases of wimlib.</b>  */
+ * 32768 byte chunks.  */
 #define WIMLIB_EXTRACT_FLAG_COMPACT_LZX			0x08000000
 
 /** @} */
