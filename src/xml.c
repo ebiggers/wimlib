@@ -667,8 +667,8 @@ xml_set_wimboot(struct wim_xml_info *info, int image)
 }
 
 /*
- * Calculate what to put in the FILECOUNT, DIRCOUNT, TOTALBYTES, and
- * HARDLINKBYTES elements of the specified WIM image.
+ * Update the DIRCOUNT, FILECOUNT, TOTALBYTES, HARDLINKBYTES, and
+ * LASTMODIFICATIONTIME elements for the specified WIM image.
  *
  * Note: since these stats are likely to be used for display purposes only, we
  * no longer attempt to duplicate WIMGAPI's weird bugs when calculating them.
@@ -684,8 +684,8 @@ xml_update_image_info(WIMStruct *wim, int image)
 	u64 total_bytes = 0;
 	u64 hard_link_bytes = 0;
 	u64 size;
-	xmlNode *filecount_node;
 	xmlNode *dircount_node;
+	xmlNode *filecount_node;
 	xmlNode *totalbytes_node;
 	xmlNode *hardlinkbytes_node;
 	xmlNode *lastmodificationtime_node;
@@ -773,9 +773,9 @@ err:
  * Make a copy of the XML information for the image with index @src_image in the
  * @src_info XML document and append it to the @dest_info XML document.
  *
- * In the process, the image's name and description will be changed to the
- * values specified by @dest_image_name and @dest_image_description.  Either or
- * both may be NULL, which indicates that the corresponding element will not be
+ * In the process, change the image's name and description to the values
+ * specified by @dest_image_name and @dest_image_description.  Either or both
+ * may be NULL, which indicates that the corresponding element will not be
  * included in the destination image.
  */
 int
@@ -1016,10 +1016,11 @@ xml_print_image_info(struct wim_xml_info *info, int image)
  *                      Reading and writing the XML data                      *
  *----------------------------------------------------------------------------*/
 
-static unsigned
+static int
 image_node_get_index(const xmlNode *node)
 {
-	return node_get_number((const xmlNode *)xmlHasProp(node, "INDEX"), 10);
+	u64 v = node_get_number((const xmlNode *)xmlHasProp(node, "INDEX"), 10);
+	return min(v, INT_MAX);
 }
 
 /* Prepare the 'images' array from the XML document tree.  */
@@ -1027,8 +1028,8 @@ static int
 setup_images(struct wim_xml_info *info, xmlNode *root)
 {
 	xmlNode *child;
-	unsigned index;
-	unsigned max_index = 0;
+	int index;
+	int max_index = 0;
 	int ret;
 
 	info->images = NULL;

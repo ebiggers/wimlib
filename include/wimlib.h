@@ -3137,9 +3137,10 @@ wimlib_get_image_name(const WIMStruct *wim, int image);
 /**
  * @ingroup G_wim_information
  *
- * Get a per-image property from the WIM's XML document.  This is an alternative
- * to wimlib_get_image_name() and wimlib_get_image_descripton() which allows
- * getting any simple string property.
+ * Since wimlib v1.8.3: get a per-image property from the WIM's XML document.
+ * This is an alternative to wimlib_get_image_name() and
+ * wimlib_get_image_description() which allows getting any simple string
+ * property.
  *
  * @param wim
  *	Pointer to the ::WIMStruct for the WIM.
@@ -3153,8 +3154,8 @@ wimlib_get_image_name(const WIMStruct *wim, int image);
  *	element.  The <tt>[</tt> character is reserved for future use.
  *
  * @return
- *	The property's value as a wimlib_tchar string, or @c NULL if there is no
- *	such property.  The string may not remain valid after later library
+ *	The property's value as a ::wimlib_tchar string, or @c NULL if there is
+ *	no such property.  The string may not remain valid after later library
  *	calls, so the caller should duplicate it if needed.
  */
 extern const wimlib_tchar *
@@ -3994,8 +3995,8 @@ wimlib_set_image_name(WIMStruct *wim, int image, const wimlib_tchar *name);
 /**
  * @ingroup G_modifying_wims
  *
- * Add, modify, or remove a per-image property from the WIM's XML document.
- * This is an alternative to wimlib_set_image_name(),
+ * Since wimlib v1.8.3: add, modify, or remove a per-image property from the
+ * WIM's XML document.  This is an alternative to wimlib_set_image_name(),
  * wimlib_set_image_descripton(), and wimlib_set_image_flags() which allows
  * manipulating any simple string property.
  *
