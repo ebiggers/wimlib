@@ -259,8 +259,9 @@
  *
  * wimlib_update_image() can add, delete, and rename files in a WIM image.
  *
- * wimlib_set_image_name(), wimlib_set_image_descripton(), and
- * wimlib_set_image_flags() can change other image metadata.
+ * wimlib_set_image_name(), wimlib_set_image_descripton(),
+ * wimlib_set_image_flags(), and wimlib_set_image_property() can change other
+ * image metadata.
  *
  * wimlib_set_wim_info() can change information about the WIM file itself, such
  * as the boot index.
@@ -3134,6 +3135,33 @@ extern const wimlib_tchar *
 wimlib_get_image_name(const WIMStruct *wim, int image);
 
 /**
+ * @ingroup G_wim_information
+ *
+ * Get a per-image property from the WIM's XML document.  This is an alternative
+ * to wimlib_get_image_name() and wimlib_get_image_descripton() which allows
+ * getting any simple string property.
+ *
+ * @param wim
+ *	Pointer to the ::WIMStruct for the WIM.
+ * @param image
+ *	The 1-based index of the image for which to get the property.
+ * @param property_name
+ *	The name of the image property, for example "NAME", "DESCRIPTION", or
+ *	"TOTALBYTES".  The name can contain forward slashes to indicate a nested
+ *	XML element; for example, "WINDOWS/VERSION/BUILD" indicates the BUILD
+ *	element nested within the VERSION element nested within the WINDOWS
+ *	element.  The <tt>[</tt> character is reserved for future use.
+ *
+ * @return
+ *	The property's value as a wimlib_tchar string, or @c NULL if there is no
+ *	such property.  The string may not remain valid after later library
+ *	calls, so the caller should duplicate it if needed.
+ */
+extern const wimlib_tchar *
+wimlib_get_image_property(const WIMStruct *wim, int image,
+			  const wimlib_tchar *property_name);
+
+/**
  * @ingroup G_general
  *
  * Return the version of wimlib as a 32-bit number whose top 12 bits contain the
@@ -3959,6 +3987,37 @@ wimlib_set_image_flags(WIMStruct *wim, int image, const wimlib_tchar *flags);
  */
 extern int
 wimlib_set_image_name(WIMStruct *wim, int image, const wimlib_tchar *name);
+
+/**
+ * @ingroup G_modifying_wims
+ *
+ * Add, modify, or remove a per-image property from the WIM's XML document.
+ * This is an alternative to wimlib_set_image_name(),
+ * wimlib_set_image_descripton(), and wimlib_set_image_flags() which allows
+ * manipulating any simple string property.
+ *
+ * @param wim
+ *	Pointer to the ::WIMStruct for the WIM.
+ * @param image
+ *	The 1-based index of the image for which to set the property.
+ * @param property_name
+ *	The name of the image property in the same format documented for
+ *	wimlib_get_image_property().
+ * @param property_value
+ *	If not NULL and not empty, the property is set to this value.
+ *	Otherwise, the property is removed from the XML document.
+ *
+ * @return 0 on success; a ::wimlib_error_code value on failure.
+ *
+ * @retval ::WIMLIB_ERR_INVALID_IMAGE
+ *	@p image does not exist in @p wim.
+ * @retval ::WIMLIB_ERR_INVALID_PARAM
+ *	@p property_name has an unsupported format.
+ */
+extern int
+wimlib_set_image_property(WIMStruct *wim, int image,
+			  const wimlib_tchar *property_name,
+			  const wimlib_tchar *property_value);
 
 /**
  * @ingroup G_general

@@ -1380,6 +1380,20 @@ wimlib_get_image_description(const WIMStruct *wim, int image)
 	return get_image_property(wim, image, "DESCRIPTION", NULL);
 }
 
+WIMLIBAPI const tchar *
+wimlib_get_image_property(const WIMStruct *wim, int image,
+			  const tchar *property_name)
+{
+	const xmlChar *name;
+	const tchar *value;
+
+	if (tstr_get_utf8(property_name, &name))
+		return NULL;
+	value = get_image_property(wim, image, name, NULL);
+	tstr_put_utf8(name);
+	return value;
+}
+
 WIMLIBAPI int
 wimlib_set_image_name(WIMStruct *wim, int image, const tchar *name)
 {
@@ -1399,4 +1413,19 @@ WIMLIBAPI int
 wimlib_set_image_flags(WIMStruct *wim, int image, const tchar *flags)
 {
 	return set_image_property(wim, image, "FLAGS", flags);
+}
+
+WIMLIBAPI int
+wimlib_set_image_property(WIMStruct *wim, int image, const tchar *property_name,
+			  const tchar *property_value)
+{
+	const xmlChar *name;
+	int ret;
+
+	ret = tstr_get_utf8(property_name, &name);
+	if (ret)
+		return ret;
+	ret = set_image_property(wim, image, name, property_value);
+	tstr_put_utf8(name);
+	return ret;
 }
