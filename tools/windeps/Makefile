@@ -53,6 +53,7 @@ libxml_$(1):$(LIBXML_SRCDIR)
 		CFLAGS=-Os					\
 		--with-minimum					\
 		--without-lzma					\
+		--with-tree					\
 		--with-writer;					\
 	$(MAKE) install;					\
 	rm -f ../sysroot_$(1)/lib/libxml2.la;

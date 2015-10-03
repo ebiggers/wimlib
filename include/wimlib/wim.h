@@ -11,7 +11,7 @@
 #include "wimlib/list.h"
 
 struct wim_image_metadata;
-struct wim_info;
+struct wim_xml_info;
 struct blob_table;
 
 /*
@@ -59,7 +59,7 @@ struct WIMStruct {
 
 	/* Information from the XML data of the WIM file.  This information is
 	 * also maintained for a WIMStruct not backed by a file.  */
-	struct wim_info *wim_info;
+	struct wim_xml_info *xml_info;
 
 	/* The blob table for this WIMStruct.  If this WIMStruct has a backing
 	 * file, then this table will index the blobs contained in that file.

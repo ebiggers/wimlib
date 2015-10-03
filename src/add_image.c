@@ -88,9 +88,6 @@ wimlib_add_empty_image(WIMStruct *wim, const tchar *name, int *new_idx_ret)
 {
 	int ret;
 
-	if (!name)
-		name = T("");
-
 	if (wimlib_image_name_in_use(wim, name)) {
 		ERROR("There is already an image named \"%"TS"\" in the WIM!",
 		      name);
@@ -101,7 +98,7 @@ wimlib_add_empty_image(WIMStruct *wim, const tchar *name, int *new_idx_ret)
 	if (ret)
 		return ret;
 
-	ret = xml_add_image(wim, name);
+	ret = xml_add_image(wim->xml_info, name);
 	if (ret) {
 		put_image_metadata(wim->image_metadata[--wim->hdr.image_count],
 				   NULL);
@@ -180,13 +177,16 @@ wimlib_add_image_multisource(WIMStruct *wim,
 	if (ret)
 		goto out_delete_image;
 
+	/* If requested, mark the new image as WIMBoot-compatible.  */
+	if (add_flags & WIMLIB_ADD_FLAG_WIMBOOT) {
+		ret = xml_set_wimboot(wim->xml_info, wim->hdr.image_count);
+		if (ret)
+			goto out_delete_image;
+	}
+
 	/* If requested, set this image as the WIM's bootable image.  */
 	if (add_flags & WIMLIB_ADD_FLAG_BOOT)
 		wim->hdr.boot_idx = wim->hdr.image_count;
-
-	/* If requested, mark new image as WIMBoot-compatible.  */
-	if (add_flags & WIMLIB_ADD_FLAG_WIMBOOT)
-		wim_info_set_wimboot(wim->wim_info, wim->hdr.image_count, true);
 
 	return 0;
 

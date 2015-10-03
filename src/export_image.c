@@ -176,14 +176,14 @@ wimlib_export_image(WIMStruct *src_wim,
 		/* Determine destination image name and description.  */
 
 		if (export_flags & WIMLIB_EXPORT_FLAG_NO_NAMES)
-			next_dest_name = T("");
+			next_dest_name = NULL;
 		else if (dest_name)
 			next_dest_name = dest_name;
 		else
 			next_dest_name = wimlib_get_image_name(src_wim, src_image);
 
 		if (export_flags & WIMLIB_EXPORT_FLAG_NO_DESCRIPTIONS)
-			next_dest_description = T("");
+			next_dest_description = NULL;
 		else if (dest_description)
 			next_dest_description = dest_description;
 		else
@@ -216,9 +216,10 @@ wimlib_export_image(WIMStruct *src_wim,
 		}
 
 		/* Export XML information into the destination WIM.  */
-		ret = xml_export_image(src_wim->wim_info, src_image,
-				       &dest_wim->wim_info, next_dest_name,
-				       next_dest_description);
+		ret = xml_export_image(src_wim->xml_info, src_image,
+				       dest_wim->xml_info, next_dest_name,
+				       next_dest_description,
+				       export_flags & WIMLIB_EXPORT_FLAG_WIMBOOT);
 		if (ret)
 			goto out_rollback;
 
@@ -248,9 +249,6 @@ wimlib_export_image(WIMStruct *src_wim,
 		int dst_image = orig_dest_image_count + 1 +
 				(src_image - start_src_image);
 
-		if (export_flags & WIMLIB_EXPORT_FLAG_WIMBOOT)
-			wim_info_set_wimboot(dest_wim->wim_info, dst_image, true);
-
 		if ((export_flags & WIMLIB_EXPORT_FLAG_BOOT) &&
 		    (!all_images || src_image == src_wim->hdr.boot_idx))
 			dest_wim->hdr.boot_idx = dst_image;
@@ -263,10 +261,10 @@ wimlib_export_image(WIMStruct *src_wim,
 	return 0;
 
 out_rollback:
-	while ((image = wim_info_get_num_images(dest_wim->wim_info))
+	while ((image = xml_get_image_count(dest_wim->xml_info))
 	       > orig_dest_image_count)
 	{
-		xml_delete_image(&dest_wim->wim_info, image);
+		xml_delete_image(dest_wim->xml_info, image);
 	}
 	while (dest_wim->hdr.image_count > orig_dest_image_count)
 	{

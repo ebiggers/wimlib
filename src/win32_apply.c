@@ -686,8 +686,8 @@ start_wimboot_extraction(struct list_head *dentry_list, struct win32_apply_ctx *
 	int ret;
 	struct wim_dentry *dentry;
 
-	if (!wim_info_get_wimboot(ctx->common.wim->wim_info,
-				  ctx->common.wim->current_image))
+	if (!xml_get_wimboot(ctx->common.wim->xml_info,
+			     ctx->common.wim->current_image))
 		WARNING("The WIM image is not marked as WIMBoot compatible.  This usually\n"
 			"          means it is not intended to be used to back a Windows operating\n"
 			"          system.  Proceeding anyway.");
@@ -2938,8 +2938,8 @@ win32_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 			goto out;
 	}
 
-	ctx->windows_build_number = wim_info_get_windows_build_number(ctx->common.wim->wim_info,
-								      ctx->common.wim->current_image);
+	ctx->windows_build_number = xml_get_windows_build_number(ctx->common.wim->xml_info,
+								 ctx->common.wim->current_image);
 
 	dentry_count = count_dentries(dentry_list);
 

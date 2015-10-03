@@ -57,7 +57,7 @@ delete_wim_image(WIMStruct *wim, int image)
 	--wim->hdr.image_count;
 
 	/* Remove the image from the XML information. */
-	xml_delete_image(&wim->wim_info, image);
+	xml_delete_image(wim->xml_info, image);
 
 	/* Fix the boot index. */
 	if (wim->hdr.boot_idx == image)

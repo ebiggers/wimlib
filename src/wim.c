@@ -176,8 +176,9 @@ wimlib_create_new_wim(enum wimlib_compression_type ctype, WIMStruct **wim_ret)
 	if (!wim)
 		return WIMLIB_ERR_NOMEM;
 
+	wim->xml_info = xml_new_info_struct();
 	wim->blob_table = new_blob_table(9001);
-	if (!wim->blob_table) {
+	if (!wim->xml_info || !wim->blob_table) {
 		wimlib_free(wim);
 		return WIMLIB_ERR_NOMEM;
 	}
@@ -440,7 +441,7 @@ wimlib_print_available_images(const WIMStruct *wim, int image)
 		tputchar(T('-'));
 	tputchar(T('\n'));
 	for (i = first; i <= last; i++)
-		print_image_info(wim->wim_info, i);
+		xml_print_image_info(wim->xml_info, i);
 }
 
 /* API function documented in wimlib.h  */
@@ -456,7 +457,7 @@ wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info)
 	info->part_number = wim->hdr.part_number;
 	info->total_parts = wim->hdr.total_parts;
 	info->compression_type = wim->compression_type;
-	info->total_bytes = wim_info_get_total_bytes(wim->wim_info);
+	info->total_bytes = xml_get_total_bytes(wim->xml_info);
 	info->has_integrity_table = wim_has_integrity_table(wim);
 	info->opened_from_file = (wim->filename != NULL);
 	info->is_readonly = (wim->hdr.flags & WIM_HDR_FLAG_READONLY) ||
@@ -619,7 +620,6 @@ static int
 begin_read(WIMStruct *wim, const void *wim_filename_or_fd, int open_flags)
 {
 	int ret;
-	int xml_num_images;
 	const tchar *wimfile;
 
 	if (open_flags & WIMLIB_OPEN_FLAG_FROM_PIPE) {
@@ -738,8 +738,7 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd, int open_flags)
 		if (ret)
 			return ret;
 
-		xml_num_images = wim_info_get_num_images(wim->wim_info);
-		if (xml_num_images != wim->hdr.image_count) {
+		if (xml_get_image_count(wim->xml_info) != wim->hdr.image_count) {
 			ERROR("The WIM's header is inconsistent with its XML data.\n"
 			      "        Please submit a bug report if you believe this "
 			      "WIM file should be considered valid.");
@@ -890,7 +889,7 @@ wimlib_free(WIMStruct *wim)
 	wimlib_free_decompressor(wim->decompressor);
 
 	FREE(wim->filename);
-	free_wim_info(wim->wim_info);
+	xml_free_info_struct(wim->xml_info);
 	if (wim->image_metadata) {
 		for (unsigned i = 0; i < wim->hdr.image_count; i++)
 			put_image_metadata(wim->image_metadata[i], NULL);
@@ -961,7 +960,7 @@ wimlib_global_init(int init_flags)
 			    WIMLIB_INIT_FLAG_DEFAULT_CASE_INSENSITIVE))
 		goto out_unlock;
 
-	libxml_global_init();
+	xml_global_init();
 	if (!(init_flags & WIMLIB_INIT_FLAG_ASSUME_UTF8)) {
 		wimlib_mbs_is_utf8 = test_locale_ctype_utf8();
 	#ifdef WITH_NTFS_3G
@@ -1000,7 +999,7 @@ wimlib_global_cleanup(void)
 	if (!lib_initialized)
 		goto out_unlock;
 
-	libxml_global_cleanup();
+	xml_global_cleanup();
 	iconv_global_cleanup();
 #ifdef __WIN32__
 	win32_global_cleanup();

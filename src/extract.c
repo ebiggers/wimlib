@@ -1386,12 +1386,12 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 		 * subtract <HARDLINKBYTES> from this if hard links are
 		 * supported by the extraction mode.)  */
 		ctx->progress.extract.total_bytes =
-			wim_info_get_image_total_bytes(wim->wim_info,
-						       wim->current_image);
+			xml_get_image_total_bytes(wim->xml_info,
+						  wim->current_image);
 		if (ctx->supported_features.hard_links) {
 			ctx->progress.extract.total_bytes -=
-				wim_info_get_image_hard_link_bytes(wim->wim_info,
-								   wim->current_image);
+				xml_get_image_hard_link_bytes(wim->xml_info,
+							      wim->current_image);
 		}
 	}
 
@@ -1699,7 +1699,8 @@ image_name_ok_as_dir(const tchar *image_name)
 	return image_name && *image_name &&
 		!tstrpbrk(image_name, filename_forbidden_chars) &&
 		tstrcmp(image_name, T(".")) &&
-		tstrcmp(image_name, T(".."));
+		tstrcmp(image_name, T("..")) &&
+		tstrlen(image_name) <= 128;
 }
 
 /* Extracts all images from the WIM to the directory @target, with the images
@@ -1707,9 +1708,8 @@ image_name_ok_as_dir(const tchar *image_name)
 static int
 extract_all_images(WIMStruct *wim, const tchar *target, int extract_flags)
 {
-	size_t image_name_max_len = max(xml_get_max_image_name_len(wim), 20);
 	size_t output_path_len = tstrlen(target);
-	tchar buf[output_path_len + 1 + image_name_max_len + 1];
+	tchar buf[output_path_len + 1 + 128 + 1];
 	int ret;
 	int image;
 	const tchar *image_name;
@@ -1865,7 +1865,7 @@ wimlib_extract_image_from_pipe_with_progress(int pipe_fd,
 		if (ret)
 			goto out_wimlib_free;
 
-		if (wim_info_get_num_images(pwm->wim_info) != pwm->hdr.image_count) {
+		if (xml_get_image_count(pwm->xml_info) != pwm->hdr.image_count) {
 			ERROR("Image count in XML data is not the same as in WIM header.");
 			ret = WIMLIB_ERR_IMAGE_COUNT;
 			goto out_wimlib_free;

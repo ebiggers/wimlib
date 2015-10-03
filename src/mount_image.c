@@ -1061,7 +1061,7 @@ renew_current_image(struct wimfs_context *ctx)
 	if (ret)
 		goto err_free_new_blob;
 
-	ret = xml_add_image(wim, "");
+	ret = xml_add_image(wim->xml_info, NULL);
 	if (ret)
 		goto err_undo_append;
 
