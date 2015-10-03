@@ -2479,6 +2479,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_NOT_PERMITTED_TO_UNMOUNT           = 81,
 	WIMLIB_ERR_FVE_LOCKED_VOLUME		      = 82,
 	WIMLIB_ERR_UNABLE_TO_READ_CAPTURE_CONFIG      = 83,
+	WIMLIB_ERR_WIM_IS_INCOMPLETE		      = 84,
 };
 
 
@@ -3553,6 +3554,9 @@ wimlib_mount_image(WIMStruct *wim,
  * @retval ::WIMLIB_ERR_WIM_IS_ENCRYPTED
  *	The WIM cannot be opened because it contains encrypted segments.  (It
  *	may be a Windows 8 "ESD" file.)
+ * @retval ::WIMLIB_ERR_WIM_IS_INCOMPLETE
+ *	The WIM file is not complete (e.g. the program which wrote it was
+ *	terminated before it finished)
  * @retval ::WIMLIB_ERR_WIM_IS_READONLY
  *	::WIMLIB_OPEN_FLAG_WRITE_ACCESS was specified but the WIM file was
  *	considered read-only because of any of the reasons mentioned in the

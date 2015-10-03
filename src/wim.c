@@ -733,6 +733,9 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd, int open_flags)
 		if (!wim->blob_table)
 			return WIMLIB_ERR_NOMEM;
 	} else {
+		if (wim->hdr.blob_table_reshdr.uncompressed_size == 0 &&
+		    wim->hdr.xml_data_reshdr.uncompressed_size == 0)
+			return WIMLIB_ERR_WIM_IS_INCOMPLETE;
 
 		ret = read_wim_xml_data(wim);
 		if (ret)

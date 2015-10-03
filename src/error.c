@@ -332,6 +332,8 @@ static const tchar * const error_strings[] = {
 		= T("The volume must be unlocked before it can be used"),
 	[WIMLIB_ERR_UNABLE_TO_READ_CAPTURE_CONFIG]
 		= T("The capture configuration file could not be read"),
+	[WIMLIB_ERR_WIM_IS_INCOMPLETE]
+		= T("The WIM file is incomplete"),
 };
 
 WIMLIBAPI const tchar *
