@@ -236,9 +236,6 @@ static const tchar * const error_strings[] = {
 		= T("One of the specified paths to delete was a directory"),
 	[WIMLIB_ERR_IS_SPLIT_WIM]
 		= T("The WIM is part of a split WIM, which is not supported for this operation"),
-	[WIMLIB_ERR_LIBXML_UTF16_HANDLER_NOT_AVAILABLE]
-		= T("libxml2 was unable to find a character encoding conversion handler "
-		  "for UTF-16LE"),
 	[WIMLIB_ERR_LINK]
 		= T("Failed to create a hard or symbolic link when extracting "
 			"a file from the WIM"),

@@ -2433,7 +2433,6 @@ enum wimlib_error_code {
 	WIMLIB_ERR_INVALID_UTF8_STRING                = 31,
 	WIMLIB_ERR_IS_DIRECTORY                       = 32,
 	WIMLIB_ERR_IS_SPLIT_WIM                       = 33,
-	WIMLIB_ERR_LIBXML_UTF16_HANDLER_NOT_AVAILABLE = 34,
 	WIMLIB_ERR_LINK                               = 35,
 	WIMLIB_ERR_METADATA_NOT_FOUND                 = 36,
 	WIMLIB_ERR_MKDIR                              = 37,
