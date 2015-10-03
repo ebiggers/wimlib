@@ -1769,7 +1769,7 @@ imagex_apply(int argc, tchar **argv, int cmd)
 				       "       make sure you have "
 				       "concatenated together all parts."));
 		}
-	} else if (ret == WIMLIB_ERR_METADATA_NOT_FOUND) {
+	} else if (ret == WIMLIB_ERR_METADATA_NOT_FOUND && wim) {
 		do_metadata_not_found_warning(wimfile, &info);
 	}
 out_wimlib_free:
