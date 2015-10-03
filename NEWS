@@ -4,6 +4,11 @@ Version 1.8.3-BETA:
 	resulting filesystem.  Users of the (UNIX-only) NTFS-3g based WIM
 	extraction support should not use wimlib v1.8.1 or wimlib v1.8.2.
 
+	Made some small improvements to the compression algorithms.
+
+	Improved handling of WIM XML data and added two new API functions:
+	wimlib_get_image_property() and wimlib_set_image_property().
+
 	Several improvements to System Compression (compact mode) support:
 
 		wof.sys (or wofadk.sys) is now automatically attached to the
