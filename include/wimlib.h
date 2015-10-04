@@ -2288,12 +2288,13 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 #define WIMLIB_INIT_FLAG_ASSUME_UTF8			0x00000001
 
 /** Windows-only: do not attempt to acquire additional privileges (currently
- * SeBackupPrivilege, SeRestorePrivilege, SeSecurityPrivilege, and
- * SeTakeOwnershipPrivilege) when initializing the library.  This flag is
- * intended for the case where the calling program manages these privileges
- * itself.  Note: by default, no error is issued if privileges cannot be
- * acquired, although related errors may be reported later, depending on if the
- * operations performed actually require additional privileges or not.  */
+ * SeBackupPrivilege, SeRestorePrivilege, SeSecurityPrivilege,
+ * SeTakeOwnershipPrivilege, and SeManageVolumePrivilege) when initializing the
+ * library.  This flag is intended for the case where the calling program
+ * manages these privileges itself.  Note: by default, no error is issued if
+ * privileges cannot be acquired, although related errors may be reported later,
+ * depending on if the operations performed actually require additional
+ * privileges or not.  */
 #define WIMLIB_INIT_FLAG_DONT_ACQUIRE_PRIVILEGES	0x00000002
 
 /** Windows only:  If ::WIMLIB_INIT_FLAG_DONT_ACQUIRE_PRIVILEGES not specified,
