@@ -1505,8 +1505,13 @@ write_blob_list(struct list_head *blob_list,
 					       out_ctype, out_chunk_size,
 					       &raw_copy_blobs);
 
-	if (num_nonraw_bytes == 0)
-		goto out_write_raw_copy_resources;
+	/* Copy any compressed resources for which the raw data can be reused
+	 * without decompression.  */
+	ret = write_raw_copy_resources(&raw_copy_blobs, ctx.out_fd,
+				       &ctx.progress_data);
+
+	if (ret || num_nonraw_bytes == 0)
+		goto out_destroy_context;
 
 	/* Unless uncompressed output was required, allocate a chunk_compressor
 	 * to do compression.  There are serial and parallel implementations of
@@ -1605,12 +1610,6 @@ write_blob_list(struct list_head *blob_list,
 		}
 		wimlib_assert(offset_in_res == reshdr.uncompressed_size);
 	}
-
-out_write_raw_copy_resources:
-	/* Copy any compressed resources for which the raw data can be reused
-	 * without decompression.  */
-	ret = write_raw_copy_resources(&raw_copy_blobs, ctx.out_fd,
-				       &ctx.progress_data);
 
 out_destroy_context:
 	FREE(ctx.chunk_csizes);
