@@ -9,6 +9,8 @@ Version 1.8.3-BETA:
 	Improved handling of WIM XML data and added two new API functions:
 	wimlib_get_image_property() and wimlib_set_image_property().
 
+	Added support for (unsafe) in-place compaction of WIM files.
+
 	Several improvements to System Compression (compact mode) support:
 
 		wof.sys (or wofadk.sys) is now automatically attached to the
