@@ -138,60 +138,72 @@ blob_hard_filtered(const struct blob_descriptor *blob,
 	return blob_filtered(blob, ctx) < 0;
 }
 
-static inline int
+static inline bool
 may_soft_filter_blobs(const struct filter_context *ctx)
 {
-	if (ctx == NULL)
-		return 0;
-	return ctx->write_flags & WIMLIB_WRITE_FLAG_OVERWRITE;
+	return ctx && (ctx->write_flags & WIMLIB_WRITE_FLAG_OVERWRITE);
 }
 
-static inline int
+static inline bool
 may_hard_filter_blobs(const struct filter_context *ctx)
 {
-	if (ctx == NULL)
-		return 0;
-	return ctx->write_flags & WIMLIB_WRITE_FLAG_SKIP_EXTERNAL_WIMS;
+	return ctx && (ctx->write_flags & WIMLIB_WRITE_FLAG_SKIP_EXTERNAL_WIMS);
 }
 
-static inline int
+static inline bool
 may_filter_blobs(const struct filter_context *ctx)
 {
 	return (may_soft_filter_blobs(ctx) || may_hard_filter_blobs(ctx));
 }
 
-/* Return true if the specified resource is compressed and the compressed data
- * can be reused with the specified output parameters.  */
+/* Return true if the specified blob is located in a WIM resource which can be
+ * reused in the output WIM file, without being recompressed.  */
 static bool
-can_raw_copy(const struct blob_descriptor *blob,
-	     int write_resource_flags, int out_ctype, u32 out_chunk_size)
+can_raw_copy(const struct blob_descriptor *blob, int write_resource_flags,
+	     int out_ctype, u32 out_chunk_size)
 {
 	const struct wim_resource_descriptor *rdesc;
 
+	/* Recompress everything if requested.  */
 	if (write_resource_flags & WRITE_RESOURCE_FLAG_RECOMPRESS)
 		return false;
 
-	if (out_ctype == WIMLIB_COMPRESSION_TYPE_NONE)
-		return false;
-
+	/* A blob not located in a WIM resource cannot be reused.  */
 	if (blob->blob_location != BLOB_IN_WIM)
 		return false;
 
 	rdesc = blob->rdesc;
 
-	if (rdesc->is_pipable != !!(write_resource_flags & WRITE_RESOURCE_FLAG_PIPABLE))
+	/* Only reuse compressed resources.  */
+	if (out_ctype == WIMLIB_COMPRESSION_TYPE_NONE ||
+	    !(rdesc->flags & (WIM_RESHDR_FLAG_COMPRESSED |
+			      WIM_RESHDR_FLAG_SOLID)))
 		return false;
 
+	/* When writing a pipable WIM, we can only reuse pipable resources; and
+	 * when writing a non-pipable WIM, we can only reuse non-pipable
+	 * resources.  */
+	if (rdesc->is_pipable !=
+	    !!(write_resource_flags & WRITE_RESOURCE_FLAG_PIPABLE))
+		return false;
+
+	/* When writing a solid WIM, we can only reuse solid resources; and when
+	 * writing a non-solid WIM, we can only reuse non-solid resources.  */
+	if (!!(rdesc->flags & WIM_RESHDR_FLAG_SOLID) !=
+	    !!(write_resource_flags & WRITE_RESOURCE_FLAG_SOLID))
+		return false;
+
+	/* Note: it is theoretically possible to copy chunks of compressed data
+	 * between non-solid, solid, and pipable resources.  However, we don't
+	 * currently implement this optimization because it would be complex and
+	 * would usually go unused.  */
+
 	if (rdesc->flags & WIM_RESHDR_FLAG_COMPRESSED) {
-		/* Normal compressed resource: Must use same compression type
-		 * and chunk size.  */
+		/* To re-use a non-solid resource, it must use the desired
+		 * compression type and chunk size.  */
 		return (rdesc->compression_type == out_ctype &&
 			rdesc->chunk_size == out_chunk_size);
-	}
-
-	if ((rdesc->flags & WIM_RESHDR_FLAG_SOLID) &&
-	    (write_resource_flags & WRITE_RESOURCE_FLAG_SOLID))
-	{
+	} else {
 		/* Solid resource: Such resources may contain multiple blobs,
 		 * and in general only a subset of them need to be written.  As
 		 * a heuristic, re-use the raw data if more than two-thirds the
@@ -202,6 +214,10 @@ can_raw_copy(const struct blob_descriptor *blob,
 		 * check if they are compatible with @out_ctype and
 		 * @out_chunk_size.  */
 
+		/* Did we already decide to reuse the resource?  */
+		if (rdesc->raw_copy_ok)
+			return true;
+
 		struct blob_descriptor *res_blob;
 		u64 write_size = 0;
 
@@ -211,8 +227,6 @@ can_raw_copy(const struct blob_descriptor *blob,
 
 		return (write_size > rdesc->uncompressed_size * 2 / 3);
 	}
-
-	return false;
 }
 
 static u32
@@ -337,10 +351,6 @@ struct write_blobs_ctx {
 	struct write_blobs_progress_data progress_data;
 
 	struct filter_context *filter_ctx;
-
-	/* Upper bound on the total number of bytes that need to be compressed.
-	 * */
-	u64 num_bytes_to_compress;
 
 	/* Pointer to the chunk_compressor implementation being used for
 	 * compressing chunks of data, or NULL if chunks are being written
@@ -1133,14 +1143,12 @@ compute_blob_list_stats(struct list_head *blob_list,
  * @raw_copy_blobs.  Return the total uncompressed size of the blobs that need
  * to be compressed.  */
 static u64
-find_raw_copy_blobs(struct list_head *blob_list,
-		    int write_resource_flags,
-		    int out_ctype,
-		    u32 out_chunk_size,
+find_raw_copy_blobs(struct list_head *blob_list, int write_resource_flags,
+		    int out_ctype, u32 out_chunk_size,
 		    struct list_head *raw_copy_blobs)
 {
 	struct blob_descriptor *blob, *tmp;
-	u64 num_bytes_to_compress = 0;
+	u64 num_nonraw_bytes = 0;
 
 	INIT_LIST_HEAD(raw_copy_blobs);
 
@@ -1150,23 +1158,17 @@ find_raw_copy_blobs(struct list_head *blob_list,
 			blob->rdesc->raw_copy_ok = 0;
 
 	list_for_each_entry_safe(blob, tmp, blob_list, write_blobs_list) {
-		if (blob->blob_location == BLOB_IN_WIM &&
-		    blob->rdesc->raw_copy_ok)
-		{
-			list_move_tail(&blob->write_blobs_list,
-				       raw_copy_blobs);
-		} else if (can_raw_copy(blob, write_resource_flags,
-					out_ctype, out_chunk_size))
+		if (can_raw_copy(blob, write_resource_flags,
+				 out_ctype, out_chunk_size))
 		{
 			blob->rdesc->raw_copy_ok = 1;
-			list_move_tail(&blob->write_blobs_list,
-				       raw_copy_blobs);
+			list_move_tail(&blob->write_blobs_list, raw_copy_blobs);
 		} else {
-			num_bytes_to_compress += blob->size;
+			num_nonraw_bytes += blob->size;
 		}
 	}
 
-	return num_bytes_to_compress;
+	return num_nonraw_bytes;
 }
 
 /* Copy a raw compressed resource located in another WIM file to the WIM file
@@ -1442,6 +1444,7 @@ write_blob_list(struct list_head *blob_list,
 	int ret;
 	struct write_blobs_ctx ctx;
 	struct list_head raw_copy_blobs;
+	u64 num_nonraw_bytes;
 
 	wimlib_assert((write_resource_flags &
 		       (WRITE_RESOURCE_FLAG_SOLID |
@@ -1498,13 +1501,11 @@ write_blob_list(struct list_head *blob_list,
 	ctx.progress_data.progfunc = progfunc;
 	ctx.progress_data.progctx = progctx;
 
-	ctx.num_bytes_to_compress = find_raw_copy_blobs(blob_list,
-							write_resource_flags,
-							out_ctype,
-							out_chunk_size,
-							&raw_copy_blobs);
+	num_nonraw_bytes = find_raw_copy_blobs(blob_list, write_resource_flags,
+					       out_ctype, out_chunk_size,
+					       &raw_copy_blobs);
 
-	if (ctx.num_bytes_to_compress == 0)
+	if (num_nonraw_bytes == 0)
 		goto out_write_raw_copy_resources;
 
 	/* Unless uncompressed output was required, allocate a chunk_compressor
@@ -1515,7 +1516,7 @@ write_blob_list(struct list_head *blob_list,
 	if (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE) {
 
 	#ifdef ENABLE_MULTITHREADED_COMPRESSION
-		if (ctx.num_bytes_to_compress > max(2000000, out_chunk_size)) {
+		if (num_nonraw_bytes > max(2000000, out_chunk_size)) {
 			ret = new_parallel_chunk_compressor(out_ctype,
 							    out_chunk_size,
 							    num_threads, 0,
@@ -1552,7 +1553,7 @@ write_blob_list(struct list_head *blob_list,
 		goto out_destroy_context;
 
 	if (write_resource_flags & WRITE_RESOURCE_FLAG_SOLID) {
-		ret = begin_write_resource(&ctx, ctx.num_bytes_to_compress);
+		ret = begin_write_resource(&ctx, num_nonraw_bytes);
 		if (ret)
 			goto out_destroy_context;
 	}

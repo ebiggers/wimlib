@@ -412,22 +412,33 @@ cmp_blobs_by_sequential_order(const void *p1, const void *p2)
 		wim1 = blob1->rdesc->wim;
 		wim2 = blob2->rdesc->wim;
 
-		/* Different (possibly split) WIMs?  */
+		/* Different WIM files?  */
 		if (wim1 != wim2) {
+
+			/* Different split WIMs?  */
 			v = cmp_guids(wim1->hdr.guid, wim2->hdr.guid);
 			if (v)
 				return v;
+
+			/* Different part numbers in the same split WIM?  */
+			v = (int)wim1->hdr.part_number - (int)wim2->hdr.part_number;
+			if (v)
+				return v;
+
+			/* Probably two WIMStructs for the same on-disk file.
+			 * Just sort by pointer.  */
+			return wim1 < wim2 ? -1 : 1;
 		}
 
-		/* Different part numbers in the same WIM?  */
-		v = (int)wim1->hdr.part_number - (int)wim2->hdr.part_number;
-		if (v)
-			return v;
+		/* Same WIM file  */
 
+		/* Sort by increasing resource offset  */
 		if (blob1->rdesc->offset_in_wim != blob2->rdesc->offset_in_wim)
 			return cmp_u64(blob1->rdesc->offset_in_wim,
 				       blob2->rdesc->offset_in_wim);
 
+		/* The blobs are in the same solid resource.  Sort by increasing
+		 * offset in the resource.  */
 		return cmp_u64(blob1->offset_in_res, blob2->offset_in_res);
 
 	case BLOB_IN_FILE_ON_DISK:
