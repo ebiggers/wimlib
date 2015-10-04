@@ -3588,22 +3588,21 @@ wimlib_open_wim_with_progress(const wimlib_tchar *wim_file,
 /**
  * @ingroup G_writing_and_overwriting_wims
  *
- * Commit a ::WIMStruct to disk, overwriting its backing file or appending to it
- * as needed.
+ * Commit a ::WIMStruct to disk, updating its backing file.
  *
- * There are two alternative ways in which changes may be committed:
+ * There are several alternative ways in which changes may be committed:
  *
  *   1. Full rebuild: write the updated WIM to a temporary file, then rename the
  *	temporary file to the original.
  *   2. Appending: append updates to the new original WIM file, then overwrite
  *	its header such that those changes become visible to new readers.
  *
- * Append mode is often much faster, but it wastes some amount of space due to
- * leaving "holes" in the WIM file.  Because of the greater efficiency,
- * wimlib_overwrite() normally defaults to append mode.  However,
- * ::WIMLIB_WRITE_FLAG_REBUILD can be used to explicitly request a full rebuild.
- * In addition, if wimlib_delete_image() has been used on the ::WIMStruct, then
- * the default mode switches to rebuild mode, and
+ * Append mode is often much faster than a full rebuild, but it wastes some
+ * amount of space due to leaving "holes" in the WIM file.  Because of the
+ * greater efficiency, wimlib_overwrite() normally defaults to append mode.
+ * However, ::WIMLIB_WRITE_FLAG_REBUILD can be used to explicitly request a full
+ * rebuild.  In addition, if wimlib_delete_image() has been used on the
+ * ::WIMStruct, then the default mode switches to rebuild mode, and
  * ::WIMLIB_WRITE_FLAG_SOFT_DELETE can be used to explicitly request append
  * mode.
  *

@@ -28,7 +28,7 @@
 
 #if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
 /* On BSD, this should be included before "wimlib/list.h" so that "wimlib/list.h" can
- * overwrite the LIST_HEAD macro. */
+ * override the LIST_HEAD macro. */
 #  include <sys/file.h>
 #endif
 
@@ -118,7 +118,7 @@ blob_filtered(const struct blob_descriptor *blob,
 	write_flags = ctx->write_flags;
 	wim = ctx->wim;
 
-	if (write_flags & WIMLIB_WRITE_FLAG_OVERWRITE &&
+	if (write_flags & WIMLIB_WRITE_FLAG_APPEND &&
 	    blob->blob_location == BLOB_IN_WIM &&
 	    blob->rdesc->wim == wim)
 		return 1;
@@ -141,7 +141,7 @@ blob_hard_filtered(const struct blob_descriptor *blob,
 static inline bool
 may_soft_filter_blobs(const struct filter_context *ctx)
 {
-	return ctx && (ctx->write_flags & WIMLIB_WRITE_FLAG_OVERWRITE);
+	return ctx && (ctx->write_flags & WIMLIB_WRITE_FLAG_APPEND);
 }
 
 static inline bool
@@ -1972,9 +1972,9 @@ filter_blob_list_for_write(struct list_head *blob_list,
  *	STREAMS_OK:  For writes of all images, assume that all blobs in the blob
  *	table of @wim and the per-image lists of unhashed blobs should be taken
  *	as-is, and image metadata should not be searched for references.  This
- *	does not exclude filtering with OVERWRITE and SKIP_EXTERNAL_WIMS, below.
+ *	does not exclude filtering with APPEND and SKIP_EXTERNAL_WIMS, below.
  *
- *	OVERWRITE:  Blobs already present in @wim shall not be returned in
+ *	APPEND:  Blobs already present in @wim shall not be returned in
  *	@blob_list_ret.
  *
  *	SKIP_EXTERNAL_WIMS:  Blobs already present in a WIM file, but not @wim,
@@ -1994,9 +1994,9 @@ filter_blob_list_for_write(struct list_head *blob_list,
  *	the blobs in @blob_list_ret.
  *
  *	This list will be a proper superset of @blob_list_ret if and only if
- *	WIMLIB_WRITE_FLAG_OVERWRITE was specified in @write_flags and some of
- *	the blobs that would otherwise need to be written were already located
- *	in the WIM file.
+ *	WIMLIB_WRITE_FLAG_APPEND was specified in @write_flags and some of the
+ *	blobs that would otherwise need to be written were already located in
+ *	the WIM file.
  *
  *	All blobs in this list will have @out_refcnt set to the number of
  *	references to the blob in the output WIM.  If
@@ -2140,7 +2140,7 @@ write_metadata_resources(WIMStruct *wim, int image, int write_flags)
 		if (imd->modified) {
 			ret = write_metadata_resource(wim, i,
 						      write_resource_flags);
-		} else if (write_flags & WIMLIB_WRITE_FLAG_OVERWRITE) {
+		} else if (write_flags & WIMLIB_WRITE_FLAG_APPEND) {
 			blob_set_out_reshdr_for_reuse(imd->metadata_blob);
 			ret = 0;
 		} else {
@@ -2215,7 +2215,7 @@ write_blob_table(WIMStruct *wim, int image, int write_flags,
 	int ret;
 
 	/* Set output resource metadata for blobs already present in WIM.  */
-	if (write_flags & WIMLIB_WRITE_FLAG_OVERWRITE) {
+	if (write_flags & WIMLIB_WRITE_FLAG_APPEND) {
 		struct blob_descriptor *blob;
 		list_for_each_entry(blob, blob_table_list, blob_table_list) {
 			if (blob->blob_location == BLOB_IN_WIM &&
@@ -2298,14 +2298,13 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 				wim->out_hdr.boot_idx - 1]->metadata_blob->out_reshdr);
 	}
 
-	/* If overwriting the WIM file containing an integrity table in-place,
-	 * we'd like to re-use the information in the old integrity table
-	 * instead of recalculating it.  But we might overwrite the old
-	 * integrity table when we expand the XML data.  Read it into memory
-	 * just in case.  */
-	if ((write_flags & (WIMLIB_WRITE_FLAG_OVERWRITE |
+	/* If appending to a WIM file containing an integrity table, we'd like
+	 * to re-use the information in the old integrity table instead of
+	 * recalculating it.  But we might overwrite the old integrity table
+	 * when we expand the XML data.  Read it into memory just in case.  */
+	if ((write_flags & (WIMLIB_WRITE_FLAG_APPEND |
 			    WIMLIB_WRITE_FLAG_CHECK_INTEGRITY)) ==
-		(WIMLIB_WRITE_FLAG_OVERWRITE |
+		(WIMLIB_WRITE_FLAG_APPEND |
 		 WIMLIB_WRITE_FLAG_CHECK_INTEGRITY)
 	    && wim_has_integrity_table(wim))
 	{
@@ -2843,8 +2842,8 @@ check_resource_offset(struct blob_descriptor *blob, void *_wim)
 }
 
 /* Make sure no file or metadata resources are located after the XML data (or
- * integrity table if present)--- otherwise we can't safely overwrite the WIM in
- * place and we return WIMLIB_ERR_RESOURCE_ORDER.  */
+ * integrity table if present)--- otherwise we can't safely append to the WIM
+ * file and we return WIMLIB_ERR_RESOURCE_ORDER.  */
 static int
 check_resource_offsets(WIMStruct *wim, off_t end_offset)
 {
@@ -2914,7 +2913,7 @@ check_resource_offsets(WIMStruct *wim, off_t end_offset)
  *                   XML data (variable size)
  *                   Integrity table (optional) (variable size)
  *
- * This method allows an image to be appended to a large WIM very quickly, and
+ * This function allows an image to be appended to a large WIM very quickly, and
  * is crash-safe except in the case of write re-ordering, but the disadvantage
  * is that a small hole is left in the WIM where the old blob table, xml data,
  * and integrity table were.  (These usually only take up a small amount of
@@ -2952,7 +2951,7 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 		write_flags |= WIMLIB_WRITE_FLAG_SOLID;
 
 	/* Set additional flags for overwrite.  */
-	write_flags |= WIMLIB_WRITE_FLAG_OVERWRITE |
+	write_flags |= WIMLIB_WRITE_FLAG_APPEND |
 		       WIMLIB_WRITE_FLAG_STREAMS_OK;
 
 	/* Make sure there is no data after the XML data, except possibily an
@@ -3121,8 +3120,8 @@ overwrite_wim_via_tmpfile(WIMStruct *wim, int write_flags, unsigned num_threads)
 			     &progress, wim->progctx);
 }
 
-/* Determine if the specified WIM file may be updated by appending in-place
- * rather than writing and replacing it with an entirely new file.  */
+/* Determine if the specified WIM file may be updated in-place rather than by
+ * writing and replacing it with an entirely new file.  */
 static bool
 can_overwrite_wim_inplace(const WIMStruct *wim, int write_flags)
 {
