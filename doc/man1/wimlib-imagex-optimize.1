@@ -77,6 +77,16 @@ pipable.
 \fB--not-pipable\fR
 Rebuild the WIM in the non-pipable format.  (This is the default if
 \fIWIMFILE\fR is not pipable.)
+.TP
+\fB--unsafe-compact\fR
+Compact the WIM file in-place, without using a temporary file.  Existing
+resources are shifted down to fill holes and new resources are appended as
+needed.  The WIM file is truncated to its final size, which may shrink the
+on-disk file.  THIS OPERATION CANNOT BE SAFELY INTERRUPTED!  If the operation is
+interrupted, then the WIM file will be corrupted, and it may be impossible (or
+at least very difficult) to recover any data from it.  Users of this option are
+expected to know what they are doing and assume responsibility for any data
+corruption that may result.
 .SH NOTES
 \fBwimlib-imagex optimize\fR does not support split WIMs.
 .PP

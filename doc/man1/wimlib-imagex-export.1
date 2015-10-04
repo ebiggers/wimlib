@@ -132,6 +132,9 @@ pipable, or if \fIDEST_WIMFILE\fR was "-" (standard output).
 Mark the destination image as WIMBoot-compatible.  Also, if exporting to a new
 archive, set the compression type to that recommended for WIMBoot (currently,
 XPRESS with 4096 byte chunks).
+.TP
+\fB--unsafe-compact\fR
+See the documentation for this option in \fBwimlib-imagex-optimize\fR (1).
 .SH SPLIT WIMS
 You may use \fBwimlib-imagex export\fR to export images from a split WIM.
 The \fISRC_WIMFILE\fR argument must specify the first part of the split WIM,

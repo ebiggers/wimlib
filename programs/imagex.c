@@ -194,6 +194,7 @@ enum {
 	IMAGEX_THREADS_OPTION,
 	IMAGEX_TO_STDOUT_OPTION,
 	IMAGEX_UNIX_DATA_OPTION,
+	IMAGEX_UNSAFE_COMPACT_OPTION,
 	IMAGEX_UPDATE_OF_OPTION,
 	IMAGEX_VERBOSE_OPTION,
 	IMAGEX_WIMBOOT_CONFIG_OPTION,
@@ -254,12 +255,14 @@ static const struct option capture_or_append_options[] = {
 	{T("update-of"),   required_argument, NULL, IMAGEX_UPDATE_OF_OPTION},
 	{T("delta-from"),  required_argument, NULL, IMAGEX_DELTA_FROM_OPTION},
 	{T("wimboot"),     no_argument,       NULL, IMAGEX_WIMBOOT_OPTION},
+	{T("unsafe-compact"), no_argument,    NULL, IMAGEX_UNSAFE_COMPACT_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
 static const struct option delete_options[] = {
 	{T("check"), no_argument, NULL, IMAGEX_CHECK_OPTION},
 	{T("soft"),  no_argument, NULL, IMAGEX_SOFT_OPTION},
+	{T("unsafe-compact"), no_argument, NULL, IMAGEX_UNSAFE_COMPACT_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -293,6 +296,7 @@ static const struct option export_options[] = {
 	{T("pipable"),     no_argument,       NULL, IMAGEX_PIPABLE_OPTION},
 	{T("not-pipable"), no_argument,       NULL, IMAGEX_NOT_PIPABLE_OPTION},
 	{T("wimboot"),     no_argument,       NULL, IMAGEX_WIMBOOT_OPTION},
+	{T("unsafe-compact"), no_argument,    NULL, IMAGEX_UNSAFE_COMPACT_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -366,6 +370,7 @@ static const struct option optimize_options[] = {
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
 	{T("pipable"),     no_argument,       NULL, IMAGEX_PIPABLE_OPTION},
 	{T("not-pipable"), no_argument,       NULL, IMAGEX_NOT_PIPABLE_OPTION},
+	{T("unsafe-compact"), no_argument,    NULL, IMAGEX_UNSAFE_COMPACT_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -410,6 +415,7 @@ static const struct option update_options[] = {
 	{T("no-acls"),     no_argument,       NULL, IMAGEX_NO_ACLS_OPTION},
 	{T("strict-acls"), no_argument,       NULL, IMAGEX_STRICT_ACLS_OPTION},
 	{T("no-replace"),  no_argument,       NULL, IMAGEX_NO_REPLACE_OPTION},
+	{T("unsafe-compact"), no_argument,    NULL, IMAGEX_UNSAFE_COMPACT_OPTION},
 
 	{NULL, 0, NULL, 0},
 };
@@ -1951,6 +1957,9 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		case IMAGEX_WIMBOOT_OPTION:
 			add_flags |= WIMLIB_ADD_FLAG_WIMBOOT;
 			break;
+		case IMAGEX_UNSAFE_COMPACT_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_UNSAFE_COMPACT;
+			break;
 		default:
 			goto out_usage;
 		}
@@ -2352,6 +2361,9 @@ imagex_delete(int argc, tchar **argv, int cmd)
 			break;
 		case IMAGEX_SOFT_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_SOFT_DELETE;
+			break;
+		case IMAGEX_UNSAFE_COMPACT_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_UNSAFE_COMPACT;
 			break;
 		default:
 			goto out_usage;
@@ -2836,6 +2848,9 @@ imagex_export(int argc, tchar **argv, int cmd)
 			break;
 		case IMAGEX_WIMBOOT_OPTION:
 			export_flags |= WIMLIB_EXPORT_FLAG_WIMBOOT;
+			break;
+		case IMAGEX_UNSAFE_COMPACT_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_UNSAFE_COMPACT;
 			break;
 		default:
 			goto out_usage;
@@ -3735,6 +3750,9 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 		case IMAGEX_NOT_PIPABLE_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_NOT_PIPABLE;
 			break;
+		case IMAGEX_UNSAFE_COMPACT_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_UNSAFE_COMPACT;
+			break;
 		default:
 			goto out_usage;
 		}
@@ -4031,6 +4049,9 @@ imagex_update(int argc, tchar **argv, int cmd)
 			break;
 		case IMAGEX_NO_REPLACE_OPTION:
 			default_add_flags |= WIMLIB_ADD_FLAG_NO_REPLACE;
+			break;
+		case IMAGEX_UNSAFE_COMPACT_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_UNSAFE_COMPACT;
 			break;
 		default:
 			goto out_usage;
