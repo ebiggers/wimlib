@@ -174,7 +174,12 @@ can_raw_copy(const struct blob_descriptor *blob, int write_resource_flags,
 
 	rdesc = blob->rdesc;
 
-	/* Only reuse compressed resources.  */
+	/* In the case of an in-place compaction, always reuse resources located
+	 * in the WIM being compacted.  */
+	if (rdesc->wim->being_compacted)
+		return true;
+
+	/* Otherwise, only reuse compressed resources.  */
 	if (out_ctype == WIMLIB_COMPRESSION_TYPE_NONE ||
 	    !(rdesc->flags & (WIM_RESHDR_FLAG_COMPRESSED |
 			      WIM_RESHDR_FLAG_SOLID)))
@@ -1104,11 +1109,16 @@ write_blob_end_read(struct blob_descriptor *blob, int status, void *_ctx)
 	return status;
 }
 
-/* Compute statistics about a list of blobs that will be written.
+/*
+ * Compute statistics about a list of blobs that will be written.
  *
  * Assumes the blobs are sorted such that all blobs located in each distinct WIM
- * (specified by WIMStruct) are together.  */
-static void
+ * (specified by WIMStruct) are together.
+ *
+ * For compactions, also verify that there are no overlapping resources.  This
+ * really should be checked earlier, but for now it's easiest to check here.
+ */
+static int
 compute_blob_list_stats(struct list_head *blob_list,
 			struct write_blobs_ctx *ctx)
 {
@@ -1117,14 +1127,31 @@ compute_blob_list_stats(struct list_head *blob_list,
 	u64 num_blobs = 0;
 	u64 total_parts = 0;
 	WIMStruct *prev_wim_part = NULL;
+	const struct wim_resource_descriptor *prev_rdesc = NULL;
 
 	list_for_each_entry(blob, blob_list, write_blobs_list) {
 		num_blobs++;
 		total_bytes += blob->size;
 		if (blob->blob_location == BLOB_IN_WIM) {
-			if (prev_wim_part != blob->rdesc->wim) {
-				prev_wim_part = blob->rdesc->wim;
+			const struct wim_resource_descriptor *rdesc = blob->rdesc;
+			WIMStruct *wim = rdesc->wim;
+
+			if (prev_wim_part != wim) {
+				prev_wim_part = wim;
 				total_parts++;
+			}
+			if (unlikely(wim->being_compacted) && rdesc != prev_rdesc) {
+				if (prev_rdesc != NULL &&
+				    rdesc->offset_in_wim <
+						prev_rdesc->offset_in_wim +
+						prev_rdesc->size_in_wim)
+				{
+					WARNING("WIM file contains overlapping "
+						"resources!  Compaction is not "
+						"possible.");
+					return WIMLIB_ERR_RESOURCE_ORDER;
+				}
+				prev_rdesc = rdesc;
 			}
 		}
 	}
@@ -1136,6 +1163,7 @@ compute_blob_list_stats(struct list_head *blob_list,
 	ctx->progress_data.progress.write_streams.total_parts       = total_parts;
 	ctx->progress_data.progress.write_streams.completed_parts   = 0;
 	ctx->progress_data.next_progress = 0;
+	return 0;
 }
 
 /* Find blobs in @blob_list that can be copied to the output WIM in raw form
@@ -1200,21 +1228,37 @@ write_raw_copy_resource(struct wim_resource_descriptor *in_rdesc,
 	}
 	in_fd = &in_rdesc->wim->in_fd;
 	wimlib_assert(cur_read_offset != end_read_offset);
-	do {
 
-		bytes_to_read = min(sizeof(buf), end_read_offset - cur_read_offset);
+	if (likely(!in_rdesc->wim->being_compacted) ||
+	    in_rdesc->offset_in_wim > out_fd->offset) {
+		do {
+			bytes_to_read = min(sizeof(buf),
+					    end_read_offset - cur_read_offset);
 
-		ret = full_pread(in_fd, buf, bytes_to_read, cur_read_offset);
-		if (ret)
-			return ret;
+			ret = full_pread(in_fd, buf, bytes_to_read,
+					 cur_read_offset);
+			if (ret)
+				return ret;
 
-		ret = full_write(out_fd, buf, bytes_to_read);
-		if (ret)
-			return ret;
+			ret = full_write(out_fd, buf, bytes_to_read);
+			if (ret)
+				return ret;
 
-		cur_read_offset += bytes_to_read;
+			cur_read_offset += bytes_to_read;
 
-	} while (cur_read_offset != end_read_offset);
+		} while (cur_read_offset != end_read_offset);
+	} else {
+		/* Optimization: the WIM file is being compacted and the
+		 * resource being written is already in the desired location.
+		 * Skip over the data instead of re-writing it.  */
+
+		/* Due the earlier check for overlapping resources, it should
+		 * never be the case that we already overwrote the resource.  */
+		wimlib_assert(!(in_rdesc->offset_in_wim < out_fd->offset));
+
+		if (-1 == filedes_seek(out_fd, out_fd->offset + in_rdesc->size_in_wim))
+			return WIMLIB_ERR_WRITE;
+	}
 
 	list_for_each_entry(blob, &in_rdesc->blob_list, rdesc_node) {
 		if (blob->will_be_in_output_wim) {
@@ -1490,7 +1534,9 @@ write_blob_list(struct list_head *blob_list,
 	if (ret)
 		return ret;
 
-	compute_blob_list_stats(blob_list, &ctx);
+	ret = compute_blob_list_stats(blob_list, &ctx);
+	if (ret)
+		return ret;
 
 	if (write_resource_flags & WRITE_RESOURCE_FLAG_SOLID_SORT) {
 		ret = sort_blob_list_for_solid_compression(blob_list);
@@ -2139,6 +2185,10 @@ write_metadata_resources(WIMStruct *wim, int image, int write_flags)
 		if (imd->modified) {
 			ret = write_metadata_resource(wim, i,
 						      write_resource_flags);
+		} else if (write_flags & WIMLIB_WRITE_FLAG_UNSAFE_COMPACT) {
+			/* For compactions, existing metadata resources are
+			 * written along with the existing file resources.  */
+			ret = 0;
 		} else if (write_flags & WIMLIB_WRITE_FLAG_APPEND) {
 			blob_set_out_reshdr_for_reuse(imd->metadata_blob);
 			ret = 0;
@@ -2384,6 +2434,14 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	if (ret)
 		return ret;
 
+	if (unlikely(write_flags & WIMLIB_WRITE_FLAG_UNSAFE_COMPACT)) {
+		/* Truncate any data the compaction freed up.  */
+		if (ftruncate(wim->out_fd.fd, wim->out_fd.offset)) {
+			ERROR_WITH_ERRNO("Failed to truncate the output WIM file");
+			return WIMLIB_ERR_WRITE;
+		}
+	}
+
 	/* Possibly sync file data to disk before closing.  On POSIX systems, it
 	 * is necessary to do this before using rename() to overwrite an
 	 * existing file with a new file.  Otherwise, data loss would occur if
@@ -2617,6 +2675,10 @@ write_wim_part(WIMStruct *wim,
 			    WIMLIB_WRITE_FLAG_NOT_PIPABLE))
 				== (WIMLIB_WRITE_FLAG_PIPABLE |
 				    WIMLIB_WRITE_FLAG_NOT_PIPABLE))
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	/* Only wimlib_overwrite() accepts UNSAFE_COMPACT.  */
+	if (write_flags & WIMLIB_WRITE_FLAG_UNSAFE_COMPACT)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	/* Include an integrity table by default if no preference was given and
@@ -2917,13 +2979,25 @@ check_resource_offsets(WIMStruct *wim, off_t end_offset)
  * is that a small hole is left in the WIM where the old blob table, xml data,
  * and integrity table were.  (These usually only take up a small amount of
  * space compared to the blobs, however.)
+ *
+ * Finally, this function also supports "compaction" overwrites as an
+ * alternative to the normal "append" overwrites described above.  In a
+ * compaction, data is written starting immediately from the end of the header.
+ * All existing resources are written first, in order by file offset.  New
+ * resources are written afterwards, and at the end any extra data is truncated
+ * from the file.  The advantage of this approach is that is that the WIM file
+ * ends up fully optimized, without any holes remaining.  The main disadavantage
+ * is that this operation is fundamentally unsafe and cannot be interrupted
+ * without data corruption.  Consequently, compactions are only ever done when
+ * explicitly requested by the library user with the flag
+ * WIMLIB_WRITE_FLAG_UNSAFE_COMPACT.  (Another disadvantage is that a compaction
+ * can be much slower than an append.)
  */
 static int
 overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 {
 	int ret;
 	off_t old_wim_end;
-	u64 old_blob_table_end, old_xml_begin, old_xml_end;
 	struct list_head blob_list;
 	struct list_head blob_table_list;
 	struct filter_context filter_ctx;
@@ -2949,65 +3023,99 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 	if (should_default_to_solid_compression(wim, write_flags))
 		write_flags |= WIMLIB_WRITE_FLAG_SOLID;
 
-	/* Set additional flags for overwrite.  */
-	write_flags |= WIMLIB_WRITE_FLAG_APPEND |
-		       WIMLIB_WRITE_FLAG_STREAMS_OK;
+	if (unlikely(write_flags & WIMLIB_WRITE_FLAG_UNSAFE_COMPACT)) {
 
-	/* Make sure there is no data after the XML data, except possibily an
-	 * integrity table.  If this were the case, then this data would be
-	 * overwritten.  */
-	old_xml_begin = wim->hdr.xml_data_reshdr.offset_in_wim;
-	old_xml_end = old_xml_begin + wim->hdr.xml_data_reshdr.size_in_wim;
-	old_blob_table_end = wim->hdr.blob_table_reshdr.offset_in_wim +
-			     wim->hdr.blob_table_reshdr.size_in_wim;
-	if (wim_has_integrity_table(wim) &&
-	    wim->hdr.integrity_table_reshdr.offset_in_wim < old_xml_end) {
-		WARNING("Didn't expect the integrity table to be before the XML data");
-		ret = WIMLIB_ERR_RESOURCE_ORDER;
-		goto out;
-	}
+		/* In-place compaction  */
 
-	if (old_blob_table_end > old_xml_begin) {
-		WARNING("Didn't expect the blob table to be after the XML data");
-		ret = WIMLIB_ERR_RESOURCE_ORDER;
-		goto out;
-	}
+		WARNING("The WIM file \"%"TS"\" is being compacted in place.\n"
+			"          Do *not* interrupt the operation, or else "
+			"the WIM file will be\n"
+			"          corrupted!", wim->filename);
+		wim->being_compacted = 1;
+		old_wim_end = WIM_HEADER_DISK_SIZE;
 
-	/* Set @old_wim_end, which indicates the point beyond which we don't
-	 * allow any file and metadata resources to appear without returning
-	 * WIMLIB_ERR_RESOURCE_ORDER (due to the fact that we would otherwise
-	 * overwrite these resources). */
-	if (!wim->image_deletion_occurred && !any_images_modified(wim)) {
-		/* If no images have been modified and no images have been
-		 * deleted, a new blob table does not need to be written.  We
-		 * shall write the new XML data and optional integrity table
-		 * immediately after the blob table.  Note that this may
-		 * overwrite an existing integrity table. */
-		old_wim_end = old_blob_table_end;
-		write_flags |= WIMLIB_WRITE_FLAG_NO_NEW_BLOBS;
-	} else if (wim_has_integrity_table(wim)) {
-		/* Old WIM has an integrity table; begin writing new blobs after
-		 * it. */
-		old_wim_end = wim->hdr.integrity_table_reshdr.offset_in_wim +
-			      wim->hdr.integrity_table_reshdr.size_in_wim;
+		ret = prepare_blob_list_for_write(wim, WIMLIB_ALL_IMAGES,
+						  write_flags, &blob_list,
+						  &blob_table_list, &filter_ctx);
+		if (ret)
+			goto out;
+
+		if (wim_has_metadata(wim)) {
+			/* Add existing metadata resources to be compacted along
+			 * with the file resources.  */
+			for (int i = 0; i < wim->hdr.image_count; i++) {
+				struct wim_image_metadata *imd = wim->image_metadata[i];
+				if (!imd->modified) {
+					fully_reference_blob_for_write(imd->metadata_blob,
+								       &blob_list);
+				}
+			}
+		}
 	} else {
-		/* No existing integrity table; begin writing new blobs after
-		 * the old XML data. */
-		old_wim_end = old_xml_end;
+		u64 old_blob_table_end, old_xml_begin, old_xml_end;
+
+		/* Set additional flags for append.  */
+		write_flags |= WIMLIB_WRITE_FLAG_APPEND |
+			       WIMLIB_WRITE_FLAG_STREAMS_OK;
+
+		/* Make sure there is no data after the XML data, except
+		 * possibily an integrity table.  If this were the case, then
+		 * this data would be overwritten.  */
+		old_xml_begin = wim->hdr.xml_data_reshdr.offset_in_wim;
+		old_xml_end = old_xml_begin + wim->hdr.xml_data_reshdr.size_in_wim;
+		old_blob_table_end = wim->hdr.blob_table_reshdr.offset_in_wim +
+				     wim->hdr.blob_table_reshdr.size_in_wim;
+		if (wim_has_integrity_table(wim) &&
+		    wim->hdr.integrity_table_reshdr.offset_in_wim < old_xml_end) {
+			WARNING("Didn't expect the integrity table to be "
+				"before the XML data");
+			ret = WIMLIB_ERR_RESOURCE_ORDER;
+			goto out;
+		}
+
+		if (old_blob_table_end > old_xml_begin) {
+			WARNING("Didn't expect the blob table to be after "
+				"the XML data");
+			ret = WIMLIB_ERR_RESOURCE_ORDER;
+			goto out;
+		}
+		/* Set @old_wim_end, which indicates the point beyond which we
+		 * don't allow any file and metadata resources to appear without
+		 * returning WIMLIB_ERR_RESOURCE_ORDER (due to the fact that we
+		 * would otherwise overwrite these resources). */
+		if (!wim->image_deletion_occurred && !any_images_modified(wim)) {
+			/* If no images have been modified and no images have
+			 * been deleted, a new blob table does not need to be
+			 * written.  We shall write the new XML data and
+			 * optional integrity table immediately after the blob
+			 * table.  Note that this may overwrite an existing
+			 * integrity table. */
+			old_wim_end = old_blob_table_end;
+			write_flags |= WIMLIB_WRITE_FLAG_NO_NEW_BLOBS;
+		} else if (wim_has_integrity_table(wim)) {
+			/* Old WIM has an integrity table; begin writing new
+			 * blobs after it. */
+			old_wim_end = wim->hdr.integrity_table_reshdr.offset_in_wim +
+				      wim->hdr.integrity_table_reshdr.size_in_wim;
+		} else {
+			/* No existing integrity table; begin writing new blobs
+			 * after the old XML data. */
+			old_wim_end = old_xml_end;
+		}
+
+		ret = check_resource_offsets(wim, old_wim_end);
+		if (ret)
+			goto out;
+
+		ret = prepare_blob_list_for_write(wim, WIMLIB_ALL_IMAGES,
+						  write_flags, &blob_list,
+						  &blob_table_list, &filter_ctx);
+		if (ret)
+			goto out;
+
+		if (write_flags & WIMLIB_WRITE_FLAG_NO_NEW_BLOBS)
+			wimlib_assert(list_empty(&blob_list));
 	}
-
-	ret = check_resource_offsets(wim, old_wim_end);
-	if (ret)
-		goto out;
-
-	ret = prepare_blob_list_for_write(wim, WIMLIB_ALL_IMAGES, write_flags,
-					  &blob_list, &blob_table_list,
-					  &filter_ctx);
-	if (ret)
-		goto out;
-
-	if (write_flags & WIMLIB_WRITE_FLAG_NO_NEW_BLOBS)
-		wimlib_assert(list_empty(&blob_list));
 
 	ret = open_wim_writable(wim, wim->filename, O_RDWR);
 	if (ret)
@@ -3050,7 +3158,8 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 	return 0;
 
 out_truncate:
-	if (!(write_flags & WIMLIB_WRITE_FLAG_NO_NEW_BLOBS)) {
+	if (!(write_flags & (WIMLIB_WRITE_FLAG_NO_NEW_BLOBS |
+			     WIMLIB_WRITE_FLAG_UNSAFE_COMPACT))) {
 		WARNING("Truncating \"%"TS"\" to its original size "
 			"(%"PRIu64" bytes)", wim->filename, old_wim_end);
 		/* Return value of ftruncate() is ignored because this is
@@ -3064,6 +3173,7 @@ out_unlock_wim:
 out_close_wim:
 	(void)close_wim_writable(wim, write_flags);
 out:
+	wim->being_compacted = 0;
 	return ret;
 }
 
@@ -3162,6 +3272,20 @@ wimlib_overwrite(WIMStruct *wim, int write_flags, unsigned num_threads)
 	if (!wim->filename)
 		return WIMLIB_ERR_NO_FILENAME;
 
+	if (unlikely(write_flags & WIMLIB_WRITE_FLAG_UNSAFE_COMPACT)) {
+		/*
+		 * In UNSAFE_COMPACT mode:
+		 *	- RECOMPRESS is forbidden
+		 *	- REBUILD is ignored
+		 *	- SOFT_DELETE and NO_SOLID_SORT are implied
+		 */
+		if (write_flags & WIMLIB_WRITE_FLAG_RECOMPRESS)
+			return WIMLIB_ERR_COMPACTION_NOT_POSSIBLE;
+		write_flags &= ~WIMLIB_WRITE_FLAG_REBUILD;
+		write_flags |= WIMLIB_WRITE_FLAG_SOFT_DELETE;
+		write_flags |= WIMLIB_WRITE_FLAG_NO_SOLID_SORT;
+	}
+
 	orig_hdr_flags = wim->hdr.flags;
 	if (write_flags & WIMLIB_WRITE_FLAG_IGNORE_READONLY_FLAG)
 		wim->hdr.flags &= ~WIM_HDR_FLAG_READONLY;
@@ -3176,5 +3300,7 @@ wimlib_overwrite(WIMStruct *wim, int write_flags, unsigned num_threads)
 			return ret;
 		WARNING("Falling back to re-building entire WIM");
 	}
+	if (write_flags & WIMLIB_WRITE_FLAG_UNSAFE_COMPACT)
+		return WIMLIB_ERR_COMPACTION_NOT_POSSIBLE;
 	return overwrite_wim_via_tmpfile(wim, write_flags, num_threads);
 }

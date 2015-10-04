@@ -2260,6 +2260,24 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  */
 #define WIMLIB_WRITE_FLAG_NO_SOLID_SORT			0x00004000
 
+/**
+ * Since wimlib v1.8.3 and for wimlib_overwrite() only: <b>unsafely</b> compact
+ * the WIM file in-place, without appending.  Existing resources are shifted
+ * down to fill holes and new resources are appended as needed.  The WIM file is
+ * truncated to its final size, which may shrink the on-disk file.  <b>This
+ * operation cannot be safely interrupted.  If the operation is interrupted,
+ * then the WIM file will be corrupted, and it may be impossible (or at least
+ * very difficult) to recover any data from it.  Users of this flag are expected
+ * to know what they are doing and assume responsibility for any data corruption
+ * that may result.</b>
+ *
+ * If the WIM file cannot be compacted in-place because of its structure, its
+ * layout, or other requested write parameters, then wimlib_overwrite() fails
+ * with ::WIMLIB_ERR_COMPACTION_NOT_POSSIBLE, and the caller may wish to retry
+ * the operation without this flag.
+ */
+#define WIMLIB_WRITE_FLAG_UNSAFE_COMPACT		0x00008000
+
 /** @} */
 /** @addtogroup G_general
  * @{ */
@@ -2477,6 +2495,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_FVE_LOCKED_VOLUME		      = 82,
 	WIMLIB_ERR_UNABLE_TO_READ_CAPTURE_CONFIG      = 83,
 	WIMLIB_ERR_WIM_IS_INCOMPLETE		      = 84,
+	WIMLIB_ERR_COMPACTION_NOT_POSSIBLE            = 85,
 };
 
 
@@ -3596,6 +3615,8 @@ wimlib_open_wim_with_progress(const wimlib_tchar *wim_file,
  *	temporary file to the original.
  *   2. Appending: append updates to the new original WIM file, then overwrite
  *	its header such that those changes become visible to new readers.
+ *   3. Compaction: normally should not be used; see
+ *	::WIMLIB_WRITE_FLAG_UNSAFE_COMPACT for details.
  *
  * Append mode is often much faster than a full rebuild, but it wastes some
  * amount of space due to leaving "holes" in the WIM file.  Because of the

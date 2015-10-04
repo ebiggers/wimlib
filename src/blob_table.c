@@ -403,7 +403,12 @@ cmp_blobs_by_sequential_order(const void *p1, const void *p2)
 
 	v = (int)blob1->blob_location - (int)blob2->blob_location;
 
-	/* Different locations?  */
+	/* Different locations?  Note: "unsafe compaction mode" requires that
+	 * blobs in WIMs sort before all others.  For the logic here to ensure
+	 * this, BLOB_IN_WIM must have the lowest value among all defined
+	 * blob_locations.  Statically verify that the enum values haven't
+	 * changed.  */
+	STATIC_ASSERT(BLOB_NONEXISTENT == 0 && BLOB_IN_WIM == 1);
 	if (v)
 		return v;
 
@@ -414,6 +419,12 @@ cmp_blobs_by_sequential_order(const void *p1, const void *p2)
 
 		/* Different WIM files?  */
 		if (wim1 != wim2) {
+
+			/* Resources from the WIM file currently being compacted
+			 * (if any) must always sort first.  */
+			v = (int)wim2->being_compacted - (int)wim1->being_compacted;
+			if (v)
+				return v;
 
 			/* Different split WIMs?  */
 			v = cmp_guids(wim1->hdr.guid, wim2->hdr.guid);

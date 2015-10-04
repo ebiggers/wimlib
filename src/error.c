@@ -334,6 +334,9 @@ static const tchar * const error_strings[] = {
 		= T("The capture configuration file could not be read"),
 	[WIMLIB_ERR_WIM_IS_INCOMPLETE]
 		= T("The WIM file is incomplete"),
+	[WIMLIB_ERR_COMPACTION_NOT_POSSIBLE]
+		= T("The WIM file cannot be compacted because of its format, "
+		    "its layout, or the write parameters specified by the user"),
 };
 
 WIMLIBAPI const tchar *

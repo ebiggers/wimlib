@@ -124,6 +124,10 @@ struct WIMStruct {
 	/* 1 if the WIM file has been locked for appending, otherwise 0  */
 	u8 locked_for_append : 1;
 
+	/* 1 if the WIM file is currently being compacted by wimlib_overwrite()
+	 * with WIMLIB_WRITE_FLAG_UNSAFE_COMPACT  */
+	u8 being_compacted : 1;
+
 	/* If this WIM is backed by a file, then this is the compression type
 	 * for non-solid resources in that file.  */
 	u8 compression_type;
