@@ -10,6 +10,10 @@
  * You can do whatever you want with this file.
  */
 
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
 #include "wimlib/x86_cpu_features.h"
 
 #if defined(__i386__) || defined(__x86_64__)
