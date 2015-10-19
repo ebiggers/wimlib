@@ -920,11 +920,12 @@ print_windows_info(struct wim_xml_info *info, xmlNode *image_node)
 
 		tprintf(T("Languages:              "));
 		node_for_each_child(langs_node, lang_node) {
-			if (node_is_element(lang_node, "LANGUAGE")) {
-				tfputs(node_get_ttext(info, lang_node), stdout);
-				tputchar(T(' '));
-			}
-
+			if (!node_is_element(lang_node, "LANGUAGE"))
+				continue;
+			text = node_get_ttext(info, lang_node);
+			if (!text)
+				continue;
+			tprintf(T("%"TS" "), text);
 		}
 		tputchar(T('\n'));
 
