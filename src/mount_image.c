@@ -2137,6 +2137,8 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	}
 
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
+		if (imd->refcnt > 1)
+			return WIMLIB_ERR_IMAGE_HAS_MULTIPLE_REFERENCES;
 		ret = lock_wim_for_append(wim);
 		if (ret)
 			return ret;

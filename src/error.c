@@ -337,6 +337,9 @@ static const tchar * const error_strings[] = {
 	[WIMLIB_ERR_COMPACTION_NOT_POSSIBLE]
 		= T("The WIM file cannot be compacted because of its format, "
 		    "its layout, or the write parameters specified by the user"),
+	[WIMLIB_ERR_IMAGE_HAS_MULTIPLE_REFERENCES]
+		= T("The WIM image cannot be modified because it is currently "
+		    "referenced from multiple places"),
 };
 
 WIMLIBAPI const tchar *

@@ -2497,6 +2497,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_UNABLE_TO_READ_CAPTURE_CONFIG      = 83,
 	WIMLIB_ERR_WIM_IS_INCOMPLETE		      = 84,
 	WIMLIB_ERR_COMPACTION_NOT_POSSIBLE            = 85,
+	WIMLIB_ERR_IMAGE_HAS_MULTIPLE_REFERENCES      = 86,
 };
 
 
@@ -2715,12 +2716,17 @@ wimlib_delete_path(WIMStruct *wim, int image,
  *
  * Export an image, or all images, from a ::WIMStruct into another ::WIMStruct.
  *
- * Note: after calling this function, the exported WIM image(s) cannot be
- * independently modified because the image metadata will be shared between the
- * two ::WIMStruct's.
+ * Specifically, if the destination ::WIMStruct contains <tt>n</tt> images, then
+ * the source image(s) will be appended, in order, starting at destination index
+ * <tt>n + 1</tt>.  By default, all image metadata will be exported verbatim,
+ * but certain changes can be made by passing appropriate parameters.
  *
- * Note: no changes are committed to disk until wimlib_write() or
- * wimlib_overwrite() is called.
+ * wimlib_export_image() is only an in-memory operation; no changes are
+ * committed to disk until wimlib_write() or wimlib_overwrite() is called.
+ *
+ * A limitation of the current implementation of wimlib_export_image() is that
+ * the directory tree of a source or destination image cannot be updated
+ * following an export until one of the two images has been freed from memory.
  *
  * @param src_wim
  *	The WIM from which to export the images, specified as a pointer to the
@@ -3468,6 +3474,10 @@ wimlib_join_with_progress(const wimlib_tchar * const *swms,
  * 	Another process is currently modifying the WIM file.
  * @retval ::WIMLIB_ERR_FUSE
  * 	A non-zero status code was returned by @c fuse_main().
+ * @retval ::WIMLIB_ERR_IMAGE_HAS_MULTIPLE_REFERENCES
+ *	There are currently multiple references to the WIM image as a result of
+ *	a call to wimlib_export_image().  Free one before attempting the
+ *	read-write mount.
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  * 	@p image does not exist in @p wim.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
@@ -4351,6 +4361,9 @@ wimlib_unmount_image_with_progress(const wimlib_tchar *dir,
  * @retval ::WIMLIB_ERR_FVE_LOCKED_VOLUME
  *	Windows-only: One of the "add" commands attempted to add files from an
  *	encrypted BitLocker volume that hasn't yet been unlocked.
+ * @retval ::WIMLIB_ERR_IMAGE_HAS_MULTIPLE_REFERENCES
+ *	There are currently multiple references to the WIM image as a result of
+ *	a call to wimlib_export_image().  Free one before attempting the update.
  * @retval ::WIMLIB_ERR_INVALID_CAPTURE_CONFIG
  *	The contents of a capture configuration file were invalid.
  * @retval ::WIMLIB_ERR_INVALID_IMAGE

@@ -1396,6 +1396,7 @@ wimlib_update_image(WIMStruct *wim,
 		    int update_flags)
 {
 	int ret;
+	struct wim_image_metadata *imd;
 	struct wimlib_update_command *cmds_copy;
 
 	if (update_flags & ~WIMLIB_UPDATE_FLAG_SEND_PROGRESS)
@@ -1404,7 +1405,14 @@ wimlib_update_image(WIMStruct *wim,
 	/* Load the metadata for the image to modify (if not loaded already) */
 	ret = select_wim_image(wim, image);
 	if (ret)
-		goto out;
+		return ret;
+
+	imd = wim->image_metadata[image - 1];
+
+	/* Don't allow updating an image currently being shared by multiple
+	 * WIMStructs (as a result of an export)  */
+	if (imd->refcnt > 1)
+		return WIMLIB_ERR_IMAGE_HAS_MULTIPLE_REFERENCES;
 
 	/* Make a copy of the update commands, in the process doing certain
 	 * canonicalizations on paths (e.g. translating backslashes to forward
@@ -1412,7 +1420,7 @@ wimlib_update_image(WIMStruct *wim,
 	 * commands. */
 	ret = copy_update_commands(cmds, num_cmds, &cmds_copy);
 	if (ret)
-		goto out;
+		return ret;
 
 	/* Perform additional checks on the update commands before we execute
 	 * them. */
@@ -1425,7 +1433,7 @@ wimlib_update_image(WIMStruct *wim,
 	if (ret)
 		goto out_free_cmds_copy;
 
-	mark_image_dirty(wim->image_metadata[image - 1]);
+	mark_image_dirty(imd);
 
 	/* Statistics about the WIM image, such as the numbers of files and
 	 * directories, may have changed.  Call xml_update_image_info() to
@@ -1438,7 +1446,6 @@ wimlib_update_image(WIMStruct *wim,
 			wim->hdr.flags |= WIM_HDR_FLAG_RP_FIX;
 out_free_cmds_copy:
 	free_update_commands(cmds_copy, num_cmds);
-out:
 	return ret;
 }
 
