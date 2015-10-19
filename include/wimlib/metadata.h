@@ -1,6 +1,7 @@
 #ifndef _WIMLIB_METADATA_H
 #define _WIMLIB_METADATA_H
 
+#include "wimlib/blob_table.h"
 #include "wimlib/list.h"
 #include "wimlib/types.h"
 #include "wimlib/wim.h"
@@ -18,7 +19,12 @@ struct wim_image_metadata {
 	/* Pointer to the security data of the image. */
 	struct wim_security_data *security_data;
 
-	/* Pointer to the blob descriptor for this image's metadata resource */
+	/* Pointer to the blob descriptor for this image's metadata resource.
+	 * If this image metadata is sourced from a WIM file (as opposed to
+	 * being created from scratch) and hasn't been modified from the version
+	 * in that WIM file, then this blob descriptor's data corresponds to the
+	 * WIM backing source.  Otherwise, this blob descriptor is a dummy entry
+	 * with blob_location==BLOB_NONEXISTENT.  */
 	struct blob_descriptor *metadata_blob;
 
 	/* Linked list of 'struct wim_inode's for this image. */
@@ -30,11 +36,6 @@ struct wim_image_metadata {
 	 * into the WIMStruct's blob table.  This list is appended to when files
 	 * are scanned for inclusion in this WIM image.  */
 	struct list_head unhashed_blobs;
-
-	/* 1 iff the dentry tree has been modified from the original stored in
-	 * the WIM file.  If this is the case, the memory for the dentry tree
-	 * should not be freed when switching to a different WIM image. */
-	u8 modified : 1;
 };
 
 /* Retrieve the metadata of the image in @wim currently selected with
@@ -59,6 +60,33 @@ static inline struct wim_security_data *
 wim_get_current_security_data(WIMStruct *wim)
 {
 	return wim_get_current_image_metadata(wim)->security_data;
+}
+
+/* Return true iff the specified image has been changed since being read from
+ * its backing file or has been created from scratch.  */
+static inline bool
+is_image_dirty(const struct wim_image_metadata *imd)
+{
+	/* The only possible values here are BLOB_NONEXISTENT and BLOB_IN_WIM */
+	return imd->metadata_blob->blob_location == BLOB_NONEXISTENT;
+}
+
+/* Return true iff the specified image is unchanged since being read from the
+ * specified backing WIM file.  */
+static inline bool
+is_image_unchanged_from_wim(const struct wim_image_metadata *imd,
+			    const WIMStruct *wim)
+{
+	return !is_image_dirty(imd) && imd->metadata_blob->rdesc->wim == wim;
+}
+
+/* Mark the metadata for the specified WIM image "dirty" following changes to
+ * the image's directory tree.  This records that the metadata no longer matches
+ * the version in the WIM file (if any).  */
+static inline void
+mark_image_dirty(struct wim_image_metadata *imd)
+{
+	blob_release_location(imd->metadata_blob);
 }
 
 /* Iterate over each inode in a WIM image  */

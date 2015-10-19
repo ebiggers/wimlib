@@ -152,13 +152,6 @@ struct blob_descriptor {
 	u16 unique_size : 1;
 	u16 will_be_in_output_wim : 1;
 
-	/* Set to 1 if this blob represents a metadata resource that has been
-	 * changed.  In such cases, the hash cannot be used to verify the data
-	 * if the metadata resource is read again.  (This could be avoided if we
-	 * used separate fields for input/output checksum, but most blobs
-	 * wouldn't need this.)  */
-	u16 dont_check_metadata_hash : 1;
-
 	u16 may_send_done_with_file : 1;
 
 	/* Only used by wimlib_export_image() */
@@ -312,6 +305,9 @@ blob_subtract_refcnt(struct blob_descriptor *blob, struct blob_table *table,
 extern void
 blob_decrement_num_opened_fds(struct blob_descriptor *blob);
 #endif
+
+extern void
+blob_release_location(struct blob_descriptor *blob);
 
 extern void
 free_blob_descriptor(struct blob_descriptor *blob);

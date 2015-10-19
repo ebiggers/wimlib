@@ -2179,20 +2179,28 @@ write_metadata_resources(WIMStruct *wim, int image, int write_flags)
 		struct wim_image_metadata *imd;
 
 		imd = wim->image_metadata[i - 1];
-		/* Build a new metadata resource only if image was modified from
-		 * the original (or was newly added).  Otherwise just copy the
-		 * existing one.  */
-		if (imd->modified) {
+		if (is_image_dirty(imd)) {
+			/* The image was modified from the original, or was
+			 * newly added, so we have to build and write a new
+			 * metadata resource.  */
 			ret = write_metadata_resource(wim, i,
 						      write_resource_flags);
-		} else if (write_flags & WIMLIB_WRITE_FLAG_UNSAFE_COMPACT) {
-			/* For compactions, existing metadata resources are
-			 * written along with the existing file resources.  */
-			ret = 0;
-		} else if (write_flags & WIMLIB_WRITE_FLAG_APPEND) {
-			blob_set_out_reshdr_for_reuse(imd->metadata_blob);
+		} else if (is_image_unchanged_from_wim(imd, wim) &&
+			   (write_flags & (WIMLIB_WRITE_FLAG_UNSAFE_COMPACT |
+					   WIMLIB_WRITE_FLAG_APPEND)))
+		{
+			/* The metadata resource is already in the WIM file.
+			 * For appends, we don't need to write it at all.  For
+			 * compactions, we re-write existing metadata resources
+			 * along with the existing file resources, not here.  */
+			if (write_flags & WIMLIB_WRITE_FLAG_APPEND)
+				blob_set_out_reshdr_for_reuse(imd->metadata_blob);
 			ret = 0;
 		} else {
+			/* The metadata resource is in a WIM file other than the
+			 * one being written to.  We need to rewrite it,
+			 * possibly compressed differently; but rebuilding the
+			 * metadata itself isn't necessary.  */
 			ret = write_wim_resource(imd->metadata_blob,
 						 &wim->out_fd,
 						 wim->out_compression_type,
@@ -2880,11 +2888,16 @@ wimlib_write_to_fd(WIMStruct *wim, int fd,
 	return write_standalone_wim(wim, &fd, image, write_flags, num_threads);
 }
 
+/* Have there been any changes to images in the specified WIM, including updates
+ * as well as deletions and additions of entire images, but excluding changes to
+ * the XML document?  */
 static bool
-any_images_modified(WIMStruct *wim)
+any_images_changed(WIMStruct *wim)
 {
+	if (wim->image_deletion_occurred)
+		return true;
 	for (int i = 0; i < wim->hdr.image_count; i++)
-		if (wim->image_metadata[i]->modified)
+		if (!is_image_unchanged_from_wim(wim->image_metadata[i], wim))
 			return true;
 	return false;
 }
@@ -3045,7 +3058,7 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 			 * with the file resources.  */
 			for (int i = 0; i < wim->hdr.image_count; i++) {
 				struct wim_image_metadata *imd = wim->image_metadata[i];
-				if (!imd->modified) {
+				if (is_image_unchanged_from_wim(imd, wim)) {
 					fully_reference_blob_for_write(imd->metadata_blob,
 								       &blob_list);
 				}
@@ -3083,13 +3096,13 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 		 * don't allow any file and metadata resources to appear without
 		 * returning WIMLIB_ERR_RESOURCE_ORDER (due to the fact that we
 		 * would otherwise overwrite these resources). */
-		if (!wim->image_deletion_occurred && !any_images_modified(wim)) {
-			/* If no images have been modified and no images have
-			 * been deleted, a new blob table does not need to be
-			 * written.  We shall write the new XML data and
-			 * optional integrity table immediately after the blob
-			 * table.  Note that this may overwrite an existing
-			 * integrity table. */
+		if (!any_images_changed(wim)) {
+			/* If no images have been modified, added, or deleted,
+			 * then a new blob table does not need to be written.
+			 * We shall write the new XML data and optional
+			 * integrity table immediately after the blob table.
+			 * Note that this may overwrite an existing integrity
+			 * table.  */
 			old_wim_end = old_blob_table_end;
 			write_flags |= WIMLIB_WRITE_FLAG_NO_NEW_BLOBS;
 		} else if (wim_has_integrity_table(wim)) {

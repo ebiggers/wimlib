@@ -1051,7 +1051,6 @@ renew_current_image(struct wimfs_context *ctx)
 		goto err_put_replace_imd;
 
 	new_blob->refcnt = 1;
-	new_blob->unhashed = 1;
 	new_blob->is_metadata = 1;
 
 	/* Make the image being moved available at a new index.  Increments the
@@ -1118,6 +1117,7 @@ commit_image(struct wimfs_context *ctx, int unmount_flags, mqd_t mq)
 	INIT_LIST_HEAD(&ctx->orig_blob_list);
 	delete_empty_blobs(ctx);
 	xml_update_image_info(ctx->wim, ctx->wim->current_image);
+	mark_image_dirty(wim_get_current_image_metadata(ctx->wim));
 
 	write_flags = 0;
 
@@ -2129,10 +2129,9 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	/* Get the metadata for the image to mount.  */
 	imd = wim_get_current_image_metadata(wim);
 
-	if (imd->modified) {
-		/* To avoid complicating things, we don't support mounting
-		 * images to which in-memory modifications have already been
-		 * made.  */
+	/* To avoid complicating things, we don't support mounting images to
+	 * which in-memory modifications have already been made.  */
+	if (is_image_dirty(imd)) {
 		ERROR("Cannot mount a modified WIM image!");
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
@@ -2207,10 +2206,6 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	/* Number the inodes in the mounted image sequentially and initialize
 	 * the file descriptor arrays  */
 	prepare_inodes(&ctx);
-
-	/* If a read-write mount, mark the image as modified.  */
-	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)
-		imd->modified = 1;
 
 	/* Save the absolute path to the mountpoint directory.  */
 	ctx.mountpoint_abspath = realpath(dir, NULL);

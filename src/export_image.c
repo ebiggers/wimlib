@@ -229,11 +229,6 @@ wimlib_export_image(WIMStruct *src_wim,
 		if (ret)
 			goto out_rollback;
 		src_imd->refcnt++;
-
-		/* Lock the metadata into memory.  XXX: need better solution for
-		 * this.  */
-		src_imd->modified = 1;
-
 	}
 
 	/* Image export complete.  Finish by setting any needed special metadata

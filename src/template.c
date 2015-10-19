@@ -172,7 +172,7 @@ wimlib_reference_template_image(WIMStruct *wim, int new_image,
 		return WIMLIB_ERR_METADATA_NOT_FOUND;
 
 	new_imd = wim->image_metadata[new_image - 1];
-	if (!new_imd->modified)
+	if (!is_image_dirty(new_imd))
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	ret = select_wim_image(template_wim, template_image);

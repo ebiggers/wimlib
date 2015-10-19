@@ -1425,7 +1425,7 @@ wimlib_update_image(WIMStruct *wim,
 	if (ret)
 		goto out_free_cmds_copy;
 
-	wim->image_metadata[image - 1]->modified = 1;
+	mark_image_dirty(wim->image_metadata[image - 1]);
 
 	/* Statistics about the WIM image, such as the numbers of files and
 	 * directories, may have changed.  Call xml_update_image_info() to

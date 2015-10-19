@@ -49,7 +49,6 @@ add_empty_image_metadata(WIMStruct *wim)
 		goto out;
 
 	metadata_blob->refcnt = 1;
-	metadata_blob->unhashed = 1;
 	metadata_blob->is_metadata = 1;
 
 	/* Create empty security data (no security descriptors).  */
@@ -66,7 +65,6 @@ add_empty_image_metadata(WIMStruct *wim)
 	imd->root_dentry = NULL;
 	imd->metadata_blob = metadata_blob;
 	imd->security_data = sd;
-	imd->modified = 1;
 
 	/* Append as next image index.  */
 	ret = append_image_metadata(wim, imd);

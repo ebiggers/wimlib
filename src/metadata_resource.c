@@ -73,6 +73,7 @@ read_metadata_resource(struct wim_image_metadata *imd)
 	const struct blob_descriptor *metadata_blob;
 	void *buf;
 	int ret;
+	u8 hash[SHA1_HASH_SIZE];
 	struct wim_security_data *sd;
 	struct wim_dentry *root;
 
@@ -84,16 +85,12 @@ read_metadata_resource(struct wim_image_metadata *imd)
 		return ret;
 
 	/* Checksum the metadata resource.  */
-	if (!metadata_blob->dont_check_metadata_hash) {
-		u8 hash[SHA1_HASH_SIZE];
-
-		sha1_buffer(buf, metadata_blob->size, hash);
-		if (!hashes_equal(metadata_blob->hash, hash)) {
-			ERROR("Metadata resource is corrupted "
-			      "(invalid SHA-1 message digest)!");
-			ret = WIMLIB_ERR_INVALID_METADATA_RESOURCE;
-			goto out_free_buf;
-		}
+	sha1_buffer(buf, metadata_blob->size, hash);
+	if (!hashes_equal(metadata_blob->hash, hash)) {
+		ERROR("Metadata resource is corrupted "
+		      "(invalid SHA-1 message digest)!");
+		ret = WIMLIB_ERR_INVALID_METADATA_RESOURCE;
+		goto out_free_buf;
 	}
 
 	/* Parse the metadata resource.
@@ -244,9 +241,6 @@ write_metadata_resource(WIMStruct *wim, int image, int write_resource_flags)
 					     &imd->metadata_blob->out_reshdr,
 					     imd->metadata_blob->hash,
 					     write_resource_flags);
-
-	/* Original checksum was overridden; set a flag so it isn't used.  */
-	imd->metadata_blob->dont_check_metadata_hash = 1;
 
 	FREE(buf);
 	return ret;

@@ -162,7 +162,9 @@ out_free:
 	return NULL;
 }
 
-static void
+/* Release a blob descriptor from its location, if any, and set its new location
+ * to BLOB_NONEXISTENT.  */
+void
 blob_release_location(struct blob_descriptor *blob)
 {
 	switch (blob->blob_location) {
@@ -193,6 +195,7 @@ blob_release_location(struct blob_descriptor *blob)
 		break;
 #endif
 	}
+	blob->blob_location = BLOB_NONEXISTENT;
 }
 
 void

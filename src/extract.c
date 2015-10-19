@@ -1936,7 +1936,6 @@ wimlib_extract_image_from_pipe_with_progress(int pipe_fd,
 			ret = read_metadata_resource(imd);
 			if (ret)
 				goto out_wimlib_free;
-			imd->modified = 1;
 		} else {
 			/* Metadata resource is not for the image being
 			 * extracted.  Skip over it.  */
