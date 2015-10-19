@@ -219,6 +219,8 @@ do_iterate_dir_tree(WIMStruct *wim,
 		}
 	}
 out_free_wimlib_dentry:
+	FREE(dentry->d_full_path);
+	dentry->d_full_path = NULL;
 	free_wimlib_dentry(wdentry);
 out:
 	return ret;
