@@ -219,6 +219,13 @@ wimlib_split(WIMStruct *wim, const tchar *swm_name,
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 
+	for (i = 0; i < wim->hdr.image_count; i++) {
+		if (!is_image_unchanged_from_wim(wim->image_metadata[i], wim)) {
+			ERROR("Only an unmodified, on-disk WIM file can be split.");
+			return WIMLIB_ERR_UNSUPPORTED;
+		}
+	}
+
 	memset(&swm_info, 0, sizeof(swm_info));
 	swm_info.max_part_size = part_size;
 
