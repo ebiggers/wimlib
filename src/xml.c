@@ -1388,6 +1388,8 @@ wimlib_get_image_property(const WIMStruct *wim, int image,
 	const xmlChar *name;
 	const tchar *value;
 
+	if (!property_name || !*property_name)
+		return NULL;
 	if (tstr_get_utf8(property_name, &name))
 		return NULL;
 	value = get_image_property(wim, image, name, NULL);
