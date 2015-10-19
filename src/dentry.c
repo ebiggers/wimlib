@@ -358,7 +358,8 @@ dentry_out_total_length(const struct wim_dentry *dentry)
 					dentry->d_short_name_nbytes);
 	len = ALIGN(len, 8);
 
-	len += ALIGN(inode->i_extra_size, 8);
+	if (inode->i_extra)
+		len += ALIGN(inode->i_extra->size, 8);
 
 	if (!(inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED)) {
 		/*
@@ -1187,10 +1188,12 @@ read_extra_data(const u8 *p, const u8 *end, struct wim_inode *inode)
 		p++;
 
 	if (unlikely(p < end)) {
-		inode->i_extra = memdup(p, end - p);
+		inode->i_extra = MALLOC(sizeof(struct wim_inode_extra) +
+					end - p);
 		if (!inode->i_extra)
 			return WIMLIB_ERR_NOMEM;
-		inode->i_extra_size = end - p;
+		inode->i_extra->size = end - p;
+		memcpy(inode->i_extra->data, p, end - p);
 	}
 	return 0;
 }
@@ -1774,9 +1777,9 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 	while ((uintptr_t)p & 7)
 		*p++ = 0;
 
-	if (inode->i_extra_size) {
+	if (inode->i_extra) {
 		/* Extra tagged items --- not usually present.  */
-		p = mempcpy(p, inode->i_extra, inode->i_extra_size);
+		p = mempcpy(p, inode->i_extra->data, inode->i_extra->size);
 
 		/* Align to 8-byte boundary */
 		while ((uintptr_t)p & 7)

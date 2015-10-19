@@ -74,8 +74,14 @@ inode_get_tagged_item(const struct wim_inode *inode,
 		      u32 desired_tag, u32 min_data_len)
 {
 	size_t minlen_with_hdr = sizeof(struct tagged_item_header) + min_data_len;
-	size_t len_remaining = inode->i_extra_size;
-	u8 *p = inode->i_extra;
+	size_t len_remaining;
+	u8 *p;
+
+	if (!inode->i_extra)
+		return NULL;
+
+	len_remaining = inode->i_extra->size;
+	p = inode->i_extra->data;
 
 	/* Iterate through the tagged items.  */
 	while (len_remaining >= minlen_with_hdr) {
@@ -108,26 +114,28 @@ inode_add_tagged_item(struct wim_inode *inode, u32 tag, u32 len)
 {
 	size_t itemsize;
 	size_t newsize;
-	u8 *buf;
+	struct wim_inode_extra *extra;
 	struct tagged_item_header *hdr;
 
 	/* We prepend the item instead of appending it because it's easier.  */
 
 	itemsize = sizeof(struct tagged_item_header) + ALIGN(len, 8);
-	newsize = itemsize + inode->i_extra_size;
+	newsize = itemsize;
+	if (inode->i_extra)
+		newsize += inode->i_extra->size;
 
-	buf = MALLOC(newsize);
-	if (!buf)
+	extra = MALLOC(sizeof(struct wim_inode_extra) + newsize);
+	if (!extra)
 		return NULL;
-
-	if (inode->i_extra_size) {
-		memcpy(buf + itemsize, inode->i_extra, inode->i_extra_size);
+	if (inode->i_extra) {
+		memcpy(&extra->data[itemsize], inode->i_extra->data,
+		       inode->i_extra->size);
 		FREE(inode->i_extra);
 	}
-	inode->i_extra = buf;
-	inode->i_extra_size = newsize;
+	extra->size = newsize;
+	inode->i_extra = extra;
 
-	hdr = (struct tagged_item_header *)buf;
+	hdr = (struct tagged_item_header *)extra->data;
 	hdr->tag = cpu_to_le32(tag);
 	hdr->length = cpu_to_le32(len);
 	return memset(hdr->data, 0, ALIGN(len, 8));

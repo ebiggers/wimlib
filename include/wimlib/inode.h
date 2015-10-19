@@ -10,6 +10,7 @@ struct avl_tree_node;
 struct blob_descriptor;
 struct blob_table;
 struct wim_dentry;
+struct wim_inode_extra;
 struct wim_security_data;
 struct wimfs_fd;
 
@@ -140,10 +141,7 @@ struct wim_inode {
 	 * dentry.  This should be a series of tagged items, each of which
 	 * represents a bit of extra metadata, such as the file's object ID.
 	 * See tagged_items.c for more information.  */
-	void *i_extra;
-
-	/* Size of @i_extra buffer in bytes.  If 0, there is no extra data.  */
-	size_t i_extra_size;
+	struct wim_inode_extra *i_extra;
 
 	/* Creation time, last access time, and last write time for this inode,
 	 * in 100-nanosecond intervals since 12:00 a.m UTC January 1, 1601.
@@ -228,6 +226,12 @@ struct wim_inode {
 
 	/* Next stream ID to be assigned  */
 	u32 i_next_stream_id;
+};
+
+/* Optional extra data for a WIM inode  */
+struct wim_inode_extra {
+	size_t size;	/* Size of the extra data in bytes  */
+	u8 data[];	/* The extra data  */
 };
 
 /*
