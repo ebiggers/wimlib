@@ -80,14 +80,14 @@ possible, the results with the Microsoft equivalent are included.
   =============================================================================
   | None             [1]   ||  361,314,224 in 2.7s   |  361,315,338 in 3.0s   |
   | XPRESS           [2]   ||  137,954,729 in 3.0s   |  140,457,081 in 6.4s   |
-  | XPRESS (slow)    [3]   ||  135,214,004 in 8.8s   |  N/A                   |
+  | XPRESS (slow)    [3]   ||  135,147,054 in 8.0s   |  N/A                   |
   | LZX (quick)      [4]   ||  130,098,933 in 3.3s   |  N/A                   |
-  | LZX (normal)     [5]   ||  126,369,877 in 10.1s  |  127,293,110 in 19.2s  |
-  | LZX (slow)       [6]   ||  125,945,733 in 17.7s  |  N/A                   |
+  | LZX (normal)     [5]   ||  126,310,241 in 9.9s   |  127,293,110 in 18.5s  |
+  | LZX (slow)       [6]   ||  125,884,919 in 17.4s  |  N/A                   |
   | LZMS (non-solid) [7]   ||  116,150,698 in 23.4s  |  N/A                   |
   | LZMS (solid)     [8]   ||  88,108,326  in 55.6s  |  88,771,800 in 90.9s   |
   | "WIMBoot"        [9]   ||  166,892,801 in 3.0s   |  169,108,689 in 8.9s   |
-  | "WIMBoot" (slow) [10]  ||  165,022,523 in 7.3s   |  N/A                   |
+  | "WIMBoot" (slow) [10]  ||  165,004,333 in 7.8s   |  N/A                   |
   =============================================================================
 
 Notes:
@@ -154,8 +154,8 @@ formats/programs:
      | ZIP (Info-ZIP, -9)                 | 732,297      |
      | WIM (wimlib, LZX quick)            | 686,420      |
      | WIM (WIMGAPI, LZX)                 | 651,866      |
-     | WIM (wimlib, LZX normal)           | 624,142      |
-     | WIM (wimlib, LZX slow)             | 619,514      |
+     | WIM (wimlib, LZX normal)           | 623,718      |
+     | WIM (wimlib, LZX slow)             | 619,382      |
      | WIM (wimlib, LZMS non-solid)       | 581,046      |
      | tar.bz2 (bzip, default)            | 565,008      |
      | tar.bz2 (bzip, -9)                 | 565,008      |
