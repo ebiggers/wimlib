@@ -138,7 +138,11 @@ load_u24_unaligned(const u8 *p)
 	return loaded_u32_to_u24(load_u32_unaligned(p));
 #else
 #  define LOAD_U24_REQUIRED_NBYTES 3
+#  if CPU_IS_BIG_ENDIAN
+	return ((u32)p[2] << 0) | ((u32)p[1] << 8) | ((u32)p[0] << 16);
+#  else
 	return ((u32)p[0] << 0) | ((u32)p[1] << 8) | ((u32)p[2] << 16);
+#  endif
 #endif
 }
 
