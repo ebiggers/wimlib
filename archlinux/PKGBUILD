@@ -30,7 +30,7 @@ check() {
 package() {
 	cd "$pkgname-$pkgver"
 	make DESTDIR="$pkgdir" install
-	for file in NEWS README*; do
+	for file in NEWS README; do
 		install -Dm644 $file "$pkgdir/usr/share/doc/$pkgname/$file"
 	done
 	for file in COPYING*; do
