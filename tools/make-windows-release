@@ -59,6 +59,7 @@ then
 		CPPFLAGS="-I$SYSROOT/include"				\
 		LDFLAGS="-L$SYSROOT/lib"				\
 		PKG_CONFIG_PATH="$SYSROOT/lib/pkgconfig"		\
+		--without-libcrypto					\
 		$extra_args
 	$MAKE clean
 fi
