@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2013, 2014 Eric Biggers
+ * Copyright (C) 2013, 2014, 2015 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -37,7 +37,6 @@
 struct reference_info {
 	WIMStruct *dest_wim;
 	struct list_head new_blobs;
-	struct list_head new_subwims;
 	int ref_flags;
 	struct blob_table *src_table;
 };
@@ -48,28 +47,13 @@ init_reference_info(struct reference_info *info, WIMStruct *dest_wim,
 {
 	info->dest_wim = dest_wim;
 	INIT_LIST_HEAD(&info->new_blobs);
-	INIT_LIST_HEAD(&info->new_subwims);
 	info->ref_flags = ref_flags;
-}
-
-static void
-commit_reference_info(struct reference_info *info)
-{
-	list_splice(&info->new_subwims, &info->dest_wim->subwims);
 }
 
 static void
 rollback_reference_info(struct reference_info *info)
 {
-	WIMStruct *subwim;
 	struct blob_descriptor *blob;
-
-	while (!list_empty(&info->new_subwims)) {
-		subwim = list_first_entry(&info->new_subwims,
-					  WIMStruct, subwim_node);
-		list_del(&subwim->subwim_node);
-		wimlib_free(subwim);
-	}
 
 	while (!list_empty(&info->new_blobs)) {
 		blob = list_first_entry(&info->new_blobs,
@@ -78,16 +62,6 @@ rollback_reference_info(struct reference_info *info)
 		blob_table_unlink(info->dest_wim->blob_table, blob);
 		free_blob_descriptor(blob);
 	}
-}
-
-static int
-commit_or_rollback_reference_info(struct reference_info *info, int ret)
-{
-	if (unlikely(ret))
-		rollback_reference_info(info);
-	else
-		commit_reference_info(info);
-	return ret;
 }
 
 static bool
@@ -101,12 +75,6 @@ reference_blob(struct reference_info *info, struct blob_descriptor *blob)
 {
 	blob_table_insert(info->dest_wim->blob_table, blob);
 	list_add(&blob->blob_table_list, &info->new_blobs);
-}
-
-static void
-reference_subwim(struct reference_info *info, WIMStruct *subwim)
-{
-	list_add(&subwim->subwim_node, &info->new_subwims);
 }
 
 static int
@@ -154,7 +122,9 @@ wimlib_reference_resources(WIMStruct *wim, WIMStruct **resource_wims,
 			break;
 	}
 
-	return commit_or_rollback_reference_info(&info, ret);
+	if (unlikely(ret))
+		rollback_reference_info(&info);
+	return ret;
 }
 
 static int
@@ -185,7 +155,7 @@ reference_resource_path(struct reference_info *info, const tchar *path,
 
 	info->src_table = src_wim->blob_table;
 	for_blob_in_table(src_wim->blob_table, blob_gift, info);
-	reference_subwim(info, src_wim);
+	wimlib_free(src_wim);
 	return 0;
 }
 
@@ -269,5 +239,7 @@ wimlib_reference_resource_files(WIMStruct *wim,
 	else
 		ret = reference_resource_paths(&info, paths_or_globs, count, open_flags);
 
-	return commit_or_rollback_reference_info(&info, ret);
+	if (unlikely(ret))
+		rollback_reference_info(&info);
+	return ret;
 }

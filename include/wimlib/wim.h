@@ -67,6 +67,11 @@ struct WIMStruct {
 	 * referenced from other WIMStructs.  */
 	struct blob_table *blob_table;
 
+	/* The number of references to this WIMStruct.  This is equal to the
+	 * number of resource descriptors that reference this WIMStruct, plus 1
+	 * if wimlib_free() still needs to be called.  */
+	ssize_t refcnt;
+
 	/*
 	 * The 1-based index of the currently selected image in this WIMStruct,
 	 * or WIMLIB_NO_IMAGE if no image is currently selected.
@@ -104,16 +109,6 @@ struct WIMStruct {
 	struct wimlib_decompressor *decompressor;
 	u8 decompressor_ctype;
 	u32 decompressor_max_block_size;
-
-	/*
-	 * 'subwims' is the list of dependent WIMStructs (linked by
-	 * 'subwim_node') that have been opened by calls to
-	 * wimlib_reference_resource_files().  These WIMStructs must be retained
-	 * so that resources from them can be used.  They are internal to the
-	 * library and are not visible to API users.
-	 */
-	struct list_head subwims;
-	struct list_head subwim_node;
 
 	/* Temporary field; use sparingly  */
 	void *private;
@@ -189,6 +184,9 @@ static inline bool wim_is_pipable(const WIMStruct *wim)
 {
 	return (wim->hdr.magic == PWM_MAGIC);
 }
+
+extern void
+finalize_wim_struct(WIMStruct *wim);
 
 extern bool
 wim_has_solid_resources(const WIMStruct *wim);

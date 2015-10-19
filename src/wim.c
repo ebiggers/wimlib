@@ -146,12 +146,12 @@ new_wim_struct(void)
 	if (!wim)
 		return NULL;
 
+	wim->refcnt = 1;
 	filedes_invalidate(&wim->in_fd);
 	filedes_invalidate(&wim->out_fd);
 	wim->out_solid_compression_type = wim_default_solid_compression_type();
 	wim->out_solid_chunk_size = wim_default_solid_chunk_size(
 					wim->out_solid_compression_type);
-	INIT_LIST_HEAD(&wim->subwims);
 	return wim;
 }
 
@@ -867,6 +867,20 @@ can_modify_wim(WIMStruct *wim)
 	return 0;
 }
 
+/* Free a WIMStruct after no more resources reference it.  */
+void
+finalize_wim_struct(WIMStruct *wim)
+{
+	if (filedes_valid(&wim->in_fd))
+		filedes_close(&wim->in_fd);
+	if (filedes_valid(&wim->out_fd))
+		filedes_close(&wim->out_fd);
+	wimlib_free_decompressor(wim->decompressor);
+	xml_free_info_struct(wim->xml_info);
+	FREE(wim->filename);
+	FREE(wim);
+}
+
 /* API function documented in wimlib.h  */
 WIMLIBAPI void
 wimlib_free(WIMStruct *wim)
@@ -874,31 +888,22 @@ wimlib_free(WIMStruct *wim)
 	if (!wim)
 		return;
 
-	while (!list_empty(&wim->subwims)) {
-		WIMStruct *subwim;
-
-		subwim = list_entry(wim->subwims.next, WIMStruct, subwim_node);
-		list_del(&subwim->subwim_node);
-		wimlib_free(subwim);
-	}
-
-	if (filedes_valid(&wim->in_fd))
-		filedes_close(&wim->in_fd);
-	if (filedes_valid(&wim->out_fd))
-		filedes_close(&wim->out_fd);
+	/* The blob table and image metadata are freed immediately, but other
+	 * members of the WIMStruct such as the input file descriptor are
+	 * retained until no more exported resources reference the WIMStruct. */
 
 	free_blob_table(wim->blob_table);
-
-	wimlib_free_decompressor(wim->decompressor);
-
-	FREE(wim->filename);
-	xml_free_info_struct(wim->xml_info);
-	if (wim->image_metadata) {
-		for (unsigned i = 0; i < wim->hdr.image_count; i++)
+	wim->blob_table = NULL;
+	if (wim->image_metadata != NULL) {
+		for (int i = 0; i < wim->hdr.image_count; i++)
 			put_image_metadata(wim->image_metadata[i], NULL);
 		FREE(wim->image_metadata);
+		wim->image_metadata = NULL;
 	}
-	FREE(wim);
+
+	wimlib_assert(wim->refcnt > 0);
+	if (--wim->refcnt == 0)
+		finalize_wim_struct(wim);
 }
 
 static bool

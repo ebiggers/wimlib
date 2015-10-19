@@ -168,11 +168,18 @@ void
 blob_release_location(struct blob_descriptor *blob)
 {
 	switch (blob->blob_location) {
-	case BLOB_IN_WIM:
+	case BLOB_IN_WIM: {
+		struct wim_resource_descriptor *rdesc = blob->rdesc;
+
 		list_del(&blob->rdesc_node);
-		if (list_empty(&blob->rdesc->blob_list))
-			FREE(blob->rdesc);
+		if (list_empty(&rdesc->blob_list)) {
+			wimlib_assert(rdesc->wim->refcnt > 0);
+			if (--rdesc->wim->refcnt == 0)
+				finalize_wim_struct(rdesc->wim);
+			FREE(rdesc);
+		}
 		break;
+	}
 	case BLOB_IN_FILE_ON_DISK:
 #ifdef __WIN32__
 	case BLOB_IN_WINNT_FILE_ON_DISK:
@@ -710,6 +717,8 @@ load_solid_info(WIMStruct *wim,
 	if (ret)
 		goto out_free_rdescs;
 
+	wim->refcnt += num_rdescs;
+
 	*rdescs_ret = rdescs;
 	*num_rdescs_ret = num_rdescs;
 	return 0;
@@ -750,9 +759,12 @@ static void
 free_solid_rdescs(struct wim_resource_descriptor **rdescs, size_t num_rdescs)
 {
 	if (rdescs) {
-		for (size_t i = 0; i < num_rdescs; i++)
-			if (list_empty(&rdescs[i]->blob_list))
+		for (size_t i = 0; i < num_rdescs; i++) {
+			if (list_empty(&rdescs[i]->blob_list)) {
+				rdescs[i]->wim->refcnt--;
 				FREE(rdescs[i]);
+			}
+		}
 		FREE(rdescs);
 	}
 }
@@ -984,6 +996,7 @@ read_blob_table(WIMStruct *wim)
 				goto oom;
 
 			wim_reshdr_to_desc_and_blob(&reshdr, wim, rdesc, cur_blob);
+			wim->refcnt++;
 		}
 
 		/* cur_blob is now a blob bound to a resource.  */

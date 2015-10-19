@@ -1929,6 +1929,7 @@ wimlib_extract_image_from_pipe_with_progress(int pipe_fd,
 			goto out_wimlib_free;
 		wim_reshdr_to_desc_and_blob(&reshdr, pwm, metadata_rdesc,
 					    imd->metadata_blob);
+		pwm->refcnt++;
 
 		if (i == image) {
 			/* Metadata resource is for the image being extracted.

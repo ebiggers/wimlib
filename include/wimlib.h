@@ -2717,8 +2717,7 @@ wimlib_delete_path(WIMStruct *wim, int image,
  *
  * Note: after calling this function, the exported WIM image(s) cannot be
  * independently modified because the image metadata will be shared between the
- * two ::WIMStruct's.  In addition, @p dest_wim will depend on @p src_wim, so @p
- * src_wim cannot be freed until @p dest_wim is ready to be freed as well.
+ * two ::WIMStruct's.
  *
  * Note: no changes are committed to disk until wimlib_write() or
  * wimlib_overwrite() is called.
@@ -3071,11 +3070,14 @@ wimlib_extract_xml_data(WIMStruct *wim, FILE *fp);
 /**
  * @ingroup G_general
  *
- * Free all memory allocated for a WIMStruct and close all files associated with
- * it.
+ * Release a reference to a ::WIMStruct.  If the ::WIMStruct is still referenced
+ * by other ::WIMStruct's (e.g. following calls to wimlib_export_image() or
+ * wimlib_reference_resources()), then the library will free it later, when the
+ * last reference is released; otherwise it is freed immediately and any
+ * associated file descriptors are closed.
  *
  * @param wim
- * 	Pointer to the ::WIMStruct to free.  If @c NULL, no action is taken.
+ * 	Pointer to the ::WIMStruct to release.  If @c NULL, no action is taken.
  */
 extern void
 wimlib_free(WIMStruct *wim);
@@ -3760,11 +3762,7 @@ wimlib_reference_resource_files(WIMStruct *wim,
  * @param ref_flags
  *	Reserved; must be 0.
  *
- * @return 0 on success; a ::wimlib_error_code value on failure.  On success,
- * the ::WIMStruct's of the @p resource_wims are referenced internally by @p wim
- * and must not be freed with wimlib_free() or overwritten with
- * wimlib_overwrite() until @p wim has been freed with wimlib_free(), or
- * immediately before freeing @p wim with wimlib_free().
+ * @return 0 on success; a ::wimlib_error_code value on failure.
  */
 extern int
 wimlib_reference_resources(WIMStruct *wim, WIMStruct **resource_wims,
