@@ -410,8 +410,10 @@ struct lzx_compressor {
 
 	/* The matches and literals that the parser has chosen for the current
 	 * block.  The required length of this array is limited by the maximum
-	 * number of matches that can ever be chosen for a single block.  */
-	struct lzx_sequence chosen_sequences[DIV_ROUND_UP(LZX_DIV_BLOCK_SIZE, LZX_MIN_MATCH_LEN)];
+	 * number of matches that can ever be chosen for a single block, plus
+	 * one for the special entry at the end.  */
+	struct lzx_sequence chosen_sequences[
+		       DIV_ROUND_UP(LZX_DIV_BLOCK_SIZE, LZX_MIN_MATCH_LEN) + 1];
 
 	/* Tables for mapping adjusted offsets to offset slots  */
 
