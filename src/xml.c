@@ -1425,6 +1425,9 @@ wimlib_set_image_property(WIMStruct *wim, int image, const tchar *property_name,
 	const xmlChar *name;
 	int ret;
 
+	if (!property_name || !*property_name)
+		return WIMLIB_ERR_INVALID_PARAM;
+
 	ret = tstr_get_utf8(property_name, &name);
 	if (ret)
 		return ret;
