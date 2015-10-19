@@ -19,42 +19,56 @@
 /* Watch out for conflict with ntfs-3g/endians.h ... */
 #ifndef _NTFS_ENDIANS_H
 
-static inline u16 bswap16(u16 n)
+#define bswap16_const(n)			\
+	((((u16)(n) & 0x00FF) << 8)	|	\
+	 (((u16)(n) & 0xFF00) >> 8))
+
+#define bswap32_const(n)				\
+	((((u32)(n) & 0x000000FF) << 24)	|	\
+	 (((u32)(n) & 0x0000FF00) << 8)		|	\
+	 (((u32)(n) & 0x00FF0000) >> 8)		|	\
+	 (((u32)(n) & 0xFF000000) >> 24))
+
+#define bswap64_const(n)					\
+	((((u64)(n) & 0x00000000000000FF) << 56)	|	\
+	 (((u64)(n) & 0x000000000000FF00) << 40)	|	\
+	 (((u64)(n) & 0x0000000000FF0000) << 24)	|	\
+	 (((u64)(n) & 0x00000000FF000000) << 8)		|	\
+	 (((u64)(n) & 0x000000FF00000000) >> 8)		|	\
+	 (((u64)(n) & 0x0000FF0000000000) >> 24)	|	\
+	 (((u64)(n) & 0x00FF000000000000) >> 40)	|	\
+	 (((u64)(n) & 0xFF00000000000000) >> 56))
+
+static inline u16 do_bswap16(u16 n)
 {
 #ifdef compiler_bswap16
 	return compiler_bswap16(n);
 #else
-	return (n << 8) | (n >> 8);
+	return bswap16_const(n);
 #endif
 }
 
-static inline u32 bswap32(u32 n)
+static inline u32 do_bswap32(u32 n)
 {
 #ifdef compiler_bswap32
 	return compiler_bswap32(n);
 #else
-	return (n << 24) |
-	       ((n & 0xFF00) << 8) |
-	       ((n & 0xFF0000) >> 8) |
-	       (n >> 24);
+	return bswap32_const(n);
 #endif
 }
 
-static inline u64 bswap64(u64 n)
+static inline u64 do_bswap64(u64 n)
 {
 #ifdef compiler_bswap64
 	return compiler_bswap64(n);
 #else
-	return (n << 56) |
-	       ((n & 0xFF00) << 40) |
-	       ((n & 0xFF0000) << 24) |
-	       ((n & 0xFF000000) << 8) |
-	       ((n & 0xFF00000000) >> 8) |
-	       ((n & 0xFF0000000000) >> 24) |
-	       ((n & 0xFF000000000000) >> 40) |
-	       (n >> 56);
+	return bswap64_const(n);
 #endif
 }
+
+#define bswap16(n) (__builtin_constant_p(n) ? bswap16_const(n) : do_bswap16(n))
+#define bswap32(n) (__builtin_constant_p(n) ? bswap32_const(n) : do_bswap32(n))
+#define bswap64(n) (__builtin_constant_p(n) ? bswap64_const(n) : do_bswap64(n))
 
 #if CPU_IS_BIG_ENDIAN
 #  define cpu_to_le16(n) ((_force_attr le16)bswap16(n))
