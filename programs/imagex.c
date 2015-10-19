@@ -1958,6 +1958,11 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			add_flags |= WIMLIB_ADD_FLAG_WIMBOOT;
 			break;
 		case IMAGEX_UNSAFE_COMPACT_OPTION:
+			if (cmd != CMD_APPEND) {
+				imagex_error(T("'--unsafe-compact' is only "
+					       "valid for append!"));
+				goto out_err;
+			}
 			write_flags |= WIMLIB_WRITE_FLAG_UNSAFE_COMPACT;
 			break;
 		default:
@@ -2937,6 +2942,13 @@ imagex_export(int argc, tchar **argv, int cmd)
 		if (errno != ENOENT) {
 			imagex_error_with_errno(T("Cannot stat file \"%"TS"\""),
 						dest_wimfile);
+			ret = -1;
+			goto out_free_src_wim;
+		}
+
+		if (write_flags & WIMLIB_WRITE_FLAG_UNSAFE_COMPACT) {
+			imagex_error(T("'--unsafe-compact' is only valid when "
+				       "exporting to an existing WIM file!"));
 			ret = -1;
 			goto out_free_src_wim;
 		}
