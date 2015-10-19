@@ -548,7 +548,7 @@ struct lzx_output_bitstream {
 
 /* Can the specified number of bits always be added to 'bitbuf' after any
  * pending 16-bit coding units have been flushed?  */
-#define CAN_BUFFER(n)	((n) <= (8 * sizeof(machine_word_t)) - 16)
+#define CAN_BUFFER(n)	((n) <= (8 * sizeof(machine_word_t)) - 15)
 
 /*
  * Initialize the output bitstream.
@@ -994,6 +994,8 @@ lzx_write_sequences(struct lzx_output_bitstream *os, int block_type,
 			if (!CAN_BUFFER(MAX_MATCH_BITS))
 				lzx_flush_bits(os, ALIGNED_CODEWORD_LIMIT);
 		} else {
+			STATIC_ASSERT(CAN_BUFFER(17));
+
 			lzx_add_bits(os, extra_bits, num_extra_bits);
 			if (!CAN_BUFFER(MAX_MATCH_BITS))
 				lzx_flush_bits(os, 17);
