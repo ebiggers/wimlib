@@ -52,6 +52,7 @@
 #include "wimlib/lz_hash.h"
 
 #define BT_MATCHFINDER_HASH3_ORDER 15
+#define BT_MATCHFINDER_HASH3_WAYS  2
 #define BT_MATCHFINDER_HASH4_ORDER 16
 
 /* TEMPLATED functions and structures have MF_SUFFIX appended to their name.  */
@@ -83,7 +84,7 @@ struct TEMPLATED(bt_matchfinder) {
 #endif
 
 	/* The hash table for finding length 3 matches  */
-	mf_pos_t hash3_tab[1UL << BT_MATCHFINDER_HASH3_ORDER];
+	mf_pos_t hash3_tab[1UL << BT_MATCHFINDER_HASH3_ORDER][BT_MATCHFINDER_HASH3_WAYS];
 
 	/* The hash table which contains the roots of the binary trees for
 	 * finding length 4+ matches  */
@@ -152,7 +153,12 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 	u16 seq2;
 	u32 hash2;
 #endif
+	STATIC_ASSERT(BT_MATCHFINDER_HASH3_WAYS >= 1 &&
+		      BT_MATCHFINDER_HASH3_WAYS <= 2);
 	u32 cur_node;
+#if BT_MATCHFINDER_HASH3_WAYS >= 2
+	u32 cur_node_2;
+#endif
 	const u8 *matchptr;
 	mf_pos_t *pending_lt_ptr, *pending_gt_ptr;
 	u32 best_lt_len, best_gt_len;
@@ -185,15 +191,26 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 	}
 #endif
 
-	cur_node = mf->hash3_tab[hash3];
-	mf->hash3_tab[hash3] = cur_pos;
-	if (record_matches &&
-	    load_u24_unaligned(in_next) == load_u24_unaligned(&in_begin[cur_node]) &&
-	    likely(in_next != in_begin))
-	{
-		lz_matchptr->length = 3;
-		lz_matchptr->offset = in_next - &in_begin[cur_node];
-		lz_matchptr++;
+	cur_node = mf->hash3_tab[hash3][0];
+	mf->hash3_tab[hash3][0] = cur_pos;
+#if BT_MATCHFINDER_HASH3_WAYS >= 2
+	cur_node_2 = mf->hash3_tab[hash3][1];
+	mf->hash3_tab[hash3][1] = cur_node;
+#endif
+	if (record_matches && likely(in_next != in_begin)) {
+		u32 seq3 = load_u24_unaligned(in_next);
+		if (seq3 == load_u24_unaligned(&in_begin[cur_node])) {
+			lz_matchptr->length = 3;
+			lz_matchptr->offset = in_next - &in_begin[cur_node];
+			lz_matchptr++;
+		}
+	#if BT_MATCHFINDER_HASH3_WAYS >= 2
+		else if (seq3 == load_u24_unaligned(&in_begin[cur_node_2])) {
+			lz_matchptr->length = 3;
+			lz_matchptr->offset = in_next - &in_begin[cur_node_2];
+			lz_matchptr++;
+		}
+	#endif
 	}
 
 	cur_node = mf->hash4_tab[hash4];
