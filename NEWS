@@ -1,15 +1,25 @@
 Version 1.8.3-BETA:
 	Fixed a bug with libntfs-3g extraction present since v1.8.1.  Sometimes,
 	some Microsoft software would not correctly recognize data in the
-	resulting filesystem.  Users of the (UNIX-only) NTFS-3g based WIM
-	extraction support should not use wimlib v1.8.1 or wimlib v1.8.2.
+	resulting filesystem.
 
-	Made some small improvements to the compression algorithms.
+	Made some small improvements to the compression algorithms:
+		LZX compression ratio was slightly improved.
+		XPRESS compression ratio and speed was slightly improved.
+		LZMS compression speed was slightly improved.
 
-	Improved handling of WIM XML data and added two new API functions:
+	Improved handling of WIM XML data.  wimlib no longer drops unrecognized
+	elements when exporting images.  In addition, two API functions were
+	added for better access to elements in the XML document:
 	wimlib_get_image_property() and wimlib_set_image_property().
 
 	Added support for (unsafe) in-place compaction of WIM files.
+
+	Improved performance of image export by reusing metadata resources
+	instead of always rebuilding and recompressing them.
+
+	Improved performance of wimlib_update_image() by delaying the update to
+	the WIM's XML document until a write is requested.
 
 	Several improvements to System Compression (compact mode) support:
 
