@@ -989,6 +989,9 @@ open_target_directory(struct win32_apply_ctx *ctx)
 	ctx->attr.Length = sizeof(ctx->attr);
 	ctx->attr.RootDirectory = NULL;
 	ctx->attr.ObjectName = &ctx->target_ntpath;
+
+	/* Don't use FILE_OPEN_REPARSE_POINT here; we want the extraction to
+	 * happen at the directory "pointed to" by the reparse point. */
 	status = (*func_NtCreateFile)(&ctx->h_target,
 				      FILE_TRAVERSE,
 				      &ctx->attr,
@@ -998,7 +1001,6 @@ open_target_directory(struct win32_apply_ctx *ctx)
 				      FILE_SHARE_VALID_FLAGS,
 				      FILE_OPEN_IF,
 				      FILE_DIRECTORY_FILE |
-					      FILE_OPEN_REPARSE_POINT |
 					      FILE_OPEN_FOR_BACKUP_INTENT,
 				      NULL,
 				      0);

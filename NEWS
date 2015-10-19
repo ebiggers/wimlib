@@ -21,6 +21,8 @@ Version 1.8.3-BETA:
 	Improved performance of wimlib_update_image() by delaying the update to
 	the WIM's XML document until a write is requested.
 
+	On Windows, the target of an extraction may now be a reparse point.
+
 	Several improvements to System Compression (compact mode) support:
 
 		wof.sys (or wofadk.sys) is now automatically attached to the
