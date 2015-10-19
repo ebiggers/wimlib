@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014 Eric Biggers
+ * Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -128,7 +128,7 @@ wimlib_export_image(WIMStruct *src_wim,
 			     WIMLIB_EXPORT_FLAG_WIMBOOT))
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	if (!src_wim || !dest_wim || src_wim == dest_wim)
+	if (!src_wim || !dest_wim)
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	if (!wim_has_metadata(src_wim) || !wim_has_metadata(dest_wim))
@@ -152,6 +152,21 @@ wimlib_export_image(WIMStruct *src_wim,
 		end_src_image = src_image;
 	}
 	orig_dest_image_count = dest_wim->hdr.image_count;
+
+	/* We don't yet support having a single WIMStruct contain duplicate
+	 * 'image_metadata' structures, so we must forbid this from happening.
+	 * A duplication is possible if 'src_wim == dest_wim', if the same image
+	 * is exported to the same destination WIMStruct multiple times, or if
+	 * an image is exported in an A => B => A manner.  */
+	for (src_image = start_src_image;
+	     src_image <= end_src_image; src_image++)
+	{
+		const struct wim_image_metadata *src_imd =
+				src_wim->image_metadata[src_image - 1];
+		for (int i = 0; i < dest_wim->hdr.image_count; i++)
+			if (dest_wim->image_metadata[i] == src_imd)
+				return WIMLIB_ERR_DUPLICATE_EXPORTED_IMAGE;
+	}
 
 	/* Blob checksums must be known before proceeding.  */
 	ret = wim_checksum_unhashed_blobs(src_wim);
@@ -249,10 +264,6 @@ wimlib_export_image(WIMStruct *src_wim,
 			dest_wim->hdr.boot_idx = dst_image;
 	}
 
-	if (export_flags & WIMLIB_EXPORT_FLAG_GIFT) {
-		free_blob_table(src_wim->blob_table);
-		src_wim->blob_table = NULL;
-	}
 	return 0;
 
 out_rollback:

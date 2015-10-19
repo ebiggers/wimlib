@@ -2493,11 +2493,12 @@ enum wimlib_error_code {
 	WIMLIB_ERR_MOUNTED_IMAGE_IS_BUSY              = 79,
 	WIMLIB_ERR_NOT_A_MOUNTPOINT                   = 80,
 	WIMLIB_ERR_NOT_PERMITTED_TO_UNMOUNT           = 81,
-	WIMLIB_ERR_FVE_LOCKED_VOLUME		      = 82,
+	WIMLIB_ERR_FVE_LOCKED_VOLUME                  = 82,
 	WIMLIB_ERR_UNABLE_TO_READ_CAPTURE_CONFIG      = 83,
-	WIMLIB_ERR_WIM_IS_INCOMPLETE		      = 84,
+	WIMLIB_ERR_WIM_IS_INCOMPLETE                  = 84,
 	WIMLIB_ERR_COMPACTION_NOT_POSSIBLE            = 85,
 	WIMLIB_ERR_IMAGE_HAS_MULTIPLE_REFERENCES      = 86,
+	WIMLIB_ERR_DUPLICATE_EXPORTED_IMAGE           = 87,
 };
 
 
@@ -2757,6 +2758,9 @@ wimlib_delete_path(WIMStruct *wim, int image,
  *
  * @return 0 on success; a ::wimlib_error_code value on failure.
  *
+ * @retval ::WIMLIB_ERR_DUPLICATE_EXPORTED_IMAGE
+ *	One or more of the source images had already been exported into the
+ *	destination WIM.
  * @retval ::WIMLIB_ERR_IMAGE_NAME_COLLISION
  * 	One or more of the names being given to an exported image was already in
  * 	use in the destination WIM.

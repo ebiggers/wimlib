@@ -340,6 +340,8 @@ static const tchar * const error_strings[] = {
 	[WIMLIB_ERR_IMAGE_HAS_MULTIPLE_REFERENCES]
 		= T("The WIM image cannot be modified because it is currently "
 		    "referenced from multiple places"),
+	[WIMLIB_ERR_DUPLICATE_EXPORTED_IMAGE]
+		= T("The destination WIM already contains one of the source images"),
 };
 
 WIMLIBAPI const tchar *
