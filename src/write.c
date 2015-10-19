@@ -1464,9 +1464,9 @@ init_done_with_file_info(struct list_head *blob_list)
  * identical to another blob already being written or one that would be filtered
  * out of the output WIM using blob_filtered() with the context @filter_ctx.
  * Each such duplicate blob will be removed from @blob_list, its reference count
- * transfered to the pre-existing duplicate blob, its memory freed, and will not
- * be written.  Alternatively, if a blob in @blob_list is a duplicate with any
- * blob in @blob_table that has not been marked for writing or would not be
+ * transferred to the pre-existing duplicate blob, its memory freed, and will
+ * not be written.  Alternatively, if a blob in @blob_list is a duplicate with
+ * any blob in @blob_table that has not been marked for writing or would not be
  * hard-filtered, it is freed and the pre-existing duplicate is written instead,
  * taking ownership of the reference count and slot in the @blob_table_list.
  *

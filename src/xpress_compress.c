@@ -212,7 +212,7 @@ struct xpress_output_bitstream {
 	/* Pointer to the start of the output buffer.  */
 	u8 *start;
 
-	/* Pointer to the location in the ouput buffer at which to write the
+	/* Pointer to the location in the output buffer at which to write the
 	 * next 16 bits.  */
 	u8 *next_bits;
 

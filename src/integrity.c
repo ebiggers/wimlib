@@ -42,7 +42,7 @@
  * information. */
 #define INTEGRITY_CHUNK_SIZE 10485760
 
-/* Only use a different chunk size for compatiblity with an existing integrity
+/* Only use a different chunk size for compatibility with an existing integrity
  * table if the chunk size is between these two numbers. */
 #define INTEGRITY_MIN_CHUNK_SIZE 4096
 #define INTEGRITY_MAX_CHUNK_SIZE 134217728

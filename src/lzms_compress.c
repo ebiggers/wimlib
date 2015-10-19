@@ -249,7 +249,7 @@ struct lzms_optimum_node {
 	 *
 	 * Note: this adaptive state structure also does not include the
 	 * probability entries or current Huffman codewords.  Those aren't
-	 * maintained per-position and are only updated occassionally.
+	 * maintained per-position and are only updated occasionally.
 	 */
 	struct lzms_adaptive_state state;
 } _aligned_attribute(64);

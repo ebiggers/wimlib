@@ -503,7 +503,7 @@ enum wimlib_compression_type {
 	 * produce a better compression ratio, and work more quickly, than the
 	 * implementation in Microsoft's WIMGAPI (as of Windows 8.1).  There is
 	 * limited support for non-default compression levels, but compression
-	 * will be noticably faster if you choose a level < 35.
+	 * will be noticeably faster if you choose a level < 35.
 	 *
 	 * If using wimlib_create_compressor() to create an LZMS compressor
 	 * directly, the @p max_block_size parameter may be any positive value
@@ -776,7 +776,7 @@ union wimlib_progress_info {
 		uint64_t completed_streams;
 
 		/** The number of threads being used for data compression; or,
-		 * if no compression is being peformed, this will be 1.  */
+		 * if no compression is being performed, this will be 1.  */
 		uint32_t num_threads;
 
 		/** The compression type being used, as one of the
@@ -2254,7 +2254,7 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 #define WIMLIB_WRITE_FLAG_SEND_DONE_WITH_FILE_MESSAGES	0x00002000
 
 /**
- * Do not consider content similarily when arranging file data for solid
+ * Do not consider content similarity when arranging file data for solid
  * compression.  Providing this flag will typically worsen the compression
  * ratio, so only provide this flag if you know what you are doing.
  */

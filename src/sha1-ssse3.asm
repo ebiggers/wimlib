@@ -8,7 +8,7 @@
 ;   C++ prototypes of implemented functions are below:
 ;
 ;   #ifndef INTEL_SHA1_SINGLEBLOCK
-;      // Updates 20-byte SHA-1 record in 'hash' for 'num_blocks' consequtive 64-byte blocks
+;      // Updates 20-byte SHA-1 record in 'hash' for 'num_blocks' consecutive 64-byte blocks
 ;      extern "C" void sha1_update_intel(int *hash, const char* input, size_t num_blocks );
 ;   #else
 ;      // Updates 20-byte SHA-1 record in 'hash' for one 64-byte block pointed by 'input'

@@ -628,7 +628,7 @@ winnt_try_rpfix(struct reparse_buffer_disk *rpbuf, u16 *rpbuflen_p,
 	 * SYMBOLIC_LINK_RELATIVE.  We will use this information, although this
 	 * may not always do what the user expects, since drive-relative
 	 * symbolic links such as "\Users\Public" have SYMBOLIC_LINK_RELATIVE
-	 * set, in addition to truely relative symbolic links such as "Users" or
+	 * set, in addition to truly relative symbolic links such as "Users" or
 	 * "Users\Public".  However, WIMGAPI (as of Windows 8.1) has this same
 	 * behavior.
 	 *
