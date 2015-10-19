@@ -809,7 +809,10 @@ xml_export_image(const struct wim_xml_info *src_info, int src_image,
 
 	xmlFreeProp(unlink_index_attribute(dest_node));
 
-	return append_image_node(dest_info, dest_node);
+	ret = append_image_node(dest_info, dest_node);
+	if (ret)
+		goto err;
+	return 0;
 
 err:
 	xmlFreeNode(dest_node);
