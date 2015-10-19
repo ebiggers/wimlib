@@ -1347,8 +1347,8 @@ wimlib_extract_xml_data(WIMStruct *wim, FILE *fp)
 	return ret;
 }
 
-WIMLIBAPI bool
-wimlib_image_name_in_use(const WIMStruct *wim, const tchar *name)
+static bool
+image_name_in_use(const WIMStruct *wim, const tchar *name, int excluded_image)
 {
 	const struct wim_xml_info *info = wim->xml_info;
 	const xmlChar *name_utf8;
@@ -1362,11 +1362,19 @@ wimlib_image_name_in_use(const WIMStruct *wim, const tchar *name)
 	if (tstr_get_utf8(name, &name_utf8))
 		return false;
 	for (int i = 0; i < info->image_count && !found; i++) {
+		if (i + 1 == excluded_image)
+			continue;
 		found = xmlStrEqual(name_utf8, xml_get_text_by_path(
 						    info->images[i], "NAME"));
 	}
 	tstr_put_utf8(name_utf8);
 	return found;
+}
+
+WIMLIBAPI bool
+wimlib_image_name_in_use(const WIMStruct *wim, const tchar *name)
+{
+	return image_name_in_use(wim, name, WIMLIB_NO_IMAGE);
 }
 
 WIMLIBAPI const tchar *
@@ -1400,7 +1408,7 @@ wimlib_get_image_property(const WIMStruct *wim, int image,
 WIMLIBAPI int
 wimlib_set_image_name(WIMStruct *wim, int image, const tchar *name)
 {
-	if (wimlib_image_name_in_use(wim, name))
+	if (image_name_in_use(wim, name, image))
 		return WIMLIB_ERR_IMAGE_NAME_COLLISION;
 
 	return set_image_property(wim, image, "NAME", name);
