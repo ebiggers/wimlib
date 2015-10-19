@@ -36,6 +36,10 @@ struct wim_image_metadata {
 	 * into the WIMStruct's blob table.  This list is appended to when files
 	 * are scanned for inclusion in this WIM image.  */
 	struct list_head unhashed_blobs;
+
+	/* Are the filecount/bytecount stats (in the XML info) out of date for
+	 * this image?  */
+	bool stats_outdated;
 };
 
 /* Retrieve the metadata of the image in @wim currently selected with
@@ -82,11 +86,12 @@ is_image_unchanged_from_wim(const struct wim_image_metadata *imd,
 
 /* Mark the metadata for the specified WIM image "dirty" following changes to
  * the image's directory tree.  This records that the metadata no longer matches
- * the version in the WIM file (if any).  */
+ * the version in the WIM file (if any) and that its stats are out of date.  */
 static inline void
 mark_image_dirty(struct wim_image_metadata *imd)
 {
 	blob_release_location(imd->metadata_blob);
+	imd->stats_outdated = true;
 }
 
 /* Iterate over each inode in a WIM image  */

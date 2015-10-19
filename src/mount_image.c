@@ -1116,7 +1116,6 @@ commit_image(struct wimfs_context *ctx, int unmount_flags, mqd_t mq)
 	}
 	INIT_LIST_HEAD(&ctx->orig_blob_list);
 	delete_empty_blobs(ctx);
-	xml_update_image_info(ctx->wim, ctx->wim->current_image);
 	mark_image_dirty(wim_get_current_image_metadata(ctx->wim));
 
 	write_flags = 0;

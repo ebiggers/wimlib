@@ -2639,6 +2639,25 @@ should_default_to_solid_compression(WIMStruct *wim, int write_flags)
 		wim_has_solid_resources(wim);
 }
 
+/* Update the images' filecount/bytecount stats (in the XML info) to take into
+ * account any recent modifications.  */
+static int
+update_image_stats(WIMStruct *wim)
+{
+	if (!wim_has_metadata(wim))
+		return 0;
+	for (int i = 0; i < wim->hdr.image_count; i++) {
+		struct wim_image_metadata *imd = wim->image_metadata[i];
+		if (imd->stats_outdated) {
+			int ret = xml_update_image_info(wim, i + 1);
+			if (ret)
+				return ret;
+			imd->stats_outdated = false;
+		}
+	}
+	return 0;
+}
+
 /* Write a standalone WIM or split WIM (SWM) part to a new file or to a file
  * descriptor.  */
 int
@@ -2785,6 +2804,11 @@ write_wim_part(WIMStruct *wim,
 		else if (image == wim->hdr.boot_idx)
 			wim->out_hdr.boot_idx = 1;
 	}
+
+	/* Update image stats if needed.  */
+	ret = update_image_stats(wim);
+	if (ret)
+		return ret;
 
 	/* Set up the output file descriptor.  */
 	if (write_flags & WIMLIB_WRITE_FLAG_FILE_DESCRIPTOR) {
@@ -3129,6 +3153,11 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 		if (write_flags & WIMLIB_WRITE_FLAG_NO_NEW_BLOBS)
 			wimlib_assert(list_empty(&blob_list));
 	}
+
+	/* Update image stats if needed.  */
+	ret = update_image_stats(wim);
+	if (ret)
+		goto out;
 
 	ret = open_wim_writable(wim, wim->filename, O_RDWR);
 	if (ret)

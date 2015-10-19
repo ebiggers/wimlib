@@ -716,7 +716,6 @@ xml_update_image_info(WIMStruct *wim, int image)
 		xmlFreeNode(totalbytes_node);
 		xmlFreeNode(hardlinkbytes_node);
 		xmlFreeNode(lastmodificationtime_node);
-		WARNING("Failed to update image information!");
 		return WIMLIB_ERR_NOMEM;
 	}
 

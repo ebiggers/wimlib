@@ -64,7 +64,6 @@
 #include "wimlib/metadata.h"
 #include "wimlib/paths.h"
 #include "wimlib/progress.h"
-#include "wimlib/xml.h"
 
 /* Saved specification of a "primitive" update operation that was performed.  */
 struct update_primitive {
@@ -1434,11 +1433,6 @@ wimlib_update_image(WIMStruct *wim,
 		goto out_free_cmds_copy;
 
 	mark_image_dirty(imd);
-
-	/* Statistics about the WIM image, such as the numbers of files and
-	 * directories, may have changed.  Call xml_update_image_info() to
-	 * recalculate these statistics. */
-	xml_update_image_info(wim, image);
 
 	for (size_t i = 0; i < num_cmds; i++)
 		if (cmds_copy[i].op == WIMLIB_UPDATE_OP_ADD &&
