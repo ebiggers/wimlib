@@ -565,12 +565,12 @@ See the documentation for this option in \fBwimlib-imagex-optimize\fR (1).
 .SH NOTES
 \fBwimlib-imagex append\fR does not support appending an image to a split WIM.
 .PP
-It is safe to abort an \fBwimlib-imagex append\fR command partway through;
-however, after doing this, it is recommended to run \fBwimlib-imagex
-optimize\fR to remove any data that was appended to the physical WIM file but
-not yet incorporated into the structure of the WIM, unless the WIM was being
-fully rebuilt (e.g. with \fB--rebuild\fR), in which case you should delete the
-temporary file left over.
+Except when using \fB--unsafe-compact\fR, it is safe to abort a \fBwimlib-imagex
+append\fR command partway through; however, after doing this, it is recommended
+to run \fBwimlib-imagex optimize\fR to remove any data that was appended to the
+physical WIM file but not yet incorporated into the structure of the WIM, unless
+the WIM was being fully rebuilt (e.g. with \fB--rebuild\fR), in which case you
+should delete the temporary file left over.
 .PP
 \fBwimlib-imagex\fR creates WIMs compatible with Microsoft's software
 (WIMGAPI, ImageX, DISM), with some caveats:

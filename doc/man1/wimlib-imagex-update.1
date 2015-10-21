@@ -198,11 +198,12 @@ On UNIX-like systems, you cannot use \fBwimlib-imagex update\fR to add files
 to an image directly from an NTFS volume using libntfs-3g, even though
 \fBwimlib-imagex capture\fR supports capturing a full image this way.
 .PP
-It is safe to abort an \fBwimlib-imagex update\fR command partway through;
-however, after doing this, it is recommended to run \fBwimlib-imagex
-optimize\fR to remove any data that was appended to the physical WIM file but
-not yet incorporated into the structure of the WIM, unless \fB--rebuild\fR was
-specified, in which case you should delete the temporary file left over.
+Except when using \fB--unsafe-compact\fR, it is safe to abort a \fBwimlib-imagex
+update\fR command partway through; however, after doing this, it is recommended
+to run \fBwimlib-imagex optimize\fR to remove any data that was appended to the
+physical WIM file but not yet incorporated into the structure of the WIM, unless
+\fB--rebuild\fR was specified, in which case you should delete the temporary
+file left over.
 .SH EXAMPLES
 All the examples below show the update command file to be created as well as the
 \fBwimlib-imagex update\fR command to run to perform the updates.

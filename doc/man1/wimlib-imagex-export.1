@@ -159,12 +159,13 @@ To export the first image of this split WIM to a new or existing WIM file
 wimlib-imagex export mywim.swm 1 other.wim --ref="mywim*.swm"
 .RE
 .SH NOTES
-\fIData integrity\fR:  It is safe to abort a \fBwimlib-imagex export\fR command partway through.
-However, after doing this, it is recommended to run \fBwimlib-imagex
-optimize\fR on the destination WIM to remove any data that was appended to the
-physical WIM file but not yet incorporated into the structure of the WIM, unless
-the WIM was being rebuilt (e.g. with \fB--rebuild\fR), in which case you should
-delete the temporary file left over.
+\fIData integrity\fR: Except when using \fB--unsafe-compact\fR, it is safe to
+abort a \fBwimlib-imagex export\fR command partway through.  However, after
+doing this, it is recommended to run \fBwimlib-imagex optimize\fR on the
+destination WIM to remove any data that was appended to the physical WIM file
+but not yet incorporated into the structure of the WIM, unless the WIM was being
+rebuilt (e.g. with \fB--rebuild\fR), in which case you should delete the
+temporary file left over.
 .PP
 \fISingle instancing\fR: The WIM format uses single-instance streams (roughly,
 "files").  When an image is exported, only the streams ("files") not already
