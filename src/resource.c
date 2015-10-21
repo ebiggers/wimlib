@@ -537,7 +537,8 @@ read_error:
  * data in nonempty chunks into the cbs->consume_chunk() function.  */
 static int
 read_raw_file_data(struct filedes *in_fd, u64 offset, u64 size,
-		   const struct read_blob_callbacks *cbs)
+		   const struct read_blob_callbacks *cbs,
+		   const tchar *filename)
 {
 	u8 buf[BUFFER_SIZE];
 	size_t bytes_to_read;
@@ -546,10 +547,8 @@ read_raw_file_data(struct filedes *in_fd, u64 offset, u64 size,
 	while (size) {
 		bytes_to_read = min(sizeof(buf), size);
 		ret = full_pread(in_fd, buf, bytes_to_read, offset);
-		if (unlikely(ret)) {
-			ERROR_WITH_ERRNO("Read error");
-			return ret;
-		}
+		if (unlikely(ret))
+			goto read_error;
 		ret = call_consume_chunk(buf, bytes_to_read, cbs);
 		if (unlikely(ret))
 			return ret;
@@ -557,6 +556,17 @@ read_raw_file_data(struct filedes *in_fd, u64 offset, u64 size,
 		offset += bytes_to_read;
 	}
 	return 0;
+
+read_error:
+	if (!filename) {
+		ERROR_WITH_ERRNO("Error reading data from WIM file");
+	} else if (ret == WIMLIB_ERR_UNEXPECTED_END_OF_FILE) {
+		ERROR("\"%"TS"\": File was concurrently truncated", filename);
+		ret = WIMLIB_ERR_CONCURRENT_MODIFICATION_DETECTED;
+	} else {
+		ERROR_WITH_ERRNO("\"%"TS"\": Error reading data", filename);
+	}
+	return ret;
 }
 
 /* A consume_chunk() implementation that simply concatenates all chunks into an
@@ -601,7 +611,7 @@ read_partial_wim_resource(const struct wim_resource_descriptor *rdesc,
 	/* Uncompressed resource  */
 	return read_raw_file_data(&rdesc->wim->in_fd,
 				  rdesc->offset_in_wim + offset,
-				  size, cbs);
+				  size, cbs, NULL);
 }
 
 /* Read the specified range of uncompressed data from the specified blob, which
@@ -660,7 +670,7 @@ read_file_on_disk_prefix(const struct blob_descriptor *blob, u64 size,
 		return WIMLIB_ERR_OPEN;
 	}
 	filedes_init(&fd, raw_fd);
-	ret = read_raw_file_data(&fd, 0, size, cbs);
+	ret = read_raw_file_data(&fd, 0, size, cbs, blob->file_on_disk);
 	filedes_close(&fd);
 	return ret;
 }
@@ -682,7 +692,7 @@ read_staging_file_prefix(const struct blob_descriptor *blob, u64 size,
 		return WIMLIB_ERR_OPEN;
 	}
 	filedes_init(&fd, raw_fd);
-	ret = read_raw_file_data(&fd, 0, size, cbs);
+	ret = read_raw_file_data(&fd, 0, size, cbs, blob->staging_file_name);
 	filedes_close(&fd);
 	return ret;
 }
@@ -932,6 +942,62 @@ hasher_consume_chunk(const void *chunk, size_t size, void *_ctx)
 	return call_consume_chunk(chunk, size, &ctx->cbs);
 }
 
+static int
+report_sha1_mismatch_error(const struct blob_descriptor *blob,
+			   const u8 actual_hash[SHA1_HASH_SIZE])
+{
+	tchar expected_hashstr[SHA1_HASH_SIZE * 2 + 1];
+	tchar actual_hashstr[SHA1_HASH_SIZE * 2 + 1];
+
+	wimlib_assert(blob->blob_location != BLOB_NONEXISTENT);
+	wimlib_assert(blob->blob_location != BLOB_IN_ATTACHED_BUFFER);
+
+	sprint_hash(blob->hash, expected_hashstr);
+	sprint_hash(actual_hash, actual_hashstr);
+
+	if (blob_is_in_file(blob)) {
+		ERROR("A file was concurrently modified!\n"
+		      "        Path: \"%"TS"\"\n"
+		      "        Expected SHA-1: %"TS"\n"
+		      "        Actual SHA-1: %"TS"\n",
+		      blob->file_on_disk, expected_hashstr, actual_hashstr);
+		return WIMLIB_ERR_CONCURRENT_MODIFICATION_DETECTED;
+	} else if (blob->blob_location == BLOB_IN_WIM) {
+		const struct wim_resource_descriptor *rdesc = blob->rdesc;
+		ERROR("A WIM resource is corrupted!\n"
+		      "        WIM file: \"%"TS"\"\n"
+		      "        Blob uncompressed size: %"PRIu64"\n"
+		      "        Resource offset in WIM: %"PRIu64"\n"
+		      "        Resource uncompressed size: %"PRIu64"\n"
+		      "        Resource size in WIM: %"PRIu64"\n"
+		      "        Resource flags: 0x%x%"TS"\n"
+		      "        Resource compression type: %"TS"\n"
+		      "        Resource compression chunk size: %"PRIu32"\n"
+		      "        Expected SHA-1: %"TS"\n"
+		      "        Actual SHA-1: %"TS"\n",
+		      rdesc->wim->filename,
+		      blob->size,
+		      rdesc->offset_in_wim,
+		      rdesc->uncompressed_size,
+		      rdesc->size_in_wim,
+		      (unsigned int)rdesc->flags,
+		      (rdesc->is_pipable ? T(", pipable") : T("")),
+		      wimlib_get_compression_type_string(
+						rdesc->compression_type),
+		      rdesc->chunk_size,
+		      expected_hashstr, actual_hashstr);
+		return WIMLIB_ERR_INVALID_RESOURCE_HASH;
+	} else {
+		ERROR("File data was concurrently modified!\n"
+		      "        Location ID: %d\n"
+		      "        Expected SHA-1: %"TS"\n"
+		      "        Actual SHA-1: %"TS"\n",
+		      (int)blob->blob_location,
+		      expected_hashstr, actual_hashstr);
+		return WIMLIB_ERR_CONCURRENT_MODIFICATION_DETECTED;
+	}
+}
+
 /* Callback for finishing reading a blob while calculating its SHA-1 message
  * digest.  */
 static int
@@ -958,16 +1024,7 @@ hasher_end_blob(struct blob_descriptor *blob, int status, void *_ctx)
 	} else if ((ctx->flags & VERIFY_BLOB_HASHES) &&
 		   unlikely(!hashes_equal(hash, blob->hash)))
 	{
-		if (wimlib_print_errors) {
-			tchar expected_hashstr[SHA1_HASH_SIZE * 2 + 1];
-			tchar actual_hashstr[SHA1_HASH_SIZE * 2 + 1];
-			sprint_hash(blob->hash, expected_hashstr);
-			sprint_hash(hash, actual_hashstr);
-			ERROR("The data is corrupted!\n"
-			      "        (Expected SHA-1=%"TS", got SHA-1=%"TS")",
-			      expected_hashstr, actual_hashstr);
-		}
-		ret = WIMLIB_ERR_INVALID_RESOURCE_HASH;
+		ret = report_sha1_mismatch_error(blob, hash);
 		goto out_next_cb;
 	}
 	ret = 0;

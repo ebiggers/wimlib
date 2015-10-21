@@ -137,10 +137,16 @@ read_winnt_stream_prefix(const struct blob_descriptor *blob, u64 size,
 
 		status = (*func_NtReadFile)(h, NULL, NULL, NULL,
 					    &iosb, buf, count, NULL, NULL);
-		if (!NT_SUCCESS(status)) {
-			winnt_error(status, L"\"%ls\": Error reading data",
-				    printable_path(path));
-			ret = WIMLIB_ERR_READ;
+		if (unlikely(!NT_SUCCESS(status))) {
+			if (status == STATUS_END_OF_FILE) {
+				ERROR("\"%ls\": File was concurrently truncated",
+				      printable_path(path));
+				ret = WIMLIB_ERR_CONCURRENT_MODIFICATION_DETECTED;
+			} else {
+				winnt_error(status, L"\"%ls\": Error reading data",
+					    printable_path(path));
+				ret = WIMLIB_ERR_READ;
+			}
 			break;
 		}
 

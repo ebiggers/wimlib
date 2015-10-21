@@ -1340,17 +1340,6 @@ validate_blob_list(struct list_head *blob_list)
 	}
 }
 
-static inline bool
-blob_is_in_file(const struct blob_descriptor *blob)
-{
-	return blob->blob_location == BLOB_IN_FILE_ON_DISK
-#ifdef __WIN32__
-	    || blob->blob_location == BLOB_IN_WINNT_FILE_ON_DISK
-	    || blob->blob_location == BLOB_WIN32_ENCRYPTED
-#endif
-	   ;
-}
-
 static void
 init_done_with_file_info(struct list_head *blob_list)
 {

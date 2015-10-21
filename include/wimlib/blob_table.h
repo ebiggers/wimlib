@@ -387,6 +387,17 @@ blob_set_is_located_in_attached_buffer(struct blob_descriptor *blob,
 	blob->size = size;
 }
 
+static inline bool
+blob_is_in_file(const struct blob_descriptor *blob)
+{
+	return blob->blob_location == BLOB_IN_FILE_ON_DISK
+#ifdef __WIN32__
+	    || blob->blob_location == BLOB_IN_WINNT_FILE_ON_DISK
+	    || blob->blob_location == BLOB_WIN32_ENCRYPTED
+#endif
+	   ;
+}
+
 extern struct blob_descriptor *
 new_blob_from_data_buffer(const void *buffer, size_t size,
 			  struct blob_table *blob_table);

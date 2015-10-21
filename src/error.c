@@ -342,6 +342,8 @@ static const tchar * const error_strings[] = {
 		    "referenced from multiple places"),
 	[WIMLIB_ERR_DUPLICATE_EXPORTED_IMAGE]
 		= T("The destination WIM already contains one of the source images"),
+	[WIMLIB_ERR_CONCURRENT_MODIFICATION_DETECTED]
+		= T("A file being added to a WIM image was concurrently modified"),
 };
 
 WIMLIBAPI const tchar *

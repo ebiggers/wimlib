@@ -2499,6 +2499,7 @@ enum wimlib_error_code {
 	WIMLIB_ERR_COMPACTION_NOT_POSSIBLE            = 85,
 	WIMLIB_ERR_IMAGE_HAS_MULTIPLE_REFERENCES      = 86,
 	WIMLIB_ERR_DUPLICATE_EXPORTED_IMAGE           = 87,
+	WIMLIB_ERR_CONCURRENT_MODIFICATION_DETECTED   = 88,
 };
 
 
@@ -4474,12 +4475,13 @@ wimlib_update_image(WIMStruct *wim,
  *
  * @return 0 on success; a ::wimlib_error_code value on failure.
  *
+ * @retval ::WIMLIB_ERR_CONCURRENT_MODIFICATION_DETECTED
+ * 	A file that had previously been scanned for inclusion in the WIM was
+ * 	concurrently modified.
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  * 	@p image did not exist in @p wim.
  * @retval ::WIMLIB_ERR_INVALID_RESOURCE_HASH
- * 	A file, stored in another WIM, which needed to be written was corrupt;
- * 	or a file that had previously been scanned for inclusion in the WIM was
- * 	concurrently modified.
+ * 	A file, stored in another WIM, which needed to be written was corrupt.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
  * 	@p path was not a nonempty string, or invalid flags were passed.
  * @retval ::WIMLIB_ERR_OPEN
