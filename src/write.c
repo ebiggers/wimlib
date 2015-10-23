@@ -2950,6 +2950,20 @@ check_resource_offsets(WIMStruct *wim, off_t end_offset)
 	return 0;
 }
 
+static int
+free_blob_if_invalidated(struct blob_descriptor *blob, void *_wim)
+{
+	const WIMStruct *wim = _wim;
+
+	if (!blob->will_be_in_output_wim &&
+	    blob->blob_location == BLOB_IN_WIM && blob->rdesc->wim == wim)
+	{
+		blob_table_unlink(wim->blob_table, blob);
+		free_blob_descriptor(blob);
+	}
+	return 0;
+}
+
 /*
  * Overwrite a WIM, possibly appending new resources to it.
  *
@@ -3065,6 +3079,11 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 						  &blob_table_list, &filter_ctx);
 		if (ret)
 			goto out;
+
+		/* Prevent new files from being deduplicated with existing blobs
+		 * in the WIM that we haven't decided to write.  Such blobs will
+		 * be overwritten during the compaction.  */
+		for_blob_in_table(wim->blob_table, free_blob_if_invalidated, wim);
 
 		if (wim_has_metadata(wim)) {
 			/* Add existing metadata resources to be compacted along
