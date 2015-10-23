@@ -1540,21 +1540,12 @@ write_blob_list(struct list_head *blob_list,
 					       out_ctype, out_chunk_size,
 					       &raw_copy_blobs);
 
-	/* Copy any compressed resources for which the raw data can be reused
-	 * without decompression.  */
-	ret = write_raw_copy_resources(&raw_copy_blobs, ctx.out_fd,
-				       &ctx.progress_data);
-
-	if (ret || num_nonraw_bytes == 0)
-		goto out_destroy_context;
-
-	/* Unless uncompressed output was required, allocate a chunk_compressor
-	 * to do compression.  There are serial and parallel implementations of
-	 * the chunk_compressor interface.  We default to parallel using the
+	/* Unless no data needs to be compressed, allocate a chunk_compressor to
+	 * do compression.  There are serial and parallel implementations of the
+	 * chunk_compressor interface.  We default to parallel using the
 	 * specified number of threads, unless the upper bound on the number
 	 * bytes needing to be compressed is less than a heuristic value.  */
-	if (out_ctype != WIMLIB_COMPRESSION_TYPE_NONE) {
-
+	if (num_nonraw_bytes != 0 && out_ctype != WIMLIB_COMPRESSION_TYPE_NONE) {
 	#ifdef ENABLE_MULTITHREADED_COMPRESSION
 		if (num_nonraw_bytes > max(2000000, out_chunk_size)) {
 			ret = new_parallel_chunk_compressor(out_ctype,
@@ -1582,9 +1573,6 @@ write_blob_list(struct list_head *blob_list,
 	else
 		ctx.progress_data.progress.write_streams.num_threads = 1;
 
-	INIT_LIST_HEAD(&ctx.blobs_being_compressed);
-	INIT_LIST_HEAD(&ctx.blobs_in_solid_resource);
-
 	ret = call_progress(ctx.progress_data.progfunc,
 			    WIMLIB_PROGRESS_MSG_WRITE_STREAMS,
 			    &ctx.progress_data.progress,
@@ -1592,7 +1580,20 @@ write_blob_list(struct list_head *blob_list,
 	if (ret)
 		goto out_destroy_context;
 
+	/* Copy any compressed resources for which the raw data can be reused
+	 * without decompression.  */
+	ret = write_raw_copy_resources(&raw_copy_blobs, ctx.out_fd,
+				       &ctx.progress_data);
+
+	if (ret || num_nonraw_bytes == 0)
+		goto out_destroy_context;
+
+	INIT_LIST_HEAD(&ctx.blobs_being_compressed);
+
 	if (write_resource_flags & WRITE_RESOURCE_FLAG_SOLID) {
+
+		INIT_LIST_HEAD(&ctx.blobs_in_solid_resource);
+
 		ret = begin_write_resource(&ctx, num_nonraw_bytes);
 		if (ret)
 			goto out_destroy_context;
