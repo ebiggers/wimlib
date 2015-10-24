@@ -2369,10 +2369,8 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	if (!(write_flags & WIMLIB_WRITE_FLAG_NO_NEW_BLOBS)) {
 		ret = write_blob_table(wim, image, write_flags,
 				       blob_table_list);
-		if (ret) {
-			free_integrity_table(old_integrity_table);
-			return ret;
-		}
+		if (ret)
+			goto out;
 	}
 
 	/* Write XML data.  */
@@ -2382,10 +2380,8 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	ret = write_wim_xml_data(wim, image, xml_totalbytes,
 				 &wim->out_hdr.xml_data_reshdr,
 				 write_resource_flags);
-	if (ret) {
-		free_integrity_table(old_integrity_table);
-		return ret;
-	}
+	if (ret)
+		goto out;
 
 	/* Write integrity table if needed.  */
 	if ((write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) &&
@@ -2401,10 +2397,8 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 			zero_reshdr(&checkpoint_hdr.integrity_table_reshdr);
 			checkpoint_hdr.flags |= WIM_HDR_FLAG_WRITE_IN_PROGRESS;
 			ret = write_wim_header(&checkpoint_hdr, &wim->out_fd, 0);
-			if (ret) {
-				free_integrity_table(old_integrity_table);
-				return ret;
-			}
+			if (ret)
+				goto out;
 		}
 
 		new_blob_table_end = wim->out_hdr.blob_table_reshdr.offset_in_wim +
@@ -2414,9 +2408,8 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 					    new_blob_table_end,
 					    old_blob_table_end,
 					    old_integrity_table);
-		free_integrity_table(old_integrity_table);
 		if (ret)
-			return ret;
+			goto out;
 	} else {
 		/* No integrity table.  */
 		zero_reshdr(&wim->out_hdr.integrity_table_reshdr);
@@ -2432,13 +2425,14 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	else
 		ret = write_wim_header(&wim->out_hdr, &wim->out_fd, 0);
 	if (ret)
-		return ret;
+		goto out;
 
+	ret = WIMLIB_ERR_WRITE;
 	if (unlikely(write_flags & WIMLIB_WRITE_FLAG_UNSAFE_COMPACT)) {
 		/* Truncate any data the compaction freed up.  */
 		if (ftruncate(wim->out_fd.fd, wim->out_fd.offset)) {
 			ERROR_WITH_ERRNO("Failed to truncate the output WIM file");
-			return WIMLIB_ERR_WRITE;
+			goto out;
 		}
 	}
 
@@ -2448,19 +2442,24 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	 * the system is abruptly terminated when the metadata for the rename
 	 * operation has been written to disk, but the new file data has not.
 	 */
+	ret = WIMLIB_ERR_WRITE;
 	if (write_flags & WIMLIB_WRITE_FLAG_FSYNC) {
 		if (fsync(wim->out_fd.fd)) {
 			ERROR_WITH_ERRNO("Error syncing data to WIM file");
-			return WIMLIB_ERR_WRITE;
+			goto out;
 		}
 	}
 
+	ret = WIMLIB_ERR_WRITE;
 	if (close_wim_writable(wim, write_flags)) {
 		ERROR_WITH_ERRNO("Failed to close the output WIM file");
-		return WIMLIB_ERR_WRITE;
+		goto out;
 	}
 
-	return 0;
+	ret = 0;
+out:
+	free_integrity_table(old_integrity_table);
+	return ret;
 }
 
 #if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
