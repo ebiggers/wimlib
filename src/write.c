@@ -2388,7 +2388,9 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	}
 
 	/* Write integrity table if needed.  */
-	if (write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) {
+	if ((write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) &&
+	    wim->out_hdr.blob_table_reshdr.offset_in_wim != 0)
+	{
 		if (write_flags & WIMLIB_WRITE_FLAG_NO_NEW_BLOBS) {
 			/* The XML data we wrote may have overwritten part of
 			 * the old integrity table, so while calculating the new
