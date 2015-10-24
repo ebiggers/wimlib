@@ -3110,8 +3110,11 @@ overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 		 * this data would be overwritten.  */
 		old_xml_begin = wim->hdr.xml_data_reshdr.offset_in_wim;
 		old_xml_end = old_xml_begin + wim->hdr.xml_data_reshdr.size_in_wim;
-		old_blob_table_end = wim->hdr.blob_table_reshdr.offset_in_wim +
-				     wim->hdr.blob_table_reshdr.size_in_wim;
+		if (wim->hdr.blob_table_reshdr.offset_in_wim == 0)
+			old_blob_table_end = WIM_HEADER_DISK_SIZE;
+		else
+			old_blob_table_end = wim->hdr.blob_table_reshdr.offset_in_wim +
+					     wim->hdr.blob_table_reshdr.size_in_wim;
 		if (wim_has_integrity_table(wim) &&
 		    wim->hdr.integrity_table_reshdr.offset_in_wim < old_xml_end) {
 			WARNING("Didn't expect the integrity table to be "
