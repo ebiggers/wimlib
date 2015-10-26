@@ -517,7 +517,11 @@ ntfs_3g_create_directories(struct wim_dentry *root,
 
 	root->d_inode->i_mft_no = FILE_root;
 
-	ret = ntfs_3g_create_dirs_recursive(root_ni, root, ctx);
+	ret = ntfs_3g_set_metadata(root_ni, root->d_inode, ctx);
+	if (!ret)
+		ret = ntfs_3g_create_empty_attributes(root_ni, root->d_inode, ctx);
+	if (!ret)
+		ret = ntfs_3g_create_dirs_recursive(root_ni, root, ctx);
 
 	if (ntfs_inode_close(root_ni) && !ret) {
 		ERROR_WITH_ERRNO("Error closing root of NTFS volume");
