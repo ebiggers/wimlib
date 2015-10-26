@@ -181,6 +181,17 @@ unix_build_inode_extraction_path(const struct wim_inode *inode,
 	return unix_build_extraction_path(inode_first_extraction_dentry(inode), ctx);
 }
 
+/* Should the specified file be extracted as a directory on UNIX?  We extract
+ * the file as a directory if FILE_ATTRIBUTE_DIRECTORY is set and the file does
+ * not have a symlink or junction reparse point.  It *may* have a different type
+ * of reparse point.  */
+static inline bool
+should_extract_as_directory(const struct wim_inode *inode)
+{
+	return (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) &&
+		!inode_is_symlink(inode);
+}
+
 /* Sets the timestamps on a file being extracted.
  *
  * Either @fd or @path must be specified (not -1 and not NULL, respectively).
@@ -356,7 +367,7 @@ unix_create_if_directory(const struct wim_dentry *dentry,
 	const char *path;
 	struct stat stbuf;
 
-	if (!dentry_is_directory(dentry))
+	if (!should_extract_as_directory(dentry->d_inode))
 		return 0;
 
 	path = unix_build_extraction_path(dentry, ctx);
@@ -391,7 +402,7 @@ unix_extract_if_empty_file(const struct wim_dentry *dentry,
 
 	/* Is this a directory, a symbolic link, or any type of nonempty file?
 	 */
-	if (inode_is_directory(inode) || inode_is_symlink(inode) ||
+	if (should_extract_as_directory(inode) || inode_is_symlink(inode) ||
 	    inode_get_blob_for_unnamed_data_stream_resolved(inode))
 		return 0;
 
@@ -480,7 +491,7 @@ unix_count_dentries(const struct list_head *dentry_list,
 
 		const struct wim_inode *inode = dentry->d_inode;
 
-		if (inode_is_directory(inode))
+		if (should_extract_as_directory(inode))
 			dir_count++;
 		else if ((dentry == inode_first_extraction_dentry(inode)) &&
 			 !inode_is_symlink(inode) &&
@@ -680,7 +691,7 @@ unix_set_dir_metadata(struct list_head *dentry_list, struct unix_apply_ctx *ctx)
 	int ret;
 
 	list_for_each_entry_reverse(dentry, dentry_list, d_extraction_list_node) {
-		if (dentry_is_directory(dentry)) {
+		if (should_extract_as_directory(dentry->d_inode)) {
 			ret = unix_set_metadata(-1, dentry->d_inode, NULL, ctx);
 			if (ret)
 				return ret;
