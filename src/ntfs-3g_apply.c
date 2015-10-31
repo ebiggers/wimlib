@@ -855,16 +855,35 @@ out:
 	return ret;
 }
 
+/* Note: contrary to its documentation, ntfs_attr_pwrite() can return a short
+ * count in non-error cases --- specifically, when writing to a compressed
+ * attribute and the requested count exceeds the size of an NTFS "compression
+ * block".  Therefore, we must continue calling ntfs_attr_pwrite() until all
+ * bytes have been written or a real error has occurred.  */
+static bool
+ntfs_3g_full_pwrite(ntfs_attr *na, u64 offset, size_t size, const u8 *data)
+{
+	while (size) {
+		s64 res = ntfs_attr_pwrite(na, offset, size, data);
+		if (unlikely(res <= 0))
+			return false;
+		wimlib_assert(res <= size);
+		offset += res;
+		size -= res;
+		data += res;
+	}
+	return true;
+}
+
 static int
 ntfs_3g_extract_chunk(const void *chunk, size_t size, void *_ctx)
 {
 	struct ntfs_3g_apply_ctx *ctx = _ctx;
-	s64 res;
 
 	for (unsigned i = 0; i < ctx->num_open_attrs; i++) {
-		res = ntfs_attr_pwrite(ctx->open_attrs[i],
-				       ctx->offset, size, chunk);
-		if (res != size) {
+		if (!ntfs_3g_full_pwrite(ctx->open_attrs[i],
+					 ctx->offset, size, chunk))
+		{
 			ERROR_WITH_ERRNO("Error writing data to NTFS volume");
 			return WIMLIB_ERR_NTFS_3G;
 		}
