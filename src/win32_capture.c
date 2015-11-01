@@ -38,6 +38,7 @@
 #include "wimlib/error.h"
 #include "wimlib/paths.h"
 #include "wimlib/reparse.h"
+#include "wimlib/wof.h"
 
 struct winnt_scan_stats {
 	unsigned long num_get_sd_access_denied;
@@ -1112,6 +1113,55 @@ set_sort_key(struct wim_inode *inode, u64 sort_key)
 	}
 }
 
+/* Special case to better support in-place updates of backing WIM files: in
+ * WIMBOOT mode, if the file is backed by a WIM (perhaps the WIM being updated)
+ * and WOF is not attached to the volume, then capture the file as the
+ * "dereferenced file" rather than as the "pointer file".  Note that this only
+ * requires stream manipulation --- there is no special handling of metadata
+ * such as security descriptors required.  */
+static noinline_for_stack int
+fixup_wim_backed_file(struct wim_inode *inode, struct blob_table *blob_table)
+{
+	struct wim_inode_stream *strm;
+	struct blob_descriptor *blob;
+	u8 _rpdata[REPARSE_DATA_MAX_SIZE] _aligned_attribute(8);
+	struct {
+		struct wof_external_info wof_info;
+		struct wim_provider_rpdata wim_info;
+	} *rpdata = (void *)_rpdata;
+	int ret;
+
+	strm = inode_get_unnamed_stream(inode, STREAM_TYPE_REPARSE_POINT);
+	blob = stream_blob_resolved(strm);
+	if (!blob || blob->size < sizeof(*rpdata))
+		return 0;
+
+	ret = read_blob_into_buf(blob, rpdata);
+	if (ret)
+		return ret;
+
+	if (rpdata->wof_info.version != WOF_CURRENT_VERSION ||
+	    rpdata->wof_info.provider != WOF_PROVIDER_WIM ||
+	    rpdata->wim_info.version != 2)
+		return 0;
+
+	blob = lookup_blob(blob_table, rpdata->wim_info.unnamed_data_stream_hash);
+	if (!blob)
+		return 0;
+
+	/* All okay --- remove the reparse point and redirect the unnamed data
+	 * stream to the "dereferenced" one.  */
+	inode_remove_stream(inode, strm, blob_table);
+	strm = inode_get_unnamed_data_stream(inode);
+	wimlib_assert(strm != NULL);
+	inode_replace_stream_blob(inode, strm, blob, blob_table);
+	inode->i_attributes &= ~(FILE_ATTRIBUTE_REPARSE_POINT |
+				 FILE_ATTRIBUTE_SPARSE_FILE);
+	if (inode->i_attributes == 0)
+		inode->i_attributes = FILE_ATTRIBUTE_NORMAL;
+	return 0;
+}
+
 static noinline_for_stack u32
 get_volume_information(HANDLE h, const wchar_t *full_path,
 		       struct capture_params *params)
@@ -1385,6 +1435,15 @@ retry_open:
 					      params->unhashed_blobs,
 					      file_info.end_of_file,
 					      vol_flags);
+		if (ret)
+			goto out;
+	}
+
+	if (unlikely((params->add_flags & WIMLIB_ADD_FLAG_WIMBOOT) &&
+		     (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
+		     (inode->i_reparse_tag == WIM_IO_REPARSE_TAG_WOF)))
+	{
+		ret = fixup_wim_backed_file(inode, params->blob_table);
 		if (ret)
 			goto out;
 	}
