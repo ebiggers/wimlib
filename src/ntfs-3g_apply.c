@@ -331,6 +331,19 @@ ntfs_3g_restore_reparse_point(ntfs_inode *ni, const struct wim_inode *inode,
 	return 0;
 }
 
+static bool
+ntfs_3g_has_empty_attributes(const struct wim_inode *inode)
+{
+	for (unsigned i = 0; i < inode->i_num_streams; i++) {
+		const struct wim_inode_stream *strm = &inode->i_streams[i];
+
+		if (stream_blob_resolved(strm) == NULL &&
+		    (strm->stream_type == STREAM_TYPE_REPARSE_POINT ||
+		     stream_is_named_data_stream(strm)))
+			return true;
+	}
+	return false;
+}
 
 /*
  * Create empty attributes (named data streams and potentially a reparse point)
@@ -338,13 +351,14 @@ ntfs_3g_restore_reparse_point(ntfs_inode *ni, const struct wim_inode *inode,
  *
  * Since these won't have blob descriptors, they won't show up in the call to
  * extract_blob_list().  Hence the need for the special case.
+ *
+ * Keep this in sync with ntfs_3g_has_empty_attributes()!
  */
 static int
 ntfs_3g_create_empty_attributes(ntfs_inode *ni,
 				const struct wim_inode *inode,
 				struct ntfs_3g_apply_ctx *ctx)
 {
-
 	for (unsigned i = 0; i < inode->i_num_streams; i++) {
 
 		const struct wim_inode_stream *strm = &inode->i_streams[i];
@@ -481,8 +495,6 @@ ntfs_3g_create_dirs_recursive(ntfs_inode *dir_ni, struct wim_dentry *dir,
 		if (!ret)
 			ret = ntfs_3g_set_metadata(ni, child->d_inode, ctx);
 		if (!ret)
-			ret = ntfs_3g_create_empty_attributes(ni, child->d_inode, ctx);
-		if (!ret)
 			ret = ntfs_3g_create_dirs_recursive(ni, child, ctx);
 
 		if (ntfs_inode_close_in_dir(ni, dir_ni) && !ret) {
@@ -519,8 +531,6 @@ ntfs_3g_create_directories(struct wim_dentry *root,
 
 	ret = ntfs_3g_set_metadata(root_ni, root->d_inode, ctx);
 	if (!ret)
-		ret = ntfs_3g_create_empty_attributes(root_ni, root->d_inode, ctx);
-	if (!ret)
 		ret = ntfs_3g_create_dirs_recursive(root_ni, root, ctx);
 
 	if (ntfs_inode_close(root_ni) && !ret) {
@@ -530,18 +540,44 @@ ntfs_3g_create_directories(struct wim_dentry *root,
 	if (ret)
 		return ret;
 
-	/* Set the DOS name of any directory that has one.  */
+	/* Set the DOS name of any directory that has one.  In addition, create
+	 * empty attributes for directories that have them.  Note that creating
+	 * an empty reparse point attribute must happen *after* setting the
+	 * DOS name in order to work around a case where
+	 * ntfs_set_ntfs_dos_name() fails with EOPNOTSUPP.  */
 	list_for_each_entry(dentry, dentry_list, d_extraction_list_node) {
-		if (!(dentry->d_inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY))
+		const struct wim_inode *inode = dentry->d_inode;
+
+		if (!(inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY))
 			continue;
-		if (!dentry_has_short_name(dentry))
-			continue;
-		ret = ntfs_3g_restore_dos_name(NULL, NULL, dentry, ctx->vol);
-		if (ret)
-			return ret;
-		ret = report_file_created(&ctx->common);
-		if (ret)
-			return ret;
+		if (dentry_has_short_name(dentry)) {
+			ret = ntfs_3g_restore_dos_name(NULL, NULL, dentry,
+						       ctx->vol);
+			if (ret)
+				return ret;
+			ret = report_file_created(&ctx->common);
+			if (ret)
+				return ret;
+		}
+		if (ntfs_3g_has_empty_attributes(inode)) {
+			ntfs_inode *ni;
+
+			ret = WIMLIB_ERR_NTFS_3G;
+			ni = ntfs_inode_open(ctx->vol, inode->i_mft_no);
+			if (ni) {
+				ret = ntfs_3g_create_empty_attributes(ni, inode,
+								      ctx);
+				if (ntfs_inode_close(ni) && !ret)
+					ret = WIMLIB_ERR_NTFS_3G;
+			}
+			if (ret) {
+				ERROR_WITH_ERRNO("Failed to create empty "
+						 "attributes of directory "
+						 "\"%s\" in NTFS volume",
+						 dentry_full_path(dentry));
+				return ret;
+			}
+		}
 	}
 	return 0;
 }
