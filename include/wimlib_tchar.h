@@ -50,6 +50,7 @@ typedef wchar_t tchar;
 #  define tstrtol	wcstol
 #  define tstrtod	wcstod
 #  define tstrtoul	wcstoul
+#  define tstrtoull	wcstoull
 #  define tunlink	_wunlink
 #  define tstrerror	_wcserror
 #  define taccess	_waccess
@@ -111,6 +112,7 @@ typedef char tchar;
 #  define tstrtol	strtol
 #  define tstrtod	strtod
 #  define tstrtoul	strtoul
+#  define tstrtoull	strtoull
 #  define tmkdir	mkdir
 #  define tstrdup	strdup
 #  define ttempnam	tempnam
