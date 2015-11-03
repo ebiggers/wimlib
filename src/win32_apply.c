@@ -1099,6 +1099,7 @@ adjust_compression_attribute(HANDLE h, const struct wim_dentry *dentry,
 	FILE_BASIC_INFORMATION info;
 	NTSTATUS status;
 	USHORT compression_state;
+	DWORD bytes_returned;
 
 	/* Get current attributes  */
 	status = (*func_NtQueryInformationFile)(h, &ctx->iosb,
@@ -1118,20 +1119,14 @@ adjust_compression_attribute(HANDLE h, const struct wim_dentry *dentry,
 	else
 		compression_state = COMPRESSION_FORMAT_NONE;
 
-	status = (*func_NtFsControlFile)(h,
-					 NULL,
-					 NULL,
-					 NULL,
-					 &ctx->iosb,
-					 FSCTL_SET_COMPRESSION,
-					 &compression_state,
-					 sizeof(USHORT),
-					 NULL,
-					 0);
-	if (NT_SUCCESS(status))
+	/* Note: don't use NtFsControlFile() here unless prepared to handle
+	 * STATUS_PENDING.  */
+	if (DeviceIoControl(h, FSCTL_SET_COMPRESSION,
+			    &compression_state, sizeof(USHORT), NULL, 0,
+			    &bytes_returned, NULL))
 		return 0;
 
-	winnt_error(status, L"Can't %s compression attribute on \"%ls\"",
+	win32_error(GetLastError(), L"Can't %s compression attribute on \"%ls\"",
 		    (compressed ? "set" : "clear"), current_path(ctx));
 	return WIMLIB_ERR_SET_ATTRIBUTES;
 }
