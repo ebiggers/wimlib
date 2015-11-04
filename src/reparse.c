@@ -30,19 +30,25 @@
 #include "wimlib/endianness.h"
 #include "wimlib/encoding.h"
 #include "wimlib/error.h"
+#include "wimlib/guid.h"
 #include "wimlib/inode.h"
 #include "wimlib/reparse.h"
 #include "wimlib/resource.h"
 
-/* Reconstruct the header of a reparse point buffer.  This is necessary because
+/*
+ * Reconstruct the header of a reparse point buffer.  This is necessary because
  * only reparse data is stored in WIM files.  The reparse tag is instead stored
  * in the on-disk WIM dentry, and the reparse data length is equal to the size
- * of the blob in which the reparse data was stored.  */
+ * of the blob in which the reparse data was stored, minus the size of a GUID
+ * (16 bytes) if the reparse tag does not have the "Microsoft" bit set.
+ */
 void
 complete_reparse_point(struct reparse_buffer_disk *rpbuf,
 		       const struct wim_inode *inode, u16 blob_size)
 {
 	rpbuf->rptag = cpu_to_le32(inode->i_reparse_tag);
+	if (blob_size >= GUID_SIZE && !(inode->i_reparse_tag & 0x80000000))
+		blob_size -= GUID_SIZE;
 	rpbuf->rpdatalen = cpu_to_le16(blob_size);
 	rpbuf->rpreserved = cpu_to_le16(inode->i_rp_reserved);
 }
