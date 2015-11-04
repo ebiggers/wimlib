@@ -322,9 +322,18 @@ ntfs_3g_restore_reparse_point(ntfs_inode *ni, const struct wim_inode *inode,
 	if (ntfs_set_ntfs_reparse_data(ni, (const char *)&ctx->rpbuf,
 				       REPARSE_DATA_OFFSET + blob_size, 0))
 	{
+		int err = errno;
 		ERROR_WITH_ERRNO("Failed to set reparse data on \"%s\"",
 				 dentry_full_path(
 					inode_first_extraction_dentry(inode)));
+		if (err == EINVAL && !(inode->i_reparse_tag & 0x80000000)) {
+			WARNING("This reparse point had a non-Microsoft reparse "
+				"tag.  The preceding error may have been caused "
+				"by a known bug in libntfs-3g where it does not "
+				"correctly validate non-Microsoft reparse "
+				"points.  This bug may be fixed in the 2016 "
+				"release of libntfs-3g.");
+		}
 		return WIMLIB_ERR_SET_REPARSE_DATA;
 	}
 
