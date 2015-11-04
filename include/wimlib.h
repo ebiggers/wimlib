@@ -1721,6 +1721,11 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  *
  * Note: ::WIMLIB_ADD_FLAG_WIMBOOT does something different from, and
  * independent from, ::WIMLIB_ADD_FLAG_BOOT.
+ *
+ * Since wimlib v1.8.3, ::WIMLIB_ADD_FLAG_WIMBOOT also causes offline WIM-backed
+ * files to be added as the "real" files rather than as their reparse points,
+ * provided that their data is already present in the WIM.  This feature can be
+ * useful when updating a backing WIM file in an "offline" state.
  */
 #define WIMLIB_ADD_FLAG_WIMBOOT			0x00001000
 
