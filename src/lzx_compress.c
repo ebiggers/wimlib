@@ -587,13 +587,21 @@ lzx_add_bits(struct lzx_output_bitstream *os, u32 bits, unsigned num_bits)
 static inline void
 lzx_flush_bits(struct lzx_output_bitstream *os, unsigned max_num_bits)
 {
+	/* Masking the number of bits to shift is only needed to avoid undefined
+	 * behavior; we don't actually care about the results of bad shifts.  On
+	 * x86, the explicit masking generates no extra code.  */
+	const u32 shift_mask = 8 * sizeof(os->bitbuf) - 1;
+
 	if (os->end - os->next < 6)
 		return;
-	put_unaligned_u16_le(os->bitbuf >> (os->bitcount - 16), os->next + 0);
+	put_unaligned_u16_le(os->bitbuf >> ((os->bitcount - 16) &
+					    shift_mask), os->next + 0);
 	if (max_num_bits > 16)
-		put_unaligned_u16_le(os->bitbuf >> (os->bitcount - 32), os->next + 2);
+		put_unaligned_u16_le(os->bitbuf >> ((os->bitcount - 32) &
+						shift_mask), os->next + 2);
 	if (max_num_bits > 32)
-		put_unaligned_u16_le(os->bitbuf >> (os->bitcount - 48), os->next + 4);
+		put_unaligned_u16_le(os->bitbuf >> ((os->bitcount - 48) &
+						shift_mask), os->next + 4);
 	os->next += (os->bitcount >> 4) << 1;
 	os->bitcount &= 15;
 }
