@@ -331,15 +331,6 @@ lzx_lru_queue_push(struct lzx_lru_queue queue, u32 offset)
 	};
 }
 
-/* Pop a match offset off the front (most recently used) end of the queue.  */
-static inline u32
-lzx_lru_queue_pop(struct lzx_lru_queue *queue_p)
-{
-	u32 offset = queue_p->R & LZX_QUEUE64_OFFSET_MASK;
-	queue_p->R >>= LZX_QUEUE64_OFFSET_SHIFT;
-	return offset;
-}
-
 /* Swap a match offset to the front of the queue.  */
 static inline struct lzx_lru_queue
 lzx_lru_queue_swap(struct lzx_lru_queue queue, unsigned idx)
