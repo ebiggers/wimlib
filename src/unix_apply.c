@@ -156,7 +156,9 @@ unix_build_extraction_path(const struct wim_dentry *dentry,
 	d = dentry;
 	do {
 		p -= d->d_extraction_name_nchars;
-		memcpy(p, d->d_extraction_name, d->d_extraction_name_nchars);
+		if (d->d_extraction_name_nchars)
+			memcpy(p, d->d_extraction_name,
+			       d->d_extraction_name_nchars);
 		*--p = '/';
 		d = d->d_parent;
 	} while (!dentry_is_root(d) && will_extract_dentry(d));

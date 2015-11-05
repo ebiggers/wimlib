@@ -901,7 +901,9 @@ build_extraction_path(const struct wim_dentry *dentry,
 	     d = d->d_parent)
 	{
 		p -= d->d_extraction_name_nchars;
-		wmemcpy(p, d->d_extraction_name, d->d_extraction_name_nchars);
+		if (d->d_extraction_name_nchars)
+			wmemcpy(p, d->d_extraction_name,
+				d->d_extraction_name_nchars);
 		*--p = '\\';
 	}
 	/* No leading slash  */

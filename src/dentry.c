@@ -504,7 +504,8 @@ calculate_dentry_full_path(struct wim_dentry *dentry)
 	d = dentry;
 	do {
 		p -= d->d_name_nbytes / sizeof(utf16lechar);
-		memcpy(p, d->d_name, d->d_name_nbytes);
+		if (d->d_name_nbytes)
+			memcpy(p, d->d_name, d->d_name_nbytes);
 		*--p = cpu_to_le16(WIM_PATH_SEPARATOR);
 		d = d->d_parent;  /* assumes d == d->d_parent for root  */
 	} while (!dentry_is_root(d));
