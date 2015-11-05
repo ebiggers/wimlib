@@ -55,39 +55,17 @@ typedef struct {
 #define wimlib_SE_RM_CONTROL_VALID		0x4000
 #define wimlib_SE_SELF_RELATIVE			0x8000
 
-/* Header of a Windows NT access control entry  */
+/* Windows NT security identifier (user or group)  */
 typedef struct {
-	/* Type of ACE  */
-	u8 type;
 
-	/* Bitwise OR of inherit ACE flags  */
-	u8 flags;
+	u8  revision;
+	u8  sub_authority_count;
 
-	/* Size of the access control entry, including this header  */
-	le16 size;
-} _packed_attribute wimlib_ACE_HEADER;
+	/* Identifies the authority that issued the SID  */
+	u8  identifier_authority[6];
 
-/* Windows NT access control entry to grant rights to a user or group  */
-typedef struct {
-	wimlib_ACE_HEADER hdr;
-	le32 mask;
-	le32 sid_start;
-} _packed_attribute wimlib_ACCESS_ALLOWED_ACE;
-
-/* Windows NT access control entry to deny rights to a user or group  */
-typedef struct {
-	wimlib_ACE_HEADER hdr;
-	le32 mask;
-	le32 sid_start;
-} _packed_attribute wimlib_ACCESS_DENIED_ACE;
-
-/* Windows NT access control entry to audit access to the object  */
-typedef struct {
-	wimlib_ACE_HEADER hdr;
-	le32 mask;
-	le32 sid_start;
-} _packed_attribute wimlib_SYSTEM_AUDIT_ACE;
-
+	le32 sub_authority[];
+} _packed_attribute wimlib_SID;
 
 /* Header of a Windows NT access control list  */
 typedef struct {
@@ -108,16 +86,42 @@ typedef struct {
 	le16 sbz2;
 } _packed_attribute wimlib_ACL;
 
-/* Windows NT security identifier (user or group)  */
+#define wimlib_ACCESS_ALLOWED_ACE_TYPE		0
+#define wimlib_ACCESS_DENIED_ACE_TYPE		1
+#define wimlib_SYSTEM_AUDIT_ACE_TYPE		2
+
+/* Header of a Windows NT access control entry  */
 typedef struct {
+	/* Type of ACE  */
+	u8 type;
 
-	u8  revision;
-	u8  sub_authority_count;
+	/* Bitwise OR of inherit ACE flags  */
+	u8 flags;
 
-	/* Identifies the authority that issued the SID  */
-	u8  identifier_authority[6];
+	/* Size of the access control entry, including this header  */
+	le16 size;
+} _packed_attribute wimlib_ACE_HEADER;
 
-	le32 sub_authority[];
-} _packed_attribute wimlib_SID;
+/* Windows NT access control entry to grant rights to a user or group  */
+typedef struct {
+	wimlib_ACE_HEADER hdr;
+	le32 mask;
+	wimlib_SID sid;
+} _packed_attribute wimlib_ACCESS_ALLOWED_ACE;
+
+/* Windows NT access control entry to deny rights to a user or group  */
+typedef struct {
+	wimlib_ACE_HEADER hdr;
+	le32 mask;
+	wimlib_SID sid;
+} _packed_attribute wimlib_ACCESS_DENIED_ACE;
+
+/* Windows NT access control entry to audit access to the object  */
+typedef struct {
+	wimlib_ACE_HEADER hdr;
+	le32 mask;
+	wimlib_SID sid;
+} _packed_attribute wimlib_SYSTEM_AUDIT_ACE;
+
 
 #endif
