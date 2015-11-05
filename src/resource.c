@@ -234,34 +234,33 @@ read_compressed_wim_resource(const struct wim_resource_descriptor * const rdesc,
 		 * to initialize the chunk_offsets array.  */
 
 		u64 first_chunk_entry_to_read;
-		u64 last_chunk_entry_to_read;
+		u64 num_chunk_entries_to_read;
 
 		if (alt_chunk_table) {
 			/* The alternate chunk table contains chunk sizes, not
 			 * offsets, so we always must read all preceding entries
 			 * in order to determine offsets.  */
 			first_chunk_entry_to_read = 0;
-			last_chunk_entry_to_read = last_needed_chunk;
+			num_chunk_entries_to_read = last_needed_chunk + 1;
 		} else {
-			/* Here we must account for the fact that the first
-			 * chunk has no explicit chunk table entry.  */
 
-			if (read_start_chunk == 0)
+			num_chunk_entries_to_read = last_needed_chunk - read_start_chunk + 1;
+
+			/* The first chunk has no explicit chunk table entry.  */
+			if (read_start_chunk == 0) {
+				num_chunk_entries_to_read--;
 				first_chunk_entry_to_read = 0;
-			else
+			} else {
 				first_chunk_entry_to_read = read_start_chunk - 1;
+			}
 
-			if (last_needed_chunk == 0)
-				last_chunk_entry_to_read = 0;
-			else
-				last_chunk_entry_to_read = last_needed_chunk - 1;
-
+			/* Unless we're reading the final chunk of the resource,
+			 * we need the offset of the chunk following the last
+			 * needed chunk so that the compressed size of the last
+			 * needed chunk can be computed.  */
 			if (last_needed_chunk < num_chunks - 1)
-				last_chunk_entry_to_read++;
+				num_chunk_entries_to_read++;
 		}
-
-		const u64 num_chunk_entries_to_read =
-			last_chunk_entry_to_read - first_chunk_entry_to_read + 1;
 
 		const u64 chunk_offsets_alloc_size =
 			max(num_chunk_entries_to_read,
