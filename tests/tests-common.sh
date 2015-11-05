@@ -38,22 +38,22 @@ wimlib_imagex()
 
 wimappend()
 {
-	wimlib_imagex append "$@" > null
+	wimlib_imagex append "$@" > /dev/null
 }
 
 wimapply()
 {
-	wimlib_imagex apply "$@" > null
+	wimlib_imagex apply "$@" > /dev/null
 }
 
 wimcapture()
 {
-	wimlib_imagex capture "$@" > null
+	wimlib_imagex capture "$@" > /dev/null
 }
 
 wimdelete()
 {
-	wimlib_imagex delete "$@" > null
+	wimlib_imagex delete "$@" > /dev/null
 }
 
 wimdir()
@@ -63,12 +63,12 @@ wimdir()
 
 wimexport()
 {
-	wimlib_imagex export "$@" > null
+	wimlib_imagex export "$@" > /dev/null
 }
 
 wimextract()
 {
-	wimlib_imagex extract "$@" > null
+	wimlib_imagex extract "$@" > /dev/null
 }
 
 wiminfo()
@@ -78,42 +78,42 @@ wiminfo()
 
 wimjoin()
 {
-	wimlib_imagex join "$@" > null
+	wimlib_imagex join "$@" > /dev/null
 }
 
 wimmount()
 {
-	wimlib_imagex mount "$@" > null
+	wimlib_imagex mount "$@" > /dev/null
 }
 
 wimmountrw()
 {
-	wimlib_imagex mountrw "$@" > null
+	wimlib_imagex mountrw "$@" > /dev/null
 }
 
 wimoptimize()
 {
-	wimlib_imagex optimize "$@" > null
+	wimlib_imagex optimize "$@" > /dev/null
 }
 
 wimsplit()
 {
-	wimlib_imagex split "$@" > null
+	wimlib_imagex split "$@" > /dev/null
 }
 
 wimunmount()
 {
-	wimlib_imagex unmount "$@" > null
+	wimlib_imagex unmount "$@" > /dev/null
 }
 
 wimupdate()
 {
-	wimlib_imagex update "$@" > null
+	wimlib_imagex update "$@" > /dev/null
 }
 
 wimverify()
 {
-	wimlib_imagex verify "$@" > null
+	wimlib_imagex verify "$@" > /dev/null
 }
 
 wim_ctype()
