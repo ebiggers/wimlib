@@ -911,23 +911,30 @@ lzx_write_sequences(struct lzx_output_bitstream *os, int block_type,
 					unsigned lit1 = block_data[1];
 					unsigned lit2 = block_data[2];
 					unsigned lit3 = block_data[3];
-					lzx_add_bits(os, codes->codewords.main[lit0], codes->lens.main[lit0]);
-					lzx_add_bits(os, codes->codewords.main[lit1], codes->lens.main[lit1]);
-					lzx_add_bits(os, codes->codewords.main[lit2], codes->lens.main[lit2]);
-					lzx_add_bits(os, codes->codewords.main[lit3], codes->lens.main[lit3]);
+					lzx_add_bits(os, codes->codewords.main[lit0],
+						     codes->lens.main[lit0]);
+					lzx_add_bits(os, codes->codewords.main[lit1],
+						     codes->lens.main[lit1]);
+					lzx_add_bits(os, codes->codewords.main[lit2],
+						     codes->lens.main[lit2]);
+					lzx_add_bits(os, codes->codewords.main[lit3],
+						     codes->lens.main[lit3]);
 					lzx_flush_bits(os, 4 * MAIN_CODEWORD_LIMIT);
 					block_data += 4;
 					litrunlen -= 4;
 				}
 				if (litrunlen--) {
 					unsigned lit = *block_data++;
-					lzx_add_bits(os, codes->codewords.main[lit], codes->lens.main[lit]);
+					lzx_add_bits(os, codes->codewords.main[lit],
+						     codes->lens.main[lit]);
 					if (litrunlen--) {
 						unsigned lit = *block_data++;
-						lzx_add_bits(os, codes->codewords.main[lit], codes->lens.main[lit]);
+						lzx_add_bits(os, codes->codewords.main[lit],
+							     codes->lens.main[lit]);
 						if (litrunlen--) {
 							unsigned lit = *block_data++;
-							lzx_add_bits(os, codes->codewords.main[lit], codes->lens.main[lit]);
+							lzx_add_bits(os, codes->codewords.main[lit],
+								     codes->lens.main[lit]);
 							lzx_flush_bits(os, 3 * MAIN_CODEWORD_LIMIT);
 						} else {
 							lzx_flush_bits(os, 2 * MAIN_CODEWORD_LIMIT);
@@ -940,7 +947,8 @@ lzx_write_sequences(struct lzx_output_bitstream *os, int block_type,
 				/* 32-bit: write 1 literal at a time.  */
 				do {
 					unsigned lit = *block_data++;
-					lzx_add_bits(os, codes->codewords.main[lit], codes->lens.main[lit]);
+					lzx_add_bits(os, codes->codewords.main[lit],
+						     codes->lens.main[lit]);
 					lzx_flush_bits(os, MAIN_CODEWORD_LIMIT);
 				} while (--litrunlen);
 			}
@@ -980,8 +988,10 @@ lzx_write_sequences(struct lzx_output_bitstream *os, int block_type,
 		/* If needed, output the length symbol for the match.  */
 
 		if (adjusted_length >= LZX_NUM_PRIMARY_LENS) {
-			lzx_add_bits(os, codes->codewords.len[adjusted_length - LZX_NUM_PRIMARY_LENS],
-				     codes->lens.len[adjusted_length - LZX_NUM_PRIMARY_LENS]);
+			lzx_add_bits(os, codes->codewords.len[adjusted_length -
+							      LZX_NUM_PRIMARY_LENS],
+				     codes->lens.len[adjusted_length -
+						     LZX_NUM_PRIMARY_LENS]);
 			if (!CAN_BUFFER(MAX_MATCH_BITS))
 				lzx_flush_bits(os, LENGTH_CODEWORD_LIMIT);
 		}
@@ -999,8 +1009,10 @@ lzx_write_sequences(struct lzx_output_bitstream *os, int block_type,
 			if (!CAN_BUFFER(MAX_MATCH_BITS))
 				lzx_flush_bits(os, 14);
 
-			lzx_add_bits(os, codes->codewords.aligned[adjusted_offset & LZX_ALIGNED_OFFSET_BITMASK],
-				     codes->lens.aligned[adjusted_offset & LZX_ALIGNED_OFFSET_BITMASK]);
+			lzx_add_bits(os, codes->codewords.aligned[adjusted_offset &
+								  LZX_ALIGNED_OFFSET_BITMASK],
+				     codes->lens.aligned[adjusted_offset &
+							 LZX_ALIGNED_OFFSET_BITMASK]);
 			if (!CAN_BUFFER(MAX_MATCH_BITS))
 				lzx_flush_bits(os, ALIGNED_CODEWORD_LIMIT);
 		} else {
@@ -1637,13 +1649,15 @@ lzx_find_min_cost_path(struct lzx_compressor * const restrict c,
 static void
 lzx_compute_match_costs(struct lzx_compressor *c)
 {
-	unsigned num_offset_slots = (c->num_main_syms - LZX_NUM_CHARS) / LZX_NUM_LEN_HEADERS;
+	unsigned num_offset_slots = (c->num_main_syms - LZX_NUM_CHARS) /
+					LZX_NUM_LEN_HEADERS;
 	struct lzx_costs *costs = &c->costs;
 
 	for (unsigned offset_slot = 0; offset_slot < num_offset_slots; offset_slot++) {
 
 		u32 extra_cost = (u32)lzx_extra_offset_bits[offset_slot] * LZX_BIT_COST;
-		unsigned main_symbol = LZX_NUM_CHARS + (offset_slot * LZX_NUM_LEN_HEADERS);
+		unsigned main_symbol = LZX_NUM_CHARS + (offset_slot *
+							LZX_NUM_LEN_HEADERS);
 		unsigned i;
 
 	#if LZX_CONSIDER_ALIGNED_COSTS
@@ -1821,7 +1835,9 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 			if (unlikely(max_len > in_end - in_next)) {
 				max_len = in_end - in_next;
 				nice_len = min(max_len, nice_len);
-				if (unlikely(max_len < BT_MATCHFINDER_REQUIRED_NBYTES)) {
+				if (unlikely(max_len <
+					     BT_MATCHFINDER_REQUIRED_NBYTES))
+				{
 					in_next++;
 					cache_ptr->length = 0;
 					cache_ptr++;
@@ -1830,7 +1846,8 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 			}
 
 			/* Check for matches.  */
-			lz_matchptr = CALL_BT_MF(is_16_bit, c, bt_matchfinder_get_matches,
+			lz_matchptr = CALL_BT_MF(is_16_bit, c,
+						 bt_matchfinder_get_matches,
 						 in_begin,
 						 in_next - in_begin,
 						 max_len,
@@ -1861,14 +1878,17 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 					if (unlikely(max_len > in_end - in_next)) {
 						max_len = in_end - in_next;
 						nice_len = min(max_len, nice_len);
-						if (unlikely(max_len < BT_MATCHFINDER_REQUIRED_NBYTES)) {
+						if (unlikely(max_len <
+							     BT_MATCHFINDER_REQUIRED_NBYTES))
+						{
 							in_next++;
 							cache_ptr->length = 0;
 							cache_ptr++;
 							continue;
 						}
 					}
-					CALL_BT_MF(is_16_bit, c, bt_matchfinder_skip_position,
+					CALL_BT_MF(is_16_bit, c,
+						   bt_matchfinder_skip_position,
 						   in_begin,
 						   in_next - in_begin,
 						   max_len,
@@ -2027,7 +2047,8 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os,
 
 			/* Find the longest match at the current position.  */
 
-			cur_len = CALL_HC_MF(is_16_bit, c, hc_matchfinder_longest_match,
+			cur_len = CALL_HC_MF(is_16_bit, c,
+					     hc_matchfinder_longest_match,
 					     in_begin,
 					     in_next - in_begin,
 					     2,
@@ -2093,7 +2114,8 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os,
 				nice_len = min(max_len, nice_len);
 			}
 
-			next_len = CALL_HC_MF(is_16_bit, c, hc_matchfinder_longest_match,
+			next_len = CALL_HC_MF(is_16_bit, c,
+					      hc_matchfinder_longest_match,
 					      in_begin,
 					      in_next - in_begin,
 					      cur_len - 2,
@@ -2153,7 +2175,8 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os,
 			lzx_record_match(c, cur_len, cur_offset_data,
 					 recent_offsets, is_16_bit,
 					 &litrunlen, &next_seq);
-			in_next = CALL_HC_MF(is_16_bit, c, hc_matchfinder_skip_positions,
+			in_next = CALL_HC_MF(is_16_bit, c,
+					     hc_matchfinder_skip_positions,
 					     in_begin,
 					     in_next - in_begin,
 					     in_end - in_begin,
