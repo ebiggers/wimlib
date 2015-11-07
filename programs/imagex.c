@@ -2122,11 +2122,21 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		ret = wimlib_set_output_chunk_size(wim, chunk_size);
 		if (ret)
 			goto out_free_wim;
-	} else if ((add_flags & WIMLIB_ADD_FLAG_WIMBOOT) &&
-		   compression_type == WIMLIB_COMPRESSION_TYPE_XPRESS) {
-		ret = wimlib_set_output_chunk_size(wim, 4096);
-		if (ret)
-			goto out_free_wim;
+	} else if ((add_flags & WIMLIB_ADD_FLAG_WIMBOOT)) {
+
+		int ctype = compression_type;
+
+		if (cmd == CMD_APPEND) {
+			struct wimlib_wim_info info;
+			wimlib_get_wim_info(wim, &info);
+			ctype = info.compression_type;
+		}
+
+		if (ctype == WIMLIB_COMPRESSION_TYPE_XPRESS) {
+			ret = wimlib_set_output_chunk_size(wim, 4096);
+			if (ret)
+				goto out_free_wim;
+		}
 	}
 	if (solid_ctype != WIMLIB_COMPRESSION_TYPE_INVALID) {
 		ret = wimlib_set_output_pack_compression_type(wim, solid_ctype);
