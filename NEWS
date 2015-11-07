@@ -21,7 +21,14 @@ Version 1.8.3-BETA:
 	Improved performance of wimlib_update_image() by delaying the update to
 	the WIM's XML document until a write is requested.
 
-	On Windows, the target of an extraction may now be a reparse point.
+	On Windows, the target of an extraction may now be a reparse point
+	(which will be dereferenced).
+
+	On Windows, wimlib now correctly restores non-Microsoft reparse points.
+	However, this remains broken in NTFS-3g mode due to a libntfs-3g bug.
+
+	On Windows, wimlib now has improved performance when archiving files
+	from a filesystem backed by a WIM (a "WIMBoot" setup).
 
 	Several improvements to System Compression (compact mode) support:
 
@@ -33,6 +40,8 @@ Version 1.8.3-BETA:
 
 		For compatibility with the Windows bootloader, the requested
 		compression format now is overridden on certain files.
+
+	Other minor bugfixes.
 
 Version 1.8.2:
 	This release primarily contains various minor bug fixes and
