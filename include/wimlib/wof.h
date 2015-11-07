@@ -364,6 +364,8 @@ struct file_provider_external_info {
  */
 #define FSCTL_GET_EXTERNAL_BACKING 0x90310
 
+#define STATUS_OBJECT_NOT_EXTERNALLY_BACKED	0xC000046D
+
 /*****************************************************************************
  *
  * --- FSCTL_DELETE_EXTERNAL_BACKING ---

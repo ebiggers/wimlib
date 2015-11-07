@@ -40,9 +40,14 @@
 #include "wimlib/reparse.h"
 #include "wimlib/wof.h"
 
-struct winnt_scan_stats {
+struct winnt_scan_ctx {
+	u32 vol_flags;
 	unsigned long num_get_sd_access_denied;
 	unsigned long num_get_sacl_priv_notheld;
+
+	/* True if WOF is definitely not attached to the volume being scanned;
+	 * false if it may be  */
+	bool wof_not_attached;
 };
 
 static inline const wchar_t *
@@ -271,7 +276,7 @@ winnt_get_short_name(HANDLE h, struct wim_dentry *dentry)
 static noinline_for_stack NTSTATUS
 winnt_get_security_descriptor(HANDLE h, struct wim_inode *inode,
 			      struct wim_sd_set *sd_set,
-			      struct winnt_scan_stats *stats, int add_flags)
+			      struct winnt_scan_ctx *ctx, int add_flags)
 {
 	SECURITY_INFORMATION requestedInformation;
 	u8 _buf[4096] _aligned_attribute(8);
@@ -357,7 +362,7 @@ winnt_get_security_descriptor(HANDLE h, struct wim_inode *inode,
 			}
 			if (requestedInformation & SACL_SECURITY_INFORMATION) {
 				/* Try again without the SACL.  */
-				stats->num_get_sacl_priv_notheld++;
+				ctx->num_get_sacl_priv_notheld++;
 				requestedInformation &= ~(SACL_SECURITY_INFORMATION |
 							  LABEL_SECURITY_INFORMATION |
 							  BACKUP_SECURITY_INFORMATION);
@@ -365,7 +370,7 @@ winnt_get_security_descriptor(HANDLE h, struct wim_inode *inode,
 			}
 			/* Fake success (useful when capturing as
 			 * non-Administrator).  */
-			stats->num_get_sd_access_denied++;
+			ctx->num_get_sd_access_denied++;
 			status = STATUS_SUCCESS;
 			goto out_free_buf;
 		}
@@ -390,8 +395,7 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				  const wchar_t *filename,
 				  size_t filename_nchars,
 				  struct capture_params *params,
-				  struct winnt_scan_stats *stats,
-				  u32 vol_flags);
+				  struct winnt_scan_ctx *ctx);
 
 static int
 winnt_recurse_directory(HANDLE h,
@@ -399,8 +403,7 @@ winnt_recurse_directory(HANDLE h,
 			size_t full_path_nchars,
 			struct wim_dentry *parent,
 			struct capture_params *params,
-			struct winnt_scan_stats *stats,
-			u32 vol_flags)
+			struct winnt_scan_ctx *ctx)
 {
 	void *buf;
 	const size_t bufsize = 8192;
@@ -449,8 +452,7 @@ winnt_recurse_directory(HANDLE h,
 							filename,
 							info->FileNameLength / 2,
 							params,
-							stats,
-							vol_flags);
+							ctx);
 
 				full_path[full_path_nchars] = L'\0';
 
@@ -1113,52 +1115,155 @@ set_sort_key(struct wim_inode *inode, u64 sort_key)
 	}
 }
 
-/* Special case to better support in-place updates of backing WIM files: in
- * WIMBOOT mode, if the file is backed by a WIM (perhaps the WIM being updated)
- * and WOF is not attached to the volume, then capture the file as the
- * "dereferenced file" rather than as the "pointer file".  Note that this only
- * requires stream manipulation --- there is no special handling of metadata
- * such as security descriptors required.  */
-static noinline_for_stack int
-fixup_wim_backed_file(struct wim_inode *inode, struct blob_table *blob_table)
+static inline bool
+should_try_to_use_wimboot_hash(const struct wim_inode *inode,
+			       const struct winnt_scan_ctx *ctx,
+			       const struct capture_params *params)
 {
+	/* Directories and encrypted files aren't valid for external backing. */
+	if (inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
+				   FILE_ATTRIBUTE_ENCRYPTED))
+		return false;
+
+	/* If the file is a reparse point, then try the hash fixup if it's a WOF
+	 * reparse point and we're in WIMBOOT mode.  Otherwise, try the hash
+	 * fixup if WOF may be attached. */
+	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)
+		return (inode->i_reparse_tag == WIM_IO_REPARSE_TAG_WOF) &&
+			(params->add_flags & WIMLIB_ADD_FLAG_WIMBOOT);
+	return !ctx->wof_not_attached;
+}
+
+/*
+ * This function implements an optimization for capturing files from a
+ * filesystem with a backing WIM(s).  If a file is WIM-backed, then we can
+ * retrieve the SHA-1 message digest of its original contents from its reparse
+ * point.  This may eliminate the need to read the file's data and/or allow the
+ * file's data to be immediately deduplicated with existing data in the WIM.
+ *
+ * If WOF is attached, then this function is merely an optimization, but
+ * potentially a very effective one.  If WOF is detached, then this function
+ * really causes WIM-backed files to be, effectively, automatically
+ * "dereferenced" when possible; the unnamed data stream is updated to reference
+ * the original contents and the reparse point is removed.
+ *
+ * This function returns 0 if the fixup succeeded or was intentionally not
+ * executed.  Otherwise it returns an error code.
+ */
+static noinline_for_stack int
+try_to_use_wimboot_hash(HANDLE h, struct wim_inode *inode,
+			struct blob_table *blob_table,
+			struct winnt_scan_ctx *ctx, const wchar_t *full_path)
+{
+	struct wim_inode_stream *reparse_strm = NULL;
 	struct wim_inode_stream *strm;
 	struct blob_descriptor *blob;
-	u8 _rpdata[REPARSE_DATA_MAX_SIZE] _aligned_attribute(8);
-	struct {
-		struct wof_external_info wof_info;
-		struct wim_provider_rpdata wim_info;
-	} *rpdata = (void *)_rpdata;
+	u8 hash[SHA1_HASH_SIZE];
 	int ret;
 
-	strm = inode_get_unnamed_stream(inode, STREAM_TYPE_REPARSE_POINT);
-	blob = stream_blob_resolved(strm);
-	if (!blob || blob->size < sizeof(*rpdata))
-		return 0;
+	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+		struct reparse_buffer_disk rpbuf;
+		struct {
+			struct wof_external_info wof_info;
+			struct wim_provider_rpdata wim_info;
+		} *rpdata = (void *)rpbuf.rpdata;
+		struct blob_descriptor *reparse_blob;
 
-	ret = read_blob_into_buf(blob, rpdata);
-	if (ret)
-		return ret;
+		/* The file has a WOF reparse point, so WOF must be detached.
+		 * We can read the reparse point directly.  */
+		ctx->wof_not_attached = true;
+		reparse_strm = inode_get_unnamed_stream(inode, STREAM_TYPE_REPARSE_POINT);
+		reparse_blob = stream_blob_resolved(reparse_strm);
 
-	if (rpdata->wof_info.version != WOF_CURRENT_VERSION ||
-	    rpdata->wof_info.provider != WOF_PROVIDER_WIM ||
-	    rpdata->wim_info.version != 2)
-		return 0;
+		if (!reparse_blob || reparse_blob->size < sizeof(*rpdata))
+			return 0;  /* Not a WIM-backed file  */
 
-	blob = lookup_blob(blob_table, rpdata->wim_info.unnamed_data_stream_hash);
-	if (!blob)
-		return 0;
+		ret = read_blob_into_buf(reparse_blob, rpdata);
+		if (ret)
+			return ret;
 
-	/* All okay --- remove the reparse point and redirect the unnamed data
-	 * stream to the "dereferenced" one.  */
-	inode_remove_stream(inode, strm, blob_table);
+		if (rpdata->wof_info.version != WOF_CURRENT_VERSION ||
+		    rpdata->wof_info.provider != WOF_PROVIDER_WIM ||
+		    rpdata->wim_info.version != 2)
+			return 0;  /* Not a WIM-backed file  */
+
+		/* Okay, this is a WIM backed file.  Get its SHA-1 hash.  */
+		copy_hash(hash, rpdata->wim_info.unnamed_data_stream_hash);
+	} else {
+		struct {
+			struct wof_external_info wof_info;
+			struct wim_provider_external_info wim_info;
+		} out;
+		IO_STATUS_BLOCK iosb;
+		NTSTATUS status;
+
+		/* WOF may be attached.  Try reading this file's external
+		 * backing info.  */
+		status = (*func_NtFsControlFile)(h, NULL, NULL, NULL, &iosb,
+						 FSCTL_GET_EXTERNAL_BACKING,
+						 NULL, 0, &out, sizeof(out));
+
+		/* Is WOF not attached?  */
+		if (status == STATUS_INVALID_DEVICE_REQUEST) {
+			ctx->wof_not_attached = true;
+			return 0;
+		}
+
+		/* Is this file not externally backed?  */
+		if (status == STATUS_OBJECT_NOT_EXTERNALLY_BACKED)
+			return 0;
+
+		/* Does this file have an unknown type of external backing that
+		 * needed a larger information buffer?  */
+		if (status == STATUS_BUFFER_TOO_SMALL)
+			return 0;
+
+		/* Was there some other failure?  */
+		if (status != STATUS_SUCCESS) {
+			winnt_error(status,
+				    L"\"%ls\": FSCTL_GET_EXTERNAL_BACKING failed",
+				    full_path);
+			return WIMLIB_ERR_STAT;
+		}
+
+		/* Is this file backed by a WIM?  */
+		if (out.wof_info.version != WOF_CURRENT_VERSION ||
+		    out.wof_info.provider != WOF_PROVIDER_WIM ||
+		    out.wim_info.version != WIM_PROVIDER_CURRENT_VERSION)
+			return 0;
+
+		/* Okay, this is a WIM backed file.  Get its SHA-1 hash.  */
+		copy_hash(hash, out.wim_info.unnamed_data_stream_hash);
+	}
+
+	/* If the file's unnamed data stream is nonempty, then fill in its hash
+	 * and deduplicate it if possible.
+	 *
+	 * With WOF detached, we require that the blob *must* de-duplicable for
+	 * any action can be taken, since without WOF we can't fall back to
+	 * getting the "dereferenced" data by reading the stream (the real
+	 * stream is sparse and contains all zeroes).  */
 	strm = inode_get_unnamed_data_stream(inode);
-	wimlib_assert(strm != NULL);
-	inode_replace_stream_blob(inode, strm, blob, blob_table);
-	inode->i_attributes &= ~(FILE_ATTRIBUTE_REPARSE_POINT |
-				 FILE_ATTRIBUTE_SPARSE_FILE);
-	if (inode->i_attributes == 0)
-		inode->i_attributes = FILE_ATTRIBUTE_NORMAL;
+	if (strm && (blob = stream_blob_resolved(strm))) {
+		struct blob_descriptor **back_ptr;
+
+		if (reparse_strm && !lookup_blob(blob_table, hash))
+			return 0;
+		back_ptr = retrieve_pointer_to_unhashed_blob(blob);
+		copy_hash(blob->hash, hash);
+		if (after_blob_hashed(blob, back_ptr, blob_table) != blob)
+			free_blob_descriptor(blob);
+	}
+
+	/* Remove the reparse point, if present.  */
+	if (reparse_strm) {
+		inode_remove_stream(inode, reparse_strm, blob_table);
+		inode->i_attributes &= ~(FILE_ATTRIBUTE_REPARSE_POINT |
+					 FILE_ATTRIBUTE_SPARSE_FILE);
+		if (inode->i_attributes == 0)
+			inode->i_attributes = FILE_ATTRIBUTE_NORMAL;
+	}
+
 	return 0;
 }
 
@@ -1252,8 +1357,7 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				  const wchar_t *filename,
 				  size_t filename_nchars,
 				  struct capture_params *params,
-				  struct winnt_scan_stats *stats,
-				  u32 vol_flags)
+				  struct winnt_scan_ctx *ctx)
 {
 	struct wim_dentry *root = NULL;
 	struct wim_inode *inode = NULL;
@@ -1325,7 +1429,7 @@ retry_open:
 
 	if (unlikely(!cur_dir)) {
 		/* Root of tree being captured; get volume information.  */
-		vol_flags = get_volume_information(h, full_path, params);
+		ctx->vol_flags = get_volume_information(h, full_path, params);
 		params->capture_root_ino = file_info.ino;
 	}
 
@@ -1379,10 +1483,10 @@ retry_open:
 	/* Get the file's security descriptor, unless we are capturing in
 	 * NO_ACLS mode or the volume does not support security descriptors.  */
 	if (!(params->add_flags & WIMLIB_ADD_FLAG_NO_ACLS)
-	    && (vol_flags & FILE_PERSISTENT_ACLS))
+	    && (ctx->vol_flags & FILE_PERSISTENT_ACLS))
 	{
 		status = winnt_get_security_descriptor(h, inode,
-						       params->sd_set, stats,
+						       params->sd_set, ctx,
 						       params->add_flags);
 		if (!NT_SUCCESS(status)) {
 			winnt_error(status,
@@ -1434,16 +1538,14 @@ retry_open:
 					      inode,
 					      params->unhashed_blobs,
 					      file_info.end_of_file,
-					      vol_flags);
+					      ctx->vol_flags);
 		if (ret)
 			goto out;
 	}
 
-	if (unlikely((params->add_flags & WIMLIB_ADD_FLAG_WIMBOOT) &&
-		     (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
-		     (inode->i_reparse_tag == WIM_IO_REPARSE_TAG_WOF)))
-	{
-		ret = fixup_wim_backed_file(inode, params->blob_table);
+	if (unlikely(should_try_to_use_wimboot_hash(inode, ctx, params))) {
+		ret = try_to_use_wimboot_hash(h, inode, params->blob_table, ctx,
+					      full_path);
 		if (ret)
 			goto out;
 	}
@@ -1477,8 +1579,7 @@ retry_open:
 					      full_path_nchars,
 					      root,
 					      params,
-					      stats,
-					      vol_flags);
+					      ctx);
 		if (ret)
 			goto out;
 	}
@@ -1502,22 +1603,22 @@ out:
 }
 
 static void
-winnt_do_scan_warnings(const wchar_t *path, const struct winnt_scan_stats *stats)
+winnt_do_scan_warnings(const wchar_t *path, const struct winnt_scan_ctx *ctx)
 {
-	if (likely(stats->num_get_sacl_priv_notheld == 0 &&
-		   stats->num_get_sd_access_denied == 0))
+	if (likely(ctx->num_get_sacl_priv_notheld == 0 &&
+		   ctx->num_get_sd_access_denied == 0))
 		return;
 
 	WARNING("Scan of \"%ls\" complete, but with one or more warnings:", path);
-	if (stats->num_get_sacl_priv_notheld != 0) {
+	if (ctx->num_get_sacl_priv_notheld != 0) {
 		WARNING("- Could not capture SACL (System Access Control List)\n"
 			"            on %lu files or directories.",
-			stats->num_get_sacl_priv_notheld);
+			ctx->num_get_sacl_priv_notheld);
 	}
-	if (stats->num_get_sd_access_denied != 0) {
+	if (ctx->num_get_sd_access_denied != 0) {
 		WARNING("- Could not capture security descriptor at all\n"
 			"            on %lu files or directories.",
-			stats->num_get_sd_access_denied);
+			ctx->num_get_sd_access_denied);
 	}
 	WARNING("To fully capture all security descriptors, run the program\n"
 		"          with Administrator rights.");
@@ -1534,7 +1635,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	wchar_t *path;
 	int ret;
 	UNICODE_STRING ntpath;
-	struct winnt_scan_stats stats;
+	struct winnt_scan_ctx ctx;
 	size_t ntpath_nchars;
 
 	/* WARNING: There is no check for overflow later when this buffer is
@@ -1568,15 +1669,15 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	if (ret)
 		goto out_free_path;
 
-	memset(&stats, 0, sizeof(stats));
+	memset(&ctx, 0, sizeof(ctx));
 
 	ret = winnt_build_dentry_tree_recursive(root_ret, NULL,
 						path, ntpath_nchars,
-						L"", 0, params, &stats, 0);
+						L"", 0, params, &ctx);
 out_free_path:
 	FREE(path);
 	if (ret == 0)
-		winnt_do_scan_warnings(root_disk_path, &stats);
+		winnt_do_scan_warnings(root_disk_path, &ctx);
 	return ret;
 }
 
