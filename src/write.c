@@ -2430,7 +2430,10 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	ret = WIMLIB_ERR_WRITE;
 	if (unlikely(write_flags & WIMLIB_WRITE_FLAG_UNSAFE_COMPACT)) {
 		/* Truncate any data the compaction freed up.  */
-		if (ftruncate(wim->out_fd.fd, wim->out_fd.offset)) {
+		if (ftruncate(wim->out_fd.fd, wim->out_fd.offset) &&
+		    errno != EINVAL) /* allow compaction on untruncatable files,
+					e.g. block devices  */
+		{
 			ERROR_WITH_ERRNO("Failed to truncate the output WIM file");
 			goto out;
 		}
