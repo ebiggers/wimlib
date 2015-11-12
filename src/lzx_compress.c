@@ -232,9 +232,10 @@ struct lzx_sequence {
 	u16 adjusted_length;
 
 	/* If bit 31 is clear, then this field contains the match header in bits
-	 * 0-8 and the match offset minus LZX_OFFSET_ADJUSTMENT in bits 9-30.
-	 * Otherwise, this sequence's literal run was the last literal run in
-	 * the block, so there is no match that follows it.  */
+	 * 0-8, and either the match offset plus LZX_OFFSET_ADJUSTMENT or a
+	 * recent offset code in bits 9-30.  Otherwise (if bit 31 is set), this
+	 * sequence's literal run was the last literal run in the block, so
+	 * there is no match that follows it.  */
 	u32 adjusted_offset_and_match_hdr;
 };
 
