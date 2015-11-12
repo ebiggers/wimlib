@@ -145,46 +145,53 @@ write_split_wim(WIMStruct *orig_wim, const tchar *swm_name,
 }
 
 static int
+start_new_swm_part(struct swm_info *swm_info)
+{
+	if (swm_info->num_parts == swm_info->num_alloc_parts) {
+		struct swm_part_info *parts;
+		size_t num_alloc_parts = swm_info->num_alloc_parts;
+
+		num_alloc_parts += 8;
+		parts = MALLOC(num_alloc_parts * sizeof(parts[0]));
+		if (!parts)
+			return WIMLIB_ERR_NOMEM;
+
+		for (unsigned i = 0; i < swm_info->num_parts; i++)
+			copy_part_info(&parts[i], &swm_info->parts[i]);
+
+		FREE(swm_info->parts);
+		swm_info->parts = parts;
+		swm_info->num_alloc_parts = num_alloc_parts;
+	}
+	swm_info->num_parts++;
+	INIT_LIST_HEAD(&swm_info->parts[swm_info->num_parts - 1].blob_list);
+	swm_info->parts[swm_info->num_parts - 1].size = 0;
+	return 0;
+}
+
+static int
 add_blob_to_swm(struct blob_descriptor *blob, void *_swm_info)
 {
 	struct swm_info *swm_info = _swm_info;
 	u64 blob_stored_size;
+	int ret;
 
 	if (blob->blob_location == BLOB_IN_WIM)
 		blob_stored_size = blob->rdesc->size_in_wim;
 	else
 		blob_stored_size = blob->size;
 
-	/* - Start first part if no parts have been started so far;
-	 * - Start next part if adding this blob exceeds maximum part size,
-	 *   UNLESS the blob is metadata or if no blobs at all have been added
-	 *   to the current part.
-	 */
-	if (swm_info->num_parts == 0 ||
-	    ((swm_info->parts[swm_info->num_parts - 1].size +
-			blob_stored_size >= swm_info->max_part_size)
-	     && !(blob->is_metadata ||
-		  swm_info->parts[swm_info->num_parts - 1].size == 0)))
+	/* Start the next part if adding this blob exceeds the maximum part
+	 * size, UNLESS the blob is metadata or if no blobs at all have been
+	 * added to the current part.  */
+	if ((swm_info->parts[swm_info->num_parts - 1].size +
+	     blob_stored_size >= swm_info->max_part_size)
+	    && !(blob->is_metadata ||
+		 swm_info->parts[swm_info->num_parts - 1].size == 0))
 	{
-		if (swm_info->num_parts == swm_info->num_alloc_parts) {
-			struct swm_part_info *parts;
-			size_t num_alloc_parts = swm_info->num_alloc_parts;
-
-			num_alloc_parts += 8;
-			parts = MALLOC(num_alloc_parts * sizeof(parts[0]));
-			if (!parts)
-				return WIMLIB_ERR_NOMEM;
-
-			for (unsigned i = 0; i < swm_info->num_parts; i++)
-				copy_part_info(&parts[i], &swm_info->parts[i]);
-
-			FREE(swm_info->parts);
-			swm_info->parts = parts;
-			swm_info->num_alloc_parts = num_alloc_parts;
-		}
-		swm_info->num_parts++;
-		INIT_LIST_HEAD(&swm_info->parts[swm_info->num_parts - 1].blob_list);
-		swm_info->parts[swm_info->num_parts - 1].size = 0;
+		ret = start_new_swm_part(swm_info);
+		if (ret)
+			return ret;
 	}
 	swm_info->parts[swm_info->num_parts - 1].size += blob_stored_size;
 	if (!blob->is_metadata) {
@@ -228,6 +235,10 @@ wimlib_split(WIMStruct *wim, const tchar *swm_name,
 
 	memset(&swm_info, 0, sizeof(swm_info));
 	swm_info.max_part_size = part_size;
+
+	ret = start_new_swm_part(&swm_info);
+	if (ret)
+		goto out_free_swm_info;
 
 	for (i = 0; i < wim->hdr.image_count; i++) {
 		ret = add_blob_to_swm(wim->image_metadata[i]->metadata_blob,
