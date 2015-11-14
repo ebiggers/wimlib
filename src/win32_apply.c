@@ -1625,16 +1625,28 @@ create_directory(const struct wim_dentry *dentry, struct win32_apply_ctx *ctx)
 	int ret;
 
 	/* DELETE is needed for set_short_name(); GENERIC_READ and GENERIC_WRITE
-	 * are needed for adjust_compression_attribute().  */
-	perms = GENERIC_READ | GENERIC_WRITE;
+	 * are needed for adjust_compression_attribute(); WRITE_DAC is needed to
+	 * remove the directory's DACL if the directory already existed  */
+	perms = GENERIC_READ | GENERIC_WRITE | WRITE_DAC;
 	if (!dentry_is_root(dentry))
 		perms |= DELETE;
 
 	/* FILE_ATTRIBUTE_SYSTEM is needed to ensure that
 	 * FILE_ATTRIBUTE_ENCRYPTED doesn't get set before we want it to be.  */
+retry:
 	status = create_file(&h, perms, NULL, FILE_ATTRIBUTE_SYSTEM,
 			     FILE_OPEN_IF, FILE_DIRECTORY_FILE, dentry, ctx);
-	if (!NT_SUCCESS(status)) {
+	if (unlikely(!NT_SUCCESS(status))) {
+		if (status == STATUS_ACCESS_DENIED) {
+			if (perms & WRITE_DAC) {
+				perms &= ~WRITE_DAC;
+				goto retry;
+			}
+			if (perms & DELETE) {
+				perms &= ~DELETE;
+				goto retry;
+			}
+		}
 		winnt_error(status, L"Can't create directory \"%ls\"",
 			    current_path(ctx));
 		return WIMLIB_ERR_MKDIR;
@@ -1652,6 +1664,22 @@ create_directory(const struct wim_dentry *dentry, struct win32_apply_ctx *ctx)
 		FILE_BASIC_INFORMATION basic_info = { .FileAttributes = FILE_ATTRIBUTE_NORMAL };
 		(*func_NtSetInformationFile)(h, &ctx->iosb, &basic_info,
 					     sizeof(basic_info), FileBasicInformation);
+
+		/* Also try to remove the directory's DACL.  This isn't supposed
+		 * to be necessary because we *always* use backup semantics.
+		 * However, there is a case where NtCreateFile() fails with
+		 * STATUS_ACCESS_DENIED when creating a named data stream that
+		 * was just deleted, using a directory-relative open.  I have no
+		 * idea why Windows is broken in this case.  */
+		static const SECURITY_DESCRIPTOR_RELATIVE desc = {
+			.Revision = SECURITY_DESCRIPTOR_REVISION1,
+			.Control = SE_SELF_RELATIVE | SE_DACL_PRESENT,
+			.Owner = 0,
+			.Group = 0,
+			.Sacl = 0,
+			.Dacl = 0,
+		};
+		(*func_NtSetSecurityObject)(h, DACL_SECURITY_INFORMATION, (void *)&desc);
 	}
 
 	if (!dentry_is_root(dentry)) {
