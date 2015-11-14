@@ -1,4 +1,4 @@
-Version 1.8.3-BETA:
+Version 1.8.3:
 	Fixed a bug with libntfs-3g extraction present since v1.8.1.  Sometimes,
 	some Microsoft software would not correctly recognize data in the
 	resulting filesystem.
