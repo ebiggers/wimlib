@@ -1400,67 +1400,71 @@ delete_file_or_stream(struct win32_apply_ctx *ctx)
 {
 	NTSTATUS status;
 	HANDLE h;
-	FILE_DISPOSITION_INFORMATION disposition_info;
-	FILE_BASIC_INFORMATION basic_info;
-	bool retried = false;
+	ULONG perms = DELETE;
+	ULONG flags = FILE_NON_DIRECTORY_FILE | FILE_DELETE_ON_CLOSE;
 
-	status = do_create_file(&h,
-				DELETE,
-				NULL,
-				0,
-				FILE_OPEN,
-				FILE_NON_DIRECTORY_FILE,
-				ctx);
+	/* First try opening the file with FILE_DELETE_ON_CLOSE.  In most cases,
+	 * all we have to do is that plus close the file handle.  */
+retry:
+	status = do_create_file(&h, perms, NULL, 0, FILE_OPEN, flags, ctx);
+
+	if (unlikely(status == STATUS_CANNOT_DELETE)) {
+		/* This error occurs for files with FILE_ATTRIBUTE_READONLY set.
+		 * Try an alternate approach: first open the file without
+		 * FILE_DELETE_ON_CLOSE, then reset the file attributes, then
+		 * set the "delete" disposition on the handle.  */
+		if (flags & FILE_DELETE_ON_CLOSE) {
+			flags &= ~FILE_DELETE_ON_CLOSE;
+			perms |= FILE_WRITE_ATTRIBUTES;
+			goto retry;
+		}
+	}
+
 	if (unlikely(!NT_SUCCESS(status))) {
-		winnt_error(status, L"Can't open \"%ls\" for deletion",
-			    current_path(ctx));
+		winnt_error(status, L"Can't open \"%ls\" for deletion "
+			    "(perms=%x, flags=%x)",
+			    current_path(ctx), perms, flags);
 		return WIMLIB_ERR_OPEN;
 	}
 
-retry:
-	disposition_info.DoDeleteFile = TRUE;
-	status = (*func_NtSetInformationFile)(h, &ctx->iosb,
-					      &disposition_info,
-					      sizeof(disposition_info),
-					      FileDispositionInformation);
-	(*func_NtClose)(h);
-	if (likely(NT_SUCCESS(status)))
-		return 0;
+	if (unlikely(!(flags & FILE_DELETE_ON_CLOSE))) {
 
-	if (status == STATUS_CANNOT_DELETE && !retried) {
-		/* Clear file attributes and try again.  This is necessary for
-		 * FILE_ATTRIBUTE_READONLY files.  */
-		status = do_create_file(&h,
-					FILE_WRITE_ATTRIBUTES | DELETE,
-					NULL,
-					0,
-					FILE_OPEN,
-					FILE_NON_DIRECTORY_FILE,
-					ctx);
-		if (!NT_SUCCESS(status)) {
-			winnt_error(status,
-				    L"Can't open \"%ls\" to reset attributes",
-				    current_path(ctx));
-			return WIMLIB_ERR_OPEN;
-		}
-		memset(&basic_info, 0, sizeof(basic_info));
-		basic_info.FileAttributes = FILE_ATTRIBUTE_NORMAL;
+		FILE_BASIC_INFORMATION basic_info =
+			{ .FileAttributes = FILE_ATTRIBUTE_NORMAL };
 		status = (*func_NtSetInformationFile)(h, &ctx->iosb,
 						      &basic_info,
 						      sizeof(basic_info),
 						      FileBasicInformation);
+
 		if (!NT_SUCCESS(status)) {
-			winnt_error(status,
-				    L"Can't reset file attributes on \"%ls\"",
-				    current_path(ctx));
+			winnt_error(status, L"Can't reset attributes of \"%ls\" "
+				    "to prepare for deletion", current_path(ctx));
 			(*func_NtClose)(h);
 			return WIMLIB_ERR_SET_ATTRIBUTES;
 		}
-		retried = true;
-		goto retry;
+
+		FILE_DISPOSITION_INFORMATION disp_info =
+			{ .DoDeleteFile = TRUE };
+		status = (*func_NtSetInformationFile)(h, &ctx->iosb,
+						      &disp_info,
+						      sizeof(disp_info),
+						      FileDispositionInformation);
+		if (!NT_SUCCESS(status)) {
+			winnt_error(status, L"Can't set delete-on-close "
+				    "disposition on \"%ls\"", current_path(ctx));
+			(*func_NtClose)(h);
+			return WIMLIB_ERR_SET_ATTRIBUTES;
+		}
 	}
-	winnt_error(status, L"Can't delete \"%ls\"", current_path(ctx));
-	return WIMLIB_ERR_OPEN;
+
+	status = (*func_NtClose)(h);
+	if (unlikely(!NT_SUCCESS(status))) {
+		winnt_error(status, L"Error closing \"%ls\" after setting "
+			    "delete-on-close disposition", current_path(ctx));
+		return WIMLIB_ERR_OPEN;
+	}
+
+	return 0;
 }
 
 /*
