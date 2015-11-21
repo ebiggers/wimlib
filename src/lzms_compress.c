@@ -498,7 +498,7 @@ lzms_range_encoder_shift_low(struct lzms_range_encoder *rc)
 		do {
 			if (likely(rc->next >= rc->begin)) {
 				if (rc->next != rc->end) {
-					put_unaligned_u16_le(rc->cache +
+					put_unaligned_le16(rc->cache +
 							     (u16)(rc->lower_bound >> 32),
 							     rc->next++);
 				}
@@ -658,7 +658,7 @@ lzms_write_bits(struct lzms_output_bitstream *os, const u32 bits,
 
 		/* Write a coding unit, unless it would underflow the buffer. */
 		if (os->next != os->begin)
-			put_unaligned_u16_le(os->bitbuf >> os->bitcount, --os->next);
+			put_unaligned_le16(os->bitbuf >> os->bitcount, --os->next);
 
 		/* Optimization for call sites that never write more than 16
 		 * bits at once.  */
@@ -679,7 +679,7 @@ lzms_output_bitstream_flush(struct lzms_output_bitstream *os)
 		return false;
 
 	if (os->bitcount != 0)
-		put_unaligned_u16_le(os->bitbuf << (16 - os->bitcount), --os->next);
+		put_unaligned_le16(os->bitbuf << (16 - os->bitcount), --os->next);
 
 	return true;
 }

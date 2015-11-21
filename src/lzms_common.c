@@ -516,15 +516,15 @@ have_opcode:
 	p += opcode_nbytes;
 	if (undo) {
 		if (i - *last_x86_pos <= max_trans_offset) {
-			u32 n = get_unaligned_u32_le(p);
-			put_unaligned_u32_le(n - i, p);
+			u32 n = get_unaligned_le32(p);
+			put_unaligned_le32(n - i, p);
 		}
-		target16 = i + get_unaligned_u16_le(p);
+		target16 = i + get_unaligned_le16(p);
 	} else {
-		target16 = i + get_unaligned_u16_le(p);
+		target16 = i + get_unaligned_le16(p);
 		if (i - *last_x86_pos <= max_trans_offset) {
-			u32 n = get_unaligned_u32_le(p);
-			put_unaligned_u32_le(n + i, p);
+			u32 n = get_unaligned_le32(p);
+			put_unaligned_le32(n + i, p);
 		}
 	}
 

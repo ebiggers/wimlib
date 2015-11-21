@@ -114,7 +114,7 @@ do_translate_target(void *target, s32 input_pos)
 {
 	s32 abs_offset, rel_offset;
 
-	rel_offset = get_unaligned_u32_le(target);
+	rel_offset = get_unaligned_le32(target);
 	if (rel_offset >= -input_pos && rel_offset < LZX_WIM_MAGIC_FILESIZE) {
 		if (rel_offset < LZX_WIM_MAGIC_FILESIZE - input_pos) {
 			/* "good translation" */
@@ -123,7 +123,7 @@ do_translate_target(void *target, s32 input_pos)
 			/* "compensating translation" */
 			abs_offset = rel_offset - LZX_WIM_MAGIC_FILESIZE;
 		}
-		put_unaligned_u32_le(abs_offset, target);
+		put_unaligned_le32(abs_offset, target);
 	}
 }
 
@@ -132,18 +132,18 @@ undo_translate_target(void *target, s32 input_pos)
 {
 	s32 abs_offset, rel_offset;
 
-	abs_offset = get_unaligned_u32_le(target);
+	abs_offset = get_unaligned_le32(target);
 	if (abs_offset >= 0) {
 		if (abs_offset < LZX_WIM_MAGIC_FILESIZE) {
 			/* "good translation" */
 			rel_offset = abs_offset - input_pos;
-			put_unaligned_u32_le(rel_offset, target);
+			put_unaligned_le32(rel_offset, target);
 		}
 	} else {
 		if (abs_offset >= -input_pos) {
 			/* "compensating translation" */
 			rel_offset = abs_offset + LZX_WIM_MAGIC_FILESIZE;
-			put_unaligned_u32_le(rel_offset, target);
+			put_unaligned_le32(rel_offset, target);
 		}
 	}
 }

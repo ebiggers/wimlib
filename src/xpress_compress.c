@@ -292,7 +292,7 @@ xpress_write_bits(struct xpress_output_bitstream *os,
 	if (os->bitcount > 16) {
 		os->bitcount -= 16;
 		if (os->end - os->next_byte >= 2) {
-			put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next_bits);
+			put_unaligned_le16(os->bitbuf >> os->bitcount, os->next_bits);
 			os->next_bits = os->next_bits2;
 			os->next_bits2 = os->next_byte;
 			os->next_byte += 2;
@@ -317,7 +317,7 @@ static inline void
 xpress_write_u16(struct xpress_output_bitstream *os, u16 v)
 {
 	if (os->end - os->next_byte >= 2) {
-		put_unaligned_u16_le(v, os->next_byte);
+		put_unaligned_le16(v, os->next_byte);
 		os->next_byte += 2;
 	}
 }
@@ -332,8 +332,8 @@ xpress_flush_output(struct xpress_output_bitstream *os)
 	if (os->end - os->next_byte < 2)
 		return 0;
 
-	put_unaligned_u16_le(os->bitbuf << (16 - os->bitcount), os->next_bits);
-	put_unaligned_u16_le(0, os->next_bits2);
+	put_unaligned_le16(os->bitbuf << (16 - os->bitcount), os->next_bits);
+	put_unaligned_le16(0, os->next_bits2);
 
 	return os->next_byte - os->start;
 }

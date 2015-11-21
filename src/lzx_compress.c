@@ -586,13 +586,13 @@ lzx_flush_bits(struct lzx_output_bitstream *os, unsigned max_num_bits)
 
 	if (os->end - os->next < 6)
 		return;
-	put_unaligned_u16_le(os->bitbuf >> ((os->bitcount - 16) &
+	put_unaligned_le16(os->bitbuf >> ((os->bitcount - 16) &
 					    shift_mask), os->next + 0);
 	if (max_num_bits > 16)
-		put_unaligned_u16_le(os->bitbuf >> ((os->bitcount - 32) &
+		put_unaligned_le16(os->bitbuf >> ((os->bitcount - 32) &
 						shift_mask), os->next + 2);
 	if (max_num_bits > 32)
-		put_unaligned_u16_le(os->bitbuf >> ((os->bitcount - 48) &
+		put_unaligned_le16(os->bitbuf >> ((os->bitcount - 48) &
 						shift_mask), os->next + 4);
 	os->next += (os->bitcount >> 4) << 1;
 	os->bitcount &= 15;
@@ -617,7 +617,7 @@ lzx_flush_output(struct lzx_output_bitstream *os)
 		return 0;
 
 	if (os->bitcount != 0) {
-		put_unaligned_u16_le(os->bitbuf << (16 - os->bitcount), os->next);
+		put_unaligned_le16(os->bitbuf << (16 - os->bitcount), os->next);
 		os->next += 2;
 	}
 

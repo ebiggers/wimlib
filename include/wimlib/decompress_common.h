@@ -67,7 +67,7 @@ bitstream_ensure_bits(struct input_bitstream *is, const unsigned num_bits)
 	if (unlikely(is->end - is->next < 2))
 		goto overflow;
 
-	is->bitbuf |= (u32)get_unaligned_u16_le(is->next) << (16 - is->bitsleft);
+	is->bitbuf |= (u32)get_unaligned_le16(is->next) << (16 - is->bitsleft);
 	is->next += 2;
 	is->bitsleft += 16;
 
@@ -75,7 +75,7 @@ bitstream_ensure_bits(struct input_bitstream *is, const unsigned num_bits)
 		if (unlikely(is->end - is->next < 2))
 			goto overflow;
 
-		is->bitbuf |= (u32)get_unaligned_u16_le(is->next);
+		is->bitbuf |= (u32)get_unaligned_le16(is->next);
 		is->next += 2;
 		is->bitsleft = 32;
 	}
@@ -141,7 +141,7 @@ bitstream_read_u16(struct input_bitstream *is)
 
 	if (unlikely(is->end - is->next < 2))
 		return 0;
-	v = get_unaligned_u16_le(is->next);
+	v = get_unaligned_le16(is->next);
 	is->next += 2;
 	return v;
 }
@@ -154,7 +154,7 @@ bitstream_read_u32(struct input_bitstream *is)
 
 	if (unlikely(is->end - is->next < 4))
 		return 0;
-	v = get_unaligned_u32_le(is->next);
+	v = get_unaligned_le32(is->next);
 	is->next += 4;
 	return v;
 }

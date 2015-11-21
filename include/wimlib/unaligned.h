@@ -50,7 +50,7 @@ DEFINE_UNALIGNED_TYPE(machine_word_t);
 #define store_word_unaligned	store_machine_word_t_unaligned
 
 static inline u16
-get_unaligned_u16_le(const void *p)
+get_unaligned_le16(const void *p)
 {
 	u16 v;
 
@@ -66,7 +66,7 @@ get_unaligned_u16_le(const void *p)
 }
 
 static inline u32
-get_unaligned_u32_le(const void *p)
+get_unaligned_le32(const void *p)
 {
 	u32 v;
 
@@ -84,7 +84,7 @@ get_unaligned_u32_le(const void *p)
 }
 
 static inline void
-put_unaligned_u16_le(u16 v, void *p)
+put_unaligned_le16(u16 v, void *p)
 {
 	if (UNALIGNED_ACCESS_IS_FAST) {
 		store_le16_unaligned(cpu_to_le16(v), p);
@@ -96,7 +96,7 @@ put_unaligned_u16_le(u16 v, void *p)
 }
 
 static inline void
-put_unaligned_u32_le(u32 v, void *p)
+put_unaligned_le32(u32 v, void *p)
 {
 	if (UNALIGNED_ACCESS_IS_FAST) {
 		store_le32_unaligned(cpu_to_le32(v), p);
