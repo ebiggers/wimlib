@@ -50,62 +50,45 @@ DEFINE_UNALIGNED_TYPE(machine_word_t);
 #define store_word_unaligned	store_machine_word_t_unaligned
 
 static inline u16
-get_unaligned_le16(const void *p)
+get_unaligned_le16(const u8 *p)
 {
-	u16 v;
-
-	if (UNALIGNED_ACCESS_IS_FAST) {
-		v = le16_to_cpu(load_le16_unaligned(p));
-	} else {
-		const u8 *p8 = p;
-		v = 0;
-		v |= (u16)p8[0] << 0;
-		v |= (u16)p8[1] << 8;
-	}
-	return v;
+	if (UNALIGNED_ACCESS_IS_FAST)
+		return le16_to_cpu(load_le16_unaligned(p));
+	else
+		return ((u16)p[1] << 8) | p[0];
 }
 
 static inline u32
-get_unaligned_le32(const void *p)
+get_unaligned_le32(const u8 *p)
 {
-	u32 v;
-
-	if (UNALIGNED_ACCESS_IS_FAST) {
-		v = le32_to_cpu(load_le32_unaligned(p));
-	} else {
-		const u8 *p8 = p;
-		v = 0;
-		v |= (u32)p8[0] << 0;
-		v |= (u32)p8[1] << 8;
-		v |= (u32)p8[2] << 16;
-		v |= (u32)p8[3] << 24;
-	}
-	return v;
+	if (UNALIGNED_ACCESS_IS_FAST)
+		return le32_to_cpu(load_le32_unaligned(p));
+	else
+		return ((u32)p[3] << 24) | ((u32)p[2] << 16) |
+			((u32)p[1] << 8) | p[0];
 }
 
 static inline void
-put_unaligned_le16(u16 v, void *p)
+put_unaligned_le16(u16 v, u8 *p)
 {
 	if (UNALIGNED_ACCESS_IS_FAST) {
 		store_le16_unaligned(cpu_to_le16(v), p);
 	} else {
-		u8 *p8 = p;
-		p8[0] = (v >> 0) & 0xFF;
-		p8[1] = (v >> 8) & 0xFF;
+		p[0] = (u8)(v >> 0);
+		p[1] = (u8)(v >> 8);
 	}
 }
 
 static inline void
-put_unaligned_le32(u32 v, void *p)
+put_unaligned_le32(u32 v, u8 *p)
 {
 	if (UNALIGNED_ACCESS_IS_FAST) {
 		store_le32_unaligned(cpu_to_le32(v), p);
 	} else {
-		u8 *p8 = p;
-		p8[0] = (v >> 0) & 0xFF;
-		p8[1] = (v >> 8) & 0xFF;
-		p8[2] = (v >> 16) & 0xFF;
-		p8[3] = (v >> 24) & 0xFF;
+		p[0] = (u8)(v >> 0);
+		p[1] = (u8)(v >> 8);
+		p[2] = (u8)(v >> 16);
+		p[3] = (u8)(v >> 24);
 	}
 }
 
