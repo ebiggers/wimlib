@@ -83,13 +83,13 @@ struct lzms_output_bitstream {
 	/* Number of bits currently held in @bitbuf  */
 	unsigned bitcount;
 
-	/* Pointer to one past the next position in the output buffer at which
-	 * to output a 16-bit coding unit  */
-	le16 *next;
-
 	/* Pointer to the beginning of the output buffer (this is the "end" when
 	 * writing backwards!)  */
-	le16 *begin;
+	u8 *begin;
+
+	/* Pointer to just past the next position in the output buffer at which
+	 * to output a 16-bit coding unit  */
+	u8 *next;
 };
 
 /* This structure tracks the state of range encoding and its output, which
@@ -112,14 +112,14 @@ struct lzms_range_encoder {
 	u32 cache_size;
 
 	/* Pointer to the beginning of the output buffer  */
-	le16 *begin;
+	u8 *begin;
 
 	/* Pointer to the position in the output buffer at which the next coding
 	 * unit must be written  */
-	le16 *next;
+	u8 *next;
 
 	/* Pointer to just past the end of the output buffer  */
-	le16 *end;
+	u8 *end;
 };
 
 /* Bookkeeping information for an adaptive Huffman code  */
@@ -456,18 +456,18 @@ lzms_comp_get_offset_slot(const struct lzms_compressor *c, u32 offset)
 
 /*
  * Initialize the range encoder @rc to write forwards to the specified buffer
- * @out that is @count 16-bit integers long.
+ * @out that is @size bytes long.
  */
 static void
-lzms_range_encoder_init(struct lzms_range_encoder *rc, le16 *out, size_t count)
+lzms_range_encoder_init(struct lzms_range_encoder *rc, u8 *out, size_t size)
 {
 	rc->lower_bound = 0;
 	rc->range_size = 0xffffffff;
 	rc->cache = 0;
 	rc->cache_size = 1;
 	rc->begin = out;
-	rc->next = out - 1;
-	rc->end = out + count;
+	rc->next = out - sizeof(le16);
+	rc->end = out + (size & ~1);
 }
 
 /*
@@ -499,11 +499,12 @@ lzms_range_encoder_shift_low(struct lzms_range_encoder *rc)
 			if (likely(rc->next >= rc->begin)) {
 				if (rc->next != rc->end) {
 					put_unaligned_le16(rc->cache +
-							     (u16)(rc->lower_bound >> 32),
-							     rc->next++);
+							   (u16)(rc->lower_bound >> 32),
+							   rc->next);
+					rc->next += sizeof(le16);
 				}
 			} else {
-				rc->next++;
+				rc->next += sizeof(le16);
 			}
 			rc->cache = 0xffff;
 		} while (--rc->cache_size != 0);
@@ -624,16 +625,16 @@ lzms_encode_delta_rep_bit(struct lzms_compressor *c, int bit, int idx)
 
 /*
  * Initialize the output bitstream @os to write backwards to the specified
- * buffer @out that is @count 16-bit integers long.
+ * buffer @out that is @size bytes long.
  */
 static void
 lzms_output_bitstream_init(struct lzms_output_bitstream *os,
-			   le16 *out, size_t count)
+			   u8 *out, size_t size)
 {
 	os->bitbuf = 0;
 	os->bitcount = 0;
-	os->next = out + count;
 	os->begin = out;
+	os->next = out + (size & ~1);
 }
 
 /*
@@ -657,8 +658,10 @@ lzms_write_bits(struct lzms_output_bitstream *os, const u32 bits,
 		os->bitcount -= 16;
 
 		/* Write a coding unit, unless it would underflow the buffer. */
-		if (os->next != os->begin)
-			put_unaligned_le16(os->bitbuf >> os->bitcount, --os->next);
+		if (os->next != os->begin) {
+			os->next -= sizeof(le16);
+			put_unaligned_le16(os->bitbuf >> os->bitcount, os->next);
+		}
 
 		/* Optimization for call sites that never write more than 16
 		 * bits at once.  */
@@ -678,8 +681,10 @@ lzms_output_bitstream_flush(struct lzms_output_bitstream *os)
 	if (os->next == os->begin)
 		return false;
 
-	if (os->bitcount != 0)
-		put_unaligned_le16(os->bitbuf << (16 - os->bitcount), --os->next);
+	if (os->bitcount != 0) {
+		os->next -= sizeof(le16);
+		put_unaligned_le16(os->bitbuf << (16 - os->bitcount), os->next);
+	}
 
 	return true;
 }
@@ -2068,8 +2073,8 @@ lzms_init_huffman_codes(struct lzms_compressor *c, unsigned num_offset_slots)
 static size_t
 lzms_finalize(struct lzms_compressor *c)
 {
-	size_t num_forwards_units;
-	size_t num_backwards_units;
+	size_t num_forwards_bytes;
+	size_t num_backwards_bytes;
 
 	/* Flush both the forwards and backwards streams, and make sure they
 	 * didn't cross each other and start overwriting each other's data.  */
@@ -2087,12 +2092,12 @@ lzms_finalize(struct lzms_compressor *c)
 	 * bitstream.  Move the data output by the backwards bitstream to be
 	 * adjacent to the data output by the forward bitstream, and calculate
 	 * the compressed size that this results in.  */
-	num_forwards_units = c->rc.next - c->rc.begin;
-	num_backwards_units = c->rc.end - c->os.next;
+	num_forwards_bytes = c->rc.next - c->rc.begin;
+	num_backwards_bytes = c->rc.end - c->os.next;
 
-	memmove(c->rc.next, c->os.next, num_backwards_units * sizeof(le16));
+	memmove(c->rc.next, c->os.next, num_backwards_bytes);
 
-	return (num_forwards_units + num_backwards_units) * sizeof(le16);
+	return num_forwards_bytes + num_backwards_bytes;
 }
 
 static u64
@@ -2190,8 +2195,8 @@ lzms_compress(const void *restrict in, size_t in_nbytes,
 		lzms_init_delta_matchfinder(c);
 
 	/* Initialize the encoder structures.  */
-	lzms_range_encoder_init(&c->rc, out, out_nbytes_avail / sizeof(le16));
-	lzms_output_bitstream_init(&c->os, out, out_nbytes_avail / sizeof(le16));
+	lzms_range_encoder_init(&c->rc, out, out_nbytes_avail);
+	lzms_output_bitstream_init(&c->os, out, out_nbytes_avail);
 	lzms_init_states_and_probabilities(c);
 	lzms_init_huffman_codes(c, lzms_get_num_offset_slots(c->in_nbytes));
 

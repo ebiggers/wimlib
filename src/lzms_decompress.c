@@ -276,10 +276,10 @@ struct lzms_range_decoder {
 
 	/* Pointer to the next little-endian 16-bit integer in the compressed
 	 * input data (reading forwards).  */
-	const le16 *next;
+	const u8 *next;
 
 	/* Pointer to the end of the compressed input data.  */
-	const le16 *end;
+	const u8 *end;
 };
 
 typedef u64 bitbuf_t;
@@ -295,10 +295,10 @@ struct lzms_input_bitstream {
 
 	/* Pointer to the one past the next little-endian 16-bit integer in the
 	 * compressed input data (reading backwards).  */
-	const le16 *next;
+	const u8 *next;
 
 	/* Pointer to the beginning of the compressed input data.  */
-	const le16 *begin;
+	const u8 *begin;
 };
 
 #define BITBUF_NBITS	(8 * sizeof(bitbuf_t))
@@ -363,10 +363,10 @@ struct lzms_decompressor {
 };
 
 /* Initialize the input bitstream @is to read backwards from the compressed data
- * buffer @in that is @count 16-bit integers long.  */
+ * buffer @in that is @count bytes long.  */
 static void
 lzms_input_bitstream_init(struct lzms_input_bitstream *is,
-			  const le16 *in, size_t count)
+			  const u8 *in, size_t count)
 {
 	is->bitbuf = 0;
 	is->bitsleft = 0;
@@ -387,18 +387,22 @@ lzms_ensure_bits(struct lzms_input_bitstream *is, unsigned num_bits)
 	avail = BITBUF_NBITS - is->bitsleft;
 
 	if (UNALIGNED_ACCESS_IS_FAST && CPU_IS_LITTLE_ENDIAN &&
-	    WORDSIZE == 8 && likely((u8 *)is->next - (u8 *)is->begin >= 8))
+	    WORDSIZE == 8 && likely(is->next - is->begin >= 8))
 	{
-		is->next -= avail >> 4;
+		is->next -= (avail & ~15) >> 3;
 		is->bitbuf |= load_u64_unaligned(is->next) << (avail & 15);
 		is->bitsleft += avail & ~15;
 	} else {
-		if (likely(is->next != is->begin))
-			is->bitbuf |= (bitbuf_t)le16_to_cpu(*--is->next)
+		if (likely(is->next != is->begin)) {
+			is->next -= sizeof(le16);
+			is->bitbuf |= (bitbuf_t)get_unaligned_le16(is->next)
 					<< (avail - 16);
-		if (likely(is->next != is->begin))
-			is->bitbuf |=(bitbuf_t)le16_to_cpu(*--is->next)
+		}
+		if (likely(is->next != is->begin)) {
+			is->next -= sizeof(le16);
+			is->bitbuf |= (bitbuf_t)get_unaligned_le16(is->next)
 					<< (avail - 32);
+		}
 		is->bitsleft += 32;
 	}
 }
@@ -436,14 +440,15 @@ lzms_read_bits(struct lzms_input_bitstream *is, unsigned num_bits)
 }
 
 /* Initialize the range decoder @rd to read forwards from the compressed data
- * buffer @in that is @count 16-bit integers long.  */
+ * buffer @in that is @count bytes long.  */
 static void
 lzms_range_decoder_init(struct lzms_range_decoder *rd,
-			const le16 *in, size_t count)
+			const u8 *in, size_t count)
 {
 	rd->range = 0xffffffff;
-	rd->code = ((u32)le16_to_cpu(in[0]) << 16) | le16_to_cpu(in[1]);
-	rd->next = in + 2;
+	rd->code = ((u32)get_unaligned_le16(in) << 16) |
+		   get_unaligned_le16(in + 2);
+	rd->next = in + 4;
 	rd->end = in + count;
 }
 
@@ -475,8 +480,10 @@ lzms_decode_bit(struct lzms_range_decoder *rd, u32 *state_p, u32 num_states,
 	if (!(rd->range & 0xFFFF0000)) {
 		rd->range <<= 16;
 		rd->code <<= 16;
-		if (likely(rd->next != rd->end))
-			rd->code |= le16_to_cpu(*rd->next++);
+		if (likely(rd->next != rd->end)) {
+			rd->code |= get_unaligned_le16(rd->next);
+			rd->next += sizeof(le16);
+		}
 	}
 
 	/* Based on the probability, calculate the bound between the 0-bit
@@ -749,17 +756,15 @@ lzms_decompress(const void * const restrict in, const size_t in_nbytes,
 	 *
 	 * 1. LZMS-compressed data is a series of 16-bit integers, so the
 	 *    compressed data buffer cannot take up an odd number of bytes.
-	 * 2. To prevent poor performance on some architectures, we require that
-	 *    the compressed data buffer is 2-byte aligned.
-	 * 3. There must be at least 4 bytes of compressed data, since otherwise
+	 * 2. There must be at least 4 bytes of compressed data, since otherwise
 	 *    we cannot even initialize the range decoder.
 	 */
-	if ((in_nbytes & 1) || ((uintptr_t)in & 1) || (in_nbytes < 4))
+	if ((in_nbytes & 1) || (in_nbytes < 4))
 		return -1;
 
-	lzms_range_decoder_init(&rd, in, in_nbytes / sizeof(le16));
+	lzms_range_decoder_init(&rd, in, in_nbytes);
 
-	lzms_input_bitstream_init(&is, in, in_nbytes / sizeof(le16));
+	lzms_input_bitstream_init(&is, in, in_nbytes);
 
 	lzms_init_probabilities(&d->probs);
 
