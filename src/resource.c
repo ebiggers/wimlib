@@ -57,8 +57,8 @@
  *   "chunk table" provides the offset, in bytes relative to the end of the
  *   chunk table, of the start of each compressed chunk, except for the first
  *   chunk which is omitted as it always has an offset of 0.  Chunk table
- *   entries are 32-bit for resources <= 4 GiB uncompressed and 64-bit for
- *   resources > 4 GiB uncompressed.
+ *   entries are 32-bit for resources < 4 GiB uncompressed and 64-bit for
+ *   resources >= 4 GiB uncompressed.
  *
  * - Solid resource format (distinguished by the use of WIM_RESHDR_FLAG_SOLID
  *   instead of WIM_RESHDR_FLAG_COMPRESSED): similar to the original format, but
