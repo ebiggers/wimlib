@@ -449,9 +449,11 @@ retry:
 	if (n >= buflen)
 		goto realloc;
 
-	ret = FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-			    NULL,
-			    is_ntstatus ? (*func_RtlNtStatusToDosError)(code) : code,
+	ret = FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM |
+				FORMAT_MESSAGE_IGNORE_INSERTS |
+				(is_ntstatus ? FORMAT_MESSAGE_FROM_HMODULE : 0),
+			    (is_ntstatus ? ntdll_spec.handle : NULL),
+			    code,
 			    MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
 			    &buf[n],
 			    buflen - n,
