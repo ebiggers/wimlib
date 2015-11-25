@@ -1675,15 +1675,18 @@ retry:
 		 * STATUS_ACCESS_DENIED when creating a named data stream that
 		 * was just deleted, using a directory-relative open.  I have no
 		 * idea why Windows is broken in this case.  */
-		static const SECURITY_DESCRIPTOR_RELATIVE desc = {
-			.Revision = SECURITY_DESCRIPTOR_REVISION1,
-			.Control = SE_SELF_RELATIVE | SE_DACL_PRESENT,
-			.Owner = 0,
-			.Group = 0,
-			.Sacl = 0,
-			.Dacl = 0,
-		};
-		(*func_NtSetSecurityObject)(h, DACL_SECURITY_INFORMATION, (void *)&desc);
+		if (!(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS)) {
+			static const SECURITY_DESCRIPTOR_RELATIVE desc = {
+				.Revision = SECURITY_DESCRIPTOR_REVISION1,
+				.Control = SE_SELF_RELATIVE | SE_DACL_PRESENT,
+				.Owner = 0,
+				.Group = 0,
+				.Sacl = 0,
+				.Dacl = 0,
+			};
+			(*func_NtSetSecurityObject)(h, DACL_SECURITY_INFORMATION,
+						    (void *)&desc);
+		}
 	}
 
 	if (!dentry_is_root(dentry)) {
