@@ -173,9 +173,7 @@ blob_release_location(struct blob_descriptor *blob)
 
 		list_del(&blob->rdesc_node);
 		if (list_empty(&rdesc->blob_list)) {
-			wimlib_assert(rdesc->wim->refcnt > 0);
-			if (--rdesc->wim->refcnt == 0)
-				finalize_wim_struct(rdesc->wim);
+			wim_decrement_refcnt(rdesc->wim);
 			FREE(rdesc);
 		}
 		break;

@@ -186,7 +186,7 @@ static inline bool wim_is_pipable(const WIMStruct *wim)
 }
 
 extern void
-finalize_wim_struct(WIMStruct *wim);
+wim_decrement_refcnt(WIMStruct *wim);
 
 extern bool
 wim_has_solid_resources(const WIMStruct *wim);

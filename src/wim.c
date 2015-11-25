@@ -867,10 +867,14 @@ can_modify_wim(WIMStruct *wim)
 	return 0;
 }
 
-/* Free a WIMStruct after no more resources reference it.  */
+/* Release a reference to a WIMStruct.  If the reference count reaches 0, the
+ * WIMStruct is freed.  */
 void
-finalize_wim_struct(WIMStruct *wim)
+wim_decrement_refcnt(WIMStruct *wim)
 {
+	wimlib_assert(wim->refcnt > 0);
+	if (--wim->refcnt != 0)
+		return;
 	if (filedes_valid(&wim->in_fd))
 		filedes_close(&wim->in_fd);
 	if (filedes_valid(&wim->out_fd))
@@ -901,9 +905,7 @@ wimlib_free(WIMStruct *wim)
 		wim->image_metadata = NULL;
 	}
 
-	wimlib_assert(wim->refcnt > 0);
-	if (--wim->refcnt == 0)
-		finalize_wim_struct(wim);
+	wim_decrement_refcnt(wim);
 }
 
 static bool
