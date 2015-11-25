@@ -1661,9 +1661,13 @@ retry:
 		 * directory, even though this contradicts Microsoft's
 		 * documentation for FILE_ATTRIBUTE_READONLY which states it is
 		 * not honored for directories!  */
-		FILE_BASIC_INFORMATION basic_info = { .FileAttributes = FILE_ATTRIBUTE_NORMAL };
-		(*func_NtSetInformationFile)(h, &ctx->iosb, &basic_info,
-					     sizeof(basic_info), FileBasicInformation);
+		if (!(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES)) {
+			FILE_BASIC_INFORMATION basic_info =
+				{ .FileAttributes = FILE_ATTRIBUTE_NORMAL };
+			(*func_NtSetInformationFile)(h, &ctx->iosb, &basic_info,
+						     sizeof(basic_info),
+						     FileBasicInformation);
+		}
 
 		/* Also try to remove the directory's DACL.  This isn't supposed
 		 * to be necessary because we *always* use backup semantics.
