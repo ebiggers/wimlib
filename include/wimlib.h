@@ -3,7 +3,7 @@
  * @brief External header for wimlib.
  *
  * This file contains comments for generating documentation with Doxygen.  The
- * built HTML documentation can be viewed at http://wimlib.net/apidoc.  Make
+ * built HTML documentation can be viewed at https://wimlib.net/apidoc.  Make
  * sure to see the <a href="modules.html">Modules page</a> to make more sense of
  * the declarations in this header.
  */
@@ -16,14 +16,14 @@
  * Windows Imaging Format.  This documentation is intended for developers only.
  * If you have installed wimlib and want to know how to use the @b wimlib-imagex
  * program, please see the manual pages and also the <a
- * href="http://wimlib.net/gitlist/wimlib/blob/master/README">README
+ * href="https://wimlib.net/gitlist/wimlib/blob/master/README">README
  * file</a>.
  *
  * @section sec_installing Installing
  *
  * @subsection UNIX
  *
- * Download the source code from http://wimlib.net.  Install the library by
+ * Download the source code from https://wimlib.net.  Install the library by
  * running <c>configure && make && sudo make install</c>.  See the README for
  * information about configuration options.  To use wimlib in your program after
  * installing it, include wimlib.h and link your program with <c>-lwim</c>.
@@ -32,8 +32,8 @@
  *
  * Download the Windows binary distribution with the appropriate architecture
  * (i686 or x86_64 --- also called "x86" and "amd64" respectively) from
- * http://wimlib.net.  Link your program with the libwim-15.dll file.  Make sure
- * to also download the source code so you can get wimlib.h, as it is not
+ * https://wimlib.net.  Link your program with the libwim-15.dll file.  Make
+ * sure to also download the source code so you can get wimlib.h, as it is not
  * included in the binary distribution.  If you need to access the DLL from
  * other programming languages, note that the calling convention is "cdecl".
  *
@@ -43,8 +43,8 @@
  * distribution.
  *
  * There is also the <a
- * href="http://wimlib.net/gitlist/wimlib/blob/master/programs/imagex.c"> source
- * code of <b>wimlib-imagex</b></a>, which is complicated but uses most
+ * href="https://wimlib.net/gitlist/wimlib/blob/master/programs/imagex.c">
+ * source code of <b>wimlib-imagex</b></a>, which is complicated but uses most
  * capabilities of wimlib.
  *
  * @section backwards_compatibility Backwards Compatibility

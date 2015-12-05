@@ -16,7 +16,7 @@ for Debian and RPM packaging are in the debian/ and rpm/ directories.
 To install wimlib and wimlib-imagex on Windows, just download and extract the
 ZIP file containing the latest binaries.  See README.WINDOWS for more details.
 
-All official wimlib releases are available from http://wimlib.net.
+All official wimlib releases are available from https://wimlib.net.
 
                                    WIM FILES
 
@@ -45,7 +45,7 @@ file extension rather than ".wim".  They are supported in wimlib since v1.6.0.
                              IMAGEX IMPLEMENTATION
 
 wimlib itself is a C library, and it provides a documented public API (See:
-http://wimlib.net/apidoc) for other programs to use.  However, it is also
+https://wimlib.net/apidoc) for other programs to use.  However, it is also
 distributed with a command-line program called "wimlib-imagex" that uses this
 library to implement an imaging tool similar to Microsoft's ImageX.
 wimlib-imagex supports almost all the capabilities of Microsoft's ImageX as well

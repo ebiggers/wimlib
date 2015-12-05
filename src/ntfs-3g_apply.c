@@ -455,7 +455,7 @@ ntfs_3g_set_metadata(ntfs_inode *ni, const struct wim_inode *inode,
 					"the security descriptor is invalid.  If you "
 					"are extracting a Windows 10 image, this may be "
 					"caused by a known bug in libntfs-3g.  See: "
-					"http://wimlib.net/forums/viewtopic.php?f=1&t=4 "
+					"https://wimlib.net/forums/viewtopic.php?f=1&t=4 "
 					"for more information.\n\n");
 			}
 			return ret;

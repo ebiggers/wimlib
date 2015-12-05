@@ -3,9 +3,9 @@ Summary:   Tools to create, extract, modify, and mount WIM files
 Version:   1.8.3
 Release:   1
 License:   GPLv3+
-URL:       http://wimlib.net
+URL:       https://wimlib.net
 Packager:  Eric Biggers <ebiggers3@gmail.com>
-Source:    http://wimlib.net/downloads/wimlib-%{version}.tar.gz
+Source:    https://wimlib.net/downloads/wimlib-%{version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 
 

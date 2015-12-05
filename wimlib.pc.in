@@ -5,7 +5,7 @@ includedir=@includedir@
 
 Name: wimlib
 Description: Library to extract, create, modify, and mount Windows Imaging (WIM) files
-URL:  http://wimlib.net
+URL:  https://wimlib.net
 Version: @VERSION@
 Libs: -L${libdir} -lwim
 Requires.private: @PKGCONFIG_PRIVATE_REQUIRES@
