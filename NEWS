@@ -1,3 +1,15 @@
+Version 1.8.4-BETA:
+	Fixed a bug where, on Windows, wimlib would change the security
+	descriptor of the target directory of an extraction even when the
+	'--no-acls' option was specified.
+
+	Added a new '--image-property' option to 'wimcapture', 'wimappend', and
+	'wiminfo'.  This option lets you assign values to elements in a WIM
+	file's XML document by name.
+
+	The wimlib_get_image_property() and wimlib_set_image_property() API
+	functions now support numerically indexed elements.
+
 Version 1.8.3:
 	Fixed a bug with libntfs-3g extraction present since v1.8.1.  Sometimes,
 	some Microsoft software would not correctly recognize data in the
