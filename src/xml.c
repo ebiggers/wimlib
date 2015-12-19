@@ -342,6 +342,32 @@ alloc_wim_xml_info(void)
 	return info;
 }
 
+static bool
+parse_index(xmlChar **pp, uint32_t *index_ret)
+{
+	xmlChar *p = *pp;
+	uint32_t index = 0;
+
+	*p++ = '\0'; /* overwrite '[' */
+	while (*p >= '0' && *p <= '9') {
+		uint32_t n = (index * 10) + (*p++ - '0');
+		if (n < index)
+			return false;
+		index = n;
+	}
+	if (index == 0)
+		return false;
+	if (*p != ']')
+		return false;
+	p++;
+	if (*p != '/' && *p != '\0')
+		return false;
+
+	*pp = p;
+	*index_ret = index;
+	return true;
+}
+
 static int
 do_xml_path_walk(xmlNode *node, const xmlChar *path, bool create,
 		 xmlNode **result_ret)
@@ -362,34 +388,44 @@ do_xml_path_walk(xmlNode *node, const xmlChar *path, bool create,
 
 	if (*p == '/')
 		goto bad_syntax;
-	if (strchr(p, '[')) /* reserved for future use */
-		goto bad_syntax;
 	c = *p;
 
 	while (c != '\0') {
 		const xmlChar *name;
 		xmlNode *child;
+		uint32_t index = 1;
 
 		/* We have another path component.  */
 
 		/* Parse the element name.  */
 		name = p;
-		while (*p != '/' && *p != '\0')
+		while (*p != '/' && *p != '\0' && *p != '[')
 			p++;
 		if (p == name) /* empty name?  */
 			goto bad_syntax;
+
+		/* Handle a bracketed index, if one was specified.  */
+		if (*p == '[' && !parse_index(&p, &index))
+			goto bad_syntax;
+
 		c = *p;
 		*p = '\0';
 
 		/* Look for a matching child.  */
 		node_for_each_child(node, child)
-			if (node_is_element(child, name))
+			if (node_is_element(child, name) && !--index)
 				goto next_step;
 
 		/* No child matched the path.  If create=false, the lookup
 		 * failed.  If create=true, create the needed element.  */
 		if (!create)
 			return 0;
+
+		/* We can't create an element at index 'n' if indices 1...n-1
+		 * didn't already exist.  */
+		if (index != 1)
+			return WIMLIB_ERR_INVALID_PARAM;
+
 		child = xmlNewChild(node, NULL, name, NULL);
 		if (!child)
 			return WIMLIB_ERR_NOMEM;

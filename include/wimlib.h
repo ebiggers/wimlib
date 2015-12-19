@@ -3186,7 +3186,11 @@ wimlib_get_image_name(const WIMStruct *wim, int image);
  *	"TOTALBYTES".  The name can contain forward slashes to indicate a nested
  *	XML element; for example, "WINDOWS/VERSION/BUILD" indicates the BUILD
  *	element nested within the VERSION element nested within the WINDOWS
- *	element.  The <tt>[</tt> character is reserved for future use.
+ *	element.  Since wimlib v1.8.4, a bracketed number can be used to
+ *	indicate one of several identically-named elements; for example,
+ *	"WINDOWS/LANGUAGES/LANGUAGE[2]" indicates the second "LANGUAGE" element
+ *	nested within the "WINDOWS/LANGUAGES" element.  Note that element names
+ *	are case sensitive.
  *
  * @return
  *	The property's value as a ::wimlib_tchar string, or @c NULL if there is
@@ -4043,6 +4047,13 @@ wimlib_set_image_name(WIMStruct *wim, int image, const wimlib_tchar *name);
  * @param property_name
  *	The name of the image property in the same format documented for
  *	wimlib_get_image_property().
+ *	<br/>
+ *	Note: if creating a new element using a bracketed index such as
+ *	"WINDOWS/LANGUAGES/LANGUAGE[2]", the highest index that can be specified
+ *	is one greater than the number of existing elements with that same name,
+ *	excluding the index.  That means that if you are adding a list of new
+ *	elements, they must be added sequentially from the first index (1) to
+ *	the last index (n).
  * @param property_value
  *	If not NULL and not empty, the property is set to this value.
  *	Otherwise, the property is removed from the XML document.
@@ -4052,7 +4063,8 @@ wimlib_set_image_name(WIMStruct *wim, int image, const wimlib_tchar *name);
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  *	@p image does not exist in @p wim.
  * @retval ::WIMLIB_ERR_INVALID_PARAM
- *	@p property_name has an unsupported format.
+ *	@p property_name has an unsupported format, or @p property_name included
+ *	a bracketed index that was too high.
  */
 extern int
 wimlib_set_image_property(WIMStruct *wim, int image,
