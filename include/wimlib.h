@@ -3133,19 +3133,8 @@ wimlib_get_error_string(enum wimlib_error_code code);
 /**
  * @ingroup G_wim_information
  *
- * Get the description of the specified image.
- *
- * @param wim
- * 	Pointer to the ::WIMStruct to query.  This need not represent a
- * 	standalone WIM (e.g. it could represent part of a split WIM).
- * @param image
- * 	The 1-based index of the image for which to query the description.
- *
- * @return
- * 	The description of the image, or @c NULL if there is no such image, or
- * 	@c NULL if the specified image has no description.  The string may not
- * 	remain valid after later library calls, so the caller should duplicate
- * 	it if needed.
+ * Get the description of the specified image.  Equivalent to
+ * <tt>wimlib_get_image_property(wim, image, "DESCRIPTION")</tt>.
  */
 extern const wimlib_tchar *
 wimlib_get_image_description(const WIMStruct *wim, int image);
@@ -3153,18 +3142,10 @@ wimlib_get_image_description(const WIMStruct *wim, int image);
 /**
  * @ingroup G_wim_information
  *
- * Get the name of the specified image.
- *
- * @param wim
- * 	Pointer to the ::WIMStruct to query.  This need not represent a
- * 	standalone WIM (e.g. it could represent part of a split WIM).
- * @param image
- * 	The 1-based index of the image for which to query the name.
- *
- * @return
- * 	The name of the image, or @c NULL if there is no such image, or an empty
- * 	string if the image is unnamed.  The string may not remain valid after
- * 	later library calls, so the caller should duplicate it if needed.
+ * Get the name of the specified image.  Equivalent to
+ * <tt>wimlib_get_image_property(wim, image, "NAME")</tt>, except that
+ * wimlib_get_image_name() will return an empty string if the image is unnamed
+ * whereas wimlib_get_image_property() may return @c NULL in that case.
  */
 extern const wimlib_tchar *
 wimlib_get_image_name(const WIMStruct *wim, int image);
@@ -3967,20 +3948,8 @@ wimlib_set_error_file_by_name(const wimlib_tchar *path);
 /**
  * @ingroup G_modifying_wims
  *
- * Change the description of a WIM image.
- *
- * @param wim
- * 	Pointer to the ::WIMStruct for the WIM.
- * @param image
- * 	The 1-based index of the image for which to change the description.
- * @param description
- * 	The new description to give the image.  It may be @c NULL, which
- * 	indicates that the image is to be given no description.
- *
- * @return 0 on success; a ::wimlib_error_code value on failure.
- *
- * @retval ::WIMLIB_ERR_INVALID_IMAGE
- * 	@p image does not exist in @p wim.
+ * Change the description of a WIM image.  Equivalent to
+ * <tt>wimlib_set_image_property(wim, image, "DESCRIPTION", description)</tt>.
  */
 extern int
 wimlib_set_image_descripton(WIMStruct *wim, int image,
@@ -3990,20 +3959,8 @@ wimlib_set_image_descripton(WIMStruct *wim, int image,
  * @ingroup G_modifying_wims
  *
  * Change what is stored in the \<FLAGS\> element in the WIM XML document
- * (usually something like "Core" or "Ultimate")
- *
- * @param wim
- * 	Pointer to the ::WIMStruct for the WIM.
- * @param image
- * 	The 1-based index of the image for which to change the flags.
- * @param flags
- * 	The new \<FLAGS\> element to give the image.  It may be @c NULL, which
- * 	indicates that the image is to be given no \<FLAGS\> element.
- *
- * @return 0 on success; a ::wimlib_error_code value on failure.
- *
- * @retval ::WIMLIB_ERR_INVALID_IMAGE
- * 	@p image does not exist in @p wim.
+ * (usually something like "Core" or "Ultimate").  Equivalent to
+ * <tt>wimlib_set_image_property(wim, image, "FLAGS", flags)</tt>.
  */
 extern int
 wimlib_set_image_flags(WIMStruct *wim, int image, const wimlib_tchar *flags);
@@ -4011,23 +3968,8 @@ wimlib_set_image_flags(WIMStruct *wim, int image, const wimlib_tchar *flags);
 /**
  * @ingroup G_modifying_wims
  *
- * Change the name of a WIM image.
- *
- * @param wim
- * 	Pointer to the ::WIMStruct for the WIM.
- * @param image
- * 	The 1-based index of the image for which to change the name.
- * @param name
- *	New name to give the new image.  If @c NULL or empty, the new image is
- *	given no name.  Otherwise, it must specify a name that does not already
- *	exist in @p wim.
- *
- * @return 0 on success; a ::wimlib_error_code value on failure.
- *
- * @retval ::WIMLIB_ERR_IMAGE_NAME_COLLISION
- *	The WIM already contains an image with the requested name.
- * @retval ::WIMLIB_ERR_INVALID_IMAGE
- * 	@p image does not exist in @p wim.
+ * Change the name of a WIM image.  Equivalent to
+ * <tt>wimlib_set_image_property(wim, image, "NAME", name)</tt>.
  */
 extern int
 wimlib_set_image_name(WIMStruct *wim, int image, const wimlib_tchar *name);
@@ -4060,6 +4002,9 @@ wimlib_set_image_name(WIMStruct *wim, int image, const wimlib_tchar *name);
  *
  * @return 0 on success; a ::wimlib_error_code value on failure.
  *
+ * @retval ::WIMLIB_ERR_IMAGE_NAME_COLLISION
+ *	The user requested to set the image name (the <tt>NAME</tt> property),
+ *	but another image in the WIM already had the requested name.
  * @retval ::WIMLIB_ERR_INVALID_IMAGE
  *	@p image does not exist in @p wim.
  * @retval ::WIMLIB_ERR_INVALID_PARAM

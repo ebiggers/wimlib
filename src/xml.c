@@ -512,37 +512,6 @@ xml_set_ttext_by_path(xmlNode *root, const xmlChar *path, const tchar *ttext)
 	}
 }
 
-/* Sets a string property for the specified WIM image.  */
-static int
-set_image_property(WIMStruct *wim, int image, const xmlChar *name,
-		   const tchar *value)
-{
-	struct wim_xml_info *info = wim->xml_info;
-
-	if (image < 1 || image > info->image_count)
-		return WIMLIB_ERR_INVALID_IMAGE;
-
-	return xml_set_ttext_by_path(info->images[image - 1], name, value);
-}
-
-/* Gets a string property for the specified WIM image as a 'tchar' string.
- * Returns a pointer to the property value if found; NULL if the image doesn't
- * exist; or 'default_value' if the property doesn't exist in the image or if
- * the property value could not be translated to a 'tchar' string.  */
-static const tchar *
-get_image_property(const WIMStruct *wim, int image, const xmlChar *name,
-		   const tchar *default_value)
-{
-	struct wim_xml_info *info = wim->xml_info;
-	const tchar *value;
-
-	if (image < 1 || image > info->image_count)
-		return NULL;
-
-	value = xml_get_ttext_by_path(info, info->images[image - 1], name);
-	return value ? value : default_value;
-}
-
 /* Unlink and return the node which represents the INDEX attribute of the
  * specified IMAGE element.  */
 static xmlAttr *
@@ -1419,13 +1388,19 @@ wimlib_image_name_in_use(const WIMStruct *wim, const tchar *name)
 WIMLIBAPI const tchar *
 wimlib_get_image_name(const WIMStruct *wim, int image)
 {
-	return get_image_property(wim, image, "NAME", T(""));
+	const struct wim_xml_info *info = wim->xml_info;
+	const tchar *name;
+
+	if (image < 1 || image > info->image_count)
+		return NULL;
+	name = wimlib_get_image_property(wim, image, T("NAME"));
+	return name ? name : T("");
 }
 
 WIMLIBAPI const tchar *
 wimlib_get_image_description(const WIMStruct *wim, int image)
 {
-	return get_image_property(wim, image, "DESCRIPTION", NULL);
+	return wimlib_get_image_property(wim, image, T("DESCRIPTION"));
 }
 
 WIMLIBAPI const tchar *
@@ -1434,12 +1409,15 @@ wimlib_get_image_property(const WIMStruct *wim, int image,
 {
 	const xmlChar *name;
 	const tchar *value;
+	struct wim_xml_info *info = wim->xml_info;
 
 	if (!property_name || !*property_name)
 		return NULL;
+	if (image < 1 || image > info->image_count)
+		return NULL;
 	if (tstr_get_utf8(property_name, &name))
 		return NULL;
-	value = get_image_property(wim, image, name, NULL);
+	value = xml_get_ttext_by_path(info, info->images[image - 1], name);
 	tstr_put_utf8(name);
 	return value;
 }
@@ -1447,22 +1425,19 @@ wimlib_get_image_property(const WIMStruct *wim, int image,
 WIMLIBAPI int
 wimlib_set_image_name(WIMStruct *wim, int image, const tchar *name)
 {
-	if (image_name_in_use(wim, name, image))
-		return WIMLIB_ERR_IMAGE_NAME_COLLISION;
-
-	return set_image_property(wim, image, "NAME", name);
+	return wimlib_set_image_property(wim, image, T("NAME"), name);
 }
 
 WIMLIBAPI int
 wimlib_set_image_descripton(WIMStruct *wim, int image, const tchar *description)
 {
-	return set_image_property(wim, image, "DESCRIPTION", description);
+	return wimlib_set_image_property(wim, image, T("DESCRIPTION"), description);
 }
 
 WIMLIBAPI int
 wimlib_set_image_flags(WIMStruct *wim, int image, const tchar *flags)
 {
-	return set_image_property(wim, image, "FLAGS", flags);
+	return wimlib_set_image_property(wim, image, T("FLAGS"), flags);
 }
 
 WIMLIBAPI int
@@ -1470,15 +1445,23 @@ wimlib_set_image_property(WIMStruct *wim, int image, const tchar *property_name,
 			  const tchar *property_value)
 {
 	const xmlChar *name;
+	struct wim_xml_info *info = wim->xml_info;
 	int ret;
 
 	if (!property_name || !*property_name)
 		return WIMLIB_ERR_INVALID_PARAM;
 
+	if (image < 1 || image > info->image_count)
+		return WIMLIB_ERR_INVALID_IMAGE;
+
+	if (!tstrcmp(property_name, T("NAME")) &&
+	    image_name_in_use(wim, property_value, image))
+		return WIMLIB_ERR_IMAGE_NAME_COLLISION;
+
 	ret = tstr_get_utf8(property_name, &name);
 	if (ret)
 		return ret;
-	ret = set_image_property(wim, image, name, property_value);
+	ret = xml_set_ttext_by_path(info->images[image - 1], name, property_value);
 	tstr_put_utf8(name);
 	return ret;
 }
