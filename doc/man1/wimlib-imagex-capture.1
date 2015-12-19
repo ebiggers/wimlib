@@ -279,6 +279,19 @@ optimize\fR(1).
 Specify a string to use in the <FLAGS> element of the XML data for the new
 image.
 .TP
+\fB--image-property\fR \fINAME\fR=\fIVALUE\fR
+Specify an arbitrary per-image property to set in the XML document of the WIM
+file.  \fIVALUE\fR is the string to set as the property value.  \fINAME\fR is
+the name of the image property, for example "NAME", "DESCRIPTION", or
+"TOTALBYTES".  The name can contain forward slashes to indicate a nested XML
+element; for example, "WINDOWS/VERSION/BUILD" indicates the BUILD element nested
+within the VERSION element nested within the WINDOWS element.  A bracketed
+number can be used to indicate one of several identically-named elements; for
+example, "WINDOWS/LANGUAGES/LANGUAGE[2]" indicates the second "LANGUAGE" element
+nested within the "WINDOWS/LANGUAGES" element.  When adding a list of elements
+in this way, they must be specified in sequential order.  Note that element
+names are case-sensitive.  This option may be specified multiple times.
+.TP
 \fB--dereference\fR
 (UNIX-like systems only) Follow symbolic links and archive the files they point
 to, rather than archiving the links themselves.

@@ -18,10 +18,11 @@ contained in it will be printed.  If an image is specified by \fIIMAGE\fR (as a
 1-based image index or an image name), the printed information is restricted to
 that concerning the specified image.
 .PP
-Changes to the WIM are made if \fINEW_NAME\fR and/or \fB--boot\fR are specified.
-\fINEW_NAME\fR is taken to be the new name of the image specified by \fIIMAGE\fR
-while \fINEW_DESC\fR is taken to be its new description.  If \fINEW_DESC\fR is
-not specified, the image's description is unchanged.
+Changes to the WIM are made if \fINEW_NAME\fR and/or \fB--boot\fR and/or
+\fB--image-property\fR are specified.  \fINEW_NAME\fR is taken to be the new
+name of the image specified by \fIIMAGE\fR while \fINEW_DESC\fR is taken to be
+its new description.  If \fINEW_DESC\fR is not specified, the image's
+description is unchanged.
 .PP
 \fBwimlib-imagex info\fR does not support modifying a split WIM, although you may
 display information about one.
@@ -59,6 +60,13 @@ stores only one copy of each unique blob.
 \fB--xml\fR
 Prints the raw XML data from the WIM.  Note: the XML data will be encoded using
 UTF-16LE, and it will begin with a byte-order mark.
+.TP
+\fB--image-property\fR \fINAME\fR=\fIVALUE\fR
+Set an arbitrary per-image property in the XML document of the WIM file.
+\fINAME\fR is an element path such as "WINDOWS/VERSION/MAJOR", and \fIVALUE\fR
+is the string to place in the element, such as "10".  See the documentation for
+this option to \fBwimlib-imagex capture\fR (1) for more details.  This option
+may be specified multiple times.
 .SH SEE ALSO
 .BR wimlib-imagex (1)
 .BR wimlib-imagex-dir (1)

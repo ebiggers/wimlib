@@ -160,6 +160,7 @@ enum {
 	IMAGEX_FLAGS_OPTION,
 	IMAGEX_FORCE_OPTION,
 	IMAGEX_HEADER_OPTION,
+	IMAGEX_IMAGE_PROPERTY_OPTION,
 	IMAGEX_INCLUDE_INVALID_NAMES_OPTION,
 	IMAGEX_LAZY_OPTION,
 	IMAGEX_METADATA_OPTION,
@@ -240,6 +241,7 @@ static const struct option capture_or_append_options[] = {
 	{T("config"),      required_argument, NULL, IMAGEX_CONFIG_OPTION},
 	{T("dereference"), no_argument,       NULL, IMAGEX_DEREFERENCE_OPTION},
 	{T("flags"),       required_argument, NULL, IMAGEX_FLAGS_OPTION},
+	{T("image-property"), required_argument, NULL, IMAGEX_IMAGE_PROPERTY_OPTION},
 	{T("verbose"),     no_argument,       NULL, IMAGEX_VERBOSE_OPTION},
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
 	{T("rebuild"),     no_argument,       NULL, IMAGEX_REBUILD_OPTION},
@@ -332,6 +334,7 @@ static const struct option info_options[] = {
 	{T("blobs"),        no_argument,       NULL, IMAGEX_BLOBS_OPTION},
 	{T("metadata"),     no_argument,       NULL, IMAGEX_METADATA_OPTION},
 	{T("xml"),          no_argument,       NULL, IMAGEX_XML_OPTION},
+	{T("image-property"), required_argument, NULL, IMAGEX_IMAGE_PROPERTY_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -599,7 +602,7 @@ set_compress_slow(void)
 }
 
 struct string_set {
-	const tchar **strings;
+	tchar **strings;
 	unsigned num_strings;
 	unsigned num_alloc_strings;
 };
@@ -611,12 +614,12 @@ struct string_set {
 	struct string_set _strings = STRING_SET_INITIALIZER
 
 static int
-string_set_append(struct string_set *set, const tchar *glob)
+string_set_append(struct string_set *set, tchar *glob)
 {
 	unsigned num_alloc_strings = set->num_alloc_strings;
 
 	if (set->num_strings == num_alloc_strings) {
-		const tchar **new_strings;
+		tchar **new_strings;
 
 		num_alloc_strings += 4;
 		new_strings = realloc(set->strings,
@@ -641,10 +644,55 @@ string_set_destroy(struct string_set *set)
 static int
 wim_reference_globs(WIMStruct *wim, struct string_set *set, int open_flags)
 {
-	return wimlib_reference_resource_files(wim, set->strings,
+	return wimlib_reference_resource_files(wim, (const tchar **)set->strings,
 					       set->num_strings,
 					       WIMLIB_REF_FLAG_GLOB_ENABLE,
 					       open_flags);
+}
+
+static int
+append_image_property_argument(struct string_set *image_properties)
+{
+	if (!tstrchr(optarg, '=')) {
+		imagex_error(T("'--image-property' argument "
+			       "must be in the form NAME=VALUE"));
+		return -1;
+	}
+	return string_set_append(image_properties, optarg);
+}
+
+static int
+apply_image_properties(struct string_set *image_properties,
+		       WIMStruct *wim, int image, bool *any_changes_ret)
+{
+	bool any_changes = false;
+	for (unsigned i = 0; i < image_properties->num_strings; i++) {
+		tchar *name, *value;
+		const tchar *current_value;
+		int ret;
+
+		name = image_properties->strings[i];
+		value = tstrchr(name, '=');
+		*value++ = '\0';
+
+		current_value = wimlib_get_image_property(wim, image, name);
+		if (current_value && !tstrcmp(current_value, value)) {
+			imagex_printf(T("The %"TS" property of image %d "
+					"already has value \"%"TS"\".\n"),
+				      name, image, value);
+		} else {
+			imagex_printf(T("Setting the %"TS" property of image "
+					"%d to \"%"TS"\".\n"),
+				      name, image, value);
+			ret = wimlib_set_image_property(wim, image, name, value);
+			if (ret)
+				return ret;
+			any_changes = true;
+		}
+	}
+	if (any_changes_ret)
+		*any_changes_ret = any_changes;
+	return 0;
 }
 
 static void
@@ -1810,8 +1858,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	const tchar *wimfile;
 	int wim_fd;
 	const tchar *name;
-	const tchar *desc;
-	const tchar *flags_element = NULL;
+	STRING_SET(image_properties);
 
 	WIMStruct *wim;
 	STRING_SET(base_wimfiles);
@@ -1883,8 +1930,18 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		case IMAGEX_NO_SOLID_SORT_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_NO_SOLID_SORT;
 			break;
-		case IMAGEX_FLAGS_OPTION:
-			flags_element = optarg;
+		case IMAGEX_FLAGS_OPTION: {
+			tchar *p = alloca((6 + tstrlen(optarg) + 1) * sizeof(tchar));
+			tsprintf(p, T("FLAGS=%"TS), optarg);
+			ret = string_set_append(&image_properties, p);
+			if (ret)
+				goto out;
+			break;
+		}
+		case IMAGEX_IMAGE_PROPERTY_OPTION:
+			ret = append_image_property_argument(&image_properties);
+			if (ret)
+				goto out;
 			break;
 		case IMAGEX_DEREFERENCE_OPTION:
 			add_flags |= WIMLIB_ADD_FLAG_DEREFERENCE;
@@ -1951,7 +2008,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			}
 			ret = string_set_append(&base_wimfiles, optarg);
 			if (ret)
-				goto out_free_base_wimfiles;
+				goto out;
 			write_flags |= WIMLIB_WRITE_FLAG_SKIP_EXTERNAL_WIMS;
 			break;
 		case IMAGEX_WIMBOOT_OPTION:
@@ -2065,11 +2122,15 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		name = tbasename(tstrcpy(source_copy, source));
 		name_defaulted = true;
 	}
-	/* Image description defaults to NULL if not given. */
-	if (argc >= 4)
-		desc = argv[3];
-	else
-		desc = NULL;
+
+	/* Image description (if given). */
+	if (argc >= 4) {
+		tchar *p = alloca((12 + tstrlen(argv[3]) + 1) * sizeof(tchar));
+		tsprintf(p, T("DESCRIPTION=%"TS), argv[3]);
+		ret = string_set_append(&image_properties, p);
+		if (ret)
+			goto out;
+	}
 
 	if (source_list) {
 		/* Set up capture sources in source list mode */
@@ -2278,29 +2339,18 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	if (ret)
 		goto out_free_template_wim;
 
-	if (desc || flags_element || template_image_name_or_num) {
-		/* User provided <DESCRIPTION> or <FLAGS> element, or an image
-		 * on which the added one is to be based has been specified with
-		 * --update-of.  Get the index of the image we just
-		 *  added, then use it to call the appropriate functions.  */
+	if (image_properties.num_strings || template_image_name_or_num) {
+		/* User asked to set additional image properties, or an image on
+		 * which the added one is to be based has been specified with
+		 * --update-of.  */
 		struct wimlib_wim_info info;
 
 		wimlib_get_wim_info(wim, &info);
 
-		if (desc) {
-			ret = wimlib_set_image_descripton(wim,
-							  info.image_count,
-							  desc);
-			if (ret)
-				goto out_free_template_wim;
-		}
-
-		if (flags_element) {
-			ret = wimlib_set_image_flags(wim, info.image_count,
-						     flags_element);
-			if (ret)
-				goto out_free_template_wim;
-		}
+		ret = apply_image_properties(&image_properties, wim,
+					     info.image_count, NULL);
+		if (ret)
+			goto out_free_template_wim;
 
 		/* Reference template image if the user provided one.  */
 		if (template_image_name_or_num) {
@@ -2344,7 +2394,8 @@ out_free_capture_sources:
 		free(capture_sources);
 out_free_source_list_contents:
 	free(source_list_contents);
-out_free_base_wimfiles:
+out:
+	string_set_destroy(&image_properties);
 	string_set_destroy(&base_wimfiles);
 	return ret;
 
@@ -2352,7 +2403,7 @@ out_usage:
 	usage(cmd, stderr);
 out_err:
 	ret = -1;
-	goto out_free_base_wimfiles;
+	goto out;
 }
 
 /* Remove image(s) from a WIM. */
@@ -3274,8 +3325,7 @@ imagex_info(int argc, tchar **argv, int cmd)
 	const tchar *xml_out_file = NULL;
 	const tchar *wimfile;
 	const tchar *image_num_or_name;
-	const tchar *new_name;
-	const tchar *new_desc;
+	STRING_SET(image_properties);
 	WIMStruct *wim;
 	int image;
 	int ret;
@@ -3313,6 +3363,11 @@ imagex_info(int argc, tchar **argv, int cmd)
 			imagex_error(T("The --metadata option has been removed. "
 				       "Use 'wimdir --detail' instead."));
 			goto out_err;
+		case IMAGEX_IMAGE_PROPERTY_OPTION:
+			ret = append_image_property_argument(&image_properties);
+			if (ret)
+				goto out;
+			break;
 		default:
 			goto out_usage;
 		}
@@ -3325,8 +3380,24 @@ imagex_info(int argc, tchar **argv, int cmd)
 
 	wimfile		  = argv[0];
 	image_num_or_name = (argc >= 2) ? argv[1] : T("all");
-	new_name	  = (argc >= 3) ? argv[2] : NULL;
-	new_desc	  = (argc >= 4) ? argv[3] : NULL;
+
+	if (argc >= 3) {
+		/* NEW_NAME */
+		tchar *p = alloca((5 + tstrlen(argv[2]) + 1) * sizeof(tchar));
+		tsprintf(p, T("NAME=%"TS), argv[2]);
+		ret = string_set_append(&image_properties, p);
+		if (ret)
+			goto out;
+	}
+
+	if (argc >= 4) {
+		/* NEW_DESC */
+		tchar *p = alloca((12 + tstrlen(argv[3]) + 1) * sizeof(tchar));
+		tsprintf(p, T("DESCRIPTION=%"TS), argv[3]);
+		ret = string_set_append(&image_properties, p);
+		if (ret)
+			goto out;
+	}
 
 	if (check && nocheck) {
 		imagex_error(T("Can't specify both --check and --nocheck"));
@@ -3367,17 +3438,17 @@ imagex_info(int argc, tchar **argv, int cmd)
 				       "image in a multi-image WIM"));
 			goto out_wimlib_free;
 		}
-		if (new_name) {
-			imagex_error(T("Cannot specify the NEW_NAME "
-				       "without specifying a specific "
-				       "image in a multi-image WIM"));
+		if (image_properties.num_strings) {
+			imagex_error(T("Can't change image properties without "
+				       "specifying a specific image in a "
+				       "multi-image WIM"));
 			goto out_wimlib_free;
 		}
 	}
 
 	/* Operations that print information are separated from operations that
 	 * recreate the WIM file. */
-	if (!new_name && !boot) {
+	if (!image_properties.num_strings && !boot) {
 
 		/* Read-only operations */
 
@@ -3436,15 +3507,15 @@ imagex_info(int argc, tchar **argv, int cmd)
 
 		ret = 0;
 	} else {
-
 		/* Modification operations */
+		bool any_property_changes;
 
 		if (image == WIMLIB_ALL_IMAGES)
 			image = 1;
 
-		if (image == WIMLIB_NO_IMAGE && new_name) {
-			imagex_error(T("Cannot specify new_name (\"%"TS"\") "
-				       "when using image 0"), new_name);
+		if (image == WIMLIB_NO_IMAGE && image_properties.num_strings) {
+			imagex_error(T("Cannot change image properties "
+				       "when using image 0"));
 			ret = -1;
 			goto out_wimlib_free;
 		}
@@ -3464,40 +3535,15 @@ imagex_info(int argc, tchar **argv, int cmd)
 					goto out_wimlib_free;
 			}
 		}
-		if (new_name) {
-			if (!tstrcmp(wimlib_get_image_name(wim, image), new_name))
-			{
-				imagex_printf(T("Image %d is already named \"%"TS"\".\n"),
-					image, new_name);
-				new_name = NULL;
-			} else {
-				imagex_printf(T("Changing the name of image %d to "
-					  "\"%"TS"\".\n"), image, new_name);
-				ret = wimlib_set_image_name(wim, image, new_name);
-				if (ret)
-					goto out_wimlib_free;
-			}
-		}
-		if (new_desc) {
-			const tchar *old_desc;
-			old_desc = wimlib_get_image_description(wim, image);
-			if (old_desc && !tstrcmp(old_desc, new_desc)) {
-				imagex_printf(T("The description of image %d is already "
-					  "\"%"TS"\".\n"), image, new_desc);
-				new_desc = NULL;
-			} else {
-				imagex_printf(T("Changing the description of image %d "
-					  "to \"%"TS"\".\n"), image, new_desc);
-				ret = wimlib_set_image_descripton(wim, image,
-								  new_desc);
-				if (ret)
-					goto out_wimlib_free;
-			}
-		}
+
+		ret = apply_image_properties(&image_properties, wim, image,
+					     &any_property_changes);
+		if (ret)
+			goto out_wimlib_free;
 
 		/* Only call wimlib_overwrite() if something actually needs to
 		 * be changed.  */
-		if (boot || new_name || new_desc ||
+		if (boot || any_property_changes ||
 		    (check && !info.has_integrity_table) ||
 		    (nocheck && info.has_integrity_table))
 		{
@@ -3518,6 +3564,7 @@ imagex_info(int argc, tchar **argv, int cmd)
 out_wimlib_free:
 	wimlib_free(wim);
 out:
+	string_set_destroy(&image_properties);
 	return ret;
 
 out_usage:
@@ -4384,6 +4431,7 @@ T(
 "    %"TS" WIMFILE [IMAGE [NEW_NAME [NEW_DESC]]]\n"
 "                    [--boot] [--check] [--nocheck] [--xml]\n"
 "                    [--extract-xml FILE] [--header] [--blobs]\n"
+"                    [--image-property NAME=VALUE]\n"
 ),
 [CMD_JOIN] =
 T(
