@@ -204,7 +204,8 @@ If you are creating a solid WIM (using the \fB--solid\fR option), then you
 probably want \fB--solid-compress\fR instead.
 .IP ""
 Be careful if you choose LZMS compression.  It is not compatible with wimlib
-before v1.6.0, WIMGAPI before Windows 8, DISM before Windows 8.1, and 7-Zip.
+before v1.6.0, WIMGAPI before Windows 8, DISM before Windows 8.1, and 7-Zip
+before v15.12.
 .IP ""
 Also note that choosing LZMS compression does not automatically imply solid-mode
 compression, as it does with DISM.  Use \fB--solid\fR if you want to create a
