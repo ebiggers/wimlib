@@ -159,14 +159,16 @@ libwim_la_SOURCES += src/ntfs-3g_apply.c	\
 endif
 
 if WINDOWS_NATIVE_BUILD
-libwim_la_SOURCES += src/win32_common.c			\
+libwim_la_SOURCES += src/wimboot.c			\
+		     src/win32_common.c			\
 		     src/win32_apply.c			\
 		     src/win32_capture.c		\
 		     src/win32_replacements.c		\
-		     src/wimboot.c			\
-		     include/wimlib/win32_common.h	\
-		     include/wimlib/win32.h		\
+		     src/win32_vss.c			\
 		     include/wimlib/wimboot.h		\
+		     include/wimlib/win32.h		\
+		     include/wimlib/win32_common.h	\
+		     include/wimlib/win32_vss.h		\
 		     include/wimlib/wof.h
 else
 libwim_la_SOURCES += src/unix_apply.c		\

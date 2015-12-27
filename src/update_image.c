@@ -1197,7 +1197,8 @@ check_add_command(struct wimlib_update_command *cmd,
 			  WIMLIB_ADD_FLAG_WINCONFIG |
 			  WIMLIB_ADD_FLAG_WIMBOOT |
 			  WIMLIB_ADD_FLAG_NO_REPLACE |
-			  WIMLIB_ADD_FLAG_TEST_FILE_EXCLUSION))
+			  WIMLIB_ADD_FLAG_TEST_FILE_EXCLUSION |
+			  WIMLIB_ADD_FLAG_SNAPSHOT))
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	bool is_entire_image = WIMLIB_IS_WIM_ROOT_PATH(cmd->add.wim_target_path);
@@ -1211,13 +1212,22 @@ check_add_command(struct wimlib_update_command *cmd,
 #endif
 
 #ifdef __WIN32__
-	/* Check for flags not supported on Windows */
+	/* Check for flags not supported on Windows.  */
 	if (add_flags & WIMLIB_ADD_FLAG_UNIX_DATA) {
 		ERROR("Capturing UNIX-specific data is not supported on Windows");
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 	if (add_flags & WIMLIB_ADD_FLAG_DEREFERENCE) {
 		ERROR("Dereferencing symbolic links is not supported on Windows");
+		return WIMLIB_ERR_UNSUPPORTED;
+	}
+#else
+	/* Check for flags only supported on Windows.  */
+
+	/* Currently, SNAPSHOT means Windows VSS.  In the future, it perhaps
+	 * could be implemented for other types of snapshots, such as btrfs.  */
+	if (add_flags & WIMLIB_ADD_FLAG_SNAPSHOT) {
+		ERROR("Snapshot mode is only supported on Windows (VSS)");
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 #endif

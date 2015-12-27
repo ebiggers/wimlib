@@ -184,6 +184,7 @@ enum {
 	IMAGEX_REF_OPTION,
 	IMAGEX_RESUME_OPTION,
 	IMAGEX_RPFIX_OPTION,
+	IMAGEX_SNAPSHOT_OPTION,
 	IMAGEX_SOFT_OPTION,
 	IMAGEX_SOLID_CHUNK_SIZE_OPTION,
 	IMAGEX_SOLID_COMPRESS_OPTION,
@@ -258,6 +259,7 @@ static const struct option capture_or_append_options[] = {
 	{T("delta-from"),  required_argument, NULL, IMAGEX_DELTA_FROM_OPTION},
 	{T("wimboot"),     no_argument,       NULL, IMAGEX_WIMBOOT_OPTION},
 	{T("unsafe-compact"), no_argument,    NULL, IMAGEX_UNSAFE_COMPACT_OPTION},
+	{T("snapshot"),    no_argument,       NULL, IMAGEX_SNAPSHOT_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -2021,6 +2023,9 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 				goto out_err;
 			}
 			write_flags |= WIMLIB_WRITE_FLAG_UNSAFE_COMPACT;
+			break;
+		case IMAGEX_SNAPSHOT_OPTION:
+			add_flags |= WIMLIB_ADD_FLAG_SNAPSHOT;
 			break;
 		default:
 			goto out_usage;

@@ -639,6 +639,7 @@ do_done_with_blob(struct blob_descriptor *blob,
 {
 	int ret;
 	struct wim_inode *inode;
+	const tchar *path;
 	tchar *cookie1;
 	tchar *cookie2;
 
@@ -652,10 +653,12 @@ do_done_with_blob(struct blob_descriptor *blob,
 	if (--inode->i_num_remaining_streams > 0)
 		return 0;
 
-	cookie1 = progress_get_streamless_path(blob->file_on_disk);
-	cookie2 = progress_get_win32_path(blob->file_on_disk);
+	path = blob_file_path(blob);
 
-	ret = done_with_file(blob->file_on_disk, progfunc, progctx);
+	cookie1 = progress_get_streamless_path(path);
+	cookie2 = progress_get_win32_path(path);
+
+	ret = done_with_file(path, progfunc, progctx);
 
 	progress_put_win32_path(cookie2);
 	progress_put_streamless_path(cookie1);

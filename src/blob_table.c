@@ -44,6 +44,7 @@
 #include "wimlib/resource.h"
 #include "wimlib/unaligned.h"
 #include "wimlib/util.h"
+#include "wimlib/win32.h"
 #include "wimlib/write.h"
 
 /* A hash table mapping SHA-1 message digests to blob descriptors  */
@@ -129,10 +130,6 @@ clone_blob_descriptor(const struct blob_descriptor *old)
 		break;
 
 	case BLOB_IN_FILE_ON_DISK:
-#ifdef __WIN32__
-	case BLOB_IN_WINNT_FILE_ON_DISK:
-	case BLOB_WIN32_ENCRYPTED:
-#endif
 #ifdef WITH_FUSE
 	case BLOB_IN_STAGING_FILE:
 		STATIC_ASSERT((void*)&old->file_on_disk ==
@@ -142,6 +139,11 @@ clone_blob_descriptor(const struct blob_descriptor *old)
 		if (new->file_on_disk == NULL)
 			goto out_free;
 		break;
+#ifdef __WIN32__
+	case BLOB_IN_WINDOWS_FILE:
+		new->windows_file = clone_windows_file(old->windows_file);
+		break;
+#endif
 	case BLOB_IN_ATTACHED_BUFFER:
 		new->attached_buffer = memdup(old->attached_buffer, old->size);
 		if (new->attached_buffer == NULL)
@@ -179,10 +181,6 @@ blob_release_location(struct blob_descriptor *blob)
 		break;
 	}
 	case BLOB_IN_FILE_ON_DISK:
-#ifdef __WIN32__
-	case BLOB_IN_WINNT_FILE_ON_DISK:
-	case BLOB_WIN32_ENCRYPTED:
-#endif
 #ifdef WITH_FUSE
 	case BLOB_IN_STAGING_FILE:
 		STATIC_ASSERT((void*)&blob->file_on_disk ==
@@ -193,10 +191,14 @@ blob_release_location(struct blob_descriptor *blob)
 			      (void*)&blob->attached_buffer);
 		FREE(blob->file_on_disk);
 		break;
+#ifdef __WIN32__
+	case BLOB_IN_WINDOWS_FILE:
+		free_windows_file(blob->windows_file);
+		break;
+#endif
 #ifdef WITH_NTFS_3G
 	case BLOB_IN_NTFS_VOLUME:
-		if (blob->ntfs_loc)
-			free_ntfs_location(blob->ntfs_loc);
+		free_ntfs_location(blob->ntfs_loc);
 		break;
 #endif
 	}
@@ -464,17 +466,13 @@ cmp_blobs_by_sequential_order(const void *p1, const void *p2)
 #ifdef WITH_FUSE
 	case BLOB_IN_STAGING_FILE:
 #endif
-#ifdef __WIN32__
-	case BLOB_IN_WINNT_FILE_ON_DISK:
-	case BLOB_WIN32_ENCRYPTED:
-		/* Windows: compare by starting LCN (logical cluster number)  */
-		v = cmp_u64(blob1->sort_key, blob2->sort_key);
-		if (v)
-			return v;
-#endif
 		/* Compare files by path: just a heuristic that will place files
 		 * in the same directory next to each other.  */
 		return tstrcmp(blob1->file_on_disk, blob2->file_on_disk);
+#ifdef __WIN32__
+	case BLOB_IN_WINDOWS_FILE:
+		return cmp_windows_files(blob1->windows_file, blob2->windows_file);
+#endif
 #ifdef WITH_NTFS_3G
 	case BLOB_IN_NTFS_VOLUME:
 		return cmp_ntfs_locations(blob1->ntfs_loc, blob2->ntfs_loc);

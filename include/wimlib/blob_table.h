@@ -41,16 +41,10 @@ enum blob_location {
 #endif
 
 #ifdef __WIN32__
-	/* Windows only: the blob's data is available as the contents of the
-	 * data stream named by @file_on_disk.  @file_on_disk is an NT namespace
-	 * path that may be longer than the Win32-level MAX_PATH.  Furthermore,
-	 * the stream may require "backup semantics" to access.  */
-	BLOB_IN_WINNT_FILE_ON_DISK,
-
-	/* Windows only: the blob's data is available as the raw encrypted data
-	 * of the external file named by @file_on_disk.  @file_on_disk is a
-	 * Win32 namespace path.  */
-	BLOB_WIN32_ENCRYPTED,
+	/* Windows only: the blob's data is available in the file (or named data
+	 * stream) specified by @windows_file.  The data might be only properly
+	 * accessible through the Windows API.  */
+	BLOB_IN_WINDOWS_FILE,
 #endif
 };
 
@@ -175,14 +169,13 @@ struct blob_descriptor {
 			union {
 
 				/* BLOB_IN_FILE_ON_DISK
-				 * BLOB_IN_WINNT_FILE_ON_DISK
-				 * BLOB_WIN32_ENCRYPTED  */
+				 * BLOB_IN_WINDOWS_FILE  */
 				struct {
-					tchar *file_on_disk;
+					union {
+						tchar *file_on_disk;
+						struct windows_file *windows_file;
+					};
 					struct wim_inode *file_inode;
-				#ifdef __WIN32__
-					u64 sort_key;
-				#endif
 				};
 
 				/* BLOB_IN_ATTACHED_BUFFER */
@@ -392,10 +385,24 @@ blob_is_in_file(const struct blob_descriptor *blob)
 {
 	return blob->blob_location == BLOB_IN_FILE_ON_DISK
 #ifdef __WIN32__
-	    || blob->blob_location == BLOB_IN_WINNT_FILE_ON_DISK
-	    || blob->blob_location == BLOB_WIN32_ENCRYPTED
+	    || blob->blob_location == BLOB_IN_WINDOWS_FILE
 #endif
 	   ;
+}
+
+#ifdef __WIN32__
+extern const wchar_t *
+get_windows_file_path(const struct windows_file *file);
+#endif
+
+static inline const tchar *
+blob_file_path(const struct blob_descriptor *blob)
+{
+#ifdef __WIN32__
+	if (blob->blob_location == BLOB_IN_WINDOWS_FILE)
+		return get_windows_file_path(blob->windows_file);
+#endif
+	return blob->file_on_disk;
 }
 
 extern struct blob_descriptor *

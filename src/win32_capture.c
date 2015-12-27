@@ -38,6 +38,7 @@
 #include "wimlib/error.h"
 #include "wimlib/paths.h"
 #include "wimlib/reparse.h"
+#include "wimlib/win32_vss.h"
 #include "wimlib/wof.h"
 
 struct winnt_scan_ctx {
@@ -48,6 +49,9 @@ struct winnt_scan_ctx {
 	/* True if WOF is definitely not attached to the volume being scanned;
 	 * false if it may be  */
 	bool wof_not_attached;
+
+	/* A reference to the VSS snapshot being used, or NULL if none  */
+	struct vss_snapshot *snapshot;
 };
 
 static inline const wchar_t *
@@ -55,6 +59,135 @@ printable_path(const wchar_t *full_path)
 {
 	/* Skip over \\?\ or \??\  */
 	return full_path + 4;
+}
+
+/* Description of where data is located on a Windows filesystem  */
+struct windows_file {
+
+	/* Is the data the raw encrypted data of an EFS-encrypted file?  */
+	u64 is_encrypted : 1;
+
+	/* The file's LCN (logical cluster number) for sorting, or 0 if unknown.
+	 */
+	u64 sort_key : 63;
+
+	/* A reference to the VSS snapshot containing the file, or NULL if none.
+	 */
+	struct vss_snapshot *snapshot;
+
+	/* The path to the file.  If 'is_encrypted=0' this is an NT namespace
+	 * path; if 'is_encrypted=1' this is a Win32 namespace path.  */
+	wchar_t path[];
+};
+
+/* Allocate a 'struct windows_file' to describe the location of a data stream.
+ */
+static struct windows_file *
+alloc_windows_file(bool is_encrypted, struct vss_snapshot *snapshot,
+		   const wchar_t *path, size_t path_nchars,
+		   const wchar_t *stream_name, size_t stream_name_nchars)
+{
+	struct windows_file *file;
+	wchar_t *p;
+
+	file = MALLOC(sizeof(struct windows_file) +
+		      (path_nchars + (stream_name_nchars ? 1 : 0) +
+		       stream_name_nchars + 1) * sizeof(wchar_t));
+	if (!file)
+		return NULL;
+
+	file->is_encrypted = is_encrypted;
+	file->sort_key = 0;
+	file->snapshot = vss_get_snapshot(snapshot);
+	p = wmempcpy(file->path, path, path_nchars);
+	if (stream_name_nchars) {
+		/* Named data stream  */
+		*p++ = L':';
+		p = wmempcpy(p, stream_name, stream_name_nchars);
+	}
+	*p = L'\0';
+	return file;
+}
+
+/* Add a stream, located on a Windows filesystem, to the specified WIM inode.
+ */
+static int
+add_stream(struct wim_inode *inode, bool is_encrypted,
+	   struct vss_snapshot *snapshot, u64 size,
+	   const wchar_t *path, size_t path_nchars,
+	   int stream_type, const utf16lechar *stream_name, size_t stream_name_nchars,
+	   struct list_head *unhashed_blobs)
+{
+	struct blob_descriptor *blob = NULL;
+	struct wim_inode_stream *strm;
+
+	/* If the stream is nonempty, create a blob descriptor for it.  */
+	if (size) {
+		blob = new_blob_descriptor();
+		if (!blob)
+			goto err_nomem;
+
+		blob->windows_file = alloc_windows_file(is_encrypted, snapshot,
+							path, path_nchars,
+							stream_name,
+							stream_name_nchars);
+		if (!blob->windows_file)
+			goto err_nomem;
+
+		blob->blob_location = BLOB_IN_WINDOWS_FILE;
+		blob->file_inode = inode;
+		blob->size = size;
+	}
+
+	strm = inode_add_stream(inode, stream_type, stream_name, blob);
+	if (!strm)
+		goto err_nomem;
+
+	prepare_unhashed_blob(blob, inode, strm->stream_id, unhashed_blobs);
+	return 0;
+
+err_nomem:
+	free_blob_descriptor(blob);
+	return WIMLIB_ERR_NOMEM;
+}
+
+struct windows_file *
+clone_windows_file(const struct windows_file *file)
+{
+	struct windows_file *new;
+
+	new = memdup(file, sizeof(struct windows_file) +
+			   (wcslen(file->path) + 1) * sizeof(wchar_t));
+	if (new)
+		vss_get_snapshot(new->snapshot);
+	return new;
+}
+
+void
+free_windows_file(struct windows_file *file)
+{
+	vss_put_snapshot(file->snapshot);
+	FREE(file);
+}
+
+int
+cmp_windows_files(const struct windows_file *file1,
+		  const struct windows_file *file2)
+{
+	/* Compare by starting LCN (logical cluster number)  */
+	int v = cmp_u64(file1->sort_key, file2->sort_key);
+	if (v)
+		return v;
+
+	/* Compare files by path: just a heuristic that will place files
+	 * in the same directory next to each other.  */
+	return wcscmp(file1->path, file2->path);
+}
+
+const wchar_t *
+get_windows_file_path(const struct windows_file *file)
+{
+	return file->path;
 }
 
 /*
@@ -108,21 +241,15 @@ retry:
 	return status;
 }
 
-/* Read the first @size bytes from the file, or named data stream of a file,
- * described by @blob.  */
-int
-read_winnt_stream_prefix(const struct blob_descriptor *blob, u64 size,
+static int
+read_winnt_stream_prefix(const wchar_t *path, u64 size,
 			 const struct read_blob_callbacks *cbs)
 {
-	const wchar_t *path;
 	HANDLE h;
 	NTSTATUS status;
 	u8 buf[BUFFER_SIZE];
 	u64 bytes_remaining;
 	int ret;
-
-	/* This is an NT namespace path.  */
-	path = blob->file_on_disk;
 
 	status = winnt_openat(NULL, path, wcslen(path),
 			      FILE_READ_DATA | SYNCHRONIZE, &h);
@@ -194,9 +321,8 @@ win32_encrypted_export_cb(unsigned char *data, void *_ctx, unsigned long len)
 	return ERROR_SUCCESS;
 }
 
-int
-read_win32_encrypted_file_prefix(const struct blob_descriptor *blob,
-				 u64 size,
+static int
+read_win32_encrypted_file_prefix(const wchar_t *path, bool is_dir, u64 size,
 				 const struct read_blob_callbacks *cbs)
 {
 	struct win32_encrypted_read_ctx export_ctx;
@@ -205,18 +331,18 @@ read_win32_encrypted_file_prefix(const struct blob_descriptor *blob,
 	int ret;
 	DWORD flags = 0;
 
-	if (blob->file_inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
+	if (is_dir)
 		flags |= CREATE_FOR_DIR;
 
 	export_ctx.cbs = cbs;
 	export_ctx.wimlib_err_code = 0;
 	export_ctx.bytes_remaining = size;
 
-	err = OpenEncryptedFileRaw(blob->file_on_disk, flags, &file_ctx);
+	err = OpenEncryptedFileRaw(path, flags, &file_ctx);
 	if (err != ERROR_SUCCESS) {
 		win32_error(err,
 			    L"Failed to open encrypted file \"%ls\" for raw read",
-			    printable_path(blob->file_on_disk));
+			    printable_path(path));
 		return WIMLIB_ERR_OPEN;
 	}
 	err = ReadEncryptedFileRaw(win32_encrypted_export_cb,
@@ -226,20 +352,36 @@ read_win32_encrypted_file_prefix(const struct blob_descriptor *blob,
 		if (ret == 0) {
 			win32_error(err,
 				    L"Failed to read encrypted file \"%ls\"",
-				    printable_path(blob->file_on_disk));
+				    printable_path(path));
 			ret = WIMLIB_ERR_READ;
 		}
 	} else if (export_ctx.bytes_remaining != 0) {
 		ERROR("Only could read %"PRIu64" of %"PRIu64" bytes from "
 		      "encrypted file \"%ls\"",
 		      size - export_ctx.bytes_remaining, size,
-		      printable_path(blob->file_on_disk));
+		      printable_path(path));
 		ret = WIMLIB_ERR_READ;
 	} else {
 		ret = 0;
 	}
 	CloseEncryptedFileRaw(file_ctx);
 	return ret;
+}
+
+/* Read the first @size bytes from the file, or named data stream of a file,
+ * described by @blob.  */
+int
+read_windows_file_prefix(const struct blob_descriptor *blob, u64 size,
+			 const struct read_blob_callbacks *cbs)
+{
+	const struct windows_file *file = blob->windows_file;
+
+	if (unlikely(file->is_encrypted)) {
+		bool is_dir = (blob->file_inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY);
+		return read_win32_encrypted_file_prefix(file->path, is_dir, size, cbs);
+	}
+
+	return read_winnt_stream_prefix(file->path, size, cbs);
 }
 
 /*
@@ -806,49 +948,32 @@ win32_get_encrypted_file_size(const wchar_t *path, bool is_dir, u64 *size_ret)
 }
 
 static int
-winnt_scan_efsrpc_raw_data(struct wim_inode *inode, const wchar_t *nt_path,
-			   struct list_head *unhashed_blobs)
+winnt_scan_efsrpc_raw_data(struct wim_inode *inode,
+			   wchar_t *path, size_t path_nchars,
+			   struct list_head *unhashed_blobs,
+			   struct vss_snapshot *snapshot)
 {
-	struct blob_descriptor *blob;
-	struct wim_inode_stream *strm;
+	const bool is_dir = (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY);
+	u64 size;
 	int ret;
 
-	blob = new_blob_descriptor();
-	if (!blob)
-		goto err_nomem;
-
-	blob->file_on_disk = WCSDUP(nt_path);
-	if (!blob->file_on_disk)
-		goto err_nomem;
-	blob->blob_location = BLOB_WIN32_ENCRYPTED;
-
 	/* OpenEncryptedFileRaw() expects a Win32 name.  */
-	wimlib_assert(!wmemcmp(blob->file_on_disk, L"\\??\\", 4));
-	blob->file_on_disk[1] = L'\\';
+	wimlib_assert(!wmemcmp(path, L"\\??\\", 4));
+	path[1] = L'\\';
 
-	blob->file_inode = inode;
-
-	ret = win32_get_encrypted_file_size(blob->file_on_disk,
-					    (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY),
-					    &blob->size);
+	ret = win32_get_encrypted_file_size(path, is_dir, &size);
 	if (ret)
-		goto err;
+		goto out;
 
 	/* Empty EFSRPC data does not make sense  */
-	wimlib_assert(blob->size != 0);
+	wimlib_assert(size != 0);
 
-	strm = inode_add_stream(inode, STREAM_TYPE_EFSRPC_RAW_DATA,
-				NO_STREAM_NAME, blob);
-	if (!strm)
-		goto err_nomem;
-
-	prepare_unhashed_blob(blob, inode, strm->stream_id, unhashed_blobs);
-	return 0;
-
-err_nomem:
-	ret = WIMLIB_ERR_NOMEM;
-err:
-	free_blob_descriptor(blob);
+	ret = add_stream(inode, true, snapshot, size,
+			 path, path_nchars,
+			 STREAM_TYPE_EFSRPC_RAW_DATA, NO_STREAM_NAME, 0,
+			 unhashed_blobs);
+out:
+	path[1] = L'?';
 	return ret;
 }
 
@@ -885,43 +1010,15 @@ get_data_stream_name(wchar_t *raw_stream_name, size_t raw_stream_name_nchars,
 	return true;
 }
 
-/* Build the path to the data stream.  For unnamed streams, this is simply the
- * path to the file.  For named streams, this is the path to the file, followed
- * by a colon, followed by the stream name.  */
-static wchar_t *
-build_data_stream_path(const wchar_t *path, size_t path_nchars,
-		       const wchar_t *stream_name, size_t stream_name_nchars)
-{
-	size_t stream_path_nchars;
-	wchar_t *stream_path;
-	wchar_t *p;
-
-	stream_path_nchars = path_nchars;
-	if (stream_name_nchars)
-		stream_path_nchars += 1 + stream_name_nchars;
-
-	stream_path = MALLOC((stream_path_nchars + 1) * sizeof(wchar_t));
-	if (stream_path) {
-		p = wmempcpy(stream_path, path, path_nchars);
-		if (stream_name_nchars) {
-			*p++ = L':';
-			p = wmempcpy(p, stream_name, stream_name_nchars);
-		}
-		*p++ = L'\0';
-	}
-	return stream_path;
-}
-
 static int
 winnt_scan_data_stream(const wchar_t *path, size_t path_nchars,
 		       wchar_t *raw_stream_name, size_t raw_stream_name_nchars,
 		       u64 stream_size,
-		       struct wim_inode *inode, struct list_head *unhashed_blobs)
+		       struct wim_inode *inode, struct list_head *unhashed_blobs,
+		       struct vss_snapshot *snapshot)
 {
 	wchar_t *stream_name;
 	size_t stream_name_nchars;
-	struct blob_descriptor *blob;
-	struct wim_inode_stream *strm;
 
 	/* Given the raw stream name (which is something like
 	 * :streamname:$DATA), extract just the stream name part (streamname).
@@ -932,34 +1029,10 @@ winnt_scan_data_stream(const wchar_t *path, size_t path_nchars,
 
 	stream_name[stream_name_nchars] = L'\0';
 
-	/* If the stream is non-empty, set up a blob descriptor for it.  */
-	if (stream_size != 0) {
-		blob = new_blob_descriptor();
-		if (!blob)
-			goto err_nomem;
-		blob->file_on_disk = build_data_stream_path(path,
-							    path_nchars,
-							    stream_name,
-							    stream_name_nchars);
-		if (!blob->file_on_disk)
-			goto err_nomem;
-		blob->blob_location = BLOB_IN_WINNT_FILE_ON_DISK;
-		blob->size = stream_size;
-		blob->file_inode = inode;
-	} else {
-		blob = NULL;
-	}
-
-	strm = inode_add_stream(inode, STREAM_TYPE_DATA, stream_name, blob);
-	if (!strm)
-		goto err_nomem;
-
-	prepare_unhashed_blob(blob, inode, strm->stream_id, unhashed_blobs);
-	return 0;
-
-err_nomem:
-	free_blob_descriptor(blob);
-	return WIMLIB_ERR_NOMEM;
+	return add_stream(inode, false, snapshot, stream_size,
+			  path, path_nchars,
+			  STREAM_TYPE_DATA, stream_name, stream_name_nchars,
+			  unhashed_blobs);
 }
 
 /*
@@ -979,7 +1052,8 @@ err_nomem:
 static noinline_for_stack int
 winnt_scan_data_streams(HANDLE h, const wchar_t *path, size_t path_nchars,
 			struct wim_inode *inode, struct list_head *unhashed_blobs,
-			u64 file_size, u32 vol_flags)
+			u64 file_size, u32 vol_flags,
+			struct vss_snapshot *snapshot)
 {
 	int ret;
 	u8 _buf[4096] _aligned_attribute(8);
@@ -1047,7 +1121,8 @@ winnt_scan_data_streams(HANDLE h, const wchar_t *path, size_t path_nchars,
 					     info->StreamName,
 					     info->StreamNameLength / 2,
 					     info->StreamSize.QuadPart,
-					     inode, unhashed_blobs);
+					     inode, unhashed_blobs,
+					     snapshot);
 		if (ret)
 			goto out_free_buf;
 
@@ -1075,7 +1150,8 @@ unnamed_only:
 	{
 		wchar_t stream_name[] = L"::$DATA";
 		ret = winnt_scan_data_stream(path, path_nchars, stream_name, 7,
-					     file_size, inode, unhashed_blobs);
+					     file_size, inode, unhashed_blobs,
+					     snapshot);
 	}
 out_free_buf:
 	/* Free buffer if allocated on heap.  */
@@ -1109,9 +1185,8 @@ set_sort_key(struct wim_inode *inode, u64 sort_key)
 	for (unsigned i = 0; i < inode->i_num_streams; i++) {
 		struct wim_inode_stream *strm = &inode->i_streams[i];
 		struct blob_descriptor *blob = stream_blob_resolved(strm);
-		if (blob && (blob->blob_location == BLOB_IN_WINNT_FILE_ON_DISK ||
-			     blob->blob_location == BLOB_WIN32_ENCRYPTED))
-			blob->sort_key = sort_key;
+		if (blob && blob->blob_location == BLOB_IN_WINDOWS_FILE)
+			blob->windows_file->sort_key = sort_key;
 	}
 }
 
@@ -1517,8 +1592,11 @@ retry_open:
 		 * needed.  */
 		(*func_NtClose)(h);
 		h = NULL;
-		ret = winnt_scan_efsrpc_raw_data(inode, full_path,
-						 params->unhashed_blobs);
+		ret = winnt_scan_efsrpc_raw_data(inode,
+						 full_path,
+						 full_path_nchars,
+						 params->unhashed_blobs,
+						 ctx->snapshot);
 		if (ret)
 			goto out;
 	} else {
@@ -1538,7 +1616,8 @@ retry_open:
 					      inode,
 					      params->unhashed_blobs,
 					      file_info.end_of_file,
-					      ctx->vol_flags);
+					      ctx->vol_flags,
+					      ctx->snapshot);
 		if (ret)
 			goto out;
 	}
@@ -1632,11 +1711,11 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 			const wchar_t *root_disk_path,
 			struct capture_params *params)
 {
-	wchar_t *path;
-	int ret;
+	wchar_t *path = NULL;
+	struct winnt_scan_ctx ctx = {};
 	UNICODE_STRING ntpath;
-	struct winnt_scan_ctx ctx;
 	size_t ntpath_nchars;
+	int ret;
 
 	/* WARNING: There is no check for overflow later when this buffer is
 	 * being used!  But it's as long as the maximum path length understood
@@ -1645,9 +1724,13 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	if (!path)
 		return WIMLIB_ERR_NOMEM;
 
-	ret = win32_path_to_nt_path(root_disk_path, &ntpath);
+	if (params->add_flags & WIMLIB_ADD_FLAG_SNAPSHOT)
+		ret = vss_create_snapshot(root_disk_path, &ntpath, &ctx.snapshot);
+	else
+		ret = win32_path_to_nt_path(root_disk_path, &ntpath);
+
 	if (ret)
-		goto out_free_path;
+		goto out;
 
 	if (ntpath.Length < 4 * sizeof(wchar_t) ||
 	    ntpath.Length > WINDOWS_NT_MAX_PATH * sizeof(wchar_t) ||
@@ -1667,14 +1750,13 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	}
 	HeapFree(GetProcessHeap(), 0, ntpath.Buffer);
 	if (ret)
-		goto out_free_path;
-
-	memset(&ctx, 0, sizeof(ctx));
+		goto out;
 
 	ret = winnt_build_dentry_tree_recursive(root_ret, NULL,
 						path, ntpath_nchars,
 						L"", 0, params, &ctx);
-out_free_path:
+out:
+	vss_put_snapshot(ctx.snapshot);
 	FREE(path);
 	if (ret == 0)
 		winnt_do_scan_warnings(root_disk_path, &ctx);

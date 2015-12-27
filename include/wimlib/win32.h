@@ -1,3 +1,7 @@
+/*
+ * win32.h - Windows-specific declarations needed by non-Windows-specific files.
+ */
+
 #ifndef _WIMLIB_WIN32_H
 #define _WIMLIB_WIN32_H
 
@@ -7,15 +11,21 @@
 
 struct blob_descriptor;
 struct read_blob_callbacks;
+struct windows_file;
+
+extern struct windows_file *
+clone_windows_file(const struct windows_file *file);
+
+extern void
+free_windows_file(struct windows_file *file);
 
 extern int
-read_winnt_stream_prefix(const struct blob_descriptor *blob, u64 size,
+cmp_windows_files(const struct windows_file *file1,
+		  const struct windows_file *file2);
+
+extern int
+read_windows_file_prefix(const struct blob_descriptor *blob, u64 size,
 			 const struct read_blob_callbacks *cbs);
-
-extern int
-read_win32_encrypted_file_prefix(const struct blob_descriptor *blob,
-				 u64 size,
-				 const struct read_blob_callbacks *cbs);
 
 extern int
 win32_global_init(int init_flags);

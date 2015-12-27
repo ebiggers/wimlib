@@ -344,6 +344,8 @@ static const tchar * const error_strings[] = {
 		= T("The destination WIM already contains one of the source images"),
 	[WIMLIB_ERR_CONCURRENT_MODIFICATION_DETECTED]
 		= T("A file being added to a WIM image was concurrently modified"),
+	[WIMLIB_ERR_SNAPSHOT_FAILURE]
+		= T("Unable to create a filesystem snapshot"),
 };
 
 WIMLIBAPI const tchar *

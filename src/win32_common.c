@@ -29,6 +29,7 @@
 
 #include "wimlib/error.h"
 #include "wimlib/util.h"
+#include "wimlib/win32_vss.h"
 
 static bool
 win32_modify_privilege(const wchar_t *privilege, bool enable)
@@ -316,6 +317,8 @@ out_drop_privs:
 void
 win32_global_cleanup(void)
 {
+	vss_global_cleanup();
+
 	if (acquired_privileges)
 		win32_release_capture_and_apply_privileges();
 

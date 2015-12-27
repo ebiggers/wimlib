@@ -1,3 +1,8 @@
+/*
+ * win32_common.h - common header for Windows-specific files.  This always
+ * should be included first.
+ */
+
 #ifndef _WIMLIB_WIN32_COMMON_H
 #define _WIMLIB_WIN32_COMMON_H
 

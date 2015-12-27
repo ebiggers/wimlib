@@ -739,8 +739,7 @@ read_blob_prefix(const struct blob_descriptor *blob, u64 size,
 		[BLOB_IN_NTFS_VOLUME] = read_ntfs_attribute_prefix,
 	#endif
 	#ifdef __WIN32__
-		[BLOB_IN_WINNT_FILE_ON_DISK] = read_winnt_stream_prefix,
-		[BLOB_WIN32_ENCRYPTED] = read_win32_encrypted_file_prefix,
+		[BLOB_IN_WINDOWS_FILE] = read_windows_file_prefix,
 	#endif
 	};
 	wimlib_assert(blob->blob_location < ARRAY_LEN(handlers)
@@ -959,7 +958,7 @@ report_sha1_mismatch_error(const struct blob_descriptor *blob,
 		      "        Path: \"%"TS"\"\n"
 		      "        Expected SHA-1: %"TS"\n"
 		      "        Actual SHA-1: %"TS"\n",
-		      blob->file_on_disk, expected_hashstr, actual_hashstr);
+		      blob_file_path(blob), expected_hashstr, actual_hashstr);
 		return WIMLIB_ERR_CONCURRENT_MODIFICATION_DETECTED;
 	} else if (blob->blob_location == BLOB_IN_WIM) {
 		const struct wim_resource_descriptor *rdesc = blob->rdesc;
