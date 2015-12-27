@@ -1,4 +1,4 @@
-Version 1.8.4-BETA:
+Version 1.9.0-BETA:
 	Fixed a bug where, on Windows, wimlib would change the security
 	descriptor of the target directory of an extraction even when the
 	'--no-acls' option was specified.

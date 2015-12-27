@@ -1748,7 +1748,7 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 #define WIMLIB_ADD_FLAG_TEST_FILE_EXCLUSION	0x00004000
 
 /**
- * EXPERIMENTAL, since wimlib v1.8.4: create a temporary filesystem snapshot of
+ * EXPERIMENTAL, since wimlib v1.9.0: create a temporary filesystem snapshot of
  * the source directory and add the files from it.  Currently, this option is
  * only supported on Windows, where it uses the Volume Shadow Copy Service
  * (VSS).  Using this option, you can create a consistent backup of the system
@@ -3180,7 +3180,7 @@ wimlib_get_image_name(const WIMStruct *wim, int image);
  *	"TOTALBYTES".  The name can contain forward slashes to indicate a nested
  *	XML element; for example, "WINDOWS/VERSION/BUILD" indicates the BUILD
  *	element nested within the VERSION element nested within the WINDOWS
- *	element.  Since wimlib v1.8.4, a bracketed number can be used to
+ *	element.  Since wimlib v1.9.0, a bracketed number can be used to
  *	indicate one of several identically-named elements; for example,
  *	"WINDOWS/LANGUAGES/LANGUAGE[2]" indicates the second "LANGUAGE" element
  *	nested within the "WINDOWS/LANGUAGES" element.  Note that element names
