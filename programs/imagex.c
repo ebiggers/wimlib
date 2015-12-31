@@ -4388,7 +4388,7 @@ T(
 "                    [--boot] [--check] [--nocheck] [--config=FILE]\n"
 "                    [--threads=NUM_THREADS] [--no-acls] [--strict-acls]\n"
 "                    [--rpfix] [--norpfix] [--update-of=[WIMFILE:]IMAGE]\n"
-"                    [--wimboot] [--unix-data] [--dereference]\n"
+"                    [--wimboot] [--unix-data] [--dereference] [--snapshot]\n"
 ),
 [CMD_APPLY] =
 T(
@@ -4406,6 +4406,7 @@ T(
 "                    [--no-acls] [--strict-acls] [--rpfix] [--norpfix]\n"
 "                    [--update-of=[WIMFILE:]IMAGE] [--delta-from=WIMFILE]\n"
 "                    [--wimboot] [--unix-data] [--dereference] [--solid]\n"
+"                    [--snapshot]\n"
 ),
 [CMD_DELETE] =
 T(
