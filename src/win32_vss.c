@@ -408,6 +408,15 @@ request_vss_snapshot(IVssBackupComponents *vss, wchar_t *volume,
 	return true;
 }
 
+static bool
+is_wow64(void)
+{
+	BOOL wow64 = FALSE;
+	if (sizeof(size_t) == 4)
+		IsWow64Process(GetCurrentProcess(), &wow64);
+	return wow64;
+}
+
 /*
  * Create a VSS snapshot of the specified @volume.  Return the NT namespace path
  * to the snapshot root directory in @vss_path_ret and a handle to the snapshot
@@ -494,8 +503,16 @@ vss_create_snapshot(const wchar_t *source, UNICODE_STRING *vss_path_ret,
 
 vss_err:
 	ret = WIMLIB_ERR_SNAPSHOT_FAILURE;
-	ERROR("A problem occurred while creating a VSS snapshot of \"%ls\".\n"
-	      "        Aborting the operation.", volume);
+	if (is_wow64()) {
+		ERROR("64-bit Windows doesn't allow 32-bit applications to "
+		      "create VSS snapshots.\n"
+		      "        Run the 64-bit version of this application "
+		      "instead.");
+	} else {
+		ERROR("A problem occurred while creating a VSS snapshot of "
+		      "\"%ls\".\n"
+		      "        Aborting the operation.", volume);
+	}
 err:
 	if (snapshot)
 		vss_delete_snapshot(&snapshot->base);
