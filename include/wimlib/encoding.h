@@ -13,6 +13,8 @@ iconv_global_init(void);
 extern void
 iconv_global_cleanup(void);
 
+extern u16 upcase[65536];
+
 extern void
 init_upcase(void);
 

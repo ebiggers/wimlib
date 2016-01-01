@@ -407,7 +407,7 @@ iconv_global_cleanup(void)
  * Index and array values are both CPU endian.
  * Note: this is only an *approximation* of real UTF-16 case folding.
  */
-static u16 upcase[65536];
+u16 upcase[65536];
 
 void
 init_upcase(void)

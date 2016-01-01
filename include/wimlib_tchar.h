@@ -28,6 +28,7 @@ typedef wchar_t tchar;
 #  define tsprintf	swprintf
 #  define tfprintf	fwprintf
 #  define tvfprintf	vfwprintf
+#  define tscanf	swscanf
 #  define istalpha(c)	iswalpha((wchar_t)(c))
 #  define istspace(c)	iswspace((wchar_t)(c))
 #  define totlower(c)	towlower((wchar_t)(c))
@@ -88,6 +89,7 @@ typedef char tchar;
 #  define tsprintf	sprintf
 #  define tfprintf	fprintf
 #  define tvfprintf	vfprintf
+#  define tscanf	sscanf
 #  define istalpha(c)	isalpha((unsigned char)(c))
 #  define istspace(c)	isspace((unsigned char)(c))
 #  define totlower(c)	tolower((unsigned char)(c))

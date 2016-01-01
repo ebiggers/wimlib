@@ -64,6 +64,7 @@
 #include "wimlib/metadata.h"
 #include "wimlib/paths.h"
 #include "wimlib/progress.h"
+#include "wimlib/xml_windows.h"
 
 /* Saved specification of a "primitive" update operation that was performed.  */
 struct update_primitive {
@@ -865,6 +866,14 @@ execute_add_command(struct update_command_journal *j,
 			goto out_destroy_config;
 
 		ret = attach_branch(branch, wimboot_cfgfile, j, 0, NULL, NULL);
+		if (ret)
+			goto out_destroy_config;
+	}
+
+	if (WIMLIB_IS_WIM_ROOT_PATH(wim_target_path) &&
+	    get_dentry(wim, T("Windows"), WIMLIB_CASE_INSENSITIVE))
+	{
+		ret = set_windows_specific_info(wim);
 		if (ret)
 			goto out_destroy_config;
 	}

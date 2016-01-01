@@ -1,11 +1,11 @@
 Version 1.9.0-BETA:
-	Fixed a bug where, on Windows, wimlib would change the security
-	descriptor of the target directory of an extraction even when the
-	'--no-acls' option was specified.
-
 	Added experimental support for Windows VSS (Volume Shadow Copy Service).
 	The new '--snapshot' argument to 'wimcapture' makes wimlib automatically
 	create and use a temporary VSS snapshot when capturing a WIM image.
+
+	Implemented setting of Windows-specific XML information, such as
+	architecture, system root, and version details.  This information is now
+	automatically set in newly captured WIM images, when appropriate.
 
 	Added a new '--image-property' option to 'wimcapture', 'wimappend', and
 	'wiminfo'.  This option lets you assign values to elements in a WIM
@@ -13,6 +13,10 @@ Version 1.9.0-BETA:
 
 	The wimlib_get_image_property() and wimlib_set_image_property() API
 	functions now support numerically indexed elements.
+
+	Fixed a bug where, on Windows, wimlib would change the security
+	descriptor of the target directory of an extraction even when the
+	'--no-acls' option was specified.
 
 Version 1.8.3:
 	Fixed a bug with libntfs-3g extraction present since v1.8.1.  Sometimes,

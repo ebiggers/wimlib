@@ -72,13 +72,14 @@ libwim_la_SOURCES =		\
 	src/paths.c		\
 	src/pattern.c		\
 	src/progress.c		\
-	src/resource.c		\
 	src/reference.c		\
+	src/registry.c		\
+	src/reparse.c		\
+	src/resource.c		\
 	src/security.c		\
 	src/sha1.c		\
 	src/solid.c		\
 	src/split.c		\
-	src/reparse.c		\
 	src/tagged_items.c	\
 	src/template.c		\
 	src/textfile.c		\
@@ -90,6 +91,7 @@ libwim_la_SOURCES =		\
 	src/write.c		\
 	src/x86_cpu_features.c	\
 	src/xml.c		\
+	src/xml_windows.c	\
 	src/xpress_compress.c	\
 	src/xpress_decompress.c \
 	include/wimlib/alloca.h		\
@@ -134,6 +136,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/paths.h		\
 	include/wimlib/pattern.h	\
 	include/wimlib/progress.h	\
+	include/wimlib/registry.h	\
 	include/wimlib/reparse.h	\
 	include/wimlib/resource.h	\
 	include/wimlib/security.h	\
@@ -150,6 +153,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/write.h		\
 	include/wimlib/x86_cpu_features.h	\
 	include/wimlib/xml.h		\
+	include/wimlib/xml_windows.h	\
 	include/wimlib/xpress_constants.h
 
 if WITH_NTFS_3G
