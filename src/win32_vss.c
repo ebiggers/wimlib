@@ -293,7 +293,7 @@ vss_global_init(void)
 	if (vss_initialized)
 		return true;
 	ERROR("The Volume Shadow Copy Service (VSS) API could not be "
-	      "initialized. Probably it isn't supported on this computer.");
+	      "initialized.");
 	return false;
 }
 
@@ -409,6 +409,12 @@ request_vss_snapshot(IVssBackupComponents *vss, wchar_t *volume,
 }
 
 static bool
+is_pre_vista(void)
+{
+	return (GetVersion() & 0xFF) < 6;
+}
+
+static bool
 is_wow64(void)
 {
 	BOOL wow64 = FALSE;
@@ -503,7 +509,10 @@ vss_create_snapshot(const wchar_t *source, UNICODE_STRING *vss_path_ret,
 
 vss_err:
 	ret = WIMLIB_ERR_SNAPSHOT_FAILURE;
-	if (is_wow64()) {
+	if (is_pre_vista() && !vss_initialized) {
+		ERROR("Snapshot mode is only supported on Windows Vista "
+		      "and later!");
+	} else if (is_wow64()) {
 		ERROR("64-bit Windows doesn't allow 32-bit applications to "
 		      "create VSS snapshots.\n"
 		      "        Run the 64-bit version of this application "
