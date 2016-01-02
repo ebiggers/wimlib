@@ -579,13 +579,13 @@ See the documentation for this option in \fBwimlib-imagex-optimize\fR (1).
 .TP
 \fB--snapshot\fR
 EXPERIMENTAL: create a temporary filesystem snapshot of the source directory and
-capture the files from it.  Currently, this option is only supported on Windows
-(Vista and later), where it uses the Volume Shadow Copy Service (VSS).  Using
-this option, you can create a consistent backup of the system volume of a
-running Windows system without running into problems with locked files.  For the
-VSS snapshot to be successfully created, \fBwimlib-imagex\fR must be run as an
-Administrator, and it cannot be run in WoW64 mode (i.e. if Windows is 64-bit,
-then \fBwimlib-imagex\fR must be 64-bit as well).
+capture the files from it.  Currently, this option is only supported on Windows,
+where it uses the Volume Shadow Copy Service (VSS).  Using this option, you can
+create a consistent backup of the system volume of a running Windows system
+without running into problems with locked files.  For the VSS snapshot to be
+successfully created, \fBwimlib-imagex\fR must be run as an Administrator, and
+it cannot be run in WoW64 mode (i.e. if Windows is 64-bit, then
+\fBwimlib-imagex\fR must be 64-bit as well).
 .SH NOTES
 \fBwimlib-imagex append\fR does not support appending an image to a split WIM.
 .PP
