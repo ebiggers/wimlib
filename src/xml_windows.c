@@ -372,12 +372,14 @@ language_id_to_name(u16 id)
 #define IMAGE_FILE_MACHINE_THUMB	0x01C2
 #define IMAGE_FILE_MACHINE_IA64		0x0200
 #define IMAGE_FILE_MACHINE_AMD64	0x8664
+#define IMAGE_FILE_MACHINE_ARM64	0xAA64
 
 /* Windows API processor architecture codes (common ones only)  */
 #define PROCESSOR_ARCHITECTURE_INTEL	0
 #define PROCESSOR_ARCHITECTURE_ARM	5
 #define PROCESSOR_ARCHITECTURE_IA64	6
 #define PROCESSOR_ARCHITECTURE_AMD64	9
+#define PROCESSOR_ARCHITECTURE_ARM64	12
 
 /* Translate a processor architecture code as given in a PE binary to the code
  * used by the Windows API.  Returns -1 if the code is not recognized.  */
@@ -395,6 +397,8 @@ pe_arch_to_windows_arch(unsigned pe_arch)
 		return PROCESSOR_ARCHITECTURE_IA64;
 	case IMAGE_FILE_MACHINE_AMD64:
 		return PROCESSOR_ARCHITECTURE_AMD64;
+	case IMAGE_FILE_MACHINE_ARM64:
+		return PROCESSOR_ARCHITECTURE_ARM64;
 	}
 	return -1;
 }

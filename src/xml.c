@@ -863,6 +863,7 @@ xml_delete_image(struct wim_xml_info *info, int image)
 #define PROCESSOR_ARCHITECTURE_MSIL		8
 #define PROCESSOR_ARCHITECTURE_AMD64		9
 #define PROCESSOR_ARCHITECTURE_IA32_ON_WIN64	10
+#define PROCESSOR_ARCHITECTURE_ARM64		12
 
 static const tchar *
 describe_arch(u64 arch)
@@ -873,6 +874,7 @@ describe_arch(u64 arch)
 		[PROCESSOR_ARCHITECTURE_ARM]   = T("ARM"),
 		[PROCESSOR_ARCHITECTURE_IA64]  = T("ia64"),
 		[PROCESSOR_ARCHITECTURE_AMD64] = T("x86_64"),
+		[PROCESSOR_ARCHITECTURE_ARM64] = T("ARM64"),
 	};
 
 	if (arch < ARRAY_LEN(descriptions) && descriptions[arch] != NULL)
