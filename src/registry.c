@@ -86,18 +86,19 @@ struct nk {
 	char name[0];
 } _packed_attribute;
 
-/* LF (or LH) cell - contains a list of subkey references.  LF and LH cells are
- * the same except they use different hashing algorithms.  But this
- * implementation doesn't yet make use of the hashes anyway.  */
-struct lf {
+/* Subkey list cell.  There are four types.  LF, LH, and LI cells reference
+ * subkey NK cells directly, while RI cells reference other subkey lists.  All
+ * contain a count followed by that many 32-bit offsets.  But LF and LH cells
+ * contain a 32-bit hash along with each offset, while LI and RI cells only
+ * contain offsets.  */
+struct subkey_list {
 #define LF_MAGIC	cpu_to_le16(0x666C)	/* "lf"	*/
 #define LH_MAGIC	cpu_to_le16(0x686C)	/* "lh"	*/
+#define LI_MAGIC	cpu_to_le16(0x696C)	/* "li" */
+#define RI_MAGIC	cpu_to_le16(0x6972)	/* "ri" */
 	struct cell base;
-	le16 num_subkeys;
-	struct {
-		le32 offset;
-		le32 subkey_name_hash;
-	} subkeys[0];
+	le16 num_offsets;
+	le32 elements[0];
 } _packed_attribute;
 
 /* Value list cell - contains a list of value references  */
@@ -108,24 +109,25 @@ struct value_list {
 
 /* VK cell - contains a value's data, or a reference to it  */
 struct vk {
+#define VK_MAGIC			cpu_to_le16(0x6B76)
 	struct cell base;
 	le16 name_size;
 	le32 data_size;
 	le32 data_offset;
-#define REG_NONE			cpu_to_le32(0x00000000)
-#define REG_SZ				cpu_to_le32(0x00000001)
-#define REG_EXPAND_SZ			cpu_to_le32(0x00000002)
-#define REG_BINARY			cpu_to_le32(0x00000003)
-#define REG_DWORD			cpu_to_le32(0x00000004)
-#define REG_DWORD_LITTLE_ENDIAN		cpu_to_le32(0x00000004)
-#define REG_DWORD_BIG_ENDIAN		cpu_to_le32(0x00000005)
-#define REG_LINK			cpu_to_le32(0x00000006)
-#define REG_MULTI_SZ			cpu_to_le32(0x00000007)
-#define REG_RESOURCE_LIST		cpu_to_le32(0x00000008)
-#define REG_FULL_RESOURCE_DESCRIPTOR	cpu_to_le32(0x00000009)
-#define REG_RESOURCE_REQUIREMENTS_LIST	cpu_to_le32(0x0000000A)
-#define REG_QWORD			cpu_to_le32(0x0000000B)
-#define REG_QWORD_LITTLE_ENDIAN		cpu_to_le32(0x0000000B)
+#define REG_NONE			cpu_to_le32(0)
+#define REG_SZ				cpu_to_le32(1)
+#define REG_EXPAND_SZ			cpu_to_le32(2)
+#define REG_BINARY			cpu_to_le32(3)
+#define REG_DWORD			cpu_to_le32(4)
+#define REG_DWORD_LITTLE_ENDIAN		cpu_to_le32(4)
+#define REG_DWORD_BIG_ENDIAN		cpu_to_le32(5)
+#define REG_LINK			cpu_to_le32(6)
+#define REG_MULTI_SZ			cpu_to_le32(7)
+#define REG_RESOURCE_LIST		cpu_to_le32(8)
+#define REG_FULL_RESOURCE_DESCRIPTOR	cpu_to_le32(9)
+#define REG_RESOURCE_REQUIREMENTS_LIST	cpu_to_le32(10)
+#define REG_QWORD			cpu_to_le32(11)
+#define REG_QWORD_LITTLE_ENDIAN		cpu_to_le32(11)
 	le32 data_type;
 #define VK_COMPRESSED_NAME		cpu_to_le16(0x0001)
 	le16 flags;
@@ -138,6 +140,12 @@ struct data_cell {
 	le32 size;
 	u8 data[0];
 };
+
+/* Arbitrary limits for safety  */
+#define MAX_VALUES		65536
+#define MAX_SUBKEYS		65536
+#define MAX_SUBKEY_LIST_LEVELS	5
+#define MAX_SUBKEY_LISTS	4096
 
 static enum hive_status
 translate_wimlib_error(int ret)
@@ -206,6 +214,153 @@ revalidate_cell(const struct regf *regf, le32 offset, size_t wanted_size)
 	return get_cell_pointer(regf, offset, wanted_size) != NULL;
 }
 
+struct subkey_iteration_stats {
+
+	/* The number of additional levels of descendent subkey lists that may
+	 * be visited (currently, i.e. at this point in the iteration) before
+	 * our safety limit of MAX_SUBKEY_LIST_LEVELS is reached  */
+	u32 levels_remaining;
+
+	/* The number of additional subkey lists that may be visited until our
+	 * safety limit of MAX_SUBKEY_LISTS is reached  */
+	u32 subkey_lists_remaining;
+
+	/* The number of subkeys remaining to be found.  Since the number of
+	 * subkeys is known from the parent nk cell, this should be 0 at the end
+	 * of the iteration.  */
+	u32 subkeys_remaining;
+};
+
+typedef enum hive_status (*subkey_cb_t)(const struct nk *, void *);
+
+static enum hive_status
+iterate_subkeys_recursive(const struct regf *regf, le32 subkey_list_offset,
+			  subkey_cb_t cb, void *cb_ctx,
+			  struct subkey_iteration_stats *stats)
+{
+	const struct subkey_list *list;
+	unsigned num_offsets;
+	size_t extra_size;
+	unsigned increment;
+	const le32 *p;
+	enum hive_status status;
+
+	if (stats->levels_remaining == 0 || stats->subkey_lists_remaining == 0)
+		return HIVE_CORRUPT;
+
+	stats->subkey_lists_remaining--;
+
+	list = get_cell_pointer(regf, subkey_list_offset,
+				sizeof(struct subkey_list));
+	if (!list)
+		return HIVE_CORRUPT;
+
+	num_offsets = le16_to_cpu(list->num_offsets);
+	extra_size = num_offsets * sizeof(list->elements[0]);
+	increment = 1;
+
+	if (list->base.magic == LF_MAGIC || list->base.magic == LH_MAGIC) {
+		/* Hashes are included  */
+		extra_size *= 2;
+		increment = 2;
+	}
+
+	if (!revalidate_cell(regf, subkey_list_offset,
+			     sizeof(struct subkey_list) + extra_size))
+		return HIVE_CORRUPT;
+
+	p = list->elements;
+
+	switch (list->base.magic) {
+	case LF_MAGIC:
+	case LH_MAGIC:
+	case LI_MAGIC:
+		/* Children are subkeys  */
+		if (stats->subkeys_remaining < num_offsets)
+			return HIVE_CORRUPT;
+		stats->subkeys_remaining -= num_offsets;
+		while (num_offsets--) {
+			const struct nk *sub_nk;
+
+			sub_nk = get_cell_pointer(regf, *p, sizeof(struct nk));
+			if (!sub_nk || sub_nk->base.magic != NK_MAGIC)
+				return HIVE_CORRUPT;
+
+			if (!revalidate_cell(regf, *p, sizeof(struct nk) +
+						le16_to_cpu(sub_nk->name_size)))
+				return HIVE_CORRUPT;
+
+			status = (*cb)(sub_nk, cb_ctx);
+			if (status != HIVE_OK)
+				return status;
+			p += increment;
+		}
+		return HIVE_OK;
+	case RI_MAGIC:
+		/* Children are subkey lists  */
+		status = HIVE_OK;
+		stats->levels_remaining--;
+		while (num_offsets--) {
+			status = iterate_subkeys_recursive(regf, *p++,
+							   cb, cb_ctx, stats);
+			if (status != HIVE_OK)
+				break;
+		}
+		stats->levels_remaining++;
+		return status;
+	default:
+		return HIVE_UNSUPPORTED;
+	}
+}
+
+/* Call @cb on each subkey cell of the key @nk.  */
+static enum hive_status
+iterate_subkeys(const struct regf *regf, const struct nk *nk,
+		subkey_cb_t cb, void *cb_ctx)
+{
+	u32 num_subkeys = le32_to_cpu(nk->num_subkeys);
+	struct subkey_iteration_stats stats;
+	enum hive_status status;
+
+	if (num_subkeys == 0)
+		return HIVE_OK;
+
+	if (num_subkeys > MAX_SUBKEYS)
+		return HIVE_CORRUPT;
+
+	stats.levels_remaining = MAX_SUBKEY_LIST_LEVELS;
+	stats.subkey_lists_remaining = MAX_SUBKEY_LISTS;
+	stats.subkeys_remaining = num_subkeys;
+
+	status = iterate_subkeys_recursive(regf, nk->subkey_list_offset,
+					   cb, cb_ctx, &stats);
+	if (stats.subkeys_remaining != 0 && status == HIVE_OK)
+		status = HIVE_CORRUPT;
+	return status;
+}
+
+struct lookup_subkey_ctx {
+	const utf16lechar *key_name;
+	size_t key_name_nchars;
+	const struct nk *result;
+};
+
+static enum hive_status
+lookup_subkey_cb(const struct nk *sub_nk, void *_ctx)
+{
+	struct lookup_subkey_ctx *ctx = _ctx;
+
+	if (names_equal(ctx->key_name, ctx->key_name_nchars,
+			sub_nk->name, le16_to_cpu(sub_nk->name_size),
+			(sub_nk->flags & NK_COMPRESSED_NAME)))
+	{
+		ctx->result = sub_nk;
+		return HIVE_ITERATION_STOPPED;
+	}
+
+	return HIVE_OK;
+}
+
 /*
  * Given a registry key cell @nk, look up the next component of the key
  * *key_namep.  If found, return HIVE_OK, advance *key_namep past the key name
@@ -218,70 +373,30 @@ lookup_subkey(const struct regf *regf, const utf16lechar **key_namep,
 {
 	const utf16lechar *key_name = *key_namep;
 	size_t key_name_nchars = 0;
-	size_t num_subkeys;
-	const struct cell *subkey_list;
+	struct lookup_subkey_ctx ctx;
+	enum hive_status status;
 
-	for (const utf16lechar *p = key_name;
-	     *p && *p != cpu_to_le16('\\'); p++)
+	while (key_name[key_name_nchars] != cpu_to_le16('\0') &&
+	       key_name[key_name_nchars] != cpu_to_le16('\\'))
 		key_name_nchars++;
 
-	num_subkeys = le32_to_cpu(nk->num_subkeys);
+	ctx.key_name = key_name;
+	ctx.key_name_nchars = key_name_nchars;
+	ctx.result = NULL;
 
-	if (num_subkeys == 0) /* No subkeys?  */
-		return HIVE_KEY_NOT_FOUND;
-
-	if (num_subkeys > 65536) /* Arbitrary limit */
-		return HIVE_CORRUPT;
-
-	/* Find the subkey list cell.  */
-	subkey_list = get_cell_pointer(regf, nk->subkey_list_offset,
-				       sizeof(struct cell));
-	if (!subkey_list)
-		return HIVE_CORRUPT;
-
-	if (subkey_list->magic == LF_MAGIC || subkey_list->magic == LH_MAGIC) {
-		const struct lf *lf;
-
-		/* Handle LF and LH subkey lists.  */
-
-		lf = get_cell_pointer(regf, nk->subkey_list_offset,
-				      sizeof(struct lf) +
-				      (num_subkeys * sizeof(lf->subkeys[0])));
-		if (!lf)
-			return HIVE_CORRUPT;
-
-		/* Look for the subkey in the subkey list.  */
-		for (size_t i = 0; i < num_subkeys; i++) {
-			const struct nk *sub_nk;
-			size_t name_size;
-
-			sub_nk = get_cell_pointer(regf, lf->subkeys[i].offset,
-						  sizeof(struct nk));
-			if (!sub_nk)
-				return HIVE_CORRUPT;
-
-			name_size = le16_to_cpu(sub_nk->name_size);
-
-			if (!revalidate_cell(regf, lf->subkeys[i].offset,
-					     sizeof(struct nk) + name_size))
-				return HIVE_CORRUPT;
-
-			if (names_equal(key_name, key_name_nchars,
-					sub_nk->name, name_size,
-					(sub_nk->flags & NK_COMPRESSED_NAME)))
-			{
-				key_name += key_name_nchars;
-				while (*key_name == cpu_to_le16('\\'))
-					key_name++;
-				*key_namep = key_name;
-				*sub_nk_ret = sub_nk;
-				return HIVE_OK;
-			}
-		}
-		return HIVE_KEY_NOT_FOUND;
+	status = iterate_subkeys(regf, nk, lookup_subkey_cb, &ctx);
+	if (!ctx.result) {
+		if (status == HIVE_OK)
+			status = HIVE_KEY_NOT_FOUND;
+		return status;
 	}
 
-	return HIVE_UNSUPPORTED;
+	key_name += key_name_nchars;
+	while (*key_name == cpu_to_le16('\\'))
+		key_name++;
+	*key_namep = key_name;
+	*sub_nk_ret = ctx.result;
+	return HIVE_OK;
 }
 
 /* Find the nk cell for the key named @key_name in the registry hive @regf.  */
@@ -294,7 +409,7 @@ lookup_key(const struct regf *regf, const tchar *key_name,
 	const utf16lechar *key_uname, *key_unamep;
 
 	nk = get_cell_pointer(regf, regf->root_key_offset, sizeof(struct nk));
-	if (!nk)
+	if (!nk || nk->base.magic != NK_MAGIC)
 		return HIVE_CORRUPT;
 
 	status = translate_wimlib_error(tstr_get_utf16le(key_name, &key_uname));
@@ -336,7 +451,7 @@ lookup_value(const struct regf *regf, const tchar *key_name,
 	if (num_values == 0) /* No values?  */
 		return HIVE_VALUE_NOT_FOUND;
 
-	if (num_values > 65536) /* Arbitrary limit */
+	if (num_values > MAX_VALUES)
 		return HIVE_CORRUPT;
 
 	value_list = get_cell_pointer(regf, nk->value_list_offset,
@@ -362,7 +477,7 @@ lookup_value(const struct regf *regf, const tchar *key_name,
 		status = HIVE_CORRUPT;
 		vk = get_cell_pointer(regf, value_list->vk_offsets[i],
 				      sizeof(struct vk));
-		if (!vk)
+		if (!vk || vk->base.magic != VK_MAGIC)
 			goto out;
 
 		name_size = le16_to_cpu(vk->name_size);
@@ -550,6 +665,36 @@ hive_get_number(const struct regf *regf, const tchar *key_name,
 	return status;
 }
 
+static enum hive_status
+append_subkey_name(const struct nk *sub_nk, void *_next_subkey_p)
+{
+	size_t name_size = le16_to_cpu(sub_nk->name_size);
+	tchar *subkey;
+	tchar ***next_subkeyp = _next_subkey_p;
+
+	if (sub_nk->flags & NK_COMPRESSED_NAME) {
+		subkey = MALLOC((name_size + 1) * sizeof(tchar));
+		if (!subkey)
+			return HIVE_OUT_OF_MEMORY;
+		for (size_t i = 0; i < name_size; i++)
+			subkey[i] = sub_nk->name[i];
+		subkey[name_size] = '\0';
+	} else {
+		size_t dummy;
+		enum hive_status status;
+
+		status = translate_wimlib_error(
+			utf16le_to_tstr((utf16lechar *)sub_nk->name,
+					name_size, &subkey, &dummy));
+		if (status != HIVE_OK)
+			return status;
+	}
+
+	**next_subkeyp = subkey;
+	++*next_subkeyp;
+	return HIVE_OK;
+}
+
 /* List the subkeys of the specified registry key.  */
 enum hive_status
 hive_list_subkeys(const struct regf *regf, const tchar *key_name,
@@ -557,92 +702,26 @@ hive_list_subkeys(const struct regf *regf, const tchar *key_name,
 {
 	enum hive_status status;
 	const struct nk *nk;
-	size_t num_subkeys;
-	const struct cell *subkey_list;
 	tchar **subkeys;
+	tchar **next_subkey;
 
-	/* Look up the nk cell for the key.  */
 	status = lookup_key(regf, key_name, &nk);
 	if (status != HIVE_OK)
 		return status;
 
-	num_subkeys = le32_to_cpu(nk->num_subkeys);
-
-	if (num_subkeys > 65536) /* Arbitrary limit */
+	if (le32_to_cpu(nk->num_subkeys) > MAX_SUBKEYS)
 		return HIVE_CORRUPT;
 
-	/* Prepare the array of subkey names to return.  */
-	subkeys = CALLOC(num_subkeys + 1, sizeof(subkeys[0]));
+	subkeys = CALLOC(le32_to_cpu(nk->num_subkeys) + 1, sizeof(subkeys[0]));
 	if (!subkeys)
 		return HIVE_OUT_OF_MEMORY;
-	*subkeys_ret = subkeys;
 
-	/* No subkeys?  */
-	if (num_subkeys == 0)
-		return HIVE_OK;
-
-	/* Find the subkey list cell.  */
-	status = HIVE_CORRUPT;
-	subkey_list = get_cell_pointer(regf, nk->subkey_list_offset,
-				       sizeof(struct cell));
-	if (!subkey_list)
-		goto err;
-
-	if (subkey_list->magic == LF_MAGIC || subkey_list->magic == LH_MAGIC) {
-		const struct lf *lf;
-
-		/* Handle LF and LH subkey lists.  */
-
-		status = HIVE_CORRUPT;
-		lf = get_cell_pointer(regf, nk->subkey_list_offset,
-				      sizeof(struct lf) +
-				      (num_subkeys * sizeof(lf->subkeys[0])));
-		if (!lf)
-			goto err;
-
-		/* Iterate through the subkey list and gather the subkey names.
-		 */
-		for (size_t i = 0; i < num_subkeys; i++) {
-			const struct nk *sub_nk;
-			size_t name_size;
-			tchar *subkey;
-			size_t dummy;
-
-			status = HIVE_CORRUPT;
-			sub_nk = get_cell_pointer(regf, lf->subkeys[i].offset,
-						  sizeof(struct nk));
-			if (!sub_nk)
-				goto err;
-
-			name_size = le16_to_cpu(sub_nk->name_size);
-
-			if (!revalidate_cell(regf, lf->subkeys[i].offset,
-					     sizeof(struct nk) + name_size))
-				goto err;
-
-			if (sub_nk->flags & NK_COMPRESSED_NAME) {
-				status = HIVE_OUT_OF_MEMORY;
-				subkey = MALLOC((name_size + 1) * sizeof(tchar));
-				if (!subkey)
-					goto err;
-				for (size_t j = 0; j < name_size; j++)
-					subkey[j] = sub_nk->name[j];
-				subkey[name_size] = '\0';
-			} else {
-				status = translate_wimlib_error(
-					utf16le_to_tstr((utf16lechar *)sub_nk->name,
-							name_size, &subkey, &dummy));
-				if (status != HIVE_OK)
-					goto err;
-			}
-			subkeys[i] = subkey;
-		}
-		return HIVE_OK;
-	}
-
-	status = HIVE_UNSUPPORTED;
-err:
-	hive_free_subkeys_list(subkeys);
+	next_subkey = subkeys;
+	status = iterate_subkeys(regf, nk, append_subkey_name, &next_subkey);
+	if (status == HIVE_OK)
+		*subkeys_ret = subkeys;
+	else
+		hive_free_subkeys_list(subkeys);
 	return status;
 }
 
@@ -672,6 +751,8 @@ hive_status_to_string(enum hive_status status)
 		return "HIVE_VALUE_IS_WRONG_TYPE";
 	case HIVE_OUT_OF_MEMORY:
 		return "HIVE_OUT_OF_MEMORY";
+	case HIVE_ITERATION_STOPPED:
+		return "HIVE_ITERATION_STOPPED";
 	}
 	return NULL;
 }

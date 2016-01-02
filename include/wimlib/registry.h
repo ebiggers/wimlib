@@ -13,6 +13,7 @@ enum hive_status {
 	HIVE_VALUE_NOT_FOUND,
 	HIVE_VALUE_IS_WRONG_TYPE,
 	HIVE_OUT_OF_MEMORY,
+	HIVE_ITERATION_STOPPED,
 };
 
 extern enum hive_status
