@@ -1279,7 +1279,8 @@ try_to_use_wimboot_hash(HANDLE h, struct wim_inode *inode,
 						 NULL, 0, &out, sizeof(out));
 
 		/* Is WOF not attached?  */
-		if (status == STATUS_INVALID_DEVICE_REQUEST) {
+		if (status == STATUS_INVALID_DEVICE_REQUEST ||
+		    status == STATUS_NOT_SUPPORTED) {
 			ctx->wof_not_attached = true;
 			return 0;
 		}
