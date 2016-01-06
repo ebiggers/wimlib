@@ -54,9 +54,10 @@ static int
 ntfs_3g_get_supported_features(const char *target,
 			       struct wim_features *supported_features)
 {
-	supported_features->archive_files             = 1;
+	supported_features->readonly_files            = 1;
 	supported_features->hidden_files              = 1;
 	supported_features->system_files              = 1;
+	supported_features->archive_files             = 1;
 	supported_features->compressed_files          = 1;
 	supported_features->not_context_indexed_files = 1;
 	supported_features->named_data_streams        = 1;

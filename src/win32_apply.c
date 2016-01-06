@@ -267,9 +267,10 @@ win32_get_supported_features(const wchar_t *target,
 
 	get_vol_flags(target, &vol_flags, &short_names_supported);
 
-	supported_features->archive_files = 1;
+	supported_features->readonly_files = 1;
 	supported_features->hidden_files = 1;
 	supported_features->system_files = 1;
+	supported_features->archive_files = 1;
 
 	if (vol_flags & FILE_FILE_COMPRESSION)
 		supported_features->compressed_files = 1;

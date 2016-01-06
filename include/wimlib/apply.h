@@ -11,9 +11,10 @@
 /* These can be treated as counts (for required_features) or booleans (for
  * supported_features).  */
 struct wim_features {
-	unsigned long archive_files;
+	unsigned long readonly_files;
 	unsigned long hidden_files;
 	unsigned long system_files;
+	unsigned long archive_files;
 	unsigned long compressed_files;
 	unsigned long encrypted_files;
 	unsigned long encrypted_directories;

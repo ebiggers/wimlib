@@ -1073,12 +1073,14 @@ static void
 inode_tally_features(const struct wim_inode *inode,
 		     struct wim_features *features)
 {
-	if (inode->i_attributes & FILE_ATTRIBUTE_ARCHIVE)
-		features->archive_files++;
+	if (inode->i_attributes & FILE_ATTRIBUTE_READONLY)
+		features->readonly_files++;
 	if (inode->i_attributes & FILE_ATTRIBUTE_HIDDEN)
 		features->hidden_files++;
 	if (inode->i_attributes & FILE_ATTRIBUTE_SYSTEM)
 		features->system_files++;
+	if (inode->i_attributes & FILE_ATTRIBUTE_ARCHIVE)
+		features->archive_files++;
 	if (inode->i_attributes & FILE_ATTRIBUTE_COMPRESSED)
 		features->compressed_files++;
 	if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED) {
@@ -1156,9 +1158,11 @@ do_feature_check(const struct wim_features *required_features,
 
 	/* File attributes.  */
 	if (!(extract_flags & WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES)) {
-		/* Note: Don't bother the user about FILE_ATTRIBUTE_ARCHIVE.
-		 * We're an archive program, so theoretically we can do what we
-		 * want with it.  */
+
+		if (required_features->readonly_files &&
+		    !supported_features->readonly_files)
+			WARNING("Ignoring FILE_ATTRIBUTE_READONLY of %lu files",
+				required_features->readonly_files);
 
 		if (required_features->hidden_files &&
 		    !supported_features->hidden_files)
@@ -1169,6 +1173,10 @@ do_feature_check(const struct wim_features *required_features,
 		    !supported_features->system_files)
 			WARNING("Ignoring FILE_ATTRIBUTE_SYSTEM of %lu files",
 				required_features->system_files);
+
+		/* Note: Don't bother the user about FILE_ATTRIBUTE_ARCHIVE.
+		 * We're an archive program, so theoretically we can do what we
+		 * want with it.  */
 
 		if (required_features->compressed_files &&
 		    !supported_features->compressed_files)
