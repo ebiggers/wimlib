@@ -31,8 +31,10 @@
 #include "wimlib.h"
 #include "wimlib/blob_table.h"
 #include "wimlib/dentry.h"
+#include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
+#include "wimlib/metadata.h"
 #include "wimlib/registry.h"
 #include "wimlib/wim.h"
 #include "wimlib/xml_windows.h"
@@ -52,26 +54,6 @@ struct windows_info_ctx {
 #define XML_WARN(format, ...)			\
 	if (ctx->debug_enabled)			\
 		WARNING(format, ##__VA_ARGS__)
-
-/* Path to the SOFTWARE registry hive  */
-static const tchar * const software_hive_path =
-	WIMLIB_WIM_PATH_SEPARATOR_STRING T("Windows")
-	WIMLIB_WIM_PATH_SEPARATOR_STRING T("System32")
-	WIMLIB_WIM_PATH_SEPARATOR_STRING T("config")
-	WIMLIB_WIM_PATH_SEPARATOR_STRING T("SOFTWARE");
-
-/* Path to the SYSTEM registry hive  */
-static const tchar * const system_hive_path =
-	WIMLIB_WIM_PATH_SEPARATOR_STRING T("Windows")
-	WIMLIB_WIM_PATH_SEPARATOR_STRING T("System32")
-	WIMLIB_WIM_PATH_SEPARATOR_STRING T("config")
-	WIMLIB_WIM_PATH_SEPARATOR_STRING T("SYSTEM");
-
-/* Path to kernel32.dll  */
-static const tchar * const kernel32_dll_path =
-	WIMLIB_WIM_PATH_SEPARATOR_STRING T("Windows")
-	WIMLIB_WIM_PATH_SEPARATOR_STRING T("System32")
-	WIMLIB_WIM_PATH_SEPARATOR_STRING T("kernel32.dll");
 
 /* Set a property in the XML document, with error checking.  */
 static void
@@ -599,30 +581,29 @@ set_info_from_system_hive(struct windows_info_ctx *ctx, const struct regf *regf)
  */
 static void *
 load_file_contents(struct windows_info_ctx *ctx,
-		   const tchar *path, size_t *size_ret)
+		   const struct wim_dentry *dentry, const char *filename,
+		   size_t *size_ret)
 {
-	const struct wim_dentry *dentry;
 	const struct blob_descriptor *blob;
 	void *contents;
 	int ret;
 
-	dentry = get_dentry(ctx->wim, path, WIMLIB_CASE_INSENSITIVE);
 	if (!dentry) {
-		XML_WARN("File \"%"TS"\" not found", path);
+		XML_WARN("%s does not exist", filename);
 		return NULL;
 	}
 
 	blob = inode_get_blob_for_unnamed_data_stream(dentry->d_inode,
 						      ctx->wim->blob_table);
 	if (!blob) {
-		XML_WARN("File \"%"TS"\" has no contents", path);
+		XML_WARN("%s has no contents", filename);
 		return NULL;
 	}
 
 	ret = read_blob_into_alloc_buf(blob, &contents);
 	if (ret) {
-		XML_WARN("Error loading file \"%"TS"\" (size=%"PRIu64"): %"TS,
-			 path, blob->size, wimlib_get_error_string(ret));
+		XML_WARN("Error loading %s (size=%"PRIu64"): %"TS,
+			 filename, blob->size, wimlib_get_error_string(ret));
 		ctx->oom_encountered |= (ret == WIMLIB_ERR_NOMEM &&
 					 blob->size < 100000000);
 		return NULL;
@@ -634,18 +615,153 @@ load_file_contents(struct windows_info_ctx *ctx,
 
 /* Load and validate a registry hive file.  */
 static void *
-load_hive(struct windows_info_ctx *ctx, const tchar *path)
+load_hive(struct windows_info_ctx *ctx, const struct wim_dentry *dentry,
+	  const char *filename)
 {
 	void *hive_mem;
 	size_t hive_size;
 
-	hive_mem = load_file_contents(ctx, path, &hive_size);
+	hive_mem = load_file_contents(ctx, dentry, filename, &hive_size);
 	if (hive_mem && !is_registry_valid(ctx, hive_mem, hive_size)) {
-		XML_WARN("\"%"TS"\" is not a valid registry hive!", path);
+		XML_WARN("%s is not a valid registry hive!", filename);
 		FREE(hive_mem);
 		hive_mem = NULL;
 	}
 	return hive_mem;
+}
+
+/* Set the WINDOWS/SYSTEMROOT property to the name of the directory specified by
+ * 'systemroot'.  */
+static void
+set_systemroot_property(struct windows_info_ctx *ctx,
+			const struct wim_dentry *systemroot)
+{
+	utf16lechar *uname;
+	const tchar *name;
+	size_t name_nbytes;
+	int ret;
+
+	/* to uppercase ...  */
+	uname = utf16le_dupz(systemroot->d_name, systemroot->d_name_nbytes);
+	if (!uname) {
+		ctx->oom_encountered = true;
+		goto out;
+	}
+	for (size_t i = 0; i < systemroot->d_name_nbytes / 2; i++)
+		uname[i] = cpu_to_le16(upcase[le16_to_cpu(uname[i])]);
+
+	/* to tstring ...  */
+	ret = utf16le_get_tstr(uname, systemroot->d_name_nbytes,
+			       &name, &name_nbytes);
+	if (ret) {
+		ctx->oom_encountered |= (ret == WIMLIB_ERR_NOMEM);
+		XML_WARN("Failed to get systemroot name: %"TS,
+			 wimlib_get_error_string(ret));
+		goto out;
+	}
+	set_string_property(ctx, T("WINDOWS/SYSTEMROOT"), name);
+	utf16le_put_tstr(name);
+out:
+	FREE(uname);
+}
+
+static int
+do_set_windows_specific_info(WIMStruct *wim,
+			     const struct wim_dentry *systemroot,
+			     const struct wim_dentry *kernel32,
+			     const struct wim_dentry *software,
+			     const struct wim_dentry *system)
+{
+	void *contents;
+	size_t size;
+	struct windows_info_ctx _ctx = {
+		.wim = wim,
+		.image = wim->current_image,
+		.oom_encountered = false,
+		.debug_enabled = (tgetenv(T("WIMLIB_DEBUG_XML_INFO")) != NULL),
+	}, *ctx = &_ctx;
+
+	set_systemroot_property(ctx, systemroot);
+
+	if ((contents = load_file_contents(ctx, kernel32, "kernel32.dll", &size))) {
+		set_info_from_kernel32(ctx, contents, size);
+		FREE(contents);
+	}
+
+	if ((contents = load_hive(ctx, software, "SOFTWARE"))) {
+		set_info_from_software_hive(ctx, contents);
+		FREE(contents);
+	}
+
+	if ((contents = load_hive(ctx, system, "SYSTEM"))) {
+		set_info_from_system_hive(ctx, contents);
+		FREE(contents);
+	}
+
+	if (ctx->oom_encountered) {
+		ERROR("Ran out of memory while setting Windows-specific "
+		      "metadata in the WIM file's XML document.");
+		return WIMLIB_ERR_NOMEM;
+	}
+
+	return 0;
+}
+
+/* Windows */
+static const utf16lechar windows_name[] = {
+	cpu_to_le16('W'), cpu_to_le16('i'), cpu_to_le16('n'),
+	cpu_to_le16('d'), cpu_to_le16('o'), cpu_to_le16('w'),
+	cpu_to_le16('s'),
+};
+
+/* System32 */
+static const utf16lechar system32_name[] = {
+	cpu_to_le16('S'), cpu_to_le16('y'), cpu_to_le16('s'),
+	cpu_to_le16('t'), cpu_to_le16('e'), cpu_to_le16('m'),
+	cpu_to_le16('3'), cpu_to_le16('2'),
+};
+
+/* kernel32.dll */
+static const utf16lechar kernel32_name[] = {
+	cpu_to_le16('k'), cpu_to_le16('e'), cpu_to_le16('r'),
+	cpu_to_le16('n'), cpu_to_le16('e'), cpu_to_le16('l'),
+	cpu_to_le16('3'), cpu_to_le16('2'), cpu_to_le16('.'),
+	cpu_to_le16('d'), cpu_to_le16('l'), cpu_to_le16('l'),
+};
+
+/* config */
+static const utf16lechar config_name[] = {
+	cpu_to_le16('c'), cpu_to_le16('o'), cpu_to_le16('n'),
+	cpu_to_le16('f'), cpu_to_le16('i'), cpu_to_le16('g'),
+};
+
+/* SOFTWARE */
+static const utf16lechar software_name[] = {
+	cpu_to_le16('S'), cpu_to_le16('O'), cpu_to_le16('F'),
+	cpu_to_le16('T'), cpu_to_le16('W'), cpu_to_le16('A'),
+	cpu_to_le16('R'), cpu_to_le16('E'),
+};
+
+/* SYSTEM */
+static const utf16lechar system_name[] = {
+	cpu_to_le16('S'), cpu_to_le16('Y'), cpu_to_le16('S'),
+	cpu_to_le16('T'), cpu_to_le16('E'), cpu_to_le16('M'),
+};
+
+#define GET_CHILD(parent, child_name)				\
+	get_dentry_child_with_utf16le_name(parent,		\
+					   child_name,		\
+					   sizeof(child_name),	\
+					   WIMLIB_CASE_INSENSITIVE)
+
+static bool
+is_default_systemroot(const struct wim_dentry *potential_systemroot)
+{
+	return !cmp_utf16le_strings(potential_systemroot->d_name,
+				    potential_systemroot->d_name_nbytes / 2,
+				    windows_name,
+				    ARRAY_LEN(windows_name),
+				    true);
 }
 
 /*
@@ -660,36 +776,58 @@ load_hive(struct windows_info_ctx *ctx, const tchar *path)
 int
 set_windows_specific_info(WIMStruct *wim)
 {
-	void *contents;
-	size_t size;
-	struct windows_info_ctx _ctx = {
-		.wim = wim,
-		.image = wim->current_image,
-		.oom_encountered = false,
-		.debug_enabled = (tgetenv(T("WIMLIB_DEBUG_XML_INFO")) != NULL),
-	}, *ctx = &_ctx;
+	const struct wim_dentry *root, *potential_systemroot,
+				*best_systemroot = NULL,
+				*best_kernel32 = NULL,
+				*best_software = NULL,
+				*best_system = NULL;
+	int best_score = 0;
 
-	if ((contents = load_file_contents(ctx, kernel32_dll_path, &size))) {
-		set_string_property(ctx, T("WINDOWS/SYSTEMROOT"), T("WINDOWS"));
-		set_info_from_kernel32(ctx, contents, size);
-		FREE(contents);
+	root = wim_get_current_root_dentry(wim);
+	if (!root)
+		return 0;
+
+	/* Find the system root.  This is usually the toplevel directory
+	 * "Windows", but it might be a different toplevel directory.  Choose
+	 * the directory that contains the greatest number of the files we want:
+	 * System32/kernel32.dll, System32/config/SOFTWARE, and
+	 * System32/config/SYSTEM.  Compare all names case insensitively.  */
+	for_dentry_child(potential_systemroot, root) {
+		const struct wim_dentry *system32, *kernel32, *config,
+					*software = NULL, *system = NULL;
+		int score;
+
+		if (!dentry_is_directory(potential_systemroot))
+			continue;
+		system32 = GET_CHILD(potential_systemroot, system32_name);
+		if (!system32)
+			continue;
+		kernel32 = GET_CHILD(system32, kernel32_name);
+		config = GET_CHILD(system32, config_name);
+		if (config) {
+			software = GET_CHILD(config, software_name);
+			system = GET_CHILD(config, system_name);
+		}
+
+		score = !!kernel32 + !!software + !!system;
+		if (score >= best_score) {
+			/* If there's a tie, prefer the "Windows" directory.  */
+			if (score > best_score ||
+			    is_default_systemroot(potential_systemroot))
+			{
+				best_score = score;
+				best_systemroot = potential_systemroot;
+				best_kernel32 = kernel32;
+				best_software = software;
+				best_system = system;
+			}
+		}
 	}
 
-	if ((contents = load_hive(ctx, software_hive_path))) {
-		set_info_from_software_hive(ctx, contents);
-		FREE(contents);
-	}
+	if (likely(best_score == 0))
+		return 0;  /* No Windows system root found.  */
 
-	if ((contents = load_hive(ctx, system_hive_path))) {
-		set_info_from_system_hive(ctx, contents);
-		FREE(contents);
-	}
-
-	if (ctx->oom_encountered) {
-		ERROR("Ran out of memory while setting Windows-specific "
-		      "metadata in the WIM file's XML document.");
-		return WIMLIB_ERR_NOMEM;
-	}
-
-	return 0;
+	/* Found the Windows system root.  */
+	return do_set_windows_specific_info(wim, best_systemroot, best_kernel32,
+					    best_software, best_system);
 }
