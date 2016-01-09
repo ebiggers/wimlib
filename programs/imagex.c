@@ -518,9 +518,9 @@ print_available_compression_types(FILE *fp)
 	tfputs(s, fp);
 }
 
-/* Parse the argument to --compress */
+/* Parse the argument to --compress or --solid-compress  */
 static int
-get_compression_type(tchar *optarg)
+get_compression_type(tchar *optarg, bool solid)
 {
 	int ctype;
 	unsigned int compression_level = 0;
@@ -543,15 +543,27 @@ get_compression_type(tchar *optarg)
 
 	if (!tstrcasecmp(optarg, T("maximum")) ||
 	    !tstrcasecmp(optarg, T("lzx")) ||
-	    !tstrcasecmp(optarg, T("max")))
+	    !tstrcasecmp(optarg, T("max"))) {
 		ctype = WIMLIB_COMPRESSION_TYPE_LZX;
-	else if (!tstrcasecmp(optarg, T("fast")) || !tstrcasecmp(optarg, T("xpress")))
+	} else if (!tstrcasecmp(optarg, T("fast")) || !tstrcasecmp(optarg, T("xpress"))) {
 		ctype = WIMLIB_COMPRESSION_TYPE_XPRESS;
-	else if (!tstrcasecmp(optarg, T("recovery")) || !tstrcasecmp(optarg, T("lzms")))
+	} else if (!tstrcasecmp(optarg, T("recovery"))) {
+		if (!solid) {
+			tfprintf(stderr,
+T(
+"Warning: use of '--compress=recovery' is discouraged because it behaves\n"
+"   differently from DISM.  Instead, you typically want to use '--solid' to\n"
+"   create a solid LZMS-compressed WIM or \"ESD file\", similar to DISM's\n"
+"   /compress:recovery.  But if you really want *non-solid* LZMS compression,\n"
+"   then you may suppress this warning by specifying '--compress=lzms' instead\n"
+"   of '--compress=recovery'.\n"));
+		}
 		ctype = WIMLIB_COMPRESSION_TYPE_LZMS;
-	else if (!tstrcasecmp(optarg, T("none")))
+	} else if (!tstrcasecmp(optarg, T("lzms"))) {
+		ctype = WIMLIB_COMPRESSION_TYPE_LZMS;
+	} else if (!tstrcasecmp(optarg, T("none"))) {
 		ctype = WIMLIB_COMPRESSION_TYPE_NONE;
-	else {
+	} else {
 		imagex_error(T("Invalid compression type \"%"TS"\"!"), optarg);
 		print_available_compression_types(stderr);
 		return WIMLIB_COMPRESSION_TYPE_INVALID;
@@ -1905,7 +1917,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			add_flags &= ~WIMLIB_ADD_FLAG_WINCONFIG;
 			break;
 		case IMAGEX_COMPRESS_OPTION:
-			compression_type = get_compression_type(optarg);
+			compression_type = get_compression_type(optarg, false);
 			if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID)
 				goto out_err;
 			break;
@@ -1923,7 +1935,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 				goto out_err;
 			break;
 		case IMAGEX_SOLID_COMPRESS_OPTION:
-			solid_ctype = get_compression_type(optarg);
+			solid_ctype = get_compression_type(optarg, true);
 			if (solid_ctype == WIMLIB_COMPRESSION_TYPE_INVALID)
 				goto out_err;
 			break;
@@ -2867,7 +2879,7 @@ imagex_export(int argc, tchar **argv, int cmd)
 			write_flags |= WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY;
 			break;
 		case IMAGEX_COMPRESS_OPTION:
-			compression_type = get_compression_type(optarg);
+			compression_type = get_compression_type(optarg, false);
 			if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID)
 				goto out_err;
 			break;
@@ -2895,7 +2907,7 @@ imagex_export(int argc, tchar **argv, int cmd)
 				goto out_err;
 			break;
 		case IMAGEX_SOLID_COMPRESS_OPTION:
-			solid_ctype = get_compression_type(optarg);
+			solid_ctype = get_compression_type(optarg, true);
 			if (solid_ctype == WIMLIB_COMPRESSION_TYPE_INVALID)
 				goto out_err;
 			break;
@@ -3781,7 +3793,7 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 			break;
 		case IMAGEX_COMPRESS_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
-			compression_type = get_compression_type(optarg);
+			compression_type = get_compression_type(optarg, false);
 			if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID)
 				goto out_err;
 			break;
@@ -3803,7 +3815,7 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 				goto out_err;
 			break;
 		case IMAGEX_SOLID_COMPRESS_OPTION:
-			solid_ctype = get_compression_type(optarg);
+			solid_ctype = get_compression_type(optarg, true);
 			if (solid_ctype == WIMLIB_COMPRESSION_TYPE_INVALID)
 				goto out_err;
 			break;
