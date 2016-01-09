@@ -7,6 +7,9 @@ Version 1.9.0-BETA:
 	architecture, system root, and version details.  This information is now
 	automatically set in newly captured WIM images, when appropriate.
 
+	The progress messages printed by wimlib-imagex while writing WIM files
+	have been slightly tweaked.
+
 	Added a new '--image-property' option to 'wimcapture', 'wimappend', and
 	'wiminfo'.  This option lets you assign values to elements in a WIM
 	file's XML document by name.

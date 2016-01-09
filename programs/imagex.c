@@ -1159,23 +1159,24 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 	switch (msg) {
 	case WIMLIB_PROGRESS_MSG_WRITE_STREAMS:
 		{
-			static bool first = true;
-			if (first) {
-				imagex_printf(T("Writing %"TS"-compressed data "
-						"using %u thread%"TS"\n"),
-					      wimlib_get_compression_type_string(
-							info->write_streams.compression_type),
-					info->write_streams.num_threads,
-					(info->write_streams.num_threads == 1) ? T("") : T("s"));
-				first = false;
+			static bool started;
+			if (!started) {
+				if (info->write_streams.compression_type != WIMLIB_COMPRESSION_TYPE_NONE) {
+					imagex_printf(T("Using %"TS" compression "
+							"with %u thread%"TS"\n"),
+						      wimlib_get_compression_type_string(
+								info->write_streams.compression_type),
+						info->write_streams.num_threads,
+						(info->write_streams.num_threads == 1) ? T("") : T("s"));
+				}
+				started = true;
 			}
 		}
 		unit_shift = get_unit(info->write_streams.total_bytes, &unit_name);
 		percent_done = TO_PERCENT(info->write_streams.completed_bytes,
 					  info->write_streams.total_bytes);
 
-		imagex_printf(T("\r%"PRIu64" %"TS" of %"PRIu64" %"TS" (uncompressed) "
-			"written (%u%% done)"),
+		imagex_printf(T("\rArchiving file data: %"PRIu64" %"TS" of %"PRIu64" %"TS" (%u%%) done"),
 			info->write_streams.completed_bytes >> unit_shift,
 			unit_name,
 			info->write_streams.total_bytes >> unit_shift,
