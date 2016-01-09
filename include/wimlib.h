@@ -856,13 +856,11 @@ union wimlib_progress_info {
 		uint64_t num_dirs_scanned;
 
 		/** The number of non-directories scanned so far, not counting
-		 * excluded/unsupported files.  If a file has multiple names
-		 * (hard links), it is only counted one time.  */
+		 * excluded/unsupported files.  */
 		uint64_t num_nondirs_scanned;
 
 		/** The number of bytes of file data detected so far, not
-		 * counting excluded/unsupported files.  If a file has multiple
-		 * names (hard links), its data is counted only one time.  */
+		 * counting excluded/unsupported files.  */
 		uint64_t num_bytes_scanned;
 	} scan;
 

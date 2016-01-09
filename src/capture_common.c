@@ -67,20 +67,26 @@ do_capture_progress(struct capture_params *params, int status,
 		break;
 	}
 	params->progress.scan.status = status;
-	if (status == WIMLIB_SCAN_DENTRY_OK && inode->i_nlink == 1) {
+	if (status == WIMLIB_SCAN_DENTRY_OK) {
 
-		/* Successful scan, and visiting inode for the first time  */
-
-		/* Tally size of all streams.  */
-		for (unsigned i = 0; i < inode->i_num_streams; i++) {
-			const struct blob_descriptor *blob =
-				stream_blob_resolved(&inode->i_streams[i]);
-			if (blob)
-				params->progress.scan.num_bytes_scanned += blob->size;
+		/* The first time the inode is seen, tally all its streams.  */
+		if (inode->i_nlink == 1) {
+			for (unsigned i = 0; i < inode->i_num_streams; i++) {
+				const struct blob_descriptor *blob =
+					stream_blob_resolved(&inode->i_streams[i]);
+				if (blob)
+					params->progress.scan.num_bytes_scanned += blob->size;
+			}
 		}
 
-		/* Tally the file itself.  */
-		if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
+		/* Tally the file itself, counting every hard link.  It's
+		 * debatable whether every link should be counted, but counting
+		 * every link makes the statistics consistent with the ones
+		 * placed in the FILECOUNT and DIRCOUNT elements of the WIM
+		 * file's XML document.  It also avoids possible user confusion
+		 * if the number of files reported were to be lower than that
+		 * displayed by some other software such as file browsers.  */
+		if (inode_is_directory(inode))
 			params->progress.scan.num_dirs_scanned++;
 		else
 			params->progress.scan.num_nondirs_scanned++;
