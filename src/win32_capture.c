@@ -2643,22 +2643,22 @@ generate_wim_structures_recursive(struct wim_dentry **root_ret,
 	ns = FIRST_STREAM(ni);
 	for (u32 i = 0; i < ni->num_streams; i++) {
 		struct windows_file *windows_file;
-		size_t stream_name_nchars;
 
+		/* Reference the stream by path if it's a named data stream, or
+		 * if the volume doesn't support "open by file ID", or if the
+		 * application hasn't explicitly opted in to "open by file ID".
+		 * Otherwise, only save the inode number (file ID).  */
 		if (*ns->name ||
-		    !(ctx->vol_flags & FILE_SUPPORTS_OPEN_BY_FILE_ID))
+		    !(ctx->vol_flags & FILE_SUPPORTS_OPEN_BY_FILE_ID) ||
+		    !(ctx->params->add_flags & WIMLIB_ADD_FLAG_FILE_PATHS_UNNEEDED))
 		{
-			/* Named data stream: reference by path  */
-			stream_name_nchars = wcslen(ns->name);
 			windows_file = alloc_windows_file(path,
 							  path_nchars,
 							  ns->name,
-							  stream_name_nchars,
+							  wcslen(ns->name),
 							  ctx->snapshot,
 							  false);
 		} else {
-			/* Unamed data stream: reference by file ID (inode number)  */
-			stream_name_nchars = 0;
 			windows_file = alloc_windows_file_for_file_id(ni->ino,
 								      path,
 								      ctx->params->capture_root_nchars + 1,

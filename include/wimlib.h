@@ -1757,6 +1757,15 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  */
 #define WIMLIB_ADD_FLAG_SNAPSHOT		0x00008000
 
+/**
+ * Permit the library to discard file paths after the initial scan.  If the
+ * application won't use WIMLIB_WRITE_FLAG_SEND_DONE_WITH_FILE_MESSAGES while
+ * writing the WIM archive, this flag can be used to allow the library to enable
+ * optimizations such as opening files by inode number rather than by path.
+ * Currently this only makes a difference on Windows.
+ */
+#define WIMLIB_ADD_FLAG_FILE_PATHS_UNNEEDED	0x00010000
+
 /** @} */
 /** @addtogroup G_modifying_wims
  * @{ */
