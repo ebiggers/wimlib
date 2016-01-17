@@ -149,7 +149,6 @@ enum {
 	IMAGEX_COMMIT_OPTION,
 	IMAGEX_COMPACT_OPTION,
 	IMAGEX_COMPRESS_OPTION,
-	IMAGEX_COMPRESS_SLOW_OPTION,
 	IMAGEX_CONFIG_OPTION,
 	IMAGEX_DEBUG_OPTION,
 	IMAGEX_DELTA_FROM_OPTION,
@@ -226,7 +225,6 @@ static const struct option capture_or_append_options[] = {
 	{T("no-check"),    no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("nocheck"),     no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("compress"),    required_argument, NULL, IMAGEX_COMPRESS_OPTION},
-	{T("compress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
 	{T("chunk-size"),  required_argument, NULL, IMAGEX_CHUNK_SIZE_OPTION},
 	{T("solid"),       no_argument,      NULL, IMAGEX_SOLID_OPTION},
 	{T("solid-compress"),required_argument, NULL, IMAGEX_SOLID_COMPRESS_OPTION},
@@ -278,7 +276,6 @@ static const struct option export_options[] = {
 	{T("no-check"),    no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("compress"),    required_argument, NULL, IMAGEX_COMPRESS_OPTION},
 	{T("recompress"),  no_argument,       NULL, IMAGEX_RECOMPRESS_OPTION},
-	{T("compress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
 	{T("chunk-size"),  required_argument, NULL, IMAGEX_CHUNK_SIZE_OPTION},
 	{T("solid"),       no_argument,       NULL, IMAGEX_SOLID_OPTION},
 	{T("solid-compress"),required_argument, NULL, IMAGEX_SOLID_COMPRESS_OPTION},
@@ -352,8 +349,6 @@ static const struct option optimize_options[] = {
 	{T("no-check"),    no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("compress"),    required_argument, NULL, IMAGEX_COMPRESS_OPTION},
 	{T("recompress"),  no_argument,       NULL, IMAGEX_RECOMPRESS_OPTION},
-	{T("compress-slow"), no_argument,     NULL, IMAGEX_COMPRESS_SLOW_OPTION},
-	{T("recompress-slow"), no_argument,   NULL, IMAGEX_COMPRESS_SLOW_OPTION},
 	{T("chunk-size"),  required_argument, NULL, IMAGEX_CHUNK_SIZE_OPTION},
 	{T("solid"),       no_argument,       NULL, IMAGEX_SOLID_OPTION},
 	{T("solid-compress"),required_argument, NULL, IMAGEX_SOLID_COMPRESS_OPTION},
@@ -591,16 +586,6 @@ set_compact_mode(const tchar *arg, int *extract_flags)
 	return -1;
 }
 
-
-static void
-set_compress_slow(void)
-{
-#if 0
-	fprintf(stderr, "WARNING: the '--compress-slow' option is deprecated.\n"
-		        "         Use the '--compress=TYPE:LEVEL' option instead.\n");
-#endif
-	wimlib_set_default_compression_level(-1, 100);
-}
 
 struct string_set {
 	tchar **strings;
@@ -1905,9 +1890,6 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID)
 				goto out_err;
 			break;
-		case IMAGEX_COMPRESS_SLOW_OPTION:
-			set_compress_slow();
-			break;
 		case IMAGEX_CHUNK_SIZE_OPTION:
 			chunk_size = parse_chunk_size(optarg);
 			if (chunk_size == UINT32_MAX)
@@ -2867,10 +2849,6 @@ imagex_export(int argc, tchar **argv, int cmd)
 			if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID)
 				goto out_err;
 			break;
-		case IMAGEX_COMPRESS_SLOW_OPTION:
-			set_compress_slow();
-			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
-			break;
 		case IMAGEX_RECOMPRESS_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
 			break;
@@ -3780,10 +3758,6 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 			compression_type = get_compression_type(optarg, false);
 			if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID)
 				goto out_err;
-			break;
-		case IMAGEX_COMPRESS_SLOW_OPTION:
-			set_compress_slow();
-			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
 			break;
 		case IMAGEX_RECOMPRESS_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
