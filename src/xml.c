@@ -343,14 +343,14 @@ alloc_wim_xml_info(void)
 }
 
 static bool
-parse_index(xmlChar **pp, uint32_t *index_ret)
+parse_index(xmlChar **pp, u32 *index_ret)
 {
 	xmlChar *p = *pp;
-	uint32_t index = 0;
+	u32 index = 0;
 
 	*p++ = '\0'; /* overwrite '[' */
 	while (*p >= '0' && *p <= '9') {
-		uint32_t n = (index * 10) + (*p++ - '0');
+		u32 n = (index * 10) + (*p++ - '0');
 		if (n < index)
 			return false;
 		index = n;
@@ -393,7 +393,7 @@ do_xml_path_walk(xmlNode *node, const xmlChar *path, bool create,
 	while (c != '\0') {
 		const xmlChar *name;
 		xmlNode *child;
-		uint32_t index = 1;
+		u32 index = 1;
 
 		/* We have another path component.  */
 
