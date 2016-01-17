@@ -432,6 +432,7 @@ set_info_from_software_hive(struct windows_info_ctx *ctx,
 	s64 major_version = -1;
 	s64 minor_version = -1;
 	tchar *version_string;
+	tchar *build_string;
 
 	/* Image flags  */
 	copy_registry_string(ctx, regf, version_key, T("EditionID"),
@@ -494,8 +495,28 @@ set_info_from_software_hive(struct windows_info_ctx *ctx,
 	}
 
 	/* Build number  */
-	copy_registry_string(ctx, regf, version_key, T("CurrentBuild"),
-			     T("WINDOWS/VERSION/BUILD"));
+
+	/* Note: "CurrentBuild" is marked as obsolete in Windows XP registries
+	 * (example value:  "1.511.1 () (Obsolete data - do not use)"), and
+	 * "CurrentBuildNumber" contains the correct value.  But oddly enough,
+	 * it is "CurrentBuild" that contains the correct value on *later*
+	 * versions of Windows.  */
+	if (get_string_from_registry(ctx, regf, version_key, T("CurrentBuild"),
+				     &build_string))
+	{
+		if (tstrchr(build_string, T('.'))) {
+			FREE(build_string);
+			build_string = NULL;
+			get_string_from_registry(ctx, regf, version_key,
+						 T("CurrentBuildNumber"),
+						 &build_string);
+		}
+		if (build_string) {
+			set_string_property(ctx, T("WINDOWS/VERSION/BUILD"),
+					    build_string);
+			FREE(build_string);
+		}
+	}
 }
 
 /* Gather the default language from the SYSTEM registry hive.  */
