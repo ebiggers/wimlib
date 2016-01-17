@@ -2235,12 +2235,6 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 #define WIMLIB_WRITE_FLAG_SOLID				0x00001000
 
 /**
- * Deprecated: this is the old name for ::WIMLIB_WRITE_FLAG_SOLID, retained for
- * source compatibility.
- */
-#define WIMLIB_WRITE_FLAG_PACK_STREAMS			WIMLIB_WRITE_FLAG_SOLID
-
-/**
  * Send ::WIMLIB_PROGRESS_MSG_DONE_WITH_FILE messages while writing the WIM
  * file.  This is only needed in the unusual case that the library user needs to
  * know exactly when wimlib has read each file for the last time.
