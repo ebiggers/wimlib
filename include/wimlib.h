@@ -1896,9 +1896,6 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * only allows the Administrator to create symbolic links.  */
 #define WIMLIB_EXTRACT_FLAG_STRICT_SYMLINKS             0x00008000
 
-/** Reserved for future use.  */
-#define WIMLIB_EXTRACT_FLAG_RESUME			0x00010000
-
 /** For wimlib_extract_paths() and wimlib_extract_pathlist() only:  Treat the
  * paths to extract as wildcard patterns ("globs") which may contain the
  * wildcard characters @c ? and @c *.  The @c ? character matches any
