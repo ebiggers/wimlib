@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers
+ * Copyright (C) 2012-2016 Eric Biggers
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -182,7 +182,6 @@ enum {
 	IMAGEX_RECOMPRESS_OPTION,
 	IMAGEX_RECURSIVE_OPTION,
 	IMAGEX_REF_OPTION,
-	IMAGEX_RESUME_OPTION,
 	IMAGEX_RPFIX_OPTION,
 	IMAGEX_SNAPSHOT_OPTION,
 	IMAGEX_SOFT_OPTION,
@@ -216,9 +215,6 @@ static const struct option apply_options[] = {
 	{T("rpfix"),       no_argument,       NULL, IMAGEX_RPFIX_OPTION},
 	{T("norpfix"),     no_argument,       NULL, IMAGEX_NORPFIX_OPTION},
 	{T("include-invalid-names"), no_argument,       NULL, IMAGEX_INCLUDE_INVALID_NAMES_OPTION},
-
-	/* --resume is undocumented for now as it needs improvement.  */
-	{T("resume"),      no_argument,       NULL, IMAGEX_RESUME_OPTION},
 	{T("wimboot"),     no_argument,       NULL, IMAGEX_WIMBOOT_OPTION},
 	{T("compact"),     required_argument, NULL, IMAGEX_COMPACT_OPTION},
 	{NULL, 0, NULL, 0},
@@ -1719,9 +1715,6 @@ imagex_apply(int argc, tchar **argv, int cmd)
 		case IMAGEX_INCLUDE_INVALID_NAMES_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_REPLACE_INVALID_FILENAMES;
 			extract_flags |= WIMLIB_EXTRACT_FLAG_ALL_CASE_CONFLICTS;
-			break;
-		case IMAGEX_RESUME_OPTION:
-			extract_flags |= WIMLIB_EXTRACT_FLAG_RESUME;
 			break;
 		case IMAGEX_WIMBOOT_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_WIMBOOT;
@@ -4530,7 +4523,7 @@ version(void)
 	static const tchar *s =
 	T(
 "wimlib-imagex (distributed with " PACKAGE " " PACKAGE_VERSION ")\n"
-"Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers\n"
+"Copyright (C) 2012-2016 Eric Biggers\n"
 "License GPLv3+; GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>.\n"
 "This is free software: you are free to change and redistribute it.\n"
 "There is NO WARRANTY, to the extent permitted by law.\n"
