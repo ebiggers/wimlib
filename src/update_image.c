@@ -1234,7 +1234,7 @@ check_add_command(struct wimlib_update_command *cmd,
 	/* Currently, SNAPSHOT means Windows VSS.  In the future, it perhaps
 	 * could be implemented for other types of snapshots, such as btrfs.  */
 	if (add_flags & WIMLIB_ADD_FLAG_SNAPSHOT) {
-		ERROR("Snapshot mode is only supported on Windows (VSS)");
+		ERROR("Snapshot mode is only supported on Windows, where it uses VSS.");
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 #endif
