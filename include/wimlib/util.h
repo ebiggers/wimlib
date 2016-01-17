@@ -112,6 +112,16 @@ hash_u64(u64 n)
 }
 
 static inline int
+cmp_u32(u32 n1, u32 n2)
+{
+	if (n1 < n2)
+		return -1;
+	if (n1 > n2)
+		return 1;
+	return 0;
+}
+
+static inline int
 cmp_u64(u64 n1, u64 n2)
 {
 	if (n1 < n2)
