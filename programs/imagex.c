@@ -1832,7 +1832,8 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	int open_flags = 0;
 	int add_flags = WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE |
 			WIMLIB_ADD_FLAG_WINCONFIG |
-			WIMLIB_ADD_FLAG_VERBOSE;
+			WIMLIB_ADD_FLAG_VERBOSE |
+			WIMLIB_ADD_FLAG_FILE_PATHS_UNNEEDED;
 	int write_flags = 0;
 	int compression_type = WIMLIB_COMPRESSION_TYPE_INVALID;
 	uint32_t chunk_size = UINT32_MAX;
