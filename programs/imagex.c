@@ -321,7 +321,6 @@ static const struct option info_options[] = {
 	{T("header"),       no_argument,       NULL, IMAGEX_HEADER_OPTION},
 	{T("lookup-table"), no_argument,       NULL, IMAGEX_BLOBS_OPTION},
 	{T("blobs"),        no_argument,       NULL, IMAGEX_BLOBS_OPTION},
-	{T("metadata"),     no_argument,       NULL, IMAGEX_METADATA_OPTION},
 	{T("xml"),          no_argument,       NULL, IMAGEX_XML_OPTION},
 	{T("image-property"), required_argument, NULL, IMAGEX_IMAGE_PROPERTY_OPTION},
 	{NULL, 0, NULL, 0},
@@ -3339,10 +3338,6 @@ imagex_info(int argc, tchar **argv, int cmd)
 			xml_out_file = optarg;
 			short_header = false;
 			break;
-		case IMAGEX_METADATA_OPTION:
-			imagex_error(T("The --metadata option has been removed. "
-				       "Use 'wimdir --detail' instead."));
-			goto out_err;
 		case IMAGEX_IMAGE_PROPERTY_OPTION:
 			ret = append_image_property_argument(&image_properties);
 			if (ret)
