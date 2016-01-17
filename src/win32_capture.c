@@ -856,7 +856,7 @@ winnt_rpfix_progress(struct capture_params *params, const wchar_t *path,
 	wmemcpy(print_name0, link->print_name, print_name_nchars);
 	print_name0[print_name_nchars] = L'\0';
 
-	params->progress.scan.cur_path = printable_path(path);
+	params->progress.scan.cur_path = path;
 	params->progress.scan.symlink_target = print_name0;
 	return do_capture_progress(params, scan_status, NULL);
 }
@@ -1755,7 +1755,7 @@ retry_open:
 	}
 
 out_progress:
-	ctx->params->progress.scan.cur_path = printable_path(full_path);
+	ctx->params->progress.scan.cur_path = full_path;
 	if (likely(root))
 		ret = do_capture_progress(ctx->params, WIMLIB_SCAN_DENTRY_OK, inode);
 	else
@@ -2714,7 +2714,7 @@ generate_wim_structures_recursive(struct wim_dentry **root_ret,
 	}
 
 out_progress:
-	ctx->params->progress.scan.cur_path = printable_path(path);
+	ctx->params->progress.scan.cur_path = path;
 	if (likely(root))
 		ret = do_capture_progress(ctx->params, WIMLIB_SCAN_DENTRY_OK, inode);
 	else

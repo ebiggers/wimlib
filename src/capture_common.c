@@ -53,6 +53,9 @@ int
 do_capture_progress(struct capture_params *params, int status,
 		    const struct wim_inode *inode)
 {
+	int ret;
+	tchar *cookie;
+
 	switch (status) {
 	case WIMLIB_SCAN_DENTRY_OK:
 		if (!(params->add_flags & WIMLIB_ADD_FLAG_VERBOSE))
@@ -93,8 +96,12 @@ do_capture_progress(struct capture_params *params, int status,
 	}
 
 	/* Call the user-provided progress function.  */
-	return call_progress(params->progfunc, WIMLIB_PROGRESS_MSG_SCAN_DENTRY,
+
+	cookie = progress_get_win32_path(params->progress.scan.cur_path);
+	ret = call_progress(params->progfunc, WIMLIB_PROGRESS_MSG_SCAN_DENTRY,
 			     &params->progress, params->progctx);
+	progress_put_win32_path(cookie);
+	return ret;
 }
 
 /*

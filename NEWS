@@ -14,6 +14,7 @@ Version 1.9.0-BETA:
 	have been slightly tweaked.
 
 	Progress information for directory tree scans now counts all hard links.
+	Also, on Windows "\\?\" is no longer stripped from the current path.
 
 	Added a new '--image-property' option to 'wimcapture', 'wimappend', and
 	'wiminfo'.  This option lets you assign values to elements in a WIM
