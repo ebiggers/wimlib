@@ -177,7 +177,7 @@ wimlib_create_new_wim(enum wimlib_compression_type ctype, WIMStruct **wim_ret)
 		return WIMLIB_ERR_NOMEM;
 
 	wim->xml_info = xml_new_info_struct();
-	wim->blob_table = new_blob_table(9001);
+	wim->blob_table = new_blob_table(64);
 	if (!wim->xml_info || !wim->blob_table) {
 		wimlib_free(wim);
 		return WIMLIB_ERR_NOMEM;
@@ -729,7 +729,7 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd, int open_flags)
 	}
 
 	if (open_flags & WIMLIB_OPEN_FLAG_FROM_PIPE) {
-		wim->blob_table = new_blob_table(9001);
+		wim->blob_table = new_blob_table(64);
 		if (!wim->blob_table)
 			return WIMLIB_ERR_NOMEM;
 	} else {
