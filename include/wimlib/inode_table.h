@@ -3,6 +3,7 @@
 
 #include "wimlib/list.h"
 #include "wimlib/types.h"
+#include "wimlib/util.h"
 
 struct wim_dentry;
 
@@ -13,10 +14,19 @@ struct wim_dentry;
  * cases the inodes are linked by i_hlist_node.  */
 struct wim_inode_table {
 	struct hlist_head *array;
+	size_t filled;
 	size_t capacity;
 	struct hlist_head extra_inodes;
 };
 
+
+/* Compute the index of the hash bucket to use for the given inode number and
+ * device number.  */
+static inline size_t
+hash_inode(const struct wim_inode_table *table, u64 ino, u64 devno)
+{
+	return (hash_u64(ino) + devno) & (table->capacity - 1);
+}
 
 extern int
 init_inode_table(struct wim_inode_table *table, size_t capacity);
@@ -25,6 +35,9 @@ extern int
 inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
 		       u64 ino, u64 devno, bool noshare,
 		       struct wim_dentry **dentry_ret);
+
+extern void
+enlarge_inode_table(struct wim_inode_table *table);
 
 extern void
 inode_table_prepare_inode_list(struct wim_inode_table *table,

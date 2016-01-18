@@ -72,7 +72,7 @@ inode_table_insert(struct wim_dentry *dentry, void *_params)
 	}
 
 	/* Try adding this dentry to an existing inode.  */
-	pos = d_inode->i_ino % table->capacity;
+	pos = hash_inode(table, d_inode->i_ino, 0);
 	hlist_for_each_entry(inode, &table->array[pos], i_hlist_node) {
 		if (inode->i_ino != d_inode->i_ino) {
 			continue;
@@ -108,6 +108,8 @@ inode_table_insert(struct wim_dentry *dentry, void *_params)
 
 	/* Keep this dentry's inode.  */
 	hlist_add_head(&d_inode->i_hlist_node, &table->array[pos]);
+	if (++table->filled > table->capacity)
+		enlarge_inode_table(table);
 	return 0;
 }
 
@@ -175,7 +177,7 @@ dentry_tree_fix_inodes(struct wim_dentry *root, struct hlist_head *inode_list)
 
 	/* We use a hash table to map inode numbers to inodes.  */
 
-	ret = init_inode_table(&params.inode_table, 9001);
+	ret = init_inode_table(&params.inode_table, 64);
 	if (ret)
 		return ret;
 

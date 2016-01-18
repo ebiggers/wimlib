@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014 Eric Biggers
+ * Copyright (C) 2012-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -23,6 +23,7 @@
 #  include "config.h"
 #endif
 
+#include "wimlib/bitops.h"
 #include "wimlib/dentry.h"
 #include "wimlib/error.h"
 #include "wimlib/inode.h"
@@ -34,9 +35,11 @@
 int
 init_inode_table(struct wim_inode_table *table, size_t capacity)
 {
+	capacity = roundup_pow_of_2(capacity);
 	table->array = CALLOC(capacity, sizeof(table->array[0]));
 	if (!table->array)
 		return WIMLIB_ERR_NOMEM;
+	table->filled = 0;
 	table->capacity = capacity;
 	INIT_HLIST_HEAD(&table->extra_inodes);
 	return 0;
@@ -47,6 +50,32 @@ void
 destroy_inode_table(struct wim_inode_table *table)
 {
 	FREE(table->array);
+}
+
+/* Double the capacity of the inode hash table.  */
+void
+enlarge_inode_table(struct wim_inode_table *table)
+{
+	const size_t old_capacity = table->capacity;
+	const size_t new_capacity = old_capacity * 2;
+	struct hlist_head *old_array = table->array;
+	struct hlist_head *new_array;
+	struct wim_inode *inode;
+	struct hlist_node *tmp;
+
+	new_array = CALLOC(new_capacity, sizeof(struct hlist_head));
+	if (!new_array)
+		return;
+	table->array = new_array;
+	table->capacity = new_capacity;
+	for (size_t i = 0; i < old_capacity; i++) {
+		hlist_for_each_entry_safe(inode, tmp, &old_array[i], i_hlist_node) {
+			hlist_add_head(&inode->i_hlist_node,
+				       &new_array[hash_inode(table, inode->i_ino,
+							     inode->i_devno)]);
+		}
+	}
+	FREE(old_array);
 }
 
 /*
@@ -98,8 +127,7 @@ inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
 		list = &table->extra_inodes;
 	} else {
 		/* Hard link detection  */
-		list = &table->array[hash_u64(hash_u64(ino) + hash_u64(devno))
-				     % table->capacity];
+		list = &table->array[hash_inode(table, ino, devno)];
 		hlist_for_each_entry(inode, list, i_hlist_node) {
 			if (inode->i_ino != ino || inode->i_devno != devno)
 				continue;
@@ -121,9 +149,12 @@ inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
 	if (ret)
 		return ret;
 	inode = dentry->d_inode;
-	hlist_add_head(&inode->i_hlist_node, list);
 	inode->i_ino = ino;
 	inode->i_devno = devno;
+	hlist_add_head(&inode->i_hlist_node, list);
+	if (list != &table->extra_inodes)
+		if (++table->filled > table->capacity)
+			enlarge_inode_table(table);
 	*dentry_ret = dentry;
 	return 0;
 }

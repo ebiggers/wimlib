@@ -54,21 +54,13 @@ struct blob_table {
 	size_t mask; /* capacity - 1; capacity is a power of 2  */
 };
 
-static size_t
-next_power_of_2(size_t n)
-{
-	if (n <= 1)
-		return 1;
-	return (size_t)1 << (1 + flsw(n - 1));
-}
-
 struct blob_table *
 new_blob_table(size_t capacity)
 {
 	struct blob_table *table;
 	struct hlist_head *array;
 
-	capacity = next_power_of_2(capacity);
+	capacity = roundup_pow_of_2(capacity);
 
 	table = MALLOC(sizeof(struct blob_table));
 	if (table == NULL)

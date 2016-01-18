@@ -1095,7 +1095,7 @@ execute_update_commands(WIMStruct *wim,
 		inode_table = alloca(sizeof(struct wim_inode_table));
 		sd_set = alloca(sizeof(struct wim_sd_set));
 
-		ret = init_inode_table(inode_table, 9001);
+		ret = init_inode_table(inode_table, 64);
 		if (ret)
 			goto out;
 

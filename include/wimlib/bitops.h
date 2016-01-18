@@ -89,4 +89,14 @@ ffsw(machine_word_t v)
 		return ffs64(v);
 }
 
+/* Round up to nearest power of 2  */
+
+static inline size_t
+roundup_pow_of_2(size_t n)
+{
+	if (n <= 1)
+		return 1;
+	return (size_t)1 << (1 + flsw(n - 1));
+}
+
 #endif /* _WIMLIB_BITOPS_H */
