@@ -184,11 +184,9 @@ inode_table_prepare_inode_list(struct wim_inode_table *table,
 			inode->i_ino = cur_ino++;
 			hlist_add_head(&inode->i_hlist_node, head);
 		}
-		INIT_HLIST_HEAD(&table->array[i]);
 	}
 	hlist_for_each_entry_safe(inode, tmp, &table->extra_inodes, i_hlist_node) {
 		inode->i_ino = cur_ino++;
 		hlist_add_head(&inode->i_hlist_node, head);
 	}
-	INIT_HLIST_HEAD(&table->extra_inodes);
 }
