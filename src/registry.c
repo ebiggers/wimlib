@@ -143,6 +143,7 @@ struct data_cell {
 
 /* Arbitrary limits for safety  */
 #define MAX_VALUES		65536
+#define MAX_VALUE_SIZE		1048576
 #define MAX_SUBKEYS		65536
 #define MAX_SUBKEY_LIST_LEVELS	5
 #define MAX_SUBKEY_LISTS	4096
@@ -532,7 +533,7 @@ retrieve_value(const struct regf *regf, const tchar *key_name,
 	is_inline = (data_size & 0x80000000);
 	data_size &= 0x7FFFFFFF;
 
-	if (data_size > 1048576)	/* Arbitrary limit */
+	if (data_size > MAX_VALUE_SIZE)
 		return HIVE_CORRUPT;
 
 	if (is_inline) {
