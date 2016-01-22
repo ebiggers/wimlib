@@ -2477,6 +2477,9 @@ security_map_lookup(struct security_map *map, u32 disk_security_id)
 	struct security_map_node tmp;
 	const struct avl_tree_node *res;
 
+	if (disk_security_id == 0)  /* No on-disk security ID; uncacheable  */
+		return -1;
+
 	tmp.disk_security_id = disk_security_id;
 	res = avl_tree_lookup_node(map->root, &tmp.index_node,
 				   _avl_cmp_security_map_nodes);
@@ -2490,6 +2493,9 @@ security_map_insert(struct security_map *map, u32 disk_security_id,
 		    u32 wim_security_id)
 {
 	struct security_map_node *node;
+
+	if (disk_security_id == 0)  /* No on-disk security ID; uncacheable  */
+		return 0;
 
 	node = MALLOC(sizeof(*node));
 	if (!node)
