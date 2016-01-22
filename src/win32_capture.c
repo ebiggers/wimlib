@@ -240,39 +240,38 @@ get_windows_file_path(const struct windows_file *file)
 }
 
 /*
- * If cur_dir is not NULL, open an existing file relative to the already-open
- * directory cur_dir.
- *
- * Otherwise, open the file specified by @path, which must be a Windows NT
- * namespace path.
+ * Open the file named by the NT namespace path @path of length @path_nchars
+ * characters.  If @cur_dir is not NULL then the path is given relative to
+ * @cur_dir; otherwise the path is absolute.  @perms is the access mask of
+ * permissions to request on the handle.  If permission to read the data is
+ * requested, then SYNCHRONIZE is automatically added.
  */
 static NTSTATUS
 winnt_openat(HANDLE cur_dir, const wchar_t *path, size_t path_nchars,
 	     ACCESS_MASK perms, HANDLE *h_ret)
 {
-	UNICODE_STRING name;
-	OBJECT_ATTRIBUTES attr;
+	UNICODE_STRING name = {
+		.Length = path_nchars * sizeof(wchar_t),
+		.MaximumLength = path_nchars * sizeof(wchar_t),
+		.Buffer = (wchar_t *)path,
+	};
+	OBJECT_ATTRIBUTES attr = {
+		.Length = sizeof(attr),
+		.RootDirectory = cur_dir,
+		.ObjectName = &name,
+	};
 	IO_STATUS_BLOCK iosb;
 	NTSTATUS status;
+	ULONG options = FILE_OPEN_REPARSE_POINT | FILE_OPEN_FOR_BACKUP_INTENT;
 
-	name.Length = path_nchars * sizeof(wchar_t);
-	name.MaximumLength = name.Length;
-	name.Buffer = (wchar_t *)path;
-
-	attr.Length = sizeof(attr);
-	attr.RootDirectory = cur_dir;
-	attr.ObjectName = &name;
-	attr.Attributes = 0;
-	attr.SecurityDescriptor = NULL;
-	attr.SecurityQualityOfService = NULL;
-
+	if (perms & (FILE_READ_DATA | FILE_LIST_DIRECTORY)) {
+		perms |= SYNCHRONIZE;
+		options |= FILE_SYNCHRONOUS_IO_NONALERT;
+		options |= FILE_SEQUENTIAL_ONLY;
+	}
 retry:
 	status = (*func_NtOpenFile)(h_ret, perms, &attr, &iosb,
-				    FILE_SHARE_VALID_FLAGS,
-				    FILE_OPEN_REPARSE_POINT |
-					    FILE_OPEN_FOR_BACKUP_INTENT |
-					    FILE_SYNCHRONOUS_IO_NONALERT |
-					    FILE_SEQUENTIAL_ONLY);
+				    FILE_SHARE_VALID_FLAGS, options);
 	if (!NT_SUCCESS(status)) {
 		/* Try requesting fewer permissions  */
 		if (status == STATUS_ACCESS_DENIED ||
@@ -1550,7 +1549,6 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	int ret;
 	NTSTATUS status;
 	struct file_info file_info;
-	ACCESS_MASK requestedPerms;
 	u64 sort_key;
 
 	ret = try_exclude(full_path, ctx->params);
@@ -1559,27 +1557,22 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	if (unlikely(ret > 0)) /* Error? */
 		goto out;
 
-	/* Open the file.  */
-	requestedPerms = FILE_READ_DATA |
-			 FILE_READ_ATTRIBUTES |
-			 READ_CONTROL |
-			 ACCESS_SYSTEM_SECURITY |
-			 SYNCHRONIZE;
-retry_open:
+	/* Open the file with permission to read metadata.  Although we will
+	 * later need a handle with FILE_LIST_DIRECTORY permission (or,
+	 * equivalently, FILE_READ_DATA; they're the same numeric value) if the
+	 * file is a directory, it can significantly slow things down to request
+	 * this permission on all nondirectories.  Perhaps it causes Windows to
+	 * start prefetching the file contents...  */
 	status = winnt_openat(cur_dir, relative_path, relative_path_nchars,
-			      requestedPerms, &h);
+			      FILE_READ_ATTRIBUTES | READ_CONTROL |
+					ACCESS_SYSTEM_SECURITY,
+			      &h);
 	if (unlikely(!NT_SUCCESS(status))) {
 		if (status == STATUS_DELETE_PENDING) {
 			WARNING("\"%ls\": Deletion pending; skipping file",
 				printable_path(full_path));
 			ret = 0;
 			goto out;
-		}
-		if (status == STATUS_ACCESS_DENIED &&
-		    (requestedPerms & FILE_READ_DATA)) {
-			/* This happens on encrypted files.  */
-			requestedPerms &= ~FILE_READ_DATA;
-			goto retry_open;
 		}
 		if (status == STATUS_SHARING_VIOLATION) {
 			ERROR("Can't open \"%ls\":\n"
@@ -1604,15 +1597,6 @@ retry_open:
 		winnt_error(status, L"\"%ls\": Can't get file information",
 			    printable_path(full_path));
 		ret = WIMLIB_ERR_STAT;
-		goto out;
-	}
-
-	if (unlikely(!(requestedPerms & FILE_READ_DATA)) &&
-	    !(file_info.attributes & FILE_ATTRIBUTE_ENCRYPTED))
-	{
-		ERROR("\"%ls\": Permission to read data was denied",
-		      printable_path(full_path));
-		ret = WIMLIB_ERR_OPEN;
 		goto out;
 	}
 
@@ -1729,21 +1713,19 @@ retry_open:
 
 		/* Directory: recurse to children.  */
 
-		if (unlikely(!h)) {
-			/* Re-open handle that was closed to read raw encrypted
-			 * data.  */
-			status = winnt_openat(cur_dir,
-					      relative_path,
-					      relative_path_nchars,
-					      FILE_LIST_DIRECTORY | SYNCHRONIZE,
-					      &h);
-			if (!NT_SUCCESS(status)) {
-				winnt_error(status,
-					    L"\"%ls\": Can't re-open file",
-					    printable_path(full_path));
-				ret = WIMLIB_ERR_OPEN;
-				goto out;
-			}
+		/* Re-open the directory with FILE_LIST_DIRECTORY access.  */
+		if (h) {
+			(*func_NtClose)(h);
+			h = NULL;
+		}
+		status = winnt_openat(cur_dir, relative_path,
+				      relative_path_nchars, FILE_LIST_DIRECTORY,
+				      &h);
+		if (!NT_SUCCESS(status)) {
+			winnt_error(status, L"\"%ls\": Can't open directory",
+				    printable_path(full_path));
+			ret = WIMLIB_ERR_OPEN;
+			goto out;
 		}
 		ret = winnt_recurse_directory(h,
 					      full_path,
@@ -2353,8 +2335,7 @@ load_files_from_mft(const wchar_t *path, struct ntfs_inode_map *inode_map)
 	NTSTATUS status;
 
 	status = winnt_open(path, wcslen(path),
-			    FILE_READ_DATA | SYNCHRONIZE | FILE_READ_ATTRIBUTES,
-			    &h);
+			    FILE_READ_DATA | FILE_READ_ATTRIBUTES, &h);
 	if (!NT_SUCCESS(status)) {
 		ret = -1; /* Silently try standard recursive scan instead  */
 		goto out;
@@ -2624,8 +2605,7 @@ generate_wim_structures_recursive(struct wim_dentry **root_ret,
 
 			status = winnt_open(path, path_nchars,
 					    READ_CONTROL |
-						ACCESS_SYSTEM_SECURITY |
-						SYNCHRONIZE, &h);
+						ACCESS_SYSTEM_SECURITY, &h);
 			if (!NT_SUCCESS(status)) {
 				winnt_error(status, L"Can't open \"%ls\" to "
 					    "read security descriptor",
@@ -2839,9 +2819,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	if (ret)
 		goto out;
 
-	status = winnt_open(path, ntpath_nchars,
-			    FILE_TRAVERSE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
-			    &h);
+	status = winnt_open(path, ntpath_nchars, FILE_READ_ATTRIBUTES, &h);
 	if (!NT_SUCCESS(status)) {
 		winnt_error(status, L"Can't open \"%ls\"", printable_path(path));
 		if (status == STATUS_FVE_LOCKED_VOLUME)

@@ -7,8 +7,7 @@ Version 1.9.0-BETA:
 	architecture, system root, and version details.  This information is now
 	automatically set in newly captured WIM images, when appropriate.
 
-	Significantly improved performance of directory scans of full NTFS
-	volumes on Windows 8 and later.
+	Improved performance of directory tree scans on Windows.
 
 	On Windows, to improve capture performance, wimlib now sometimes opens
 	files by inode number rather than by path.  This is enabled for
