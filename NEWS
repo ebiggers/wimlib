@@ -1,4 +1,4 @@
-Version 1.9.0-BETA:
+Version 1.9.0:
 	Added experimental support for Windows VSS (Volume Shadow Copy Service).
 	The new '--snapshot' argument to 'wimcapture' makes wimlib automatically
 	create and use a temporary VSS snapshot when capturing a WIM image.
