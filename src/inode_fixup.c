@@ -191,10 +191,6 @@ dentry_tree_fix_inodes(struct wim_dentry *root, struct hlist_head *inode_list)
 	build_inode_list(&params.inode_table, inode_list);
 	destroy_inode_table(&params.inode_table);
 
-	if (unlikely(params.num_inconsistent_inodes))
-		WARNING("Fixed %lu invalid hard links in WIM image",
-			params.num_inconsistent_inodes);
-
 	if (unlikely(params.num_dir_hard_links))
 		WARNING("Ignoring %lu directory hard links",
 			params.num_dir_hard_links);
