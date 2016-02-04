@@ -259,9 +259,6 @@ struct blob_descriptor {
 
 		/* Links blobs being exported.  */
 		struct list_head export_blob_list;
-
-		/* Links original list of blobs in the read-write mounted image.  */
-		struct list_head orig_blob_list;
 	};
 };
 

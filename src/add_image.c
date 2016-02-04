@@ -1,9 +1,9 @@
 /*
- * add_image.c - Add an image to a WIM file.
+ * add_image.c - Add an image to a WIMStruct.
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014 Eric Biggers
+ * Copyright (C) 2012-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -30,60 +30,11 @@
 #include "wimlib/security.h"
 #include "wimlib/xml.h"
 
-/* Creates and appends a 'struct wim_image_metadata' for an empty image.
- *
- * The resulting image will be the last in the WIM, so its index will be
- * the new value of wim->hdr.image_count.  */
-static int
-add_empty_image_metadata(WIMStruct *wim)
-{
-	int ret;
-	struct blob_descriptor *metadata_blob;
-	struct wim_security_data *sd;
-	struct wim_image_metadata *imd;
-
-	/* Create a blob descriptor for the new metadata resource.  */
-	ret = WIMLIB_ERR_NOMEM;
-	metadata_blob = new_blob_descriptor();
-	if (!metadata_blob)
-		goto out;
-
-	metadata_blob->refcnt = 1;
-	metadata_blob->is_metadata = 1;
-
-	/* Create empty security data (no security descriptors).  */
-	sd = new_wim_security_data();
-	if (!sd)
-		goto out_free_metadata_blob;
-
-	imd = new_image_metadata();
-	if (!imd)
-		goto out_free_security_data;
-
-	/* A NULL root_dentry indicates a completely empty image, without even a
-	 * root directory.  */
-	imd->root_dentry = NULL;
-	imd->metadata_blob = metadata_blob;
-	imd->security_data = sd;
-
-	/* Append as next image index.  */
-	ret = append_image_metadata(wim, imd);
-	if (ret)
-		put_image_metadata(imd, NULL);
-	goto out;
-
-out_free_security_data:
-	free_wim_security_data(sd);
-out_free_metadata_blob:
-	free_blob_descriptor(metadata_blob);
-out:
-	return ret;
-}
-
 /* API function documented in wimlib.h  */
 WIMLIBAPI int
 wimlib_add_empty_image(WIMStruct *wim, const tchar *name, int *new_idx_ret)
 {
+	struct wim_image_metadata *imd;
 	int ret;
 
 	if (wimlib_image_name_in_use(wim, name)) {
@@ -92,20 +43,27 @@ wimlib_add_empty_image(WIMStruct *wim, const tchar *name, int *new_idx_ret)
 		return WIMLIB_ERR_IMAGE_NAME_COLLISION;
 	}
 
-	ret = add_empty_image_metadata(wim);
+	imd = new_empty_image_metadata();
+	if (!imd)
+		return WIMLIB_ERR_NOMEM;
+
+	ret = append_image_metadata(wim, imd);
 	if (ret)
-		return ret;
+		goto err_put_imd;
 
 	ret = xml_add_image(wim->xml_info, name);
-	if (ret) {
-		put_image_metadata(wim->image_metadata[--wim->hdr.image_count],
-				   NULL);
-		return ret;
-	}
+	if (ret)
+		goto err_undo_append;
 
 	if (new_idx_ret)
 		*new_idx_ret = wim->hdr.image_count;
 	return 0;
+
+err_undo_append:
+	wim->hdr.image_count--;
+err_put_imd:
+	put_image_metadata(imd);
+	return ret;
 }
 
 /* Translate the 'struct wimlib_capture_source's passed to

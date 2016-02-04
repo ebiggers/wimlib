@@ -8,7 +8,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers
+ * Copyright (C) 2012-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -164,9 +164,9 @@ struct wimfs_context {
 	/* Number of file descriptors open to the mounted WIM image.  */
 	unsigned long num_open_fds;
 
-	/* Original list of blobs in the mounted image, linked by
-	 * 'struct blob_descriptor'.orig_blob_list.  */
-	struct list_head orig_blob_list;
+	/* For read-write mounts, the original metadata resource of the mounted
+	 * image.  */
+	struct blob_descriptor *metadata_resource;
 
 	/* Parameters for unmounting the image (can be set via extended
 	 * attribute "wimfs.unmount_info").  */
@@ -964,17 +964,6 @@ prepare_inodes(struct wimfs_context *ctx)
 	}
 }
 
-static void
-release_extra_refcnts(struct wimfs_context *ctx)
-{
-	struct list_head *list = &ctx->orig_blob_list;
-	struct blob_table *blob_table = ctx->wim->blob_table;
-	struct blob_descriptor *blob, *tmp;
-
-	list_for_each_entry_safe(blob, tmp, list, orig_blob_list)
-		blob_subtract_refcnt(blob, blob_table, blob->out_refcnt);
-}
-
 /* Delete the 'struct blob_descriptor' for any stream that was modified
  * or created in the read-write mounted image and had a final size of 0.  */
 static void
@@ -1030,52 +1019,56 @@ static int
 renew_current_image(struct wimfs_context *ctx)
 {
 	WIMStruct *wim = ctx->wim;
-	int idx = wim->current_image - 1;
-	struct wim_image_metadata *imd = wim->image_metadata[idx];
-	struct wim_image_metadata *replace_imd;
-	struct blob_descriptor *new_blob;
+	int image = wim->current_image;
+	struct wim_image_metadata *imd;
+	struct wim_inode *inode;
 	int ret;
 
-	/* Create 'replace_imd' structure to use for the reset original,
-	 * unmodified image.  */
 	ret = WIMLIB_ERR_NOMEM;
-	replace_imd = new_image_metadata();
-	if (!replace_imd)
+	imd = new_unloaded_image_metadata(ctx->metadata_resource);
+	if (!imd)
 		goto err;
 
-	/* Create new blob descriptor for the modified image's metadata
-	 * resource, which doesn't exist yet.  */
-	ret = WIMLIB_ERR_NOMEM;
-	new_blob = new_blob_descriptor();
-	if (!new_blob)
-		goto err_put_replace_imd;
-
-	new_blob->refcnt = 1;
-	new_blob->is_metadata = 1;
-
-	/* Make the image being moved available at a new index.  Increments the
-	 * WIM's image count, but does not increment the reference count of the
-	 * 'struct image_metadata'.  */
-	ret = append_image_metadata(wim, imd);
+	ret = append_image_metadata(wim, wim->image_metadata[image - 1]);
 	if (ret)
-		goto err_free_new_blob;
+		goto err_put_imd;
 
-	ret = xml_add_image(wim->xml_info, NULL);
+	ret = xml_export_image(wim->xml_info, image,
+			       wim->xml_info, NULL, NULL, false);
 	if (ret)
 		goto err_undo_append;
 
-	replace_imd->metadata_blob = imd->metadata_blob;
-	imd->metadata_blob = new_blob;
-	wim->image_metadata[idx] = replace_imd;
+	wim->image_metadata[image - 1] = imd;
 	wim->current_image = wim->hdr.image_count;
+
+	ret = select_wim_image(wim, image);
+	if (ret)
+		goto err_undo_export;
+
+	image_for_each_inode(inode, imd) {
+		for (unsigned i = 0; i < inode->i_num_streams; i++) {
+			struct blob_descriptor *blob;
+
+			blob = stream_blob(&inode->i_streams[i],
+					   wim->blob_table);
+			if (blob)
+				blob->refcnt += inode->i_nlink;
+		}
+	}
+
+	select_wim_image(wim, wim->hdr.image_count);
+	ctx->metadata_resource = NULL;
 	return 0;
 
+err_undo_export:
+	xml_delete_image(wim->xml_info, wim->hdr.image_count);
+	wim->image_metadata[image - 1] = wim->image_metadata[wim->hdr.image_count - 1];
+	wim->current_image = image;
 err_undo_append:
 	wim->hdr.image_count--;
-err_free_new_blob:
-	free_blob_descriptor(new_blob);
-err_put_replace_imd:
-	put_image_metadata(replace_imd, NULL);
+err_put_imd:
+	imd->metadata_blob = NULL;
+	put_image_metadata(imd);
 err:
 	return ret;
 }
@@ -1111,12 +1104,8 @@ commit_image(struct wimfs_context *ctx, int unmount_flags, mqd_t mq)
 		int ret = renew_current_image(ctx);
 		if (ret)
 			return ret;
-	} else {
-		release_extra_refcnts(ctx);
 	}
-	INIT_LIST_HEAD(&ctx->orig_blob_list);
 	delete_empty_blobs(ctx);
-	mark_image_dirty(wim_get_current_image_metadata(ctx->wim));
 
 	write_flags = 0;
 
@@ -2161,48 +2150,22 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	ctx.mount_flags = mount_flags;
 	if (mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS)
 		ctx.default_lookup_flags = LOOKUP_FLAG_ADS_OK;
-	/* For read-write mount, create the staging directory.  */
+
+	/* For read-write mounts, create the staging directory, save a reference
+	 * to the image's metadata resource, and mark the image dirty.  */
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 		ret = make_staging_dir(&ctx, staging_dir);
 		if (ret)
-			goto out_unlock;
+			goto out;
+		ret = WIMLIB_ERR_NOMEM;
+		ctx.metadata_resource = clone_blob_descriptor(
+							imd->metadata_blob);
+		if (!ctx.metadata_resource)
+			goto out;
+		mark_image_dirty(imd);
 	}
 	ctx.owner_uid = getuid();
 	ctx.owner_gid = getgid();
-
-	/* Add each blob referenced by files in the image to a list and
-	 * preemptively double the number of references to each.  This is done
-	 * to allow implementing the WIMLIB_UNMOUNT_FLAG_NEW_IMAGE semantics.
-	 */
-	INIT_LIST_HEAD(&ctx.orig_blob_list);
-	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
-		unsigned i;
-		struct wim_inode *inode;
-		struct blob_descriptor *blob;
-
-		image_for_each_inode(inode, imd) {
-			for (i = 0; i < inode->i_num_streams; i++) {
-				blob = stream_blob(&inode->i_streams[i],
-						   wim->blob_table);
-				if (blob)
-					blob->out_refcnt = 0;
-			}
-		}
-
-		image_for_each_inode(inode, imd) {
-			for (i = 0; i < inode->i_num_streams; i++) {
-				blob = stream_blob(&inode->i_streams[i],
-						   wim->blob_table);
-				if (blob) {
-					if (blob->out_refcnt == 0)
-						list_add(&blob->orig_blob_list,
-							 &ctx.orig_blob_list);
-					blob->out_refcnt += inode->i_nlink;
-					blob->refcnt += inode->i_nlink;
-				}
-			}
-		}
-	}
 
 	/* Number the inodes in the mounted image sequentially and initialize
 	 * the file descriptor arrays  */
@@ -2298,11 +2261,11 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	/* Cleanup and return.  */
 	if (ret)
 		ret = WIMLIB_ERR_FUSE;
+out:
 	FREE(ctx.mountpoint_abspath);
-	release_extra_refcnts(&ctx);
-	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)
+	free_blob_descriptor(ctx.metadata_resource);
+	if (ctx.staging_dir_name)
 		delete_staging_dir(&ctx);
-out_unlock:
 	unlock_wim_for_append(wim);
 	return ret;
 }

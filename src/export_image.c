@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers
+ * Copyright (C) 2012-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -275,7 +275,7 @@ out_rollback:
 	while (dest_wim->hdr.image_count > orig_dest_image_count)
 	{
 		put_image_metadata(dest_wim->image_metadata[
-					--dest_wim->hdr.image_count], NULL);
+					--dest_wim->hdr.image_count]);
 	}
 	for_blob_in_table(dest_wim->blob_table, blob_rollback_export,
 			  dest_wim->blob_table);

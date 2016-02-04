@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers
+ * Copyright (C) 2012-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -206,35 +206,33 @@ wimlib_create_new_wim(enum wimlib_compression_type ctype, WIMStruct **wim_ret)
 }
 
 static void
-destroy_image_metadata(struct wim_image_metadata *imd,
-		       struct blob_table *table,
-		       bool free_metadata_blob_descriptor)
+unload_image_metadata(struct wim_image_metadata *imd)
 {
-	free_dentry_tree(imd->root_dentry, table);
+	free_dentry_tree(imd->root_dentry, NULL);
 	imd->root_dentry = NULL;
 	free_wim_security_data(imd->security_data);
 	imd->security_data = NULL;
-
-	if (free_metadata_blob_descriptor) {
-		free_blob_descriptor(imd->metadata_blob);
-		imd->metadata_blob = NULL;
-	}
-	if (!table) {
-		struct blob_descriptor *blob, *tmp;
-		list_for_each_entry_safe(blob, tmp, &imd->unhashed_blobs, unhashed_list)
-			free_blob_descriptor(blob);
-	}
-	INIT_LIST_HEAD(&imd->unhashed_blobs);
 	INIT_HLIST_HEAD(&imd->inode_list);
 }
 
+/* Release a reference to the specified image metadata.  This assumes that no
+ * WIMStruct has the image selected.  */
 void
-put_image_metadata(struct wim_image_metadata *imd, struct blob_table *table)
+put_image_metadata(struct wim_image_metadata *imd)
 {
-	if (imd && --imd->refcnt == 0) {
-		destroy_image_metadata(imd, table, true);
-		FREE(imd);
-	}
+	struct blob_descriptor *blob, *tmp;
+
+	if (!imd)
+		return;
+	wimlib_assert(imd->refcnt > 0);
+	if (--imd->refcnt != 0)
+		return;
+	wimlib_assert(imd->selected_refcnt == 0);
+	unload_image_metadata(imd);
+	list_for_each_entry_safe(blob, tmp, &imd->unhashed_blobs, unhashed_list)
+		free_blob_descriptor(blob);
+	free_blob_descriptor(imd->metadata_blob);
+	FREE(imd);
 }
 
 /* Appends the specified image metadata structure to the array of image metadata
@@ -243,6 +241,12 @@ int
 append_image_metadata(WIMStruct *wim, struct wim_image_metadata *imd)
 {
 	struct wim_image_metadata **imd_array;
+
+	if (!wim_has_metadata(wim))
+		return WIMLIB_ERR_METADATA_NOT_FOUND;
+
+	if (wim->hdr.image_count >= MAX_IMAGES)
+		return WIMLIB_ERR_IMAGE_COUNT;
 
 	imd_array = REALLOC(wim->image_metadata,
 			    sizeof(wim->image_metadata[0]) * (wim->hdr.image_count + 1));
@@ -254,41 +258,57 @@ append_image_metadata(WIMStruct *wim, struct wim_image_metadata *imd)
 	return 0;
 }
 
-struct wim_image_metadata *
-new_image_metadata(void)
+static struct wim_image_metadata *
+new_image_metadata(struct blob_descriptor *metadata_blob,
+		   struct wim_security_data *security_data)
 {
 	struct wim_image_metadata *imd;
 
 	imd = CALLOC(1, sizeof(*imd));
-	if (imd) {
-		imd->refcnt = 1;
-		INIT_HLIST_HEAD(&imd->inode_list);
-		INIT_LIST_HEAD(&imd->unhashed_blobs);
-	}
+	if (!imd)
+		return NULL;
+
+	metadata_blob->is_metadata = 1;
+	imd->refcnt = 1;
+	imd->selected_refcnt = 0;
+	imd->root_dentry = NULL;
+	imd->security_data = security_data;
+	imd->metadata_blob = metadata_blob;
+	INIT_HLIST_HEAD(&imd->inode_list);
+	INIT_LIST_HEAD(&imd->unhashed_blobs);
+	imd->stats_outdated = false;
 	return imd;
 }
 
-static struct wim_image_metadata **
-new_image_metadata_array(unsigned num_images)
+/* Create an image metadata structure for a new empty image.  */
+struct wim_image_metadata *
+new_empty_image_metadata(void)
 {
-	struct wim_image_metadata **imd_array;
+	struct blob_descriptor *metadata_blob;
+	struct wim_security_data *security_data;
+	struct wim_image_metadata *imd;
 
-	imd_array = CALLOC(num_images, sizeof(imd_array[0]));
-
-	if (!imd_array)
-		return NULL;
-	for (unsigned i = 0; i < num_images; i++) {
-		imd_array[i] = new_image_metadata();
-		if (unlikely(!imd_array[i])) {
-			for (unsigned j = 0; j < i; j++)
-				put_image_metadata(imd_array[j], NULL);
-			FREE(imd_array);
-			return NULL;
-		}
+	metadata_blob = new_blob_descriptor();
+	security_data = new_wim_security_data();
+	if (metadata_blob && security_data) {
+		metadata_blob->refcnt = 1;
+		imd = new_image_metadata(metadata_blob, security_data);
+		if (imd)
+			return imd;
 	}
-	return imd_array;
+	free_blob_descriptor(metadata_blob);
+	FREE(security_data);
+	return NULL;
 }
 
+/* Create an image metadata structure that refers to the specified metadata
+ * resource and is initially not loaded.  */
+struct wim_image_metadata *
+new_unloaded_image_metadata(struct blob_descriptor *metadata_blob)
+{
+	wimlib_assert(metadata_blob->blob_location == BLOB_IN_WIM);
+	return new_image_metadata(metadata_blob, NULL);
+}
 
 /*
  * Load the metadata for the specified WIM image into memory and set it
@@ -324,33 +344,39 @@ select_wim_image(WIMStruct *wim, int image)
 	if (!wim_has_metadata(wim))
 		return WIMLIB_ERR_METADATA_NOT_FOUND;
 
-	/* If a valid image is currently selected, its metadata can be freed if
-	 * it is not dirty and no other WIMStructs may have it selected.  */
 	deselect_current_wim_image(wim);
-	wim->current_image = image;
-	imd = wim_get_current_image_metadata(wim);
-	if (imd->root_dentry || is_image_dirty(imd)) {
-		ret = 0;
-	} else {
+
+	imd = wim->image_metadata[image - 1];
+	if (!is_image_loaded(imd)) {
 		ret = read_metadata_resource(imd);
 		if (ret)
-			wim->current_image = WIMLIB_NO_IMAGE;
+			return ret;
 	}
-	return ret;
+	wim->current_image = image;
+	imd->selected_refcnt++;
+	return 0;
 }
 
+/*
+ * Deselect the WIMStruct's currently selected image, if any.  To reduce memory
+ * usage, possibly unload the newly deselected image's metadata from memory.
+ */
 void
 deselect_current_wim_image(WIMStruct *wim)
 {
 	struct wim_image_metadata *imd;
+
 	if (wim->current_image == WIMLIB_NO_IMAGE)
 		return;
 	imd = wim_get_current_image_metadata(wim);
-	if (!is_image_dirty(imd) && imd->refcnt == 1) {
-		wimlib_assert(list_empty(&imd->unhashed_blobs));
-		destroy_image_metadata(imd, NULL, false);
-	}
+	wimlib_assert(imd->selected_refcnt > 0);
+	imd->selected_refcnt--;
 	wim->current_image = WIMLIB_NO_IMAGE;
+
+	if (can_unload_image(imd)) {
+		wimlib_assert(list_empty(&imd->unhashed_blobs));
+		unload_image_metadata(imd);
+	}
 }
 
 /*
@@ -723,7 +749,8 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd, int open_flags)
 	}
 
 	if (wim->hdr.image_count != 0 && wim->hdr.part_number == 1) {
-		wim->image_metadata = new_image_metadata_array(wim->hdr.image_count);
+		wim->image_metadata = CALLOC(wim->hdr.image_count,
+					     sizeof(wim->image_metadata[0]));
 		if (!wim->image_metadata)
 			return WIMLIB_ERR_NOMEM;
 	}
@@ -899,8 +926,9 @@ wimlib_free(WIMStruct *wim)
 	free_blob_table(wim->blob_table);
 	wim->blob_table = NULL;
 	if (wim->image_metadata != NULL) {
+		deselect_current_wim_image(wim);
 		for (int i = 0; i < wim->hdr.image_count; i++)
-			put_image_metadata(wim->image_metadata[i], NULL);
+			put_image_metadata(wim->image_metadata[i]);
 		FREE(wim->image_metadata);
 		wim->image_metadata = NULL;
 	}

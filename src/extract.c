@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers
+ * Copyright (C) 2012-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -257,6 +257,55 @@ read_blobs_from_pipe(struct apply_ctx *ctx, const struct read_blob_callbacks *cb
 	}
 
 	return 0;
+}
+
+static int
+handle_pwm_metadata_resource(WIMStruct *pwm, int image, bool is_needed)
+{
+	struct blob_descriptor *blob;
+	struct wim_reshdr reshdr;
+	struct wim_resource_descriptor *rdesc;
+	int ret;
+
+	ret = WIMLIB_ERR_NOMEM;
+	blob = new_blob_descriptor();
+	if (!blob)
+		goto out;
+
+	ret = read_pwm_blob_header(pwm, blob->hash, &reshdr, NULL);
+	if (ret)
+		goto out;
+
+	ret = WIMLIB_ERR_INVALID_PIPABLE_WIM;
+	if (!(reshdr.flags & WIM_RESHDR_FLAG_METADATA)) {
+		ERROR("Expected metadata resource, but found non-metadata "
+		      "resource");
+		goto out;
+	}
+
+	ret = WIMLIB_ERR_NOMEM;
+	rdesc = MALLOC(sizeof(*rdesc));
+	if (!rdesc)
+		goto out;
+
+	wim_reshdr_to_desc_and_blob(&reshdr, pwm, rdesc, blob);
+	pwm->refcnt++;
+
+	ret = WIMLIB_ERR_NOMEM;
+	pwm->image_metadata[image - 1] = new_unloaded_image_metadata(blob);
+	if (!pwm->image_metadata[image - 1])
+		goto out;
+	blob = NULL;
+
+	/* If the metadata resource is for the image being extracted, then parse
+	 * it and save the metadata in memory.  Otherwise, skip over it.  */
+	if (is_needed)
+		ret = select_wim_image(pwm, image);
+	else
+		ret = skip_wim_resource(rdesc);
+out:
+	free_blob_descriptor(blob);
+	return ret;
 }
 
 /* Creates a temporary file opened for writing.  The open file descriptor is
@@ -1906,52 +1955,9 @@ wimlib_extract_image_from_pipe_with_progress(int pipe_fd,
 
 	/* Load the needed metadata resource.  */
 	for (i = 1; i <= pwm->hdr.image_count; i++) {
-		struct wim_image_metadata *imd;
-		struct wim_reshdr reshdr;
-		struct wim_resource_descriptor *metadata_rdesc;
-
-		imd = pwm->image_metadata[i - 1];
-
-		ret = WIMLIB_ERR_NOMEM;
-		imd->metadata_blob = new_blob_descriptor();
-		if (!imd->metadata_blob)
-			goto out_wimlib_free;
-
-		imd->metadata_blob->is_metadata = 1;
-
-		ret = read_pwm_blob_header(pwm, imd->metadata_blob->hash,
-					   &reshdr, NULL);
+		ret = handle_pwm_metadata_resource(pwm, i, i == image);
 		if (ret)
 			goto out_wimlib_free;
-
-		if (!(reshdr.flags & WIM_RESHDR_FLAG_METADATA)) {
-			ERROR("Expected metadata resource, but found "
-			      "non-metadata resource");
-			ret = WIMLIB_ERR_INVALID_PIPABLE_WIM;
-			goto out_wimlib_free;
-		}
-
-		ret = WIMLIB_ERR_NOMEM;
-		metadata_rdesc = MALLOC(sizeof(struct wim_resource_descriptor));
-		if (!metadata_rdesc)
-			goto out_wimlib_free;
-		wim_reshdr_to_desc_and_blob(&reshdr, pwm, metadata_rdesc,
-					    imd->metadata_blob);
-		pwm->refcnt++;
-
-		if (i == image) {
-			/* Metadata resource is for the image being extracted.
-			 * Parse it and save the metadata in memory.  */
-			ret = read_metadata_resource(imd);
-			if (ret)
-				goto out_wimlib_free;
-		} else {
-			/* Metadata resource is not for the image being
-			 * extracted.  Skip over it.  */
-			ret = skip_wim_resource(metadata_rdesc);
-			if (ret)
-				goto out_wimlib_free;
-		}
 	}
 	/* Extract the image.  */
 	extract_flags |= WIMLIB_EXTRACT_FLAG_FROM_PIPE;

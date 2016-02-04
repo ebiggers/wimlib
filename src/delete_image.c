@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014 Eric Biggers
+ * Copyright (C) 2012-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -26,6 +26,7 @@
 #include <string.h>
 
 #include "wimlib.h"
+#include "wimlib/dentry.h"
 #include "wimlib/metadata.h"
 #include "wimlib/wim.h"
 #include "wimlib/xml.h"
@@ -36,6 +37,7 @@ int
 delete_wim_image(WIMStruct *wim, int image)
 {
 	int ret;
+	struct wim_image_metadata *imd;
 
 	/* Load the metadata for the image to be deleted.  This is necessary
 	 * because blobs referenced by files in the image need to have their
@@ -44,9 +46,15 @@ delete_wim_image(WIMStruct *wim, int image)
 	if (ret)
 		return ret;
 
-	/* Release the reference to the image metadata and decrement reference
-	 * counts on the blobs referenced by files in the image.  */
-	put_image_metadata(wim->image_metadata[image - 1], wim->blob_table);
+	/* Release the files and decrement the reference counts of the blobs
+	 * they reference.  */
+	imd = wim->image_metadata[image - 1];
+	free_dentry_tree(imd->root_dentry, wim->blob_table);
+	imd->root_dentry = NULL;
+
+	/* Deselect the image and release its metadata.  */
+	deselect_current_wim_image(wim);
+	put_image_metadata(imd);
 
 	/* Remove the empty slot from the image metadata array.  */
 	memmove(&wim->image_metadata[image - 1], &wim->image_metadata[image],
@@ -54,7 +62,7 @@ delete_wim_image(WIMStruct *wim, int image)
 			sizeof(wim->image_metadata[0]));
 
 	/* Decrement the image count. */
-	--wim->hdr.image_count;
+	wim->hdr.image_count--;
 
 	/* Remove the image from the XML information. */
 	xml_delete_image(wim->xml_info, image);
@@ -65,8 +73,6 @@ delete_wim_image(WIMStruct *wim, int image)
 	else if (wim->hdr.boot_idx > image)
 		wim->hdr.boot_idx--;
 
-	/* The image is no longer valid.  */
-	wim->current_image = WIMLIB_NO_IMAGE;
 	return 0;
 }
 

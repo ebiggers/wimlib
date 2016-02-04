@@ -6,17 +6,37 @@
 #include "wimlib/types.h"
 #include "wimlib/wim.h"
 
-/* Metadata for a WIM image  */
+/*
+ * This structure holds the directory tree that comprises a WIM image, along
+ * with other information maintained at the image level.  It is populated either
+ * by reading and parsing a metadata resource or by scanning new files.
+ *
+ * An image that hasn't been modified from its on-disk copy is considered
+ * "clean" and is loaded from its metadata resource on demand by
+ * select_wim_image().  Such an image may be unloaded later to save memory when
+ * a different image is selected.  An image that has been modified or has been
+ * created from scratch, on the other hand, is considered "dirty" and is never
+ * automatically unloaded.
+ *
+ * To implement exports, it's allowed that multiple WIMStructs reference the
+ * same wim_image_metadata.
+ */
 struct wim_image_metadata {
 
-	/* Number of WIMStruct's that are sharing this image metadata (from
-	 * calls to wimlib_export_image().) */
-	unsigned long refcnt;
+	/* Number of WIMStructs that reference this image.  This will always be
+	 * >= 1.  It may be > 1 if this image has been exported.  */
+	u32 refcnt;
 
-	/* Pointer to the root dentry of the image. */
+	/* Number of WIMStructs that have this image selected as their
+	 * current_image.  This will always be <= 'refcnt' and may be 0.  */
+	u32 selected_refcnt;
+
+	/* Pointer to the root dentry of this image, or NULL if this image is
+	 * completely empty or is not currently loaded.  */
 	struct wim_dentry *root_dentry;
 
-	/* Pointer to the security data of the image. */
+	/* Pointer to the security data of this image, or NULL if this image is
+	 * not currently loaded.  */
 	struct wim_security_data *security_data;
 
 	/* Pointer to the blob descriptor for this image's metadata resource.
@@ -27,7 +47,8 @@ struct wim_image_metadata {
 	 * with blob_location==BLOB_NONEXISTENT.  */
 	struct blob_descriptor *metadata_blob;
 
-	/* Linked list of 'struct wim_inode's for this image. */
+	/* Linked list of 'struct wim_inode's for this image, or an empty list
+	 * if this image is completely empty or is not currently loaded.  */
 	struct hlist_head inode_list;
 
 	/* Linked list of 'struct blob_descriptor's for blobs that are
@@ -94,6 +115,24 @@ mark_image_dirty(struct wim_image_metadata *imd)
 	imd->stats_outdated = true;
 }
 
+/* Return true iff the specified image is currently loaded into memory.  */
+static inline bool
+is_image_loaded(const struct wim_image_metadata *imd)
+{
+	/* Check security_data rather than root_dentry, since root_dentry will
+	 * be NULL for a completely empty image whereas security_data will still
+	 * be non-NULL in that case.  */
+	return imd->security_data != NULL;
+}
+
+/* Return true iff it is okay to unload the specified image.  The image can be
+ * unloaded if no WIMStructs have it selected and it is not dirty.  */
+static inline bool
+can_unload_image(const struct wim_image_metadata *imd)
+{
+	return imd->selected_refcnt == 0 && !is_image_dirty(imd);
+}
+
 /* Iterate over each inode in a WIM image  */
 #define image_for_each_inode(inode, imd) \
 	hlist_for_each_entry(inode, &(imd)->inode_list, i_hlist_node)
@@ -112,12 +151,15 @@ mark_image_dirty(struct wim_image_metadata *imd)
 	list_for_each_entry_safe(blob, tmp, &(imd)->unhashed_blobs, unhashed_list)
 
 extern void
-put_image_metadata(struct wim_image_metadata *imd, struct blob_table *table);
+put_image_metadata(struct wim_image_metadata *imd);
 
 extern int
 append_image_metadata(WIMStruct *wim, struct wim_image_metadata *imd);
 
 extern struct wim_image_metadata *
-new_image_metadata(void) _malloc_attribute;
+new_empty_image_metadata(void);
+
+extern struct wim_image_metadata *
+new_unloaded_image_metadata(struct blob_descriptor *metadata_blob);
 
 #endif /* _WIMLIB_METADATA_H */

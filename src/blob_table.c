@@ -9,7 +9,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers
+ * Copyright (C) 2012-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -1007,9 +1007,6 @@ read_blob_table(WIMStruct *wim)
 		}
 
 		if (reshdr.flags & WIM_RESHDR_FLAG_METADATA) {
-
-			cur_blob->is_metadata = 1;
-
 			/* Blob table entry for a metadata resource.  */
 
 			/* Metadata entries with no references must be ignored.
@@ -1056,7 +1053,10 @@ read_blob_table(WIMStruct *wim)
 			 * this overrides the actual locations of the metadata
 			 * resources themselves in the WIM file as well as any
 			 * information written in the XML data.  */
-			wim->image_metadata[image_index++]->metadata_blob = cur_blob;
+			wim->image_metadata[image_index] = new_unloaded_image_metadata(cur_blob);
+			if (!wim->image_metadata[image_index])
+				goto oom;
+			image_index++;
 		} else {
 			/* Blob table entry for a non-metadata blob.  */
 
@@ -1091,8 +1091,6 @@ read_blob_table(WIMStruct *wim)
 
 	if (wim->hdr.part_number == 1 && image_index != wim->hdr.image_count) {
 		WARNING("Could not find metadata resources for all images");
-		for (u32 i = image_index; i < wim->hdr.image_count; i++)
-			put_image_metadata(wim->image_metadata[i], NULL);
 		wim->hdr.image_count = image_index;
 	}
 
