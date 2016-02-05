@@ -119,7 +119,7 @@ lzms_get_probability(const struct lzms_probability_entry *prob_entry)
 	 *	if (prob == 0)
 	 *		prob++;
 	 */
-	prob += (prob - 1) >> 31;
+	prob += (u32)(prob - 1) >> 31;
 
 	/*
 	 *	if (prob == LZMS_PROBABILITY_DENOMINATOR)
