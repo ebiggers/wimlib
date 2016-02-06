@@ -41,6 +41,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <stdlib.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -315,27 +316,33 @@ static int
 create_temporary_file(struct filedes *fd_ret, tchar **name_ret)
 {
 	tchar *name;
-	int open_flags;
 	int raw_fd;
 
+#ifdef __WIN32__
 retry:
-	name = ttempnam(NULL, T("wimlib"));
+	name = _wtempnam(NULL, L"wimlib");
 	if (!name) {
 		ERROR_WITH_ERRNO("Failed to create temporary filename");
 		return WIMLIB_ERR_NOMEM;
 	}
-
-	open_flags = O_WRONLY | O_CREAT | O_EXCL | O_BINARY;
-#ifdef __WIN32__
-	open_flags |= _O_SHORT_LIVED;
-#endif
-	raw_fd = topen(name, open_flags, 0600);
+	raw_fd = _wopen(name, O_WRONLY | O_CREAT | O_EXCL | O_BINARY |
+			_O_SHORT_LIVED, 0600);
+	if (raw_fd < 0 && errno == EEXIST) {
+		FREE(name);
+		goto retry;
+	}
+#else /* __WIN32__ */
+	const char *tmpdir = getenv("TMPDIR");
+	if (!tmpdir)
+		tmpdir = P_tmpdir;
+	name = MALLOC(strlen(tmpdir) + 1 + 6 + 6 + 1);
+	if (!name)
+		return WIMLIB_ERR_NOMEM;
+	sprintf(name, "%s/wimlibXXXXXX", tmpdir);
+	raw_fd = mkstemp(name);
+#endif /* !__WIN32__ */
 
 	if (raw_fd < 0) {
-		if (errno == EEXIST) {
-			FREE(name);
-			goto retry;
-		}
 		ERROR_WITH_ERRNO("Failed to create temporary file "
 				 "\"%"TS"\"", name);
 		FREE(name);

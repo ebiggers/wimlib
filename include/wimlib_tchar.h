@@ -56,7 +56,6 @@ typedef wchar_t tchar;
 #  define tstrerror	_wcserror
 #  define taccess	_waccess
 #  define tstrdup	wcsdup
-#  define ttempnam	_wtempnam
 #  define tgetenv	_wgetenv
 /* The following "tchar" functions do not have exact wide-character equivalents
  * on Windows so require parameter rearrangement or redirection to a replacement
@@ -117,7 +116,6 @@ typedef char tchar;
 #  define tstrtoull	strtoull
 #  define tmkdir	mkdir
 #  define tstrdup	strdup
-#  define ttempnam	tempnam
 #  define tgetenv	getenv
 #  define TSTRDUP	STRDUP
 #  define tstrerror_r	strerror_r
