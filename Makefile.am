@@ -202,7 +202,7 @@ libwim_la_SOURCES += src/sha1-ssse3.asm
 libwim_la_LIBADD += src/sha1-ssse3.lo
 
 src/sha1-ssse3.lo:src/sha1-ssse3.asm
-	$(LIBTOOL) --mode=compile --tag NASM $(srcdir)/build-aux/nasm_lt.sh \
+	$(LIBTOOL) --mode=compile $(srcdir)/build-aux/nasm_lt.sh \
 	$(NASM) $(NAFLAGS) $(NASM_PLATFORM_FLAGS)			    \
 	-DINTEL_SHA1_UPDATE_FUNCNAME=$(NASM_SYMBOL_PREFIX)sha1_transform_blocks_ssse3	    \
 	-DINTEL_SHA1_UPDATE_DEFAULT_DISPATCH=$(NASM_SYMBOL_PREFIX)sha1_transform_blocks_default  \
