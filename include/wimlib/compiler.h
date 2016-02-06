@@ -107,12 +107,12 @@
 #endif
 #define CPU_IS_LITTLE_ENDIAN (!CPU_IS_BIG_ENDIAN)
 
-#if defined(__x86_64__) || defined(__i386__)
-#  define UNALIGNED_ACCESS_SPEED 3
-#elif defined(__ARM_FEATURE_UNALIGNED) && (__ARM_FEATURE_UNALIGNED == 1)
-#  define UNALIGNED_ACCESS_SPEED 2
+/* UNALIGNED_ACCESS_IS_FAST should be defined to 1 if unaligned memory accesses
+ * can be performed efficiently on the target platform.  */
+#if defined(__x86_64__) || defined(__i386__) || defined(__ARM_FEATURE_UNALIGNED)
+#  define UNALIGNED_ACCESS_IS_FAST 1
 #else
-#  define UNALIGNED_ACCESS_SPEED 0
+#  define UNALIGNED_ACCESS_IS_FAST 0
 #endif
 
 /* Get the type of the specified expression.  */

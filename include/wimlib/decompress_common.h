@@ -299,7 +299,7 @@ lz_copy(u8 *dst, u32 length, u32 offset, const u8 *winend, u32 min_length)
 	 * beyond the end of the output buffer, hence the check for (winend -
 	 * end >= WORDSIZE - 1).
 	 */
-	if (UNALIGNED_ACCESS_IS_VERY_FAST &&
+	if (UNALIGNED_ACCESS_IS_FAST &&
 	    likely(winend - end >= WORDSIZE - 1))
 	{
 
