@@ -84,8 +84,15 @@
  * returns will not alias any pointer previously in use by the program.  */
 #define _malloc_attribute	__attribute__((malloc))
 
-/* TODO: _format_attribute is currently ignored.  */
-#define _format_attribute(type, format_str, format_start)
+/* Hint that the annotated function takes a printf()-like format string and
+ * arguments.  This is currently disabled on Windows because MinGW does not
+ * support this attribute on functions taking wide-character strings.  */
+#ifdef __WIN32__
+#  define _format_attribute(type, format_str, format_start)
+#else
+#  define _format_attribute(type, format_str, format_start)	\
+			__attribute__((format(type, format_str, format_start)))
+#endif
 
 /* Hint that the annotated function is intentionally not used.  This might be
  * the case if the function contains only static assertions.  */

@@ -45,7 +45,7 @@ struct reparse_buffer_disk {
 	};
 };
 
-#define REPARSE_DATA_OFFSET (offsetof(struct reparse_buffer_disk, rpdata))
+#define REPARSE_DATA_OFFSET ((unsigned)offsetof(struct reparse_buffer_disk, rpdata))
 
 #define REPARSE_DATA_MAX_SIZE (REPARSE_POINT_MAX_SIZE - REPARSE_DATA_OFFSET)
 
