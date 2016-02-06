@@ -3223,9 +3223,8 @@ out_truncate:
 			     WIMLIB_WRITE_FLAG_UNSAFE_COMPACT))) {
 		WARNING("Truncating \"%"TS"\" to its original size "
 			"(%"PRIu64" bytes)", wim->filename, old_wim_end);
-		/* Return value of ftruncate() is ignored because this is
-		 * already an error path.  */
-		(void)ftruncate(wim->out_fd.fd, old_wim_end);
+		if (ftruncate(wim->out_fd.fd, old_wim_end))
+			WARNING_WITH_ERRNO("Failed to truncate WIM file!");
 	}
 out_restore_hdr:
 	(void)write_wim_header_flags(wim->hdr.flags, &wim->out_fd);
