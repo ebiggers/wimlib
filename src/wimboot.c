@@ -798,10 +798,10 @@ update_wimoverlay_manually(const wchar_t *drive, const wchar_t *wim_path,
 	wchar_t path_backup[] = L"A:\\System Volume Information\\WimOverlay.backup";
 	wchar_t path_wimlib_backup[] = L"A:\\System Volume Information\\WimOverlay.wimlib_backup";
 	wchar_t path_new[] = L"A:\\System Volume Information\\WimOverlay.wimlib_new";
-	void *old_contents;
-	void *new_contents;
-	u32 new_contents_size;
-	u64 new_data_source_id;
+	void *old_contents = NULL;
+	void *new_contents = NULL;
+	u32 new_contents_size = 0;
+	u64 new_data_source_id = -1;
 	int ret;
 
 	wimlib_assert(drive[0] != L'\0' &&

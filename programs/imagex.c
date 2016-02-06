@@ -2628,6 +2628,7 @@ print_blobs(WIMStruct *wim)
 	wimlib_iterate_lookup_table(wim, 0, print_resource, NULL);
 }
 
+#ifndef __WIN32__
 static void
 default_print_security_descriptor(const uint8_t *sd, size_t size)
 {
@@ -2635,6 +2636,7 @@ default_print_security_descriptor(const uint8_t *sd, size_t size)
 	print_byte_field(sd, size);
 	tputchar(T('\n'));
 }
+#endif
 
 static void
 print_dentry_detailed(const struct wimlib_dir_entry *dentry)
@@ -4571,16 +4573,17 @@ usage_all(FILE *fp)
 	recommend_man_page(CMD_NONE, fp);
 }
 
+#ifdef __WIN32__
+extern int wmain(int argc, wchar_t **argv);
+#define main wmain
+#endif
+
 /* Entry point for wimlib's ImageX implementation.  On UNIX the command
  * arguments will just be 'char' strings (ideally UTF-8 encoded, but could be
  * something else), while on Windows the command arguments will be UTF-16LE
  * encoded 'wchar_t' strings. */
 int
-#ifdef __WIN32__
-wmain(int argc, wchar_t **argv, wchar_t **envp)
-#else
-main(int argc, char **argv)
-#endif
+main(int argc, tchar **argv)
 {
 	int ret;
 	int init_flags = 0;
