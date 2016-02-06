@@ -104,7 +104,6 @@ libwim_la_SOURCES =		\
 	include/wimlib/capture.h	\
 	include/wimlib/case.h		\
 	include/wimlib/compiler.h	\
-	include/wimlib/compiler-gcc.h	\
 	include/wimlib/compressor_ops.h	\
 	include/wimlib/compress_common.h	\
 	include/wimlib/chunk_compressor.h	\
