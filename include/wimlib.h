@@ -1746,14 +1746,14 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 #define WIMLIB_ADD_FLAG_TEST_FILE_EXCLUSION	0x00004000
 
 /**
- * EXPERIMENTAL, since wimlib v1.9.0: create a temporary filesystem snapshot of
- * the source directory and add the files from it.  Currently, this option is
- * only supported on Windows, where it uses the Volume Shadow Copy Service
- * (VSS).  Using this option, you can create a consistent backup of the system
- * volume of a running Windows system without running into problems with locked
- * files.  For the VSS snapshot to be successfully created, your application
- * must be run as an Administrator, and it cannot be run in WoW64 mode (i.e. if
- * Windows is 64-bit, then your application must be 64-bit as well).
+ * Since wimlib v1.9.0: create a temporary filesystem snapshot of the source
+ * directory and add the files from it.  Currently, this option is only
+ * supported on Windows, where it uses the Volume Shadow Copy Service (VSS).
+ * Using this option, you can create a consistent backup of the system volume of
+ * a running Windows system without running into problems with locked files.
+ * For the VSS snapshot to be successfully created, your application must be run
+ * as an Administrator, and it cannot be run in WoW64 mode (i.e. if Windows is
+ * 64-bit, then your application must be 64-bit as well).
  */
 #define WIMLIB_ADD_FLAG_SNAPSHOT		0x00008000
 

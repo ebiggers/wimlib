@@ -1,10 +1,10 @@
 /*
- * win32_vss.c - Experimental Windows-specific code for creating VSS (Volume
- * Shadow Copy Service) snapshots.
+ * win32_vss.c - Windows-specific code for creating VSS (Volume Shadow Copy
+ * Service) snapshots.
  */
 
 /*
- * Copyright (C) 2015 Eric Biggers
+ * Copyright (C) 2015-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
