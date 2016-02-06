@@ -291,7 +291,7 @@ struct WimOverlay_dat_entry_2 {
 	} _packed_attribute;
 } _packed_attribute;
 
-static inline void
+static _unused_attribute void
 wof_check_structs(void)
 {
 	STATIC_ASSERT(sizeof(struct WimOverlay_dat_header) == 24);

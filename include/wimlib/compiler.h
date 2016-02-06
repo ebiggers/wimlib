@@ -87,6 +87,10 @@
 /* TODO: _format_attribute is currently ignored.  */
 #define _format_attribute(type, format_str, format_start)
 
+/* Hint that the annotated function is intentionally not used.  This might be
+ * the case if the function contains only static assertions.  */
+#define _unused_attribute	__attribute__((unused))
+
 /* Endianness definitions.  Either CPU_IS_BIG_ENDIAN or CPU_IS_LITTLE_ENDIAN is
  * set to 1.  The other is set to 0.  Note that newer gcc supports
  * __BYTE_ORDER__ for easily determining the endianness; older gcc doesn't.  In
