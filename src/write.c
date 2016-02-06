@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers
+ * Copyright (C) 2012-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -288,7 +288,7 @@ write_pwm_blob_header(const struct blob_descriptor *blob,
 	blob_hdr.flags = cpu_to_le32(reshdr_flags);
 	ret = full_write(out_fd, &blob_hdr, sizeof(blob_hdr));
 	if (ret)
-		ERROR_WITH_ERRNO("Write error");
+		ERROR_WITH_ERRNO("Error writing blob header to WIM file");
 	return ret;
 }
 
@@ -461,8 +461,11 @@ begin_chunk_table(struct write_blobs_ctx *ctx, u64 res_expected_size)
 			reserve_size += sizeof(struct alt_chunk_table_header_disk);
 		memset(ctx->chunk_csizes, 0, reserve_size);
 		ret = full_write(ctx->out_fd, ctx->chunk_csizes, reserve_size);
-		if (ret)
+		if (ret) {
+			ERROR_WITH_ERRNO("Error reserving space for chunk "
+					 "table in WIM file");
 			return ret;
+		}
 	}
 	return 0;
 }
@@ -588,7 +591,7 @@ end_chunk_table(struct write_blobs_ctx *ctx, u64 res_actual_size,
 	return 0;
 
 write_error:
-	ERROR_WITH_ERRNO("Write error");
+	ERROR_WITH_ERRNO("Error writing chunk table to WIM file");
 	return ret;
 }
 
@@ -983,7 +986,7 @@ write_chunk(struct write_blobs_ctx *ctx, const void *cchunk,
 				       completed_blob_count, false);
 
 write_error:
-	ERROR_WITH_ERRNO("Write error");
+	ERROR_WITH_ERRNO("Error writing chunk data to WIM file");
 	return ret;
 }
 
@@ -1240,12 +1243,18 @@ write_raw_copy_resource(struct wim_resource_descriptor *in_rdesc,
 
 			ret = full_pread(in_fd, buf, bytes_to_read,
 					 cur_read_offset);
-			if (ret)
+			if (ret) {
+				ERROR_WITH_ERRNO("Error reading raw data "
+						 "from WIM file");
 				return ret;
+			}
 
 			ret = full_write(out_fd, buf, bytes_to_read);
-			if (ret)
+			if (ret) {
+				ERROR_WITH_ERRNO("Error writing raw data "
+						 "to WIM file");
 				return ret;
+			}
 
 			cur_read_offset += bytes_to_read;
 
