@@ -40,7 +40,14 @@
 /tags
 /tests/*.log
 /tests/*.trs
-/tools/windeps/
+/tools/windeps/*.tar.*
+/tools/windeps/COPYING.*
+/tools/windeps/build_*
+/tools/windeps/libxml2*
+/tools/windeps/mingw*
+/tools/windeps/sysroot_*
+/tools/windeps/win-iconv*
+/tools/windeps/winpthreads*
 /wimlib-*-bin/
 /wimlib-*.tar
 /wimlib-*.tar.*

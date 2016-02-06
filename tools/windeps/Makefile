@@ -1,40 +1,60 @@
 #
 # This Makefile builds the third-party libraries needed to build a standalone
 # libwim.dll for Windows.  We build these third-party libraries ourselves mainly
-# to cut down on bloat.
+# to cut down on bloat.  They are automatically downloaded from the URLs
+# declared below and verified against the checksums given in the 'sha256sums'
+# file.
 #
-# Among other things, this Makefile requires MinGW-w64 (i686 and x86_64
-# versions) and a windeps.wim containing the following images:
+# This Makefile requires a GNU toolchain with MinGW-w64 (i686 and x86_64
+# versions).
 #
-# 	- libxml2-2.9.2	[contents of ftp://xmlsoft.org/libxml2/libxml2-2.9.2.tar.gz]
-# 	- winpthreads-4.0.4 [directory mingw-w64-libraries/winpthreads from http://downloads.sourceforge.net/mingw-w64/mingw-w64/mingw-w64-release/mingw-w64-v4.0.4.tar.bz2]
-# 	- win-iconv-0.0.6 [contents of https://win-iconv.googlecode.com/files/win-iconv-0.0.6.tar.bz2]
 
 ARCHITECTURES		:= i686 x86_64
-LIBXML_VERSION		:= 2-2.9.2
-WINPTHREADS_VERSION	:= -4.0.4
-WINICONV_VERSION	:= -0.0.6
+LIBXML2_VERSION		:= 2.9.3
+WINPTHREADS_VERSION	:= 4.0.4
+WINICONV_VERSION	:= 0.0.6
 
-LIBXML_SRCDIR		:= libxml$(LIBXML_VERSION)
-SOURCE_TARGETS		+= $(LIBXML_SRCDIR)
-$(LIBXML_SRCDIR):
-	wimapply --unix-data windeps.wim $(LIBXML_SRCDIR) $(LIBXML_SRCDIR)
-	cp $(LIBXML_SRCDIR)/COPYING COPYING.libxml2
+LIBXML_URL		:= ftp://xmlsoft.org/libxml2/libxml2-$(LIBXML2_VERSION).tar.gz
+WINPTHREADS_URL		:= http://downloads.sourceforge.net/mingw-w64/mingw-w64/mingw-w64-release/mingw-w64-v$(WINPTHREADS_VERSION).tar.bz2
+WINICONV_URL		:= https://github.com/win-iconv/win-iconv/archive/$(WINICONV_VERSION).tar.gz
+
+
+LIBXML_SRCDIR		:= libxml2-$(LIBXML2_VERSION)
+LIBXML_DIST		:= $(LIBXML_SRCDIR).tar.gz
+SRCDIR_TARGETS		+= $(LIBXML_SRCDIR)
+DIST_TARGETS		+= $(LIBXML_DIST)
+$(LIBXML_DIST):
+	wget $(LIBXML_URL)
+$(LIBXML_SRCDIR):$(LIBXML_DIST) checksums_verified
+	tar xvf $<
+	cp $@/COPYING COPYING.libxml2
 MAKE_CLEAN_FILES += $(LIBXML_SRCDIR) COPYING.libxml2
 
-WINPTHREADS_SRCDIR	:= winpthreads$(WINPTHREADS_VERSION)
-SOURCE_TARGETS		+= $(WINPTHREADS_SRCDIR)
-$(WINPTHREADS_SRCDIR):
-	wimapply --unix-data windeps.wim $(WINPTHREADS_SRCDIR) $(WINPTHREADS_SRCDIR)
-	cp $(WINPTHREADS_SRCDIR)/COPYING COPYING.winpthreads
-MAKE_CLEAN_FILES += $(WINPTHREADS_SRCDIR) COPYING.winpthreads
+WINPTHREADS_DIST	:= mingw-w64-v$(WINPTHREADS_VERSION).tar.bz2
+WINPTHREADS_SRCDIR	:= winpthreads-$(WINPTHREADS_VERSION)
+SRCDIR_TARGETS		+= $(WINPTHREADS_SRCDIR)
+DIST_TARGETS		+= $(WINPTHREADS_DIST)
+$(WINPTHREADS_DIST):
+	wget $(WINPTHREADS_URL)
+$(WINPTHREADS_SRCDIR):$(WINPTHREADS_DIST) checksums_verified
+	tar xvf $<
+	cp -aT mingw-w64-v$(WINPTHREADS_VERSION)/mingw-w64-libraries/winpthreads $@
+	cp $@/COPYING COPYING.winpthreads
+MAKE_CLEAN_FILES += $(WINPTHREADS_SRCDIR) mingw-w64-v$(WINPTHREADS_VERSION) COPYING.winpthreads
 
-WINICONV_SRCDIR		:= win-iconv$(WINICONV_VERSION)
-SOURCE_TARGETS		+= $(WINICONV_SRCDIR)
-$(WINICONV_SRCDIR):
-	wimapply --unix-data windeps.wim $(WINICONV_SRCDIR) $(WINICONV_SRCDIR)
+WINICONV_SRCDIR		:= win-iconv-$(WINICONV_VERSION)
+WINICONV_DIST		:= $(WINICONV_VERSION).tar.gz
+SRCDIR_TARGETS		+= $(WINICONV_SRCDIR)
+DIST_TARGETS		+= $(WINICONV_DIST)
+$(WINICONV_DIST):
+	wget $(WINICONV_URL)
+$(WINICONV_SRCDIR):$(WINICONV_DIST) checksums_verified
+	tar xvf $<
 # win-iconv is public domain, so there's no license file.
 MAKE_CLEAN_FILES	+= $(WINICONV_SRCDIR)
+
+checksums_verified:$(DIST_TARGETS)
+	sha256sum -c sha256sums
 
 #
 # declare_libxml_target(arch)
@@ -125,8 +145,8 @@ $(foreach arch,$(ARCHITECTURES),$(eval $(call declare_arch_targets,$(arch))))
 all: $(ALL_SYSROOTS)
 
 clean:
-	rm -rf $(MAKE_CLEAN_FILES)
+	rm -rf $(MAKE_CLEAN_FILES) $(DIST_TARGETS)
 
-.PHONY: all clean $(SOURCE_TARGETS)
+.PHONY: all clean $(SRCDIR_TARGETS) checksums_verified
 
 .DEFAULT_GOAL = all
