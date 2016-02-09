@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2013 Eric Biggers
+ * Copyright (C) 2013-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -493,20 +493,24 @@ do_pread_or_pwrite(int fd, void *buf, size_t count, off_t offset,
 	LARGE_INTEGER relative_offset;
 	OVERLAPPED overlapped;
 	BOOL bret;
+	DWORD err = 0;
 
 	h = (HANDLE)_get_osfhandle(fd);
 	if (h == INVALID_HANDLE_VALUE)
-		goto err;
+		goto error;
 
 	if (GetFileType(h) == FILE_TYPE_PIPE) {
 		errno = ESPIPE;
-		goto err;
+		goto error;
 	}
 
 	/* Get original position */
 	relative_offset.QuadPart = 0;
-	if (!SetFilePointerEx(h, relative_offset, &orig_offset, FILE_CURRENT))
-		goto err_set_errno;
+	if (!SetFilePointerEx(h, relative_offset, &orig_offset, FILE_CURRENT)) {
+		err = GetLastError();
+		win32_error(err, L"Failed to get original file position");
+		goto error;
+	}
 
 	memset(&overlapped, 0, sizeof(overlapped));
 	overlapped.Offset = offset;
@@ -517,17 +521,26 @@ do_pread_or_pwrite(int fd, void *buf, size_t count, off_t offset,
 		bret = WriteFile(h, buf, count, &bytes_read_or_written, &overlapped);
 	else
 		bret = ReadFile(h, buf, count, &bytes_read_or_written, &overlapped);
-	if (!bret)
-		goto err_set_errno;
+	if (!bret) {
+		err = GetLastError();
+		win32_error(err, L"Failed to %s %zu bytes at offset %"PRIu64,
+			    (is_pwrite ? "write" : "read"), count, offset);
+		goto error;
+	}
 
 	/* Restore the original position */
-	if (!SetFilePointerEx(h, orig_offset, NULL, FILE_BEGIN))
-		goto err_set_errno;
+	if (!SetFilePointerEx(h, orig_offset, NULL, FILE_BEGIN)) {
+		err = GetLastError();
+		win32_error(err, L"Failed to restore file position to %"PRIu64,
+			    offset);
+		goto error;
+	}
 
 	return bytes_read_or_written;
-err_set_errno:
-	set_errno_from_GetLastError();
-err:
+
+error:
+	if (err)
+		set_errno_from_win32_error(err);
 	return -1;
 }
 
