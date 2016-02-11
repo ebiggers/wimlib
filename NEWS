@@ -1,10 +1,21 @@
 Version 1.9.1-BETA:
 	Reduced memory usage when exporting large numbers of WIM images.
 
-	VSS support is no longer marked "experimental".
-
 	Made some minor build-related updates.  Notably, enabled "silent" make
 	rules; this makes the output cleaner when building from source.
+
+	Some minor Windows-specific updates:
+		Fixed a bug where duplicate backslashes could be generated in
+		link targets when extracting symbolic links and junctions.
+
+		Added instructions for building from source on Windows.
+
+		VSS support is no longer marked "experimental".
+
+		wimlib now issues an appropriate error message if a known
+		problem with the WindowsApps directory is encountered.
+
+		wimlib now automatically retries some read requests.
 
 Version 1.9.0:
 	Added experimental support for Windows VSS (Volume Shadow Copy Service).
