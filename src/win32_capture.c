@@ -360,9 +360,12 @@ read_winnt_stream_prefix(const struct windows_file *file,
 		IO_STATUS_BLOCK iosb;
 		ULONG count;
 		ULONG bytes_read;
+		const unsigned max_tries = 5;
+		unsigned tries_remaining = max_tries;
 
 		count = min(sizeof(buf), bytes_remaining);
 
+	retry_read:
 		status = (*func_NtReadFile)(h, NULL, NULL, NULL,
 					    &iosb, buf, count, NULL, NULL);
 		if (unlikely(!NT_SUCCESS(status))) {
@@ -371,11 +374,28 @@ read_winnt_stream_prefix(const struct windows_file *file,
 				      windows_file_to_string(file, buf, sizeof(buf)));
 				ret = WIMLIB_ERR_CONCURRENT_MODIFICATION_DETECTED;
 			} else {
-				winnt_error(status, L"Error reading data from %ls",
-					    windows_file_to_string(file, buf, sizeof(buf)));
+				winnt_warning(status, L"Error reading data from %ls",
+					      windows_file_to_string(file, buf, sizeof(buf)));
+
+				/* Currently these retries are purely a guess;
+				 * there is no reproducible problem that they solve.  */
+				if (--tries_remaining) {
+					int delay = 100;
+					if (status == STATUS_INSUFFICIENT_RESOURCES ||
+					    status == STATUS_NO_MEMORY) {
+						delay *= 25;
+					}
+					WARNING("Retrying after %dms...", delay);
+					Sleep(delay);
+					goto retry_read;
+				}
+				ERROR("Too many retries; returning failure");
 				ret = WIMLIB_ERR_READ;
 			}
 			break;
+		} else if (unlikely(tries_remaining != max_tries)) {
+			WARNING("A read request had to be retried multiple times "
+				"before it succeeded!");
 		}
 
 		bytes_read = iosb.Information;
