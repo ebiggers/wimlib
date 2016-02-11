@@ -1648,8 +1648,24 @@ retry:
 				goto retry;
 			}
 		}
-		winnt_error(status, L"Can't create directory \"%ls\"",
-			    current_path(ctx));
+		const wchar_t *path = current_path(ctx);
+		winnt_error(status, L"Can't create directory \"%ls\"", path);
+
+		/* Check for known issue with WindowsApps directory.  */
+		if (status == STATUS_ACCESS_DENIED &&
+		    (wcsstr(path, L"\\WindowsApps\\") ||
+		     wcsstr(path, L"\\InfusedApps\\"))) {
+			ERROR(
+"You seem to be trying to extract files to the WindowsApps directory.\n"
+"        Windows 8.1 and later use new file permissions in this directory that\n"
+"        cannot be overridden, even by backup/restore programs.  To extract your\n"
+"        files anyway, you need to choose a different target directory, delete\n"
+"        the WindowsApps directory entirely, reformat the volume, do the\n"
+"        extraction from a non-broken operating system such as Windows 7 or\n"
+"        Linux, or wait for Microsoft to fix the design flaw in their operating\n"
+"        system.  This is *not* a bug in wimlib.  See this thread for more\n"
+"        information: https://wimlib.net/forums/viewtopic.php?f=1&t=261");
+		}
 		return WIMLIB_ERR_MKDIR;
 	}
 
