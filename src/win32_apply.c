@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2013, 2014, 2015 Eric Biggers
+ * Copyright (C) 2013-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -2108,6 +2108,17 @@ try_rpfix(struct reparse_buffer_disk *rpbuf, u16 *rpbuflen_p,
 			 (relpath - link.substitute_name);
 
 	target_ntpath_nchars = ctx->target_ntpath.Length / sizeof(wchar_t);
+
+	/* If the target directory is a filesystem root, such as \??\C:\, then
+	 * it already will have a trailing slash.  Don't include this slash if
+	 * we are already adding slashes via 'relpath'.  This prevents an extra
+	 * slash from being generated each time the link is extracted.  And
+	 * unlike on UNIX, the number of slashes in paths on Windows can be
+	 * significant; Windows won't understand the link target if it contains
+	 * too many slashes.  */
+	if (target_ntpath_nchars > 0 && relpath_nchars > 0 &&
+	    ctx->target_ntpath.Buffer[target_ntpath_nchars - 1] == L'\\')
+		target_ntpath_nchars--;
 
 	fixed_subst_name_nchars = target_ntpath_nchars + relpath_nchars;
 
