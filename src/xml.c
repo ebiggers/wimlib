@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2015 Eric Biggers
+ * Copyright (C) 2012-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -1027,7 +1027,7 @@ xml_print_image_info(struct wim_xml_info *info, int image)
  *----------------------------------------------------------------------------*/
 
 static int
-image_node_get_index(const xmlNode *node)
+image_node_get_index(xmlNode *node)
 {
 	u64 v = node_get_number((const xmlNode *)xmlHasProp(node, "INDEX"), 10);
 	return min(v, INT_MAX);
