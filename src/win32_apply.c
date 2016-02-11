@@ -2120,6 +2120,15 @@ try_rpfix(struct reparse_buffer_disk *rpbuf, u16 *rpbuflen_p,
 	    ctx->target_ntpath.Buffer[target_ntpath_nchars - 1] == L'\\')
 		target_ntpath_nchars--;
 
+	/* Also remove extra slashes from the beginning of 'relpath'.  Normally
+	 * this isn't needed, but this is here to make the extra slash(es) added
+	 * by wimlib pre-v1.9.1 get removed automatically.  */
+	while (relpath_nchars >= 2 &&
+	       relpath[0] == L'\\' && relpath[1] == L'\\') {
+		relpath++;
+		relpath_nchars--;
+	}
+
 	fixed_subst_name_nchars = target_ntpath_nchars + relpath_nchars;
 
 	wchar_t fixed_subst_name[fixed_subst_name_nchars];
