@@ -79,7 +79,57 @@ Windows-only graphical user interface that provides a thin wrapper around
 wimlib-imagex can be downloaded at
 http://reboot.pro/files/file/485-wimlib-imagex-command-line-compiler/.
 
-If you want to build your own Windows binaries from source, MinGW-w64 is
-required.  Configure with --host=i686-w64-mingw32 or --host=x86_64-w64-mingw32.
-You will need to satisfy the third-party dependencies (libxml2, winpthreads, and
-win-iconv), which in the official releases are statically linked into the DLL.
+                              BUILDING FROM SOURCE
+
+As with other open source software, advanced users may choose to build wimlib
+from source, potentially with customizations.  Although wimlib's build system is
+designed for UNIX-like systems and is easiest to use on Linux, it's possible to
+build Windows binaries on Windows using Cygwin with MinGW.  To do this, follow
+the instructions below.  For the sake of example, I'll assume you are building a
+32-bit version of wimlib v1.9.0.
+
+Run the Cygwin installer, available from https://www.cygwin.com/setup-x86.exe.
+When you get to the package selection screen, choose the following additional
+packages from category "Devel":
+
+    - make
+    - mingw64-i686-gcc-g++
+    - mingw64-i686-binutils
+    - mingw64-i686-libxml2
+    - mingw64-i686-winpthreads
+    - mingw64-i686-win-iconv
+    - mingw64-i686-pkg-config
+
+Download wimlib's source code from https://wimlib.net/downloads/wimlib-1.9.0.tar.gz.
+
+Start a Cygwin terminal and run the following commands:
+
+    cd /cygdrive/c/Users/example/Downloads # (or wherever you downloaded the source to)
+    tar xf wimlib-1.9.0.tar.gz
+    cd wimlib-1.9.0
+    ./configure --host=i686-w64-mingw32
+    make
+
+If successful, the new binaries "libwim-15.dll" and "wimlib-imagex.exe" will
+have been produced in the .libs directory.
+
+By default the binaries are built with debug symbols.  If desired, you can use
+i686-w64-mingw32-strip to strip them.
+
+libwim-15.dll will be linked to several other DLLs which you will need as well:
+
+    - iconv.dll
+    - libwinpthread-1.dll
+    - libxml2-2.dll
+    - libgcc_s_sjlj-1.dll
+
+They can be found in "C:\cygwin\usr\i686-w64-mingw32\sys-root\mingw\bin" and
+must be placed alongside libwim-15.dll for it to run portably.  (In the official
+binary release, these third-party libraries are linked to libwim-15.dll
+statically rather than dynamically.)
+
+Building 64-bit binaries is very similar, but you'll need to replace "i686" with
+"x86_64" everywhere in the above instructions.  Note that you can build both
+32-bit and 64-bit binaries from the same Cygwin installation, provided that you
+install both the mingw64-i686-* and mingw64-x86_64-* packages; and you can run
+the Cygwin setup program to install more packages at any time.
