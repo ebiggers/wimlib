@@ -55,7 +55,6 @@ then
 	# http://www.gnu.org/software/libtool/manual/libtool.html#Stripped-link-flags
 	./configure --host=${ARCH}-w64-mingw32 --disable-static		\
 		CC="${ARCH}-w64-mingw32-gcc -static-libgcc"		\
-		CFLAGS="-O2 -Wall"					\
 		CPPFLAGS="-I$SYSROOT/include"				\
 		LDFLAGS="-L$SYSROOT/lib"				\
 		PKG_CONFIG_PATH="$SYSROOT/lib/pkgconfig"		\

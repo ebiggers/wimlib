@@ -4,6 +4,8 @@ set -e
 
 MAKE="make -j$(grep -c processor /proc/cpuinfo)"
 
+export CFLAGS="-O2 -Wall -Werror"
+
 ./configure && $MAKE distcheck
 
 # Recompress with 7-Zip
