@@ -112,7 +112,7 @@ for fil in ./doc/man1/wimlib-imagex-*.1; do
 
 	sed 's/$/\r/g' > ${DESTDIR}/wim${cmd}.cmd <<- EOF
 		@echo off
-		%~dp0\\wimlib-imagex $cmd %*
+		"%~dp0\\wimlib-imagex" $cmd %*
 	EOF
 	chmod +x ${DESTDIR}/wim${cmd}.cmd
 done
