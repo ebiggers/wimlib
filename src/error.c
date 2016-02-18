@@ -181,7 +181,7 @@ static const tchar * const error_strings[] = {
 	[WIMLIB_ERR_ALREADY_LOCKED]
 		= T("The WIM is already locked for writing"),
 	[WIMLIB_ERR_DECOMPRESSION]
-		= T("Failed to decompress compressed data"),
+		= T("The WIM contains invalid compressed data"),
 	[WIMLIB_ERR_FUSE]
 		= T("An error was returned by fuse_main()"),
 	[WIMLIB_ERR_GLOB_HAD_NO_MATCHES]
@@ -240,7 +240,7 @@ static const tchar * const error_strings[] = {
 		= T("Failed to create a hard or symbolic link when extracting "
 			"a file from the WIM"),
 	[WIMLIB_ERR_METADATA_NOT_FOUND]
-		= T("A required metadata resource could not be located"),
+		= T("The WIM does not contain image metadata; it only contains file data"),
 	[WIMLIB_ERR_MKDIR]
 		= T("Failed to create a directory"),
 	[WIMLIB_ERR_MQUEUE]
