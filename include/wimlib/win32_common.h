@@ -101,17 +101,6 @@ extern NTSTATUS (WINAPI *func_NtSetSecurityObject)(HANDLE Handle,
 						   SECURITY_INFORMATION SecurityInformation,
 						   PSECURITY_DESCRIPTOR SecurityDescriptor);
 
-extern NTSTATUS (WINAPI *func_NtFsControlFile) (HANDLE FileHandle,
-						HANDLE Event,
-						PIO_APC_ROUTINE ApcRoutine,
-						PVOID ApcContext,
-						PIO_STATUS_BLOCK IoStatusBlock,
-						ULONG FsControlCode,
-						PVOID InputBuffer,
-						ULONG InputBufferLength,
-						PVOID OutputBuffer,
-						ULONG OutputBufferLength);
-
 extern NTSTATUS (WINAPI *func_NtClose) (HANDLE Handle);
 
 extern DWORD (WINAPI *func_RtlNtStatusToDosError)(NTSTATUS status);
@@ -173,5 +162,9 @@ winnt_warning(NTSTATUS status, const wchar_t *format, ...) _cold_attribute;
 
 extern void
 winnt_error(NTSTATUS status, const wchar_t *format, ...) _cold_attribute;
+
+extern NTSTATUS
+winnt_fsctl(HANDLE h, u32 code, const void *in, u32 in_size,
+	    void *out, u32 out_size_avail, u32 *actual_out_size_ret);
 
 #endif /* _WIMLIB_WIN32_COMMON_H */

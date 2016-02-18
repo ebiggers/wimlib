@@ -243,8 +243,7 @@ get_windows_file_path(const struct windows_file *file)
  * Open the file named by the NT namespace path @path of length @path_nchars
  * characters.  If @cur_dir is not NULL then the path is given relative to
  * @cur_dir; otherwise the path is absolute.  @perms is the access mask of
- * permissions to request on the handle.  If permission to read the data is
- * requested, then SYNCHRONIZE is automatically added.
+ * permissions to request on the handle.  SYNCHRONIZE permision is always added.
  */
 static NTSTATUS
 winnt_openat(HANDLE cur_dir, const wchar_t *path, size_t path_nchars,
@@ -264,8 +263,8 @@ winnt_openat(HANDLE cur_dir, const wchar_t *path, size_t path_nchars,
 	NTSTATUS status;
 	ULONG options = FILE_OPEN_REPARSE_POINT | FILE_OPEN_FOR_BACKUP_INTENT;
 
+	perms |= SYNCHRONIZE;
 	if (perms & (FILE_READ_DATA | FILE_LIST_DIRECTORY)) {
-		perms |= SYNCHRONIZE;
 		options |= FILE_SYNCHRONOUS_IO_NONALERT;
 		options |= FILE_SEQUENTIAL_ONLY;
 	}
@@ -978,7 +977,8 @@ winnt_load_reparse_data(HANDLE h, struct wim_inode *inode,
 			const wchar_t *full_path, struct capture_params *params)
 {
 	struct reparse_buffer_disk rpbuf;
-	DWORD bytes_returned;
+	NTSTATUS status;
+	u32 len;
 	u16 rpbuflen;
 	int ret;
 
@@ -989,16 +989,15 @@ winnt_load_reparse_data(HANDLE h, struct wim_inode *inode,
 		return 0;
 	}
 
-	if (!DeviceIoControl(h, FSCTL_GET_REPARSE_POINT,
-			     NULL, 0, &rpbuf, REPARSE_POINT_MAX_SIZE,
-			     &bytes_returned, NULL))
-	{
-		win32_error(GetLastError(), L"\"%ls\": Can't get reparse point",
+	status = winnt_fsctl(h, FSCTL_GET_REPARSE_POINT,
+			     NULL, 0, &rpbuf, sizeof(rpbuf), &len);
+	if (!NT_SUCCESS(status)) {
+		winnt_error(status, L"\"%ls\": Can't get reparse point",
 			    printable_path(full_path));
 		return WIMLIB_ERR_READLINK;
 	}
 
-	rpbuflen = bytes_returned;
+	rpbuflen = len;
 
 	if (unlikely(rpbuflen < REPARSE_DATA_OFFSET)) {
 		ERROR("\"%ls\": reparse point buffer is too short",
@@ -1295,12 +1294,9 @@ get_sort_key(HANDLE h)
 {
 	STARTING_VCN_INPUT_BUFFER in = { .StartingVcn.QuadPart = 0 };
 	RETRIEVAL_POINTERS_BUFFER out;
-	DWORD bytesReturned;
 
-	if (!DeviceIoControl(h, FSCTL_GET_RETRIEVAL_POINTERS,
-			     &in, sizeof(in),
-			     &out, sizeof(out),
-			     &bytesReturned, NULL))
+	if (!NT_SUCCESS(winnt_fsctl(h, FSCTL_GET_RETRIEVAL_POINTERS,
+				    &in, sizeof(in), &out, sizeof(out), NULL)))
 		return 0;
 
 	return extract_starting_lcn(&out);
@@ -1396,14 +1392,12 @@ try_to_use_wimboot_hash(HANDLE h, struct wim_inode *inode,
 			struct wof_external_info wof_info;
 			struct wim_provider_external_info wim_info;
 		} out;
-		IO_STATUS_BLOCK iosb;
 		NTSTATUS status;
 
 		/* WOF may be attached.  Try reading this file's external
 		 * backing info.  */
-		status = (*func_NtFsControlFile)(h, NULL, NULL, NULL, &iosb,
-						 FSCTL_GET_EXTERNAL_BACKING,
-						 NULL, 0, &out, sizeof(out));
+		status = winnt_fsctl(h, FSCTL_GET_EXTERNAL_BACKING,
+				     NULL, 0, &out, sizeof(out), NULL);
 
 		/* Is WOF not attached?  */
 		if (status == STATUS_INVALID_DEVICE_REQUEST ||
@@ -2349,9 +2343,7 @@ load_files_from_mft(const wchar_t *path, struct ntfs_inode_map *inode_map)
 	};
 	const size_t outsize = 32768;
 	QUERY_FILE_LAYOUT_OUTPUT *out = NULL;
-	DWORD bytes_returned;
 	int ret;
-	DWORD err;
 	NTSTATUS status;
 
 	status = winnt_open(path, wcslen(path),
@@ -2367,8 +2359,9 @@ load_files_from_mft(const wchar_t *path, struct ntfs_inode_map *inode_map)
 		goto out;
 	}
 
-	while (DeviceIoControl(h, FSCTL_QUERY_FILE_LAYOUT, &in, sizeof(in),
-			       out, outsize, &bytes_returned, NULL))
+	while (NT_SUCCESS(status = winnt_fsctl(h, FSCTL_QUERY_FILE_LAYOUT,
+					       &in, sizeof(in),
+					       out, outsize, NULL)))
 	{
 		const FILE_LAYOUT_ENTRY *file =
 			(const void *)out + out->FirstFileOffset;
@@ -2383,16 +2376,15 @@ load_files_from_mft(const wchar_t *path, struct ntfs_inode_map *inode_map)
 		in.Flags &= ~QUERY_FILE_LAYOUT_RESTART;
 	}
 
-	/* Normally, FSCTL_QUERY_FILE_LAYOUT fails with error code 38 after all
-	 * files have been enumerated.  */
-	err = GetLastError();
-	if (err != 38) {
-		if (err == ERROR_INVALID_FUNCTION ||
-		    err == ERROR_INVALID_PARAMETER) {
+	/* Normally, FSCTL_QUERY_FILE_LAYOUT fails with STATUS_END_OF_FILE after
+	 * all files have been enumerated.  */
+	if (status != STATUS_END_OF_FILE) {
+		if (status == STATUS_INVALID_DEVICE_REQUEST /* old OS */ ||
+		    status == STATUS_INVALID_PARAMETER /* not root directory */ ) {
 			/* Silently try standard recursive scan instead  */
 			ret = -1;
 		} else {
-			win32_error(err,
+			winnt_error(status,
 				    L"Error enumerating files on volume \"%ls\"",
 				    path);
 			/* Try standard recursive scan instead  */

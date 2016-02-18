@@ -1092,6 +1092,9 @@ adjust_compression_attribute(HANDLE h, const struct wim_dentry *dentry,
 {
 	const bool compressed = (dentry->d_inode->i_attributes &
 				 FILE_ATTRIBUTE_COMPRESSED);
+	FILE_BASIC_INFORMATION info;
+	USHORT compression_state;
+	NTSTATUS status;
 
 	if (ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES)
 		return 0;
@@ -1099,10 +1102,6 @@ adjust_compression_attribute(HANDLE h, const struct wim_dentry *dentry,
 	if (!ctx->common.supported_features.compressed_files)
 		return 0;
 
-	FILE_BASIC_INFORMATION info;
-	NTSTATUS status;
-	USHORT compression_state;
-	DWORD bytes_returned;
 
 	/* Get current attributes  */
 	status = (*func_NtQueryInformationFile)(h, &ctx->iosb,
@@ -1122,14 +1121,12 @@ adjust_compression_attribute(HANDLE h, const struct wim_dentry *dentry,
 	else
 		compression_state = COMPRESSION_FORMAT_NONE;
 
-	/* Note: don't use NtFsControlFile() here unless prepared to handle
-	 * STATUS_PENDING.  */
-	if (DeviceIoControl(h, FSCTL_SET_COMPRESSION,
-			    &compression_state, sizeof(USHORT), NULL, 0,
-			    &bytes_returned, NULL))
-		return 0;
+	status = winnt_fsctl(h, FSCTL_SET_COMPRESSION,
+			     &compression_state, sizeof(USHORT), NULL, 0, NULL);
+	if (NT_SUCCESS(status))
+		return status;
 
-	win32_error(GetLastError(), L"Can't %s compression attribute on \"%ls\"",
+	winnt_error(status, L"Can't %s compression attribute on \"%ls\"",
 		    (compressed ? "set" : "clear"), current_path(ctx));
 	return WIMLIB_ERR_SET_ATTRIBUTES;
 }
@@ -1347,7 +1344,7 @@ retry:
  * A wrapper around NtCreateFile() to make it slightly more usable...
  * This uses the path currently constructed in ctx->pathbuf.
  *
- * Also, we always specify FILE_OPEN_FOR_BACKUP_INTENT and
+ * Also, we always specify SYNCHRONIZE access, FILE_OPEN_FOR_BACKUP_INTENT, and
  * FILE_OPEN_REPARSE_POINT.
  */
 static NTSTATUS
@@ -1360,7 +1357,7 @@ do_create_file(PHANDLE FileHandle,
 	       struct win32_apply_ctx *ctx)
 {
 	return (*func_NtCreateFile)(FileHandle,
-				    DesiredAccess,
+				    DesiredAccess | SYNCHRONIZE,
 				    &ctx->attr,
 				    &ctx->iosb,
 				    AllocationSize,
@@ -1525,10 +1522,8 @@ do_set_reparse_point(const struct wim_dentry *dentry,
 	if (!NT_SUCCESS(status))
 		goto fail;
 
-	status = (*func_NtFsControlFile)(h, NULL, NULL, NULL,
-					 &ctx->iosb, FSCTL_SET_REPARSE_POINT,
-					 (void *)rpbuf, rpbuflen,
-					 NULL, 0);
+	status = winnt_fsctl(h, FSCTL_SET_REPARSE_POINT,
+			     rpbuf, rpbuflen, NULL, 0, NULL);
 	(*func_NtClose)(h);
 
 	if (NT_SUCCESS(status))
@@ -2378,7 +2373,6 @@ static NTSTATUS
 set_system_compression(HANDLE h, int format)
 {
 	NTSTATUS status;
-	IO_STATUS_BLOCK iosb;
 	struct {
 		struct wof_external_info wof_info;
 		struct file_provider_external_info file_info;
@@ -2399,9 +2393,8 @@ set_system_compression(HANDLE h, int format)
 	 * versions of Windows (before Windows 10?).  This can be a problem if
 	 * the WOFADK driver is being used rather than the regular WOF, since
 	 * WOFADK can be used on older versions of Windows.  */
-	status = (*func_NtFsControlFile)(h, NULL, NULL, NULL, &iosb,
-					 FSCTL_SET_EXTERNAL_BACKING,
-					 &in, sizeof(in), NULL, 0);
+	status = winnt_fsctl(h, FSCTL_SET_EXTERNAL_BACKING,
+			     &in, sizeof(in), NULL, 0, NULL);
 
 	if (status == 0xC000046F) /* "Compressing this object would not save space."  */
 		return STATUS_SUCCESS;

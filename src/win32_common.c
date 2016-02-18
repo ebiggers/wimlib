@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2013, 2014, 2015 Eric Biggers
+ * Copyright (C) 2013-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -27,6 +27,7 @@
 
 #include "wimlib/win32_common.h"
 
+#include "wimlib/assert.h"
 #include "wimlib/error.h"
 #include "wimlib/util.h"
 #include "wimlib/win32_vss.h"
@@ -170,16 +171,20 @@ NTSTATUS (WINAPI *func_NtSetSecurityObject)(HANDLE Handle,
 					    SECURITY_INFORMATION SecurityInformation,
 					    PSECURITY_DESCRIPTOR SecurityDescriptor);
 
-NTSTATUS (WINAPI *func_NtFsControlFile) (HANDLE FileHandle,
-					 HANDLE Event,
-					 PIO_APC_ROUTINE ApcRoutine,
-					 PVOID ApcContext,
-					 PIO_STATUS_BLOCK IoStatusBlock,
-					 ULONG FsControlCode,
-					 PVOID InputBuffer,
-					 ULONG InputBufferLength,
-					 PVOID OutputBuffer,
-					 ULONG OutputBufferLength);
+static NTSTATUS (WINAPI *func_NtFsControlFile) (HANDLE FileHandle,
+						HANDLE Event,
+						PIO_APC_ROUTINE ApcRoutine,
+						PVOID ApcContext,
+						PIO_STATUS_BLOCK IoStatusBlock,
+						ULONG FsControlCode,
+						PVOID InputBuffer,
+						ULONG InputBufferLength,
+						PVOID OutputBuffer,
+						ULONG OutputBufferLength);
+
+static NTSTATUS (WINAPI *func_NtWaitForSingleObject) (HANDLE Handle,
+						      BOOLEAN Alertable,
+						      PLARGE_INTEGER Timeout);
 
 NTSTATUS (WINAPI *func_NtClose) (HANDLE Handle);
 
@@ -233,6 +238,7 @@ struct dll_spec ntdll_spec = {
 		DLL_SYM(NtSetInformationFile, true),
 		DLL_SYM(NtSetSecurityObject, true),
 		DLL_SYM(NtFsControlFile, true),
+		DLL_SYM(NtWaitForSingleObject, true),
 		DLL_SYM(NtClose, true),
 		DLL_SYM(RtlNtStatusToDosError, true),
 		DLL_SYM(RtlCreateSystemVolumeInformationFolder, false),
@@ -529,6 +535,42 @@ winnt_error(NTSTATUS status, const wchar_t *format, ...)
 	va_start(va, format);
 	windows_msg(status, format, va, true, true);
 	va_end(va);
+}
+
+/*
+ * Synchronously execute a filesystem control method.  This is a wrapper around
+ * NtFsControlFile() that handles STATUS_PENDING.  Note that SYNCHRONIZE
+ * permission is, in general, required on the handle.
+ */
+NTSTATUS
+winnt_fsctl(HANDLE h, u32 code, const void *in, u32 in_size,
+	    void *out, u32 out_size_avail, u32 *actual_out_size_ret)
+{
+	IO_STATUS_BLOCK iosb;
+	NTSTATUS status;
+
+	status = (*func_NtFsControlFile)(h, NULL, NULL, NULL, &iosb, code,
+					 (void *)in, in_size,
+					 out, out_size_avail);
+	if (status == STATUS_PENDING) {
+		/* Beware: this case is often encountered with remote
+		 * filesystems, but rarely with local filesystems.  */
+
+		status = (*func_NtWaitForSingleObject)(h, FALSE, NULL);
+		if (NT_SUCCESS(status)) {
+			status = iosb.Status;
+		} else {
+			/* We shouldn't be issuing ioctls on a handle to which
+			 * we don't have SYNCHRONIZE access.  Otherwise we have
+			 * no way to wait for them to complete.  */
+			wimlib_assert(status != STATUS_ACCESS_DENIED);
+		}
+	}
+
+	if (NT_SUCCESS(status) && actual_out_size_ret != NULL)
+		*actual_out_size_ret = (u32)iosb.Information;
+
+	return status;
 }
 
 #endif /* __WIN32__ */
