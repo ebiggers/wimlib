@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2013, 2015 Eric Biggers
+ * Copyright (C) 2013-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -31,6 +31,7 @@
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/metadata.h"
+#include "wimlib/object_id.h"
 #include "wimlib/paths.h"
 #include "wimlib/security.h"
 #include "wimlib/timestamp.h"
@@ -90,6 +91,8 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry, struct wim_dentry *dentry,
 	const struct wim_inode *inode = dentry->d_inode;
 	const struct wim_inode_stream *strm;
 	struct wimlib_unix_data unix_data;
+	const void *object_id;
+	u32 object_id_len;
 
 	ret = utf16le_get_tstr(dentry->d_name, dentry->d_name_nbytes,
 			       &wdentry->filename, &dummy);
@@ -128,6 +131,11 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry, struct wim_dentry *dentry,
 		wdentry->unix_gid = unix_data.gid;
 		wdentry->unix_mode = unix_data.mode;
 		wdentry->unix_rdev = unix_data.rdev;
+	}
+	object_id = inode_get_object_id(inode, &object_id_len);
+	if (unlikely(object_id != NULL)) {
+		memcpy(&wdentry->object_id, object_id,
+		       min(object_id_len, sizeof(wdentry->object_id)));
 	}
 
 	strm = inode_get_unnamed_stream(inode, get_default_stream_type(inode));

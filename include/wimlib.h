@@ -1437,6 +1437,18 @@ struct wimlib_stream_entry {
 	uint64_t reserved[4];
 };
 
+/**
+ * An object ID, which is an extra piece of metadata that may be associated with
+ * a file on NTFS filesystems.  See:
+ * https://msdn.microsoft.com/en-us/library/windows/desktop/aa363997(v=vs.85).aspx
+ */
+struct wimlib_object_id {
+	uint8_t object_id[WIMLIB_GUID_LEN];
+	uint8_t birth_volume_id[WIMLIB_GUID_LEN];
+	uint8_t birth_object_id[WIMLIB_GUID_LEN];
+	uint8_t domain_id[WIMLIB_GUID_LEN];
+};
+
 /** Structure passed to the wimlib_iterate_dir_tree() callback function.
  * Roughly, the information about a "file" in the WIM--- but really a directory
  * entry ("dentry") because hard links are allowed.  The hard_link_group_id
@@ -1555,7 +1567,11 @@ struct wimlib_dir_entry {
 	 * This field is only valid if @p unix_mode != 0.  */
 	uint32_t unix_rdev;
 
-	uint64_t reserved[14];
+	/* The object ID of this file, if any.  Only valid if
+	 * object_id.object_id is not all zeroes.  */
+	struct wimlib_object_id object_id;
+
+	uint64_t reserved[6];
 
 	/**
 	 * Array of streams that make up this file.

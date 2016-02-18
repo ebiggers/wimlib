@@ -2638,10 +2638,27 @@ default_print_security_descriptor(const uint8_t *sd, size_t size)
 }
 #endif
 
+static bool
+is_null_guid(const uint8_t *guid)
+{
+	static const uint8_t null_guid[WIMLIB_GUID_LEN];
+
+	return !memcmp(guid, null_guid, WIMLIB_GUID_LEN);
+}
+
+static void
+print_guid(const tchar *label, const uint8_t *guid)
+{
+	if (is_null_guid(guid))
+		return;
+	tprintf(T("%-20"TS"= 0x"), label);
+	print_byte_field(guid, WIMLIB_GUID_LEN);
+	tputchar(T('\n'));
+}
+
 static void
 print_dentry_detailed(const struct wimlib_dir_entry *dentry)
 {
-
 	tprintf(T(
 "----------------------------------------------------------------------------\n"));
 	tprintf(T("Full Path           = \"%"TS"\"\n"), dentry->full_path);
@@ -2674,6 +2691,13 @@ print_dentry_detailed(const struct wimlib_dir_entry *dentry)
 			  "mode:0%"PRIo32" rdev:0x%"PRIx32"\n"),
 			dentry->unix_uid, dentry->unix_gid,
 			dentry->unix_mode, dentry->unix_rdev);
+	}
+
+	if (!is_null_guid(dentry->object_id.object_id)) {
+		print_guid(T("Object ID"), dentry->object_id.object_id);
+		print_guid(T("Birth Volume ID"), dentry->object_id.birth_volume_id);
+		print_guid(T("Birth Object ID"), dentry->object_id.birth_object_id);
+		print_guid(T("Domain ID"), dentry->object_id.domain_id);
 	}
 
 	for (uint32_t i = 0; i <= dentry->num_named_streams; i++) {
