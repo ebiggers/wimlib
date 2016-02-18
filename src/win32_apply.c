@@ -995,18 +995,18 @@ open_target_directory(struct win32_apply_ctx *ctx)
 
 	/* Don't use FILE_OPEN_REPARSE_POINT here; we want the extraction to
 	 * happen at the directory "pointed to" by the reparse point. */
-	status = (*func_NtCreateFile)(&ctx->h_target,
-				      FILE_TRAVERSE,
-				      &ctx->attr,
-				      &ctx->iosb,
-				      NULL,
-				      0,
-				      FILE_SHARE_VALID_FLAGS,
-				      FILE_OPEN_IF,
-				      FILE_DIRECTORY_FILE |
-					      FILE_OPEN_FOR_BACKUP_INTENT,
-				      NULL,
-				      0);
+	status = NtCreateFile(&ctx->h_target,
+			      FILE_TRAVERSE,
+			      &ctx->attr,
+			      &ctx->iosb,
+			      NULL,
+			      0,
+			      FILE_SHARE_VALID_FLAGS,
+			      FILE_OPEN_IF,
+				FILE_DIRECTORY_FILE |
+				FILE_OPEN_FOR_BACKUP_INTENT,
+			      NULL,
+			      0);
 	if (!NT_SUCCESS(status)) {
 		winnt_error(status, L"Can't open or create directory \"%ls\"",
 			    ctx->common.target);
@@ -1021,7 +1021,7 @@ static void
 close_target_directory(struct win32_apply_ctx *ctx)
 {
 	if (ctx->h_target) {
-		(*func_NtClose)(ctx->h_target);
+		NtClose(ctx->h_target);
 		ctx->h_target = NULL;
 		ctx->attr.RootDirectory = NULL;
 	}
@@ -1104,9 +1104,8 @@ adjust_compression_attribute(HANDLE h, const struct wim_dentry *dentry,
 
 
 	/* Get current attributes  */
-	status = (*func_NtQueryInformationFile)(h, &ctx->iosb,
-						&info, sizeof(info),
-						FileBasicInformation);
+	status = NtQueryInformationFile(h, &ctx->iosb, &info, sizeof(info),
+					FileBasicInformation);
 	if (NT_SUCCESS(status) &&
 	    compressed == !!(info.FileAttributes & FILE_ATTRIBUTE_COMPRESSED))
 	{
@@ -1192,10 +1191,10 @@ remove_conflicting_short_name(const struct wim_dentry *dentry, struct win32_appl
 	ctx->pathbuf.Length = ((u8 *)end - (u8 *)ctx->pathbuf.Buffer);
 
 	/* Open the conflicting file (by short name).  */
-	status = (*func_NtOpenFile)(&h, GENERIC_WRITE | DELETE,
-				    &ctx->attr, &ctx->iosb,
-				    FILE_SHARE_VALID_FLAGS,
-				    FILE_OPEN_REPARSE_POINT | FILE_OPEN_FOR_BACKUP_INTENT);
+	status = NtOpenFile(&h, GENERIC_WRITE | DELETE,
+			    &ctx->attr, &ctx->iosb,
+			    FILE_SHARE_VALID_FLAGS,
+			    FILE_OPEN_REPARSE_POINT | FILE_OPEN_FOR_BACKUP_INTENT);
 	if (!NT_SUCCESS(status)) {
 		winnt_warning(status, L"Can't open \"%ls\"", current_path(ctx));
 		goto out;
@@ -1209,8 +1208,8 @@ remove_conflicting_short_name(const struct wim_dentry *dentry, struct win32_appl
 	/* Try to remove the short name on the conflicting file.  */
 
 retry:
-	status = (*func_NtSetInformationFile)(h, &ctx->iosb, info, bufsize,
-					      FileShortNameInformation);
+	status = NtSetInformationFile(h, &ctx->iosb, info, bufsize,
+				      FileShortNameInformation);
 
 	if (status == STATUS_INVALID_PARAMETER && !retried) {
 
@@ -1228,7 +1227,7 @@ retry:
 		retried = true;
 		goto retry;
 	}
-	(*func_NtClose)(h);
+	NtClose(h);
 out:
 	build_extraction_path(dentry, ctx);
 	return status;
@@ -1278,8 +1277,8 @@ set_short_name(HANDLE h, const struct wim_dentry *dentry,
 	memcpy(info->FileName, dentry->d_short_name, dentry->d_short_name_nbytes);
 
 retry:
-	status = (*func_NtSetInformationFile)(h, &ctx->iosb, info, bufsize,
-					      FileShortNameInformation);
+	status = NtSetInformationFile(h, &ctx->iosb, info, bufsize,
+				      FileShortNameInformation);
 	if (NT_SUCCESS(status))
 		return 0;
 
@@ -1356,19 +1355,19 @@ do_create_file(PHANDLE FileHandle,
 	       ULONG CreateOptions,
 	       struct win32_apply_ctx *ctx)
 {
-	return (*func_NtCreateFile)(FileHandle,
-				    DesiredAccess | SYNCHRONIZE,
-				    &ctx->attr,
-				    &ctx->iosb,
-				    AllocationSize,
-				    FileAttributes,
-				    FILE_SHARE_VALID_FLAGS,
-				    CreateDisposition,
-				    CreateOptions |
-					FILE_OPEN_FOR_BACKUP_INTENT |
-					FILE_OPEN_REPARSE_POINT,
-				    NULL,
-				    0);
+	return NtCreateFile(FileHandle,
+			    DesiredAccess | SYNCHRONIZE,
+			    &ctx->attr,
+			    &ctx->iosb,
+			    AllocationSize,
+			    FileAttributes,
+			    FILE_SHARE_VALID_FLAGS,
+			    CreateDisposition,
+			    CreateOptions |
+				FILE_OPEN_FOR_BACKUP_INTENT |
+				FILE_OPEN_REPARSE_POINT,
+			    NULL,
+			    0);
 }
 
 /* Like do_create_file(), but builds the extraction path of the @dentry first.
@@ -1429,33 +1428,31 @@ retry:
 
 		FILE_BASIC_INFORMATION basic_info =
 			{ .FileAttributes = FILE_ATTRIBUTE_NORMAL };
-		status = (*func_NtSetInformationFile)(h, &ctx->iosb,
-						      &basic_info,
-						      sizeof(basic_info),
-						      FileBasicInformation);
+		status = NtSetInformationFile(h, &ctx->iosb, &basic_info,
+					      sizeof(basic_info),
+					      FileBasicInformation);
 
 		if (!NT_SUCCESS(status)) {
 			winnt_error(status, L"Can't reset attributes of \"%ls\" "
 				    "to prepare for deletion", current_path(ctx));
-			(*func_NtClose)(h);
+			NtClose(h);
 			return WIMLIB_ERR_SET_ATTRIBUTES;
 		}
 
 		FILE_DISPOSITION_INFORMATION disp_info =
 			{ .DoDeleteFile = TRUE };
-		status = (*func_NtSetInformationFile)(h, &ctx->iosb,
-						      &disp_info,
-						      sizeof(disp_info),
-						      FileDispositionInformation);
+		status = NtSetInformationFile(h, &ctx->iosb, &disp_info,
+					      sizeof(disp_info),
+					      FileDispositionInformation);
 		if (!NT_SUCCESS(status)) {
 			winnt_error(status, L"Can't set delete-on-close "
 				    "disposition on \"%ls\"", current_path(ctx));
-			(*func_NtClose)(h);
+			NtClose(h);
 			return WIMLIB_ERR_SET_ATTRIBUTES;
 		}
 	}
 
-	status = (*func_NtClose)(h);
+	status = NtClose(h);
 	if (unlikely(!NT_SUCCESS(status))) {
 		winnt_error(status, L"Error closing \"%ls\" after setting "
 			    "delete-on-close disposition", current_path(ctx));
@@ -1524,7 +1521,7 @@ do_set_reparse_point(const struct wim_dentry *dentry,
 
 	status = winnt_fsctl(h, FSCTL_SET_REPARSE_POINT,
 			     rpbuf, rpbuflen, NULL, 0, NULL);
-	(*func_NtClose)(h);
+	NtClose(h);
 
 	if (NT_SUCCESS(status))
 		return 0;
@@ -1598,7 +1595,7 @@ create_empty_streams(const struct wim_dentry *dentry,
 
 			if (ret)
 				return ret;
-			(*func_NtClose)(h);
+			NtClose(h);
 		}
 	}
 
@@ -1676,9 +1673,9 @@ retry:
 		if (!(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES)) {
 			FILE_BASIC_INFORMATION basic_info =
 				{ .FileAttributes = FILE_ATTRIBUTE_NORMAL };
-			(*func_NtSetInformationFile)(h, &ctx->iosb, &basic_info,
-						     sizeof(basic_info),
-						     FileBasicInformation);
+			NtSetInformationFile(h, &ctx->iosb, &basic_info,
+					     sizeof(basic_info),
+					     FileBasicInformation);
 		}
 
 		/* Also try to remove the directory's DACL.  This isn't supposed
@@ -1696,8 +1693,8 @@ retry:
 				.Sacl = 0,
 				.Dacl = 0,
 			};
-			(*func_NtSetSecurityObject)(h, DACL_SECURITY_INFORMATION,
-						    (void *)&desc);
+			NtSetSecurityObject(h, DACL_SECURITY_INFORMATION,
+					    (void *)&desc);
 		}
 	}
 
@@ -1709,7 +1706,7 @@ retry:
 
 	ret = adjust_compression_attribute(h, dentry, ctx);
 out:
-	(*func_NtClose)(h);
+	NtClose(h);
 	return ret;
 }
 
@@ -1784,7 +1781,7 @@ create_nondirectory_inode(HANDLE *h_ret, const struct wim_dentry *dentry,
 	return 0;
 
 out_close:
-	(*func_NtClose)(h);
+	NtClose(h);
 out:
 	return ret;
 }
@@ -1817,9 +1814,8 @@ create_link(HANDLE h, const struct wim_dentry *dentry,
 		 * STATUS_INFO_LENGTH_MISMATCH when FileNameLength
 		 * happens to be 2  */
 
-		status = (*func_NtSetInformationFile)(h, &ctx->iosb,
-						      info, bufsize,
-						      FileLinkInformation);
+		status = NtSetInformationFile(h, &ctx->iosb, info, bufsize,
+					      FileLinkInformation);
 		if (NT_SUCCESS(status))
 			return 0;
 		winnt_error(status, L"Failed to create link \"%ls\"",
@@ -1833,7 +1829,7 @@ create_link(HANDLE h, const struct wim_dentry *dentry,
 		if (ret)
 			return ret;
 
-		(*func_NtClose)(h2);
+		NtClose(h2);
 		return 0;
 	}
 }
@@ -1890,7 +1886,7 @@ create_nondirectory(struct wim_inode *inode, struct win32_apply_ctx *ctx)
 	if (!ret && unlikely(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT))
 		ret = set_backed_from_wim(h, inode, ctx);
 
-	(*func_NtClose)(h);
+	NtClose(h);
 	return ret;
 }
 
@@ -1925,7 +1921,7 @@ static void
 close_handles(struct win32_apply_ctx *ctx)
 {
 	for (unsigned i = 0; i < ctx->num_open_handles; i++)
-		(*func_NtClose)(ctx->open_handles[i]);
+		NtClose(ctx->open_handles[i]);
 }
 
 /* Prepare to read the next blob, which has size @blob_size, into an in-memory
@@ -2027,9 +2023,8 @@ begin_extract_blob_instance(const struct blob_descriptor *blob,
 
 	/* Allocate space for the data.  */
 	alloc_info.AllocationSize.QuadPart = blob->size;
-	(*func_NtSetInformationFile)(h, &ctx->iosb,
-				     &alloc_info, sizeof(alloc_info),
-				     FileAllocationInformation);
+	NtSetInformationFile(h, &ctx->iosb, &alloc_info, sizeof(alloc_info),
+			     FileAllocationInformation);
 	return 0;
 }
 
@@ -2318,10 +2313,10 @@ extract_chunk(const void *chunk, size_t size, void *_ctx)
 		while (bytes_remaining) {
 			ULONG count = min(0xFFFFFFFF, bytes_remaining);
 
-			status = (*func_NtWriteFile)(ctx->open_handles[i],
-						     NULL, NULL, NULL,
-						     &ctx->iosb, bufptr, count,
-						     NULL, NULL);
+			status = NtWriteFile(ctx->open_handles[i],
+					     NULL, NULL, NULL,
+					     &ctx->iosb, bufptr, count,
+					     NULL, NULL);
 			if (!NT_SUCCESS(status)) {
 				winnt_error(status, L"Error writing data to target volume");
 				return WIMLIB_ERR_WRITE;
@@ -2527,7 +2522,7 @@ retry:
 		}
 	}
 
-	(*func_NtClose)(h);
+	NtClose(h);
 	return status;
 }
 
@@ -2758,7 +2753,7 @@ set_security_descriptor(HANDLE h, const void *_desc,
 	 */
 
 retry:
-	status = (*func_NtSetSecurityObject)(h, info, desc);
+	status = NtSetSecurityObject(h, info, desc);
 	if (NT_SUCCESS(status))
 		goto out_maybe_free_desc;
 
@@ -2845,9 +2840,8 @@ do_apply_metadata_to_file(HANDLE h, const struct wim_inode *inode,
 			info.FileAttributes = FILE_ATTRIBUTE_NORMAL;
 	}
 
-	status = (*func_NtSetInformationFile)(h, &ctx->iosb,
-					      &info, sizeof(info),
-					      FileBasicInformation);
+	status = NtSetInformationFile(h, &ctx->iosb, &info, sizeof(info),
+				      FileBasicInformation);
 	/* On FAT volumes we get STATUS_INVALID_PARAMETER if we try to set
 	 * attributes on the root directory.  (Apparently because FAT doesn't
 	 * actually have a place to store those attributes!)  */
@@ -2905,7 +2899,7 @@ apply_metadata_to_file(const struct wim_dentry *dentry,
 
 	ret = do_apply_metadata_to_file(h, inode, ctx);
 
-	(*func_NtClose)(h);
+	NtClose(h);
 
 	return ret;
 }

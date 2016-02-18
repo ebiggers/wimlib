@@ -586,7 +586,7 @@ retry:
 
 			status = (*func_RtlCreateSystemVolumeInformationFolder)(&str);
 
-			err2 = (*func_RtlNtStatusToDosError)(status);
+			err2 = RtlNtStatusToDosError(status);
 			if (err2 == ERROR_SUCCESS) {
 				if (!already_retried) {
 					already_retried = true;

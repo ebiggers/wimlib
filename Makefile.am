@@ -173,9 +173,11 @@ libwim_la_SOURCES += src/wimboot.c			\
 		     include/wimlib/win32_common.h	\
 		     include/wimlib/win32_vss.h		\
 		     include/wimlib/wof.h
+PLATFORM_LIBS = -lmsvcrt -lntdll
 else
 libwim_la_SOURCES += src/unix_apply.c		\
 		     src/unix_capture.c
+PLATFORM_LIBS =
 endif
 
 libwim_la_CFLAGS =		\
@@ -195,7 +197,8 @@ libwim_la_LIBADD =		\
 	$(LIBNTFS_3G_LIBS)	\
 	$(LIBFUSE_LIBS)		\
 	$(LIBRT_LIBS)		\
-	$(LIBCRYPTO_LIBS)
+	$(LIBCRYPTO_LIBS)	\
+	$(PLATFORM_LIBS)
 
 if ENABLE_SSSE3_SHA1
 libwim_la_SOURCES += src/sha1-ssse3.asm

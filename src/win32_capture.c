@@ -269,8 +269,8 @@ winnt_openat(HANDLE cur_dir, const wchar_t *path, size_t path_nchars,
 		options |= FILE_SEQUENTIAL_ONLY;
 	}
 retry:
-	status = (*func_NtOpenFile)(h_ret, perms, &attr, &iosb,
-				    FILE_SHARE_VALID_FLAGS, options);
+	status = NtOpenFile(h_ret, perms, &attr, &iosb,
+			    FILE_SHARE_VALID_FLAGS, options);
 	if (!NT_SUCCESS(status)) {
 		/* Try requesting fewer permissions  */
 		if (status == STATUS_ACCESS_DENIED ||
@@ -332,14 +332,14 @@ read_winnt_stream_prefix(const struct windows_file *file,
 	u64 bytes_remaining;
 	int ret;
 
-	status = (*func_NtOpenFile)(&h, FILE_READ_DATA | SYNCHRONIZE,
-				    &attr, &iosb,
-				    FILE_SHARE_VALID_FLAGS,
-				    FILE_OPEN_REPARSE_POINT |
-					    FILE_OPEN_FOR_BACKUP_INTENT |
-					    FILE_SYNCHRONOUS_IO_NONALERT |
-					    FILE_SEQUENTIAL_ONLY |
-					    (file->is_file_id ? FILE_OPEN_BY_FILE_ID : 0));
+	status = NtOpenFile(&h, FILE_READ_DATA | SYNCHRONIZE,
+			    &attr, &iosb,
+			    FILE_SHARE_VALID_FLAGS,
+			    FILE_OPEN_REPARSE_POINT |
+				FILE_OPEN_FOR_BACKUP_INTENT |
+				FILE_SYNCHRONOUS_IO_NONALERT |
+				FILE_SEQUENTIAL_ONLY |
+				(file->is_file_id ? FILE_OPEN_BY_FILE_ID : 0));
 	if (unlikely(!NT_SUCCESS(status))) {
 		if (status == STATUS_SHARING_VIOLATION) {
 			ERROR("Can't open %ls for reading:\n"
@@ -365,8 +365,8 @@ read_winnt_stream_prefix(const struct windows_file *file,
 		count = min(sizeof(buf), bytes_remaining);
 
 	retry_read:
-		status = (*func_NtReadFile)(h, NULL, NULL, NULL,
-					    &iosb, buf, count, NULL, NULL);
+		status = NtReadFile(h, NULL, NULL, NULL,
+				    &iosb, buf, count, NULL, NULL);
 		if (unlikely(!NT_SUCCESS(status))) {
 			if (status == STATUS_END_OF_FILE) {
 				ERROR("%ls: File was concurrently truncated",
@@ -404,7 +404,7 @@ read_winnt_stream_prefix(const struct windows_file *file,
 		if (ret)
 			break;
 	}
-	(*func_NtClose)(h);
+	NtClose(h);
 	return ret;
 }
 
@@ -512,8 +512,8 @@ winnt_get_short_name(HANDLE h, struct wim_dentry *dentry)
 	u8 buf[128] _aligned_attribute(8);
 	const FILE_NAME_INFORMATION *info;
 
-	status = (*func_NtQueryInformationFile)(h, &iosb, buf, sizeof(buf),
-						FileAlternateNameInformation);
+	status = NtQueryInformationFile(h, &iosb, buf, sizeof(buf),
+					FileAlternateNameInformation);
 	info = (const FILE_NAME_INFORMATION *)buf;
 	if (NT_SUCCESS(status) && info->FileNameLength != 0) {
 		dentry->d_short_name = utf16le_dupz(info->FileName,
@@ -594,11 +594,11 @@ winnt_load_security_descriptor(HANDLE h, struct wim_inode *inode,
 	 * ntdll function and therefore not officially part of the Win32 API.
 	 * Oh well.
 	 */
-	while (!(NT_SUCCESS(status = (*func_NtQuerySecurityObject)(h,
-								   requestedInformation,
-								   (PSECURITY_DESCRIPTOR)buf,
-								   bufsize,
-								   &len_needed))))
+	while (!NT_SUCCESS(status = NtQuerySecurityObject(h,
+							  requestedInformation,
+							  (PSECURITY_DESCRIPTOR)buf,
+							  bufsize,
+							  &len_needed)))
 	{
 		switch (status) {
 		case STATUS_BUFFER_TOO_SMALL:
@@ -685,10 +685,10 @@ winnt_recurse_directory(HANDLE h,
 	/* Using NtQueryDirectoryFile() we can re-use the same open handle,
 	 * which we opened with FILE_FLAG_BACKUP_SEMANTICS.  */
 
-	while (NT_SUCCESS(status = (*func_NtQueryDirectoryFile)(h, NULL, NULL, NULL,
-								&iosb, buf, bufsize,
-								FileNamesInformation,
-								FALSE, NULL, FALSE)))
+	while (NT_SUCCESS(status = NtQueryDirectoryFile(h, NULL, NULL, NULL,
+							&iosb, buf, bufsize,
+							FileNamesInformation,
+							FALSE, NULL, FALSE)))
 	{
 		const FILE_NAMES_INFORMATION *info = buf;
 		for (;;) {
@@ -756,18 +756,17 @@ file_has_ino_and_dev(HANDLE h, u64 ino, u64 dev)
 	FILE_INTERNAL_INFORMATION int_info;
 	FILE_FS_VOLUME_INFORMATION vol_info;
 
-	status = (*func_NtQueryInformationFile)(h, &iosb,
-						&int_info, sizeof(int_info),
-						FileInternalInformation);
+	status = NtQueryInformationFile(h, &iosb, &int_info, sizeof(int_info),
+					FileInternalInformation);
 	if (!NT_SUCCESS(status))
 		return false;
 
 	if (int_info.IndexNumber.QuadPart != ino)
 		return false;
 
-	status = (*func_NtQueryVolumeInformationFile)(h, &iosb,
-						      &vol_info, sizeof(vol_info),
-						      FileFsVolumeInformation);
+	status = NtQueryVolumeInformationFile(h, &iosb,
+					      &vol_info, sizeof(vol_info),
+					      FileFsVolumeInformation);
 	if (!(NT_SUCCESS(status) || status == STATUS_BUFFER_OVERFLOW))
 		return false;
 
@@ -839,17 +838,17 @@ winnt_relativize_link_target(const wchar_t *target, size_t target_nbytes,
 		name.MaximumLength = name.Length;
 
 		/* Try opening the file  */
-		status = (*func_NtOpenFile) (&h,
-					     FILE_READ_ATTRIBUTES | FILE_TRAVERSE,
-					     &attr,
-					     &iosb,
-					     FILE_SHARE_VALID_FLAGS,
-					     FILE_OPEN_FOR_BACKUP_INTENT);
+		status = NtOpenFile(&h,
+				    FILE_READ_ATTRIBUTES | FILE_TRAVERSE,
+				    &attr,
+				    &iosb,
+				    FILE_SHARE_VALID_FLAGS,
+				    FILE_OPEN_FOR_BACKUP_INTENT);
 
 		if (NT_SUCCESS(status)) {
 			/* Reset root directory  */
 			if (attr.RootDirectory)
-				(*func_NtClose)(attr.RootDirectory);
+				NtClose(attr.RootDirectory);
 			attr.RootDirectory = h;
 			name.Buffer = (wchar_t *)p;
 			name.Length = 0;
@@ -863,7 +862,7 @@ winnt_relativize_link_target(const wchar_t *target, size_t target_nbytes,
 
 out_close_root_dir:
 	if (attr.RootDirectory)
-		(*func_NtClose)(attr.RootDirectory);
+		NtClose(attr.RootDirectory);
 	while (p > target && *(p - 1) == L'\\')
 		p--;
 	return p;
@@ -1197,11 +1196,11 @@ winnt_scan_data_streams(HANDLE h, const wchar_t *path, size_t path_nchars,
 		goto unnamed_only;
 
 	/* Get a buffer containing the stream information.  */
-	while (!NT_SUCCESS(status = (*func_NtQueryInformationFile)(h,
-								   &iosb,
-								   buf,
-								   bufsize,
-								   FileStreamInformation)))
+	while (!NT_SUCCESS(status = NtQueryInformationFile(h,
+							   &iosb,
+							   buf,
+							   bufsize,
+							   FileStreamInformation)))
 	{
 
 		switch (status) {
@@ -1486,9 +1485,8 @@ get_file_info(HANDLE h, struct file_info *info)
 	NTSTATUS status;
 	FILE_ALL_INFORMATION all_info;
 
-	status = (*func_NtQueryInformationFile)(h, &iosb, &all_info,
-						sizeof(all_info),
-						FileAllInformation);
+	status = NtQueryInformationFile(h, &iosb, &all_info, sizeof(all_info),
+					FileAllInformation);
 
 	if (unlikely(!NT_SUCCESS(status) && status != STATUS_BUFFER_OVERFLOW))
 		return status;
@@ -1515,9 +1513,9 @@ get_volume_information(HANDLE h, const wchar_t *full_path,
 	NTSTATUS status;
 
 	/* Get volume flags  */
-	status = (*func_NtQueryVolumeInformationFile)(h, &iosb, attr_info,
-						      sizeof(_attr_info),
-						      FileFsAttributeInformation);
+	status = NtQueryVolumeInformationFile(h, &iosb, attr_info,
+					      sizeof(_attr_info),
+					      FileFsAttributeInformation);
 	if (NT_SUCCESS(status)) {
 		ctx->vol_flags = attr_info->FileSystemAttributes;
 		ctx->is_ntfs = (attr_info->FileSystemNameLength == 4 * sizeof(wchar_t)) &&
@@ -1528,9 +1526,9 @@ get_volume_information(HANDLE h, const wchar_t *full_path,
 	}
 
 	/* Get volume ID.  */
-	status = (*func_NtQueryVolumeInformationFile)(h, &iosb, &vol_info,
-						      sizeof(vol_info),
-						      FileFsVolumeInformation);
+	status = NtQueryVolumeInformationFile(h, &iosb, &vol_info,
+					      sizeof(vol_info),
+					      FileFsVolumeInformation);
 	if ((NT_SUCCESS(status) || status == STATUS_BUFFER_OVERFLOW) &&
 	    (iosb.Information >= offsetof(FILE_FS_VOLUME_INFORMATION,
 					  VolumeSerialNumber) +
@@ -1693,7 +1691,7 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 		 * ERROR_SHARING_VIOLATION if there are any open handles to the
 		 * file, we have to close the file and re-open it later if
 		 * needed.  */
-		(*func_NtClose)(h);
+		NtClose(h);
 		h = NULL;
 		ret = winnt_scan_efsrpc_raw_data(inode, full_path,
 						 full_path_nchars, ctx);
@@ -1734,7 +1732,7 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 
 		/* Re-open the directory with FILE_LIST_DIRECTORY access.  */
 		if (h) {
-			(*func_NtClose)(h);
+			NtClose(h);
 			h = NULL;
 		}
 		status = winnt_openat(cur_dir, relative_path,
@@ -1763,7 +1761,7 @@ out_progress:
 		ret = do_capture_progress(ctx->params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
 out:
 	if (likely(h))
-		(*func_NtClose)(h);
+		NtClose(h);
 	if (unlikely(ret)) {
 		free_dentry_tree(root, ctx->params->blob_table);
 		root = NULL;
@@ -2400,7 +2398,7 @@ load_files_from_mft(const wchar_t *path, struct ntfs_inode_map *inode_map)
 	ret = 0;
 out:
 	FREE(out);
-	(*func_NtClose)(h);
+	NtClose(h);
 	return ret;
 }
 
@@ -2631,7 +2629,7 @@ generate_wim_structures_recursive(struct wim_dentry **root_ret,
 				goto out;
 			}
 			ret = winnt_load_security_descriptor(h, inode, path, ctx);
-			(*func_NtClose)(h);
+			NtClose(h);
 			if (ret)
 				goto out;
 
@@ -2848,7 +2846,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 
 	get_volume_information(h, path, &ctx);
 
-	(*func_NtClose)(h);
+	NtClose(h);
 
 #ifdef ENABLE_FAST_MFT_SCAN
 	if (ctx.is_ntfs && !_wgetenv(L"WIMLIB_DISABLE_QUERY_FILE_LAYOUT")) {

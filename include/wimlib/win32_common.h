@@ -13,97 +13,11 @@
 #ifdef ERROR
 #  undef ERROR
 #endif
-#include "wimlib/types.h"
 #include "wimlib/win32.h"
 
-/* ntdll functions  */
+/* ntdll definitions */
 
-extern NTSTATUS (WINAPI *func_NtCreateFile)(PHANDLE FileHandle,
-					    ACCESS_MASK DesiredAccess,
-					    POBJECT_ATTRIBUTES ObjectAttributes,
-					    PIO_STATUS_BLOCK IoStatusBlock,
-					    PLARGE_INTEGER AllocationSize,
-					    ULONG FileAttributes,
-					    ULONG ShareAccess,
-					    ULONG CreateDisposition,
-					    ULONG CreateOptions,
-					    PVOID EaBuffer,
-					    ULONG EaLength);
-
-#ifndef FILE_OPENED
-#  define FILE_OPENED 0x00000001
-#endif
-
-extern NTSTATUS (WINAPI *func_NtOpenFile) (PHANDLE FileHandle,
-					   ACCESS_MASK DesiredAccess,
-					   POBJECT_ATTRIBUTES ObjectAttributes,
-					   PIO_STATUS_BLOCK IoStatusBlock,
-					   ULONG ShareAccess,
-					   ULONG OpenOptions);
-
-extern NTSTATUS (WINAPI *func_NtReadFile) (HANDLE FileHandle,
-					   HANDLE Event,
-					   PIO_APC_ROUTINE ApcRoutine,
-					   PVOID ApcContext,
-					   PIO_STATUS_BLOCK IoStatusBlock,
-					   PVOID Buffer,
-					   ULONG Length,
-					   PLARGE_INTEGER ByteOffset,
-					   PULONG Key);
-
-extern NTSTATUS (WINAPI *func_NtWriteFile) (HANDLE FileHandle,
-					    HANDLE Event,
-					    PIO_APC_ROUTINE ApcRoutine,
-					    PVOID ApcContext,
-					    PIO_STATUS_BLOCK IoStatusBlock,
-					    PVOID Buffer,
-					    ULONG Length,
-					    PLARGE_INTEGER ByteOffset,
-					    PULONG Key);
-
-extern NTSTATUS (WINAPI *func_NtQueryInformationFile)(HANDLE FileHandle,
-						      PIO_STATUS_BLOCK IoStatusBlock,
-						      PVOID FileInformation,
-						      ULONG Length,
-						      FILE_INFORMATION_CLASS FileInformationClass);
-
-extern NTSTATUS (WINAPI *func_NtQuerySecurityObject)(HANDLE handle,
-						     SECURITY_INFORMATION SecurityInformation,
-						     PSECURITY_DESCRIPTOR SecurityDescriptor,
-						     ULONG Length,
-						     PULONG LengthNeeded);
-
-extern NTSTATUS (WINAPI *func_NtQueryDirectoryFile) (HANDLE FileHandle,
-						     HANDLE Event,
-						     PIO_APC_ROUTINE ApcRoutine,
-						     PVOID ApcContext,
-						     PIO_STATUS_BLOCK IoStatusBlock,
-						     PVOID FileInformation,
-						     ULONG Length,
-						     FILE_INFORMATION_CLASS FileInformationClass,
-						     BOOLEAN ReturnSingleEntry,
-						     PUNICODE_STRING FileName,
-						     BOOLEAN RestartScan);
-
-extern NTSTATUS (WINAPI *func_NtQueryVolumeInformationFile) (HANDLE FileHandle,
-							     PIO_STATUS_BLOCK IoStatusBlock,
-							     PVOID FsInformation,
-							     ULONG Length,
-							     FS_INFORMATION_CLASS FsInformationClass);
-
-extern NTSTATUS (WINAPI *func_NtSetInformationFile)(HANDLE FileHandle,
-						    PIO_STATUS_BLOCK IoStatusBlock,
-						    PVOID FileInformation,
-						    ULONG Length,
-						    FILE_INFORMATION_CLASS FileInformationClass);
-
-extern NTSTATUS (WINAPI *func_NtSetSecurityObject)(HANDLE Handle,
-						   SECURITY_INFORMATION SecurityInformation,
-						   PSECURITY_DESCRIPTOR SecurityDescriptor);
-
-extern NTSTATUS (WINAPI *func_NtClose) (HANDLE Handle);
-
-extern DWORD (WINAPI *func_RtlNtStatusToDosError)(NTSTATUS status);
+#define FILE_OPENED 0x00000001
 
 typedef struct _RTLP_CURDIR_REF {
 	LONG RefCount;
@@ -116,21 +30,6 @@ typedef struct _RTL_RELATIVE_NAME_U {
 	PRTLP_CURDIR_REF CurDirRef;
 } RTL_RELATIVE_NAME_U, *PRTL_RELATIVE_NAME_U;
 
-extern BOOLEAN (WINAPI *func_RtlDosPathNameToNtPathName_U)
-		(IN PCWSTR DosName,
-		 OUT PUNICODE_STRING NtName,
-		 OUT PCWSTR *PartName,
-		 OUT PRTL_RELATIVE_NAME_U RelativeName);
-
-extern NTSTATUS (WINAPI *func_RtlDosPathNameToNtPathName_U_WithStatus)
-		(IN PCWSTR DosName,
-		 OUT PUNICODE_STRING NtName,
-		 OUT PCWSTR *PartName,
-		 OUT PRTL_RELATIVE_NAME_U RelativeName);
-
-extern NTSTATUS (WINAPI *func_RtlCreateSystemVolumeInformationFolder)
-			(PCUNICODE_STRING VolumeRootPath);
-
 #define FSCTL_SET_PERSISTENT_VOLUME_STATE 0x90238
 
 #define PERSISTENT_VOLUME_STATE_SHORT_NAME_CREATION_DISABLED 0x00000001
@@ -141,6 +40,73 @@ typedef struct _FILE_FS_PERSISTENT_VOLUME_INFORMATION {
 	ULONG Version;
 	ULONG Reserved;
 } FILE_FS_PERSISTENT_VOLUME_INFORMATION, *PFILE_FS_PERSISTENT_VOLUME_INFORMATION;
+
+/* ntdll functions  */
+
+NTSTATUS
+NTAPI
+NtReadFile(IN HANDLE FileHandle,
+           IN HANDLE Event OPTIONAL,
+           IN PIO_APC_ROUTINE ApcRoutine OPTIONAL,
+           IN PVOID ApcContext OPTIONAL,
+           OUT PIO_STATUS_BLOCK IoStatusBlock,
+           OUT PVOID Buffer,
+           IN ULONG Length,
+           IN PLARGE_INTEGER ByteOffset OPTIONAL,
+           IN PULONG Key OPTIONAL);
+
+NTSTATUS
+NTAPI
+NtWriteFile(IN HANDLE FileHandle,
+            IN HANDLE Event OPTIONAL,
+            IN PIO_APC_ROUTINE ApcRoutine OPTIONAL,
+            IN PVOID ApcContext OPTIONAL,
+            OUT PIO_STATUS_BLOCK IoStatusBlock,
+            IN PVOID Buffer,
+            IN ULONG Length,
+            IN PLARGE_INTEGER ByteOffset OPTIONAL,
+            IN PULONG Key OPTIONAL);
+
+NTSTATUS
+NTAPI
+NtQueryDirectoryFile(IN HANDLE FileHandle,
+                     IN HANDLE EventHandle OPTIONAL,
+                     IN PIO_APC_ROUTINE ApcRoutine OPTIONAL,
+                     IN PVOID ApcContext OPTIONAL,
+                     OUT PIO_STATUS_BLOCK IoStatusBlock,
+                     OUT PVOID FileInformation,
+                     IN ULONG Length,
+                     IN FILE_INFORMATION_CLASS FileInformationClass,
+                     IN BOOLEAN ReturnSingleEntry,
+                     IN PUNICODE_STRING FileName OPTIONAL,
+                     IN BOOLEAN RestartScan);
+
+NTSTATUS
+NTAPI
+NtQuerySecurityObject(IN HANDLE Handle,
+                      IN SECURITY_INFORMATION SecurityInformation,
+                      OUT PSECURITY_DESCRIPTOR SecurityDescriptor,
+                      IN ULONG Length,
+                      OUT PULONG ResultLength);
+
+NTSTATUS
+NTAPI
+NtSetSecurityObject(IN HANDLE Handle,
+                    IN SECURITY_INFORMATION SecurityInformation,
+                    IN PSECURITY_DESCRIPTOR SecurityDescriptor);
+
+/* Dynamically loaded ntdll functions */
+
+extern NTSTATUS (WINAPI *func_RtlDosPathNameToNtPathName_U_WithStatus)
+		(IN PCWSTR DosName,
+		 OUT PUNICODE_STRING NtName,
+		 OUT PCWSTR *PartName,
+		 OUT PRTL_RELATIVE_NAME_U RelativeName);
+
+extern NTSTATUS (WINAPI *func_RtlCreateSystemVolumeInformationFolder)
+			(PCUNICODE_STRING VolumeRootPath);
+
+/* Other utility functions */
 
 extern int
 win32_path_to_nt_path(const wchar_t *win32_path, UNICODE_STRING *nt_path);
