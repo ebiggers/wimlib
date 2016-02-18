@@ -1,21 +1,29 @@
 Version 1.9.1-BETA:
+	Added support for object IDs, which are a type of metadata sometimes
+	present on NTFS filesystems.  They are used by some Windows software,
+	such as the Distributed Link Tracking Service.  Object IDs are now
+	captured and applied both in NTFS-3g mode and on Windows when supported
+	by the filesystem.
+
 	Reduced memory usage when exporting large numbers of WIM images.
 
 	Made some minor build-related updates.  Notably, enabled "silent" make
 	rules; this makes the output cleaner when building from source.
 
-	Some minor Windows-specific updates:
+	Some Windows-specific updates:
 		Fixed a bug where duplicate backslashes could be generated in
 		link targets when extracting symbolic links and junctions.
+
+		Fixed a bug where the .cmd shortcuts for wimlib-imagex would not
+		work if their full path contained a space.
+
+		Fixed bugs when capturing a WIM image from a SMB filesystem.
+
+		Added warning message about known issue with WindowsApps folder.
 
 		Added instructions for building from source on Windows.
 
 		VSS support is no longer marked "experimental".
-
-		wimlib now issues an appropriate error message if a known
-		problem with the WindowsApps directory is encountered.
-
-		wimlib now automatically retries some read requests.
 
 Version 1.9.0:
 	Added experimental support for Windows VSS (Volume Shadow Copy Service).
