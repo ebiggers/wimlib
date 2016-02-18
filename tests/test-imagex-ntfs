@@ -213,6 +213,12 @@ msg "file with security descriptor"
 do_test 'touch file;
 	 setfattr -n system.ntfs_acl -v 0s`cat $srcdir/tests/security_descriptor_1.base64` file'
 
+msg "file with object ID"
+do_test 'touch file;
+	 touch file2;
+	 setfattr -n system.ntfs_object_id -v 0x15ac83a36dc6cf8ec459b8017dd8626f file
+	 setfattr -n system.ntfs_object_id -v 0xf67394c12b17608e1d050d181ba8ffd27df80cbdf620f4c82c79b9e6799147b697621aff72915ade05abb96b15dea1a3e0bda4caa9e33cfd461c92c16be9713d file2'
+
 msg "files with different security descriptors"
 do_test 'touch file;
 	 touch file2;

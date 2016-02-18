@@ -53,6 +53,7 @@
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/metadata.h"
+#include "wimlib/object_id.h"
 #include "wimlib/pathlist.h"
 #include "wimlib/paths.h"
 #include "wimlib/pattern.h"
@@ -1162,6 +1163,8 @@ inode_tally_features(const struct wim_inode *inode,
 		features->security_descriptors++;
 	if (inode_has_unix_data(inode))
 		features->unix_data++;
+	if (inode_has_object_id(inode))
+		features->object_ids++;
 }
 
 /* Tally features necessary to extract a dentry and the corresponding inode.  */
@@ -1312,6 +1315,12 @@ do_feature_check(const struct wim_features *required_features,
 	{
 		WARNING("Ignoring UNIX metadata of %lu files",
 			required_features->unix_data);
+	}
+
+	/* Object IDs.  */
+	if (required_features->object_ids && !supported_features->object_ids) {
+		WARNING("Ignoring object IDs of %lu files",
+			required_features->object_ids);
 	}
 
 	/* DOS Names.  */

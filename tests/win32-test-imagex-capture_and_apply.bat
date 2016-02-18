@@ -490,6 +490,23 @@ mklink /h link file > nul
 call :do_test
 if %errorlevel% neq 0 goto :fail
 
+REM Note: since object IDs must be unique per filesystem, we can't expect them
+REM to preserved using our testing scheme.  Therefore, win32-tree-cmp doesn't
+REM compare them, and the below tests really just ensure the object ID code is
+REM run to some extent.
+
+call :msg "file with object ID"
+echo hello > file
+fsutil objectid create file > nul
+call :do_test
+if %errorlevel% neq 0 goto :fail
+
+call :msg "directory with object ID"
+md subdir
+fsutil objectid set f67394c12b17608e1d050d181ba8ffd2 7df80cbdf620f4c82c79b9e6799147b6 97621aff72915ade05abb96b15dea1a3 e0bda4caa9e33cfd461c92c16be9713d subdir
+call :do_test
+if %errorlevel% neq 0 goto :fail
+
 :rpfix_tests
 
 echo Testing rpfix junction

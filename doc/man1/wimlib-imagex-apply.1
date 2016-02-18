@@ -118,6 +118,8 @@ DOS/Windows file attribute flags.
 .IP \[bu]
 All names of all files, including names in the Win32 namespace, DOS namespace,
 Win32+DOS namespace, and POSIX namespace.  This includes hard links.
+.IP \[bu]
+Object IDs.
 .PP
 However, there are also several known limitations of the NTFS volume extraction
 mode:
@@ -181,7 +183,9 @@ supported by the filesystem.
 DOS names (8.3) names of files; however, the failure to set them is not
 considered an error condition.
 .IP \[bu]
-Hard links, if supported by the filesystem.
+Hard links, if supported by the target filesystem.
+.IP \[bu]
+Object IDs, if supported by the target filesystem.
 .PP
 Additional notes about extracting files on Windows:
 .IP \[bu] 4

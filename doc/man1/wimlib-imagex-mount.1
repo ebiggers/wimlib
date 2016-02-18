@@ -58,6 +58,9 @@ Windows file attributes.  These are not exposed in the mounted filesystem,
 although existing values will be preserved on commit.  New files are assigned
 default attributes based on the UNIX file mode bits.
 .IP \[bu]
+Object IDs.  These are not exposed in the mounted filesystem, although existing
+values will be preserved on commit.  New files are not given object IDs.
+.IP \[bu]
 EFS-encrypted files.  The files themselves will be visible in mounted WIM images
 but their data will not be available.
 .SH SPLIT WIMS

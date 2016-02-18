@@ -35,6 +35,7 @@
 #include "wimlib/encoding.h"
 #include "wimlib/error.h"
 #include "wimlib/metadata.h"
+#include "wimlib/object_id.h"
 #include "wimlib/paths.h"
 #include "wimlib/pattern.h"
 #include "wimlib/reparse.h"
@@ -157,6 +158,9 @@ struct win32_apply_ctx {
 	 * list only; it does not include matches with patterns in
 	 * [PrepopulateList].  */
 	unsigned long num_system_compression_exclusions;
+
+	/* Number of files for which we couldn't set the object ID.  */
+	unsigned long num_object_id_failures;
 
 	/* The Windows build number of the image being applied, or 0 if unknown.
 	 */
@@ -298,6 +302,9 @@ win32_get_supported_features(const wchar_t *target,
 
 	if (short_names_supported)
 		supported_features->short_names = 1;
+
+	if (vol_flags & FILE_SUPPORTS_OBJECT_IDS)
+		supported_features->object_ids = 1;
 
 	supported_features->timestamps = 1;
 
@@ -2660,6 +2667,46 @@ end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
 	 FILE_ATTRIBUTE_SPARSE_FILE	|	\
 	 FILE_ATTRIBUTE_COMPRESSED)
 
+static void
+set_object_id(HANDLE h, const struct wim_inode *inode,
+	      struct win32_apply_ctx *ctx)
+{
+	const void *object_id;
+	u32 len;
+	NTSTATUS status;
+
+	if (!ctx->common.supported_features.object_ids)
+		return;
+
+	object_id = inode_get_object_id(inode, &len);
+	if (likely(object_id == NULL))  /* No object ID?  */
+		return;
+
+	status = winnt_fsctl(h, FSCTL_SET_OBJECT_ID,
+			     object_id, len, NULL, 0, NULL);
+	if (NT_SUCCESS(status))
+		return;
+
+	/* Object IDs must be unique within the filesystem.  A duplicate might
+	 * occur if an image containing object IDs is applied twice to the same
+	 * filesystem.  Arguably, the user should be warned in this case; but
+	 * the reality seems to be that nothing important cares about object IDs
+	 * except the Distributed Link Tracking Service... so for now these
+	 * failures are just ignored.  */
+	if (status == STATUS_DUPLICATE_NAME ||
+	    status == STATUS_OBJECT_NAME_COLLISION)
+		return;
+
+	ctx->num_object_id_failures++;
+	if (ctx->num_object_id_failures < 10) {
+		winnt_warning(status, L"Can't set object ID on \"%ls\"",
+			      current_path(ctx));
+	} else if (ctx->num_object_id_failures == 10) {
+		WARNING("Suppressing further warnings about failure to set "
+			"object IDs.");
+	}
+}
+
 /* Set the security descriptor @desc, of @desc_size bytes, on the file with open
  * handle @h.  */
 static NTSTATUS
@@ -2804,7 +2851,12 @@ do_apply_metadata_to_file(HANDLE h, const struct wim_inode *inode,
 	FILE_BASIC_INFORMATION info;
 	NTSTATUS status;
 
-	/* Set security descriptor if present and not in NO_ACLS mode  */
+	/* Set the file's object ID if present and object IDs are supported by
+	 * the filesystem.  */
+	set_object_id(h, inode, ctx);
+
+	/* Set the file's security descriptor if present and we're not in
+	 * NO_ACLS mode  */
 	if (inode_has_security_descriptor(inode) &&
 	    !(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS))
 	{

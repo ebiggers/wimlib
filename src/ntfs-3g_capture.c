@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers
+ * Copyright (C) 2012-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -31,6 +31,7 @@
 #include <errno.h>
 
 #include <ntfs-3g/attrib.h>
+#include <ntfs-3g/object_id.h>
 #include <ntfs-3g/reparse.h>
 #include <ntfs-3g/security.h>
 #include <ntfs-3g/volume.h>
@@ -44,6 +45,7 @@
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/ntfs_3g.h"
+#include "wimlib/object_id.h"
 #include "wimlib/paths.h"
 #include "wimlib/reparse.h"
 #include "wimlib/security.h"
@@ -436,6 +438,22 @@ out_put_actx:
 	return ret;
 }
 
+static noinline_for_stack int
+load_object_id(ntfs_inode *ni, struct wim_inode *inode)
+{
+	OBJECT_ID_ATTR attr;
+	int len;
+
+	len = ntfs_get_ntfs_object_id(ni, (char *)&attr, sizeof(attr));
+	if (likely(len == -ENODATA || len == 0))
+		return 0;
+	if (len < 0)
+		return WIMLIB_ERR_NTFS_3G;
+	if (!inode_set_object_id(inode, &attr, len))
+		return WIMLIB_ERR_NOMEM;
+	return 0;
+}
+
 /* Load the security descriptor of an NTFS inode into the corresponding WIM
  * inode and the WIM image's security descriptor set.  */
 static noinline_for_stack int
@@ -774,6 +792,13 @@ ntfs_3g_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 						volume, AT_REPARSE_POINT);
 		if (ret)
 			goto out;
+	}
+
+	/* Load the object ID.  */
+	ret = load_object_id(ni, inode);
+	if (ret) {
+		ERROR_WITH_ERRNO("Error reading object ID of \"%s\"", path);
+		goto out;
 	}
 
 	/* Scan the data streams.

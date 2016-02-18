@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2014 Eric Biggers
+ * Copyright (C) 2014-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -28,10 +28,11 @@
 
 #include "wimlib/endianness.h"
 #include "wimlib/inode.h"
+#include "wimlib/object_id.h"
 #include "wimlib/types.h"
 #include "wimlib/unix_data.h"
 
-/* Used by the Microsoft implementation.  */
+/* Object ID tag; this is also used by the Microsoft implementation.  */
 #define TAG_OBJECT_ID		0x00000001
 
 /* Random number that we'll use for tagging our UNIX data items.  */
@@ -50,6 +51,10 @@ struct tagged_item_header {
 	/* Variable length data  */
 	u8 data[];
 };
+
+/* Unconfirmed: are all 64 bytes of the object ID always present?  Since NTFS-3g
+ * permits shorter object IDs, we'll do the same for now.  */
+#define OBJECT_ID_MIN_LENGTH	16
 
 struct object_id_disk {
 	u8 object_id[16];
@@ -71,7 +76,7 @@ struct wimlib_unix_data_disk {
  * NULL.  */
 static void *
 inode_get_tagged_item(const struct wim_inode *inode,
-		      u32 desired_tag, u32 min_data_len)
+		      u32 desired_tag, u32 min_data_len, u32 *actual_len_ret)
 {
 	size_t minlen_with_hdr = sizeof(struct tagged_item_header) + min_data_len;
 	size_t len_remaining;
@@ -98,8 +103,11 @@ inode_get_tagged_item(const struct wim_inode *inode,
 			return NULL;
 
 		/* Matches the item we wanted?  */
-		if (tag == desired_tag && len >= min_data_len)
+		if (tag == desired_tag && len >= min_data_len) {
+			if (actual_len_ret)
+				*actual_len_ret = len;
 			return hdr->data;
+		}
 
 		len_remaining -= sizeof(struct tagged_item_header) + len;
 		p += sizeof(struct tagged_item_header) + len;
@@ -145,7 +153,8 @@ static inline struct wimlib_unix_data_disk *
 inode_get_unix_data_disk(const struct wim_inode *inode)
 {
 	return inode_get_tagged_item(inode, TAG_WIMLIB_UNIX_DATA,
-				     sizeof(struct wimlib_unix_data_disk));
+				     sizeof(struct wimlib_unix_data_disk),
+				     NULL);
 }
 
 static inline struct wimlib_unix_data_disk *
@@ -214,5 +223,37 @@ inode_set_unix_data(struct wim_inode *inode, struct wimlib_unix_data *unix_data,
 		p->mode = cpu_to_le32(unix_data->mode);
 	if (which & UNIX_DATA_RDEV)
 		p->rdev = cpu_to_le32(unix_data->rdev);
+	return true;
+}
+
+/* Return %true iff the specified inode has an object ID.  */
+bool
+inode_has_object_id(const struct wim_inode *inode)
+{
+	return inode_get_object_id(inode, NULL) != NULL;
+}
+
+/* Retrieve a pointer to the object ID of the specified inode and write its
+ * length to @len_ret.  Return NULL if the inode does not have an object ID.  */
+const void *
+inode_get_object_id(const struct wim_inode *inode, u32 *len_ret)
+{
+	return inode_get_tagged_item(inode, TAG_OBJECT_ID,
+				     OBJECT_ID_MIN_LENGTH, len_ret);
+}
+
+/* Set the inode's object ID to the value specified by @object_id and @len.
+ * Assumes the inode didn't already have an object ID set.  Returns %true if
+ * successful, %false if failed (out of memory).  */
+bool
+inode_set_object_id(struct wim_inode *inode, const void *object_id, u32 len)
+{
+	void *p;
+
+	p = inode_add_tagged_item(inode, TAG_OBJECT_ID, len);
+	if (!p)
+		return false;
+
+	memcpy(p, object_id, len);
 	return true;
 }

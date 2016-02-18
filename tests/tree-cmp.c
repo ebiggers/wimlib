@@ -280,6 +280,7 @@ static void special_cmp(const char *file1, const char *file2)
 	cmp_xattr(file1, file2, "system.ntfs_acl", 0, false);
 	cmp_xattr(file1, file2, "system.ntfs_attrib", 0, false);
 	cmp_xattr(file1, file2, "system.ntfs_dos_name", 0, true);
+	cmp_xattr(file1, file2, "system.ntfs_object_id", 64, true);
 	cmp_xattr(file1, file2, "system.ntfs_reparse_data", 0, true);
 	cmp_xattr(file1, file2, "system.ntfs_times", 16, false);
 	cmp_ads(file1, file2);

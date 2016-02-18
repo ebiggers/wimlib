@@ -3,14 +3,14 @@
  *
  * Apply a WIM image directly to an NTFS volume using libntfs-3g.  Restore as
  * much information as possible, including security data, file attributes, DOS
- * names, and alternate data streams.
+ * names, alternate data streams, and object IDs.
  *
  * Note: because NTFS-3g offers inode-based interfaces, we actually don't need
  * to deal with paths at all!  (Other than for error messages.)
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers
+ * Copyright (C) 2012-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -35,6 +35,7 @@
 #include <string.h>
 
 #include <ntfs-3g/attrib.h>
+#include <ntfs-3g/object_id.h>
 #include <ntfs-3g/reparse.h>
 #include <ntfs-3g/security.h>
 
@@ -46,6 +47,7 @@
 #include "wimlib/error.h"
 #include "wimlib/metadata.h"
 #include "wimlib/ntfs_3g.h"
+#include "wimlib/object_id.h"
 #include "wimlib/reparse.h"
 #include "wimlib/security.h"
 #include "wimlib/security_descriptor.h"
@@ -65,6 +67,7 @@ ntfs_3g_get_supported_features(const char *target,
 	supported_features->reparse_points            = 1;
 	supported_features->security_descriptors      = 1;
 	supported_features->short_names               = 1;
+	supported_features->object_ids                = 1;
 	supported_features->timestamps                = 1;
 	supported_features->case_sensitive_filenames  = 1;
 	return 0;
@@ -411,6 +414,25 @@ ntfs_3g_set_metadata(ntfs_inode *ni, const struct wim_inode *inode,
 	extract_flags = ctx->common.extract_flags;
 	sd = wim_get_current_security_data(ctx->common.wim);
 	one_dentry = inode_first_extraction_dentry(inode);
+
+	/* Object ID */
+	{
+		u32 len;
+		const void *object_id = inode_get_object_id(inode, &len);
+		if (unlikely(object_id != NULL) &&
+		    ntfs_set_ntfs_object_id(ni, object_id, len, 0))
+		{
+			if (errno == EEXIST) {
+				WARNING("Duplicate object ID on file \"%s\"",
+					dentry_full_path(one_dentry));
+			} else {
+				ERROR_WITH_ERRNO("Failed to set object ID on "
+						 "\"%s\" in NTFS volume",
+						 dentry_full_path(one_dentry));
+				return WIMLIB_ERR_NTFS_3G;
+			}
+		}
+	}
 
 	/* Attributes  */
 	if (!(extract_flags & WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES)) {

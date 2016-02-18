@@ -131,6 +131,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/lzx_common.h	\
 	include/wimlib/lzx_constants.h	\
 	include/wimlib/metadata.h	\
+	include/wimlib/object_id.h	\
 	include/wimlib/pathlist.h	\
 	include/wimlib/paths.h		\
 	include/wimlib/pattern.h	\

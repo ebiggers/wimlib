@@ -36,6 +36,7 @@
 #include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
+#include "wimlib/object_id.h"
 #include "wimlib/paths.h"
 #include "wimlib/reparse.h"
 #include "wimlib/win32_vss.h"
@@ -652,6 +653,46 @@ out:
 			    printable_path(full_path));
 		return WIMLIB_ERR_STAT;
 	}
+	return 0;
+}
+
+/* Load a file's object ID into the corresponding WIM inode.  */
+static noinline_for_stack int
+winnt_load_object_id(HANDLE h, struct wim_inode *inode,
+		     const wchar_t *full_path, struct winnt_scan_ctx *ctx)
+{
+	FILE_OBJECTID_BUFFER buffer;
+	NTSTATUS status;
+	u32 len;
+
+	if (!(ctx->vol_flags & FILE_SUPPORTS_OBJECT_IDS))
+		return 0;
+
+	status = winnt_fsctl(h, FSCTL_GET_OBJECT_ID, NULL, 0,
+			     &buffer, sizeof(buffer), &len);
+
+	if (status == STATUS_OBJECTID_NOT_FOUND) /* No object ID  */
+		return 0;
+
+	if (status == STATUS_INVALID_DEVICE_REQUEST) {
+		/* The filesystem claimed to support object IDs, but we can't
+		 * actually read them.  This happens with Samba.  */
+		ctx->vol_flags &= ~FILE_SUPPORTS_OBJECT_IDS;
+		return 0;
+	}
+
+	if (!NT_SUCCESS(status)) {
+		winnt_error(status, L"\"%ls\": Can't read object ID",
+			    printable_path(full_path));
+		return WIMLIB_ERR_STAT;
+	}
+
+	if (len == 0) /* No object ID (for directories)  */
+		return 0;
+
+	if (!inode_set_object_id(inode, &buffer, len))
+		return WIMLIB_ERR_NOMEM;
+
 	return 0;
 }
 
@@ -1673,6 +1714,11 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 			goto out;
 	}
 
+	/* Get the file's object ID.  */
+	ret = winnt_load_object_id(h, inode, full_path, ctx);
+	if (ret)
+		goto out;
+
 	/* If this is a reparse point, load the reparse data.  */
 	if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
 		ret = winnt_load_reparse_data(h, inode, full_path, ctx->params);
@@ -1937,7 +1983,8 @@ struct ntfs_inode {
 	u32 attributes;
 	u32 security_id;
 	u32 num_aliases;
-	u32 num_streams;
+	u32 num_streams : 31;
+	u32 have_object_id : 1;
 	u32 first_stream_offset;
 	struct ntfs_dentry *first_child;
 	wchar_t short_name[13];
@@ -2108,6 +2155,13 @@ is_valid_stream_entry(const STREAM_LAYOUT_ENTRY *stream)
 			 stream->StreamIdentifierLength / 2);
 }
 
+static bool
+is_object_id_stream(const STREAM_LAYOUT_ENTRY *stream)
+{
+	return stream->StreamIdentifierLength == 24 &&
+		!wmemcmp(stream->StreamIdentifier, L"::$OBJECT_ID", 12);
+}
+
 /*
  * If the specified STREAM_LAYOUT_ENTRY represents a DATA stream as opposed to
  * some other type of NTFS stream such as a STANDARD_INFORMATION stream, return
@@ -2144,10 +2198,12 @@ use_stream(const FILE_LAYOUT_ENTRY *file, const STREAM_LAYOUT_ENTRY *stream,
 
 /* Validate the STREAM_LAYOUT_ENTRYs of the specified file and compute the total
  * length in bytes of the ntfs_stream structures needed to hold the stream
- * information.  */
+ * information.  In addition, set *have_object_id_ret=true if the file has an
+ * object ID stream.  */
 static int
 validate_streams_and_compute_total_length(const FILE_LAYOUT_ENTRY *file,
-					  size_t *total_length_ret)
+					  size_t *total_length_ret,
+					  bool *have_object_id_ret)
 {
 	const STREAM_LAYOUT_ENTRY *stream =
 		(const void *)file + file->FirstStreamOffset;
@@ -2171,6 +2227,8 @@ validate_streams_and_compute_total_length(const FILE_LAYOUT_ENTRY *file,
 		if (use_stream(file, stream, &name, &name_nchars)) {
 			total += ALIGN(sizeof(struct ntfs_stream) +
 				       (name_nchars + 1) * sizeof(wchar_t), 8);
+		} else if (is_object_id_stream(stream)) {
+			*have_object_id_ret = true;
 		}
 		if (stream->NextStreamOffset == 0)
 			break;
@@ -2274,6 +2332,7 @@ load_one_file(const FILE_LAYOUT_ENTRY *file, struct ntfs_inode_map *inode_map)
 	size_t n;
 	int ret;
 	void *p;
+	bool have_object_id = false;
 
 	inode_size = ALIGN(sizeof(struct ntfs_inode), 8);
 
@@ -2290,7 +2349,8 @@ load_one_file(const FILE_LAYOUT_ENTRY *file, struct ntfs_inode_map *inode_map)
 	}
 
 	if (file_has_streams(file)) {
-		ret = validate_streams_and_compute_total_length(file, &n);
+		ret = validate_streams_and_compute_total_length(file, &n,
+								&have_object_id);
 		if (ret)
 			return ret;
 		inode_size += n;
@@ -2308,6 +2368,7 @@ load_one_file(const FILE_LAYOUT_ENTRY *file, struct ntfs_inode_map *inode_map)
 	ni->last_write_time = info->BasicInformation.LastWriteTime;
 	ni->last_access_time = info->BasicInformation.LastAccessTime;
 	ni->security_id = info->SecurityId;
+	ni->have_object_id = have_object_id;
 
 	p = FIRST_DENTRY(ni);
 
@@ -2550,7 +2611,8 @@ generate_wim_structures_recursive(struct wim_dentry **root_ret,
 	 * filter driver (WOF) hides reparse points from regular filesystem APIs
 	 * but not from FSCTL_QUERY_FILE_LAYOUT.  */
 	if (ni->attributes & (FILE_ATTRIBUTE_REPARSE_POINT |
-			      FILE_ATTRIBUTE_ENCRYPTED))
+			      FILE_ATTRIBUTE_ENCRYPTED) ||
+	    ni->have_object_id)
 	{
 		ret = winnt_build_dentry_tree_recursive(&root,
 							NULL,

@@ -28,6 +28,7 @@ struct wim_features {
 	unsigned long security_descriptors;
 	unsigned long short_names;
 	unsigned long unix_data;
+	unsigned long object_ids;
 	unsigned long timestamps;
 	unsigned long case_sensitive_filenames;
 };
