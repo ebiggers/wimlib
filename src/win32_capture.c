@@ -634,8 +634,13 @@ winnt_load_security_descriptor(HANDLE h, struct wim_inode *inode,
 		}
 	}
 
+	/* We can get a length of 0 with Samba.  Assume that means "no security
+	 * descriptor".  */
+	if (len_needed == 0)
+		goto out;
+
 	/* Add the security descriptor to the WIM image, and save its ID in
-	 * file's inode.  */
+	 * the file's inode.  */
 	inode->i_security_id = sd_set_add_sd(ctx->params->sd_set, buf, len_needed);
 	if (unlikely(inode->i_security_id < 0))
 		status = STATUS_NO_MEMORY;
