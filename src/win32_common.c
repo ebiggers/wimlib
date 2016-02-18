@@ -90,8 +90,6 @@ win32_release_capture_and_apply_privileges(void)
 
 /* Pointers to dynamically loaded functions  */
 
-/* ntdll.dll  */
-
 NTSTATUS (WINAPI *func_RtlDosPathNameToNtPathName_U_WithStatus)
 		(IN PCWSTR DosName,
 		 OUT PUNICODE_STRING NtName,
@@ -103,73 +101,26 @@ NTSTATUS (WINAPI *func_RtlCreateSystemVolumeInformationFolder)
 
 static bool acquired_privileges = false;
 
-struct dll_sym {
-	void **func_ptr;
-	const char *name;
-	bool required;
-};
-
-#define DLL_SYM(name, required) { (void **)&func_##name, #name, required }
-
-#define for_each_sym(sym, spec) \
-	for ((sym) = (spec)->syms; (sym)->name; (sym)++)
-
-struct dll_spec {
-	const wchar_t *name;
-	HMODULE handle;
-	const struct dll_sym syms[];
-};
-
-struct dll_spec ntdll_spec = {
-	.name = L"ntdll.dll",
-	.syms = {
-		DLL_SYM(RtlCreateSystemVolumeInformationFolder, false),
-		DLL_SYM(RtlDosPathNameToNtPathName_U_WithStatus, false), /* Not present on XP  */
-		{NULL, NULL},
-	},
-};
+static HMODULE ntdll_handle = NULL;
 
 static int
-init_dll(struct dll_spec *spec)
+init_ntdll(void)
 {
-	const struct dll_sym *sym;
-	void *addr;
+	ntdll_handle = LoadLibrary(L"ntdll.dll");
 
-	if (!spec->handle)
-		spec->handle = LoadLibrary(spec->name);
-	if (!spec->handle) {
-		for_each_sym(sym, spec) {
-			if (sym->required) {
-				ERROR("%ls could not be loaded!", spec->name);
-				return WIMLIB_ERR_UNSUPPORTED;
-			}
-		}
-		return 0;
+	if (!ntdll_handle) {
+		ERROR("Unable to load ntdll.dll");
+		return WIMLIB_ERR_UNSUPPORTED;
 	}
-	for_each_sym(sym, spec) {
-		addr = (void *)GetProcAddress(spec->handle, sym->name);
-		if (addr) {
-			*(sym->func_ptr) = addr;
-		} else if (sym->required) {
-			ERROR("Can't find %s in %ls", sym->name, spec->name);
-			return WIMLIB_ERR_UNSUPPORTED;
-		}
-	}
+
+	func_RtlDosPathNameToNtPathName_U_WithStatus =
+		(void *)GetProcAddress(ntdll_handle,
+				       "RtlDosPathNameToNtPathName_U_WithStatus");
+
+	func_RtlCreateSystemVolumeInformationFolder =
+		(void *)GetProcAddress(ntdll_handle,
+				       "RtlCreateSystemVolumeInformationFolder");
 	return 0;
-}
-
-static void
-cleanup_dll(struct dll_spec *spec)
-{
-	const struct dll_sym *sym;
-
-	if (spec->handle) {
-		FreeLibrary(spec->handle);
-		spec->handle = NULL;
-
-		for_each_sym(sym, spec)
-			*(sym->func_ptr) = NULL;
-	}
 }
 
 /* One-time initialization for Windows capture/apply code.  */
@@ -190,7 +141,7 @@ win32_global_init(int init_flags)
 		acquired_privileges = true;
 	}
 
-	ret = init_dll(&ntdll_spec);
+	ret = init_ntdll();
 	if (ret)
 		goto out_drop_privs;
 
@@ -209,7 +160,8 @@ win32_global_cleanup(void)
 	if (acquired_privileges)
 		win32_release_capture_and_apply_privileges();
 
-	cleanup_dll(&ntdll_spec);
+	FreeLibrary(ntdll_handle);
+	ntdll_handle = NULL;
 }
 
 /*
@@ -341,7 +293,7 @@ retry:
 	ret = FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM |
 				FORMAT_MESSAGE_IGNORE_INSERTS |
 				(is_ntstatus ? FORMAT_MESSAGE_FROM_HMODULE : 0),
-			    (is_ntstatus ? ntdll_spec.handle : NULL),
+			    (is_ntstatus ? ntdll_handle : NULL),
 			    code,
 			    MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
 			    &buf[n],
