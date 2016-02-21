@@ -6,7 +6,7 @@ set -e
 cd tests
 srcdir="${srcdir:-.}/.."
 srcdir="$(cd $srcdir; pwd)"
-. "$srcdir/tests/tests-common.sh"
+. "$srcdir/tests/test_utils.sh"
 
 TEST_SUBDIR=tmpdir_test-imagex-update_and_extract
 

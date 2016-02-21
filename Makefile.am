@@ -326,7 +326,7 @@ endif
 
 EXTRA_DIST +=					\
 	tests/common_tests.sh			\
-	tests/tests-common.sh			\
+	tests/test_utils.sh			\
 	tests/security_descriptor_1.base64	\
 	tests/security_descriptor_1.bin		\
 	tests/security_descriptor_2.base64	\
