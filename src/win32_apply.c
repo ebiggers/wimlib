@@ -1010,8 +1010,7 @@ open_target_directory(struct win32_apply_ctx *ctx)
 			      0,
 			      FILE_SHARE_VALID_FLAGS,
 			      FILE_OPEN_IF,
-				FILE_DIRECTORY_FILE |
-				FILE_OPEN_FOR_BACKUP_INTENT,
+			      FILE_DIRECTORY_FILE | FILE_OPEN_FOR_BACKUP_INTENT,
 			      NULL,
 			      0);
 	if (!NT_SUCCESS(status)) {
