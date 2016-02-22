@@ -254,13 +254,13 @@ option is unneeded; instead you must ensure that all the split WIM parts are
 concatenated together on standard input.  They can be provided in any order,
 with the exception of the first part, which must be first.
 .SH PIPABLE WIMS
-As of wimlib 1.5.0, \fBwimlib-imagex apply\fR supports applying a WIM from a
+Since wimlib v1.5.0, \fBwimlib-imagex apply\fR supports applying a WIM from a
 nonseekable file, such as a pipe, provided that the WIM was captured with
-\fB--pipable\fR (see \fBwimlib-imagex capture\fR(1)).  To use standard input
-as the WIM, specify "-" as \fIWIMFILE\fR.  A useful use of this ability is to
-apply an image from a WIM while streaming it from a server.  For example, to
-apply the first image from a WIM file available on a HTTP server to an NTFS
-volume on /dev/sda1, run something like:
+\fB--pipable\fR (see \fBwimlib-imagex capture\fR(1)).  To use standard input as
+the WIM, specify "-" as \fIWIMFILE\fR.  A useful use of this ability is to apply
+an image from a WIM while streaming it from a server.  For example, to apply the
+first image from a WIM file available on a HTTP server to an NTFS volume on
+/dev/sda1, run something like:
 .PP
 .RS
 wget -O - http://myserver/mywim.wim | wimapply - 1 /dev/sda1
@@ -305,11 +305,10 @@ UNIX-like systems.
 .TP
 \fB--unix-data\fR
 (UNIX-like systems only)  Restore UNIX owners, groups, modes, and device IDs
-(major and minor numbers) that were captured by \fBwimlib-imagex capture\fR
-with the \fB--unix-data\fR option.  As of wimlib v1.7.0, you can backup and
-restore not only the standard UNIX file permission information, but also
-character device nodes, block device nodes, named pipes (FIFOs), and UNIX domain
-sockets.
+(major and minor numbers) that were captured by \fBwimlib-imagex capture\fR with
+the \fB--unix-data\fR option.  Since wimlib v1.7.0, you can backup and restore
+not only the standard UNIX file permission information, but also character
+device nodes, block device nodes, named pipes (FIFOs), and UNIX domain sockets.
 .TP
 \fB--no-acls\fR
 Do not restore security descriptors on extracted files and directories.

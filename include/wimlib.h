@@ -16,8 +16,7 @@
  * Windows Imaging Format.  This documentation is intended for developers only.
  * If you have installed wimlib and want to know how to use the @b wimlib-imagex
  * program, please see the manual pages and also the <a
- * href="https://wimlib.net/gitlist/wimlib/blob/master/README">README
- * file</a>.
+ * href="https://wimlib.net/gitlist/wimlib/blob/master/README">README file</a>.
  *
  * @section sec_installing Installing
  *
@@ -346,10 +345,10 @@
  * such as wimlib_join(), also take the progress function directly using an
  * extended version of the function, such as wimlib_join_with_progress().
  *
- * In wimlib v1.7.0 and later, progress functions are no longer just
- * unidirectional.  You can now return ::WIMLIB_PROGRESS_STATUS_ABORT to cause
- * the current operation to be aborted.  wimlib v1.7.0 also added the third
- * argument to ::wimlib_progress_func_t, which is a user-supplied context.
+ * Since wimlib v1.7.0, progress functions are no longer just unidirectional.
+ * You can now return ::WIMLIB_PROGRESS_STATUS_ABORT to cause the current
+ * operation to be aborted.  wimlib v1.7.0 also added the third argument to
+ * ::wimlib_progress_func_t, which is a user-supplied context.
  */
 
 /** @defgroup G_writing_and_overwriting_wims Writing and Overwriting WIMs
@@ -1063,8 +1062,8 @@ union wimlib_progress_info {
 
 		/** Name of the split WIM part that is about to be started
 		 * (::WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART) or has just been
-		 * finished (::WIMLIB_PROGRESS_MSG_SPLIT_END_PART).
-		 * As of wimlib v1.7.0, the library user may change this when
+		 * finished (::WIMLIB_PROGRESS_MSG_SPLIT_END_PART).  Since
+		 * wimlib v1.7.0, the library user may change this when
 		 * receiving ::WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART in order to
 		 * cause the next split WIM part to be written to a different
 		 * location.  */
@@ -1461,8 +1460,8 @@ struct wimlib_stream_entry {
 };
 
 /**
- * An object ID, which is an extra piece of metadata that may be associated with
- * a file on NTFS filesystems.  See:
+ * Since wimlib v1.9.1: an object ID, which is an extra piece of metadata that
+ * may be associated with a file on NTFS filesystems.  See:
  * https://msdn.microsoft.com/en-us/library/windows/desktop/aa363997(v=vs.85).aspx
  */
 struct wimlib_object_id {
