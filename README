@@ -65,110 +65,14 @@ commands and their syntax.  For additional documentation:
     files are converted from UNIX-style "man pages", they do document
     Windows-specific behavior when appropriate.
 
-                               COMPRESSION RATIO
+                                  COMPRESSION
 
-wimlib (and wimlib-imagex) can create XPRESS, LZX, or LZMS compressed WIM files.
-wimlib's compression codecs usually outperform and outcompress their Microsoft
-equivalents.  Although results will vary depending on the data being compressed,
-the table below shows results for a common use case: creating an x86 Windows PE
-image ("boot.wim").  Each row shows the compression type, the size of the
-resulting WIM file in bytes, and the time it took to create the file.  When
-possible, the results with the Microsoft equivalent are included.
-
-  =============================================================================
-  | Compression            ||  wimlib (v1.8.3)       |  WIMGAPI (Windows 10)  |
-  =============================================================================
-  | None             [1]   ||  361,314,224 in 2.7s   |  361,315,338 in 3.0s   |
-  | XPRESS           [2]   ||  137,954,729 in 3.0s   |  140,457,081 in 6.4s   |
-  | XPRESS (slow)    [3]   ||  135,147,054 in 8.0s   |  N/A                   |
-  | LZX (quick)      [4]   ||  130,098,933 in 3.3s   |  N/A                   |
-  | LZX (normal)     [5]   ||  126,310,241 in 9.9s   |  127,293,110 in 18.5s  |
-  | LZX (slow)       [6]   ||  125,884,919 in 17.4s  |  N/A                   |
-  | LZMS (non-solid) [7]   ||  116,150,698 in 23.4s  |  N/A                   |
-  | LZMS (solid)     [8]   ||  88,108,326  in 55.6s  |  88,771,800 in 90.9s   |
-  | "WIMBoot"        [9]   ||  166,892,801 in 3.0s   |  169,108,689 in 8.9s   |
-  | "WIMBoot" (slow) [10]  ||  165,004,333 in 7.8s   |  N/A                   |
-  =============================================================================
-
-Notes:
-   [1] '--compress=none' for wimlib-imagex; '/compress:none' for DISM.
-
-   [2] '--compress=XPRESS' for wimlib-imagex; '/compress:fast' for DISM.
-       Compression chunk size defaults to 32768 bytes in both cases.
-
-   [3] '--compress=XPRESS:80' for wimlib-imagex; no known equivalent for DISM.
-       Compression chunk size defaults to 32768 bytes.
-
-   [4] '--compress=LZX:20' for wimlib-imagex; no known equivalent for DISM.
-       Compression chunk size defaults to 32768 bytes.
-
-   [5] '--compress=LZX' or '--compress=LZX:50' or no option for wimlib-imagex;
-       '/compress:maximum' for DISM.
-       Compression chunk size defaults to 32768 bytes in both cases.
-
-   [6] '--compress=LZX:100' for wimlib-imagex; no known equivalent for DISM.
-       Compression chunk size defaults to 32768 bytes.
-
-   [7] '--compress=LZMS' for wimlib-imagex; no known equivalent for DISM.
-       Compression chunk size defaults to 131072 bytes.
-
-   [8] '--solid' for wimlib-imagex.  Should be '/compress:recovery' for DISM,
-       but only works for /Export-Image, not /Capture-Image.  Compression chunk
-       size in solid resources defaults to 67108864 bytes in both cases.
-
-   [9] '--wimboot' for wimlib-imagex; '/wimboot' for DISM.
-       This is really XPRESS compression with 4096 byte chunks, so the same as
-       '--compress=XPRESS --chunk-size=4096'.
-
-   [10] '--wimboot --compress=XPRESS:80' for wimlib-imagex;
-        no known equivalent for DISM.
-        Same format as [9], but trying harder to get a good compression ratio.
-
-Note: wimlib-imagex's --compress option also accepts the "fast", "maximum", and
-"recovery" aliases for XPRESS, LZX, and LZMS, respectively.
-
-Testing environment:
-
-    - 64 bit binaries
-    - Windows 10 virtual machine running on Linux with VT-x
-    - 4 CPUs and 4 GiB memory given to virtual machine
-    - SSD-backed virtual disk
-    - All tests done with page cache warmed
-
-The compression ratio provided by wimlib is also competitive with commonly used
-archive formats.  Below are file sizes that result when the Canterbury corpus is
-compressed with wimlib (v1.8.3), WIMGAPI (Windows 8.1), and some other
-formats/programs:
-
-     =====================================================
-     | Format                             | Size (bytes) |
-     =====================================================
-     | tar                                | 2,826,240    |
-     | WIM (WIMGAPI, None)                | 2,814,254    |
-     | WIM (wimlib, None)                 | 2,814,216    |
-     | WIM (WIMGAPI, XPRESS)              | 825,536      |
-     | WIM (wimlib, XPRESS)               | 787,356      |
-     | tar.gz (gzip, default)             | 738,796      |
-     | ZIP (Info-ZIP, default)            | 735,334      |
-     | tar.gz (gzip, -9)                  | 733,971      |
-     | ZIP (Info-ZIP, -9)                 | 732,297      |
-     | WIM (wimlib, LZX quick)            | 686,420      |
-     | WIM (WIMGAPI, LZX)                 | 651,866      |
-     | WIM (wimlib, LZX normal)           | 623,718      |
-     | WIM (wimlib, LZX slow)             | 619,382      |
-     | WIM (wimlib, LZMS non-solid)       | 581,046      |
-     | tar.bz2 (bzip, default)            | 565,008      |
-     | tar.bz2 (bzip, -9)                 | 565,008      |
-     | WIM (WIMGAPI, LZMS solid)          | 521,366      |
-     | WIM (wimlib, LZMS solid)           | 515,800      |
-     | tar.xz (xz, default)               | 486,916      |
-     | tar.xz (xz, -9)                    | 486,904      |
-     | 7z  (7-zip, default)               | 484,700      |
-     | 7z  (7-zip, -9)                    | 483,239      |
-     =====================================================
-
-Note: WIM does even better on directory trees containing duplicate files, which
-the Canterbury corpus doesn't have.
+wimlib (and wimlib-imagex) can create XPRESS, LZX, and LZMS compressed WIM
+archives.  wimlib's compression codecs usually outperform and outcompress their
+closed-source Microsoft equivalents.  Multiple compression levels and chunk
+sizes as well as solid mode compression are supported.  Compression is
+multithreaded by default.  Detailed benchmark results and descriptions of the
+algorithms used can be found at https://wimlib.net/compression.html.
 
                                   NTFS SUPPORT
 

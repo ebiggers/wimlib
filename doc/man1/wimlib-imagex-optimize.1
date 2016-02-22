@@ -109,14 +109,14 @@ Rebuild and recompress the WIM file 'install.wim':
 wimoptimize install.wim --recompress
 .RE
 .PP
-Rebuild and recompress the WIM file 'install.wim', using "maximum" (LZX)
+Rebuild and recompress the WIM file 'install.wim', using LZX ("maximum")
 compression at a higher-than-default compression level.  The compression chunk
 size remains unchanged.  This command will be slow, but it might be useful for
-optimizing files for distribution.  See the COMPRESSION RATIO section of the
-README file for some benchmark results.
+optimizing files for distribution.  See
+\fIhttps://wimlib.net/compression.html\fR for some benchmark results.
 .RS
 .PP
-wimoptimize install.wim --compress=maximum:100
+wimoptimize install.wim --compress=LZX:100
 .RE
 .PP
 .SH SEE ALSO
