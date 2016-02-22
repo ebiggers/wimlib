@@ -50,9 +50,8 @@ archiving Windows filesystems, such as NTFS.  However, it can be used on other
 platforms as well, with some limitations.  A WIM archive contains one or more
 images, each of which is a logically independent directory tree.  Images are
 indexed starting from 1, and each may also have a name.  File data is stored as
-content-addressable "streams" that are deduplicated across the entire archive.
-Streams may be compressed using one of several compression algorithms, including
-XPRESS and LZX.
+content-addressable "blobs" that are deduplicated across the entire archive.
+Data may be compressed using one of several compression algorithms.
 .PP
 An update of the WIM format released with Windows 8 features solid compression
 using the LZMS compression algorithm.  Such files are also called "ESD files"
@@ -136,35 +135,26 @@ On UNIX-like systems, integration with libntfs-3g allows capturing a WIM image
 directly from a block device containing an NTFS volume, or applying a WIM image
 directly to a block device containing an NTFS volume.  This allows saving and
 restoring NTFS-specific data, such as security descriptors and named data
-streams, which is otherwise only supported on Windows.  This feature is
-unavailable if wimlib was configured using --without-ntfs-3g.
+streams, which would otherwise only be supported on Windows.
 .IP \[bu]
-Long path support on Windows.  \fBwimlib-imagex\fR can capture and apply
-files with paths exceeding the MAX_PATH (260 character) limitation of the Win32
+Long path support on Windows.  \fBwimlib-imagex\fR can capture and apply files
+with paths exceeding the MAX_PATH (260 character) limitation of the Win32
 subsystem.
 .IP \[bu]
-Non-Administrator support on Windows.  You can run \fBwimlib-imagex\fR
-without Administrator rights, subject to some limitations.
+Non-Administrator support on Windows.  You can run \fBwimlib-imagex\fR without
+Administrator rights, subject to some limitations.
 .IP \[bu]
 Support for WIM integrity tables.  An integrity table is a list of SHA-1 message
 digests appended to the end of a WIM file which gives checksums over the WIM
-file itself.  The \fB--check\fR option to several \fBwimlib-imagex\fR
-commands can be used to verify or add integrity tables.
-.IP \[bu]
-Support for "pipable" WIMs.  This is a wimlib extension and is not compatible
-with the Microsoft implementation.  A pipable WIM, created with
-\fBwimlib-imagex capture\fR with the \fB--pipable\fR option, can be written
-to standard output or read from standard input.  This can be used to pipe images
-to or from a server over the network to implement fast filesystem imaging and
-restore.
+file itself.  The \fB--check\fR option to several \fBwimlib-imagex\fR commands
+can be used to verify or add integrity tables.
 .IP \[bu]
 On UNIX-like systems, support for saving and restoring UNIX uids (user IDs),
 gids (group IDs), and modes to/from WIM images.  This is a wimlib extension, but
 the Microsoft implementation ignores this extra metadata.
 .IP \[bu]
 Multithreaded compression.  By default, data compression is multithreaded and
-will use all available processors.  In most cases, this can be changed by the
-\fB--threads\fR option.
+will use all available processors.
 .IP \[bu]
 XPRESS, LZX, and LZMS decompression and compression.  wimlib contains
 independent implementations of all these compression algorithms.  Sometimes they
@@ -175,32 +165,41 @@ use a new WIM format that features solid resources and LZMS compression.  This
 support was first present in wimlib v1.6.0, but v1.7.0 and later have improved
 compatibility.
 .IP \[bu]
-Mounting WIM images.  This relies on FUSE (Filesystem in UserSpacE) and is only
-supported on compatible UNIX-like systems, in particular Linux.  FreeBSD may
-work but is untested.
+On Linux, support for mounting WIM images with FUSE (Filesystem in UserSpacE).
+.IP \[bu]
+"Pipable" WIMs.  This is a wimlib extension and is not compatible with the
+Microsoft implementation.  A pipable WIM, created with \fBwimcapture\fR with the
+\fB--pipable\fR option, can be written to standard output or read from standard
+input.  This can be used to pipe images to or from a server over the network to
+implement fast filesystem imaging and restore.
 .IP \[bu]
 Split WIMs.  A split WIM is a WIM archive split into multiple parts.
-\fBwimlib-imagex split\fR can create a split WIM from a standalone WIM, and
-\fBwimlib-imagex join\fR can create a standalone WIM from a split WIM.
+\fBwimsplit\fR can create a split WIM from a standalone WIM, and \fBwimjoin\fR
+can create a standalone WIM from a split WIM.
 .IP \[bu]
 Delta WIMs.  A delta WIM contains image metadata but excludes file data already
-present in another WIM file.  A delta WIM can be created using
-\fBwimlib-imagex capture\fR with the \fB--delta-from\fR option.
-.IP \[bu]
-WIMBoot support.  On Windows 8.1 and later, files on an NTFS volume can be
-externally backed by a WIM archive with the help of Microsoft's Windows Overlay
-FileSystem Filter Driver (WOF).  With the \fB--wimboot\fR flag,
-\fBwimlib-imagex apply\fR will extract "pointer files" (actually NTFS
-reparse points handled by the WOF driver) to the WIM archive rather than the
-files themselves.
+present in another WIM file.  A delta WIM can be created using \fBwimcapture\fR
+with the \fB--delta-from\fR option.
 .IP \[bu]
 Fast incremental backups.  Using the \fB--update-of\fR option of
-\fBwimlib-imagex capture\fR or \fBwimlib-imagex append\fR, you can
-optimize an image capture so that files that are unmodified based on timestamps
-are not be read from disk.  But even without this option, since the WIM format
-features single-instance files, a file identical to any already present in the
-WIM archive (in any image) will not be written, but rather a reference to the
-stored file will be used.
+\fBwimcapture\fR or \fBwimappend\fR, you can optimize an image capture so that
+files that are unmodified based on timestamps are not be read from disk.  But
+even without this option, since the WIM format features single-instance files, a
+file identical to any already present in the WIM archive (in any image) will not
+be written, but rather a reference to the stored file will be used.
+.IP \[bu]
+Windows-specific image metadata support.  When capturing an image of a Windows
+operating system, wimlib will automatically populate XML metadata fields such as
+the Windows OS version details by scanning well-known system files.
+.IP \[bu]
+WIMBoot support.  On Windows 8.1 and later, files can be "externally backed" by
+a WIM archive with the help of Microsoft's Windows Overlay Filesystem filter
+driver (WOF).  With the \fB--wimboot\fR option, \fBwimapply\fR will extract
+"pointer files" to the WIM archive rather than the files themselves.
+.IP \[bu]
+VSS snapshot support.  On Windows, \fBwimcapture\fR or \fBwimappend\fR with the
+\fB--snapshot\fR option will automatically create a temporary VSS snapshot and
+capture the image from it.  This can be used to image a "live" Windows system.
 .SH LOCALES AND CHARACTER ENCODINGS
 WIM files themselves store file and stream names using Windows native "wide
 character strings", which are UTF-16.  On Windows, wimlib works using these same

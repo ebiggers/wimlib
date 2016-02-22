@@ -53,6 +53,9 @@ advantages of wimlib-imagex compared to ImageX and DISM are:
     used in ESD (.esd) files.  (These are partially supported by recent DISM
     versions but not by ImageX.)
 
+  * wimlib-imagex supports imaging a live Windows system.  Just use the
+    --snapshot option.
+
   * In many cases, wimlib-imagex has simpler command-line syntax than either
     ImageX or DISM.
 
