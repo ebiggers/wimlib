@@ -46,7 +46,10 @@ You may use \fBwimlib-imagex optimize\fR to delete unreferenced streams from a W
 has had images soft-deleted from it.
 .TP
 \fB--unsafe-compact\fR
-See the documentation for this option in \fBwimlib-imagex-optimize\fR (1).
+Compact the WIM archive in-place, eliminating "holes".  In general, this option
+should \fInot\fR be used because a failed or interrupted compaction will corrupt
+the WIM archive.  For more information, see the documentation for this option in
+\fBwimlib-imagex-optimize\fR (1).
 .SH EXAMPLES
 Delete the first image from 'boot.wim':
 .RS

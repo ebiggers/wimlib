@@ -165,7 +165,10 @@ boot process).  See the documentation for the \fB--wimboot\fR option of
 \fBwimlib-imagex apply\fR (1) for more information.
 .TP
 \fB--unsafe-compact\fR
-See the documentation for this option in \fBwimlib-imagex-optimize\fR (1).
+Compact the WIM archive in-place and append any new data, eliminating "holes".
+In general, this option should \fInot\fR be used because a failed or interrupted
+compaction will corrupt the WIM archive.  For more information, see the
+documentation for this option in \fBwimlib-imagex-optimize\fR (1).
 .SH NOTES
 \fBwimlib-imagex update\fR is partly redundant with \fBwimlib-imagex
 mountrw\fR, since if a WIM image can be mounted read-write, then there

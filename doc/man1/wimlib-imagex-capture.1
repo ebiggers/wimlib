@@ -579,7 +579,11 @@ default, set the configuration file to
 however, this may still be overridden through the \fB--config\fR parameter.
 .TP
 \fB--unsafe-compact\fR
-See the documentation for this option in \fBwimlib-imagex-optimize\fR (1).
+For \fBwimlib-imagex append\fR: compact the WIM archive in-place and append any
+new data, eliminating "holes".  In general, this option should \fInot\fR be used
+because a failed or interrupted compaction will corrupt the WIM archive.  For
+more information, see the documentation for this option in
+\fBwimlib-imagex-optimize\fR (1).
 .TP
 \fB--snapshot\fR
 Create a temporary filesystem snapshot of the source directory and capture the
