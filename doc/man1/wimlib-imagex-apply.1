@@ -126,10 +126,7 @@ mode:
 .IP \[bu] 4
 Encrypted files will not be extracted.
 .IP \[bu]
-wimlib v1.7.0 and later:  Sparse file attributes will not be extracted (same
-behavior as ImageX/DISM/WIMGAPI).  wimlib v1.6.2 and earlier:  Although sparse
-file attributes will be applied, the full data will be extracted to each sparse
-file, so extracted "sparse" files may not actually contain any sparse regions.
+Sparse file attributes will not be extracted.
 .PP
 Regardless, since almost all information from the WIM image is restored in this
 mode, it is possible (and fully supported) to restore an image of an actual
@@ -177,8 +174,8 @@ descriptors for individual files or directories may be omitted or only partially
 set if the user does not have permission to set them, which can be a problem if
 \fBwimlib-imagex\fR is run as a non-Administrator.
 .IP \[bu]
-File attributes, including hidden, sparse, compressed, encrypted, etc, when
-supported by the filesystem.
+File attributes, including hidden, compressed, encrypted, etc, when supported by
+the filesystem.
 .IP \[bu]
 DOS names (8.3) names of files; however, the failure to set them is not
 considered an error condition.
@@ -192,6 +189,8 @@ Additional notes about extracting files on Windows:
 \fBwimlib-imagex\fR will issue a warning when it is unable to extract the
 exact metadata and data of the WIM image, for example due to features mentioned
 above not being supported by the target filesystem.
+.IP \[bu]
+Sparse file attributes will not be extracted.
 .IP \[bu]
 Since encrypted files (with FILE_ATTRIBUTE_ENCRYPTED) are not stored in
 plaintext in the WIM image, \fBwimlib-imagex\fR cannot restore encrypted
