@@ -586,68 +586,68 @@ set_compact_mode(const tchar *arg, int *extract_flags)
 }
 
 
-struct string_set {
+struct string_list {
 	tchar **strings;
 	unsigned num_strings;
 	unsigned num_alloc_strings;
 };
 
-#define STRING_SET_INITIALIZER \
+#define STRING_LIST_INITIALIZER \
 	{ .strings = NULL, .num_strings = 0, .num_alloc_strings = 0, }
 
-#define STRING_SET(_strings) \
-	struct string_set _strings = STRING_SET_INITIALIZER
+#define STRING_LIST(_strings) \
+	struct string_list _strings = STRING_LIST_INITIALIZER
 
 static int
-string_set_append(struct string_set *set, tchar *glob)
+string_list_append(struct string_list *list, tchar *glob)
 {
-	unsigned num_alloc_strings = set->num_alloc_strings;
+	unsigned num_alloc_strings = list->num_alloc_strings;
 
-	if (set->num_strings == num_alloc_strings) {
+	if (list->num_strings == num_alloc_strings) {
 		tchar **new_strings;
 
 		num_alloc_strings += 4;
-		new_strings = realloc(set->strings,
-				      sizeof(set->strings[0]) * num_alloc_strings);
+		new_strings = realloc(list->strings,
+				      sizeof(list->strings[0]) * num_alloc_strings);
 		if (!new_strings) {
 			imagex_error(T("Out of memory!"));
 			return -1;
 		}
-		set->strings = new_strings;
-		set->num_alloc_strings = num_alloc_strings;
+		list->strings = new_strings;
+		list->num_alloc_strings = num_alloc_strings;
 	}
-	set->strings[set->num_strings++] = glob;
+	list->strings[list->num_strings++] = glob;
 	return 0;
 }
 
 static void
-string_set_destroy(struct string_set *set)
+string_list_destroy(struct string_list *list)
 {
-	free(set->strings);
+	free(list->strings);
 }
 
 static int
-wim_reference_globs(WIMStruct *wim, struct string_set *set, int open_flags)
+wim_reference_globs(WIMStruct *wim, struct string_list *list, int open_flags)
 {
-	return wimlib_reference_resource_files(wim, (const tchar **)set->strings,
-					       set->num_strings,
+	return wimlib_reference_resource_files(wim, (const tchar **)list->strings,
+					       list->num_strings,
 					       WIMLIB_REF_FLAG_GLOB_ENABLE,
 					       open_flags);
 }
 
 static int
-append_image_property_argument(struct string_set *image_properties)
+append_image_property_argument(struct string_list *image_properties)
 {
 	if (!tstrchr(optarg, '=')) {
 		imagex_error(T("'--image-property' argument "
 			       "must be in the form NAME=VALUE"));
 		return -1;
 	}
-	return string_set_append(image_properties, optarg);
+	return string_list_append(image_properties, optarg);
 }
 
 static int
-apply_image_properties(struct string_set *image_properties,
+apply_image_properties(struct string_list *image_properties,
 		       WIMStruct *wim, int image, bool *any_changes_ret)
 {
 	bool any_changes = false;
@@ -683,7 +683,7 @@ apply_image_properties(struct string_set *image_properties,
 static void
 do_resource_not_found_warning(const tchar *wimfile,
 			      const struct wimlib_wim_info *info,
-			      const struct string_set *refglobs)
+			      const struct string_list *refglobs)
 {
 	if (info->total_parts > 1) {
 		if (refglobs->num_strings == 0) {
@@ -1654,7 +1654,7 @@ imagex_apply(int argc, tchar **argv, int cmd)
 	const tchar *image_num_or_name = NULL;
 	int extract_flags = 0;
 
-	STRING_SET(refglobs);
+	STRING_LIST(refglobs);
 
 	for_opt(c, apply_options) {
 		switch (c) {
@@ -1665,7 +1665,7 @@ imagex_apply(int argc, tchar **argv, int cmd)
 			/* No longer does anything.  */
 			break;
 		case IMAGEX_REF_OPTION:
-			ret = string_set_append(&refglobs, optarg);
+			ret = string_list_append(&refglobs, optarg);
 			if (ret)
 				goto out_free_refglobs;
 			break;
@@ -1812,7 +1812,7 @@ imagex_apply(int argc, tchar **argv, int cmd)
 out_wimlib_free:
 	wimlib_free(wim);
 out_free_refglobs:
-	string_set_destroy(&refglobs);
+	string_list_destroy(&refglobs);
 	return ret;
 
 out_usage:
@@ -1842,10 +1842,10 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	const tchar *wimfile;
 	int wim_fd;
 	const tchar *name;
-	STRING_SET(image_properties);
+	STRING_LIST(image_properties);
 
 	WIMStruct *wim;
-	STRING_SET(base_wimfiles);
+	STRING_LIST(base_wimfiles);
 	WIMStruct **base_wims;
 
 	WIMStruct *template_wim;
@@ -1914,7 +1914,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		case IMAGEX_FLAGS_OPTION: {
 			tchar *p = alloca((6 + tstrlen(optarg) + 1) * sizeof(tchar));
 			tsprintf(p, T("FLAGS=%"TS), optarg);
-			ret = string_set_append(&image_properties, p);
+			ret = string_list_append(&image_properties, p);
 			if (ret)
 				goto out;
 			break;
@@ -1987,7 +1987,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 					       "valid for capture!"));
 				goto out_usage;
 			}
-			ret = string_set_append(&base_wimfiles, optarg);
+			ret = string_list_append(&base_wimfiles, optarg);
 			if (ret)
 				goto out;
 			write_flags |= WIMLIB_WRITE_FLAG_SKIP_EXTERNAL_WIMS;
@@ -2111,7 +2111,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	if (argc >= 4) {
 		tchar *p = alloca((12 + tstrlen(argv[3]) + 1) * sizeof(tchar));
 		tsprintf(p, T("DESCRIPTION=%"TS), argv[3]);
-		ret = string_set_append(&image_properties, p);
+		ret = string_list_append(&image_properties, p);
 		if (ret)
 			goto out;
 	}
@@ -2379,8 +2379,8 @@ out_free_capture_sources:
 out_free_source_list_contents:
 	free(source_list_contents);
 out:
-	string_set_destroy(&image_properties);
-	string_set_destroy(&base_wimfiles);
+	string_list_destroy(&image_properties);
+	string_list_destroy(&base_wimfiles);
 	return ret;
 
 out_usage:
@@ -2741,7 +2741,7 @@ imagex_dir(int argc, tchar **argv, int cmd)
 	};
 	int iterate_flags = WIMLIB_ITERATE_DIR_TREE_FLAG_RECURSIVE;
 
-	STRING_SET(refglobs);
+	STRING_LIST(refglobs);
 
 	for_opt(c, dir_options) {
 		switch (c) {
@@ -2755,7 +2755,7 @@ imagex_dir(int argc, tchar **argv, int cmd)
 			iterate_flags &= ~WIMLIB_ITERATE_DIR_TREE_FLAG_RECURSIVE;
 			break;
 		case IMAGEX_REF_OPTION:
-			ret = string_set_append(&refglobs, optarg);
+			ret = string_list_append(&refglobs, optarg);
 			if (ret)
 				goto out_free_refglobs;
 			break;
@@ -2820,7 +2820,7 @@ imagex_dir(int argc, tchar **argv, int cmd)
 out_wimlib_free:
 	wimlib_free(wim);
 out_free_refglobs:
-	string_set_destroy(&refglobs);
+	string_list_destroy(&refglobs);
 	return ret;
 
 out_usage:
@@ -2852,7 +2852,7 @@ imagex_export(int argc, tchar **argv, int cmd)
 	int image;
 	struct stat stbuf;
 	bool wim_is_new;
-	STRING_SET(refglobs);
+	STRING_LIST(refglobs);
 	unsigned num_threads = 0;
 	uint32_t chunk_size = UINT32_MAX;
 	uint32_t solid_chunk_size = UINT32_MAX;
@@ -2900,7 +2900,7 @@ imagex_export(int argc, tchar **argv, int cmd)
 				goto out_err;
 			break;
 		case IMAGEX_REF_OPTION:
-			ret = string_set_append(&refglobs, optarg);
+			ret = string_list_append(&refglobs, optarg);
 			if (ret)
 				goto out_free_refglobs;
 			break;
@@ -3117,7 +3117,7 @@ out_free_dest_wim:
 out_free_src_wim:
 	wimlib_free(src_wim);
 out_free_refglobs:
-	string_set_destroy(&refglobs);
+	string_list_destroy(&refglobs);
 	return ret;
 
 out_usage:
@@ -3144,7 +3144,7 @@ imagex_extract(int argc, tchar **argv, int cmd)
 			    WIMLIB_EXTRACT_FLAG_STRICT_GLOB;
 	int notlist_extract_flags = WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE;
 
-	STRING_SET(refglobs);
+	STRING_LIST(refglobs);
 
 	tchar *root_path = WIMLIB_WIM_ROOT_PATH;
 
@@ -3157,7 +3157,7 @@ imagex_extract(int argc, tchar **argv, int cmd)
 			/* No longer does anything.  */
 			break;
 		case IMAGEX_REF_OPTION:
-			ret = string_set_append(&refglobs, optarg);
+			ret = string_list_append(&refglobs, optarg);
 			if (ret)
 				goto out_free_refglobs;
 			break;
@@ -3305,7 +3305,7 @@ imagex_extract(int argc, tchar **argv, int cmd)
 out_wimlib_free:
 	wimlib_free(wim);
 out_free_refglobs:
-	string_set_destroy(&refglobs);
+	string_list_destroy(&refglobs);
 	return ret;
 
 out_usage:
@@ -3331,7 +3331,7 @@ imagex_info(int argc, tchar **argv, int cmd)
 	const tchar *xml_out_file = NULL;
 	const tchar *wimfile;
 	const tchar *image_num_or_name;
-	STRING_SET(image_properties);
+	STRING_LIST(image_properties);
 	WIMStruct *wim;
 	int image;
 	int ret;
@@ -3387,7 +3387,7 @@ imagex_info(int argc, tchar **argv, int cmd)
 		/* NEW_NAME */
 		tchar *p = alloca((5 + tstrlen(argv[2]) + 1) * sizeof(tchar));
 		tsprintf(p, T("NAME=%"TS), argv[2]);
-		ret = string_set_append(&image_properties, p);
+		ret = string_list_append(&image_properties, p);
 		if (ret)
 			goto out;
 	}
@@ -3396,7 +3396,7 @@ imagex_info(int argc, tchar **argv, int cmd)
 		/* NEW_DESC */
 		tchar *p = alloca((12 + tstrlen(argv[3]) + 1) * sizeof(tchar));
 		tsprintf(p, T("DESCRIPTION=%"TS), argv[3]);
-		ret = string_set_append(&image_properties, p);
+		ret = string_list_append(&image_properties, p);
 		if (ret)
 			goto out;
 	}
@@ -3566,7 +3566,7 @@ imagex_info(int argc, tchar **argv, int cmd)
 out_wimlib_free:
 	wimlib_free(wim);
 out:
-	string_set_destroy(&image_properties);
+	string_list_destroy(&image_properties);
 	return ret;
 
 out_usage:
@@ -3638,7 +3638,7 @@ imagex_mount_rw_or_ro(int argc, tchar **argv, int cmd)
 	int image;
 	int ret;
 
-	STRING_SET(refglobs);
+	STRING_LIST(refglobs);
 
 	if (cmd == CMD_MOUNTRW) {
 		mount_flags |= WIMLIB_MOUNT_FLAG_READWRITE;
@@ -3670,7 +3670,7 @@ imagex_mount_rw_or_ro(int argc, tchar **argv, int cmd)
 			}
 			break;
 		case IMAGEX_REF_OPTION:
-			ret = string_set_append(&refglobs, optarg);
+			ret = string_list_append(&refglobs, optarg);
 			if (ret)
 				goto out_free_refglobs;
 			break;
@@ -3738,7 +3738,7 @@ imagex_mount_rw_or_ro(int argc, tchar **argv, int cmd)
 out_free_wim:
 	wimlib_free(wim);
 out_free_refglobs:
-	string_set_destroy(&refglobs);
+	string_list_destroy(&refglobs);
 	return ret;
 
 out_usage:
@@ -4257,13 +4257,13 @@ imagex_verify(int argc, tchar **argv, int cmd)
 	WIMStruct *wim;
 	int open_flags = WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 	int verify_flags = 0;
-	STRING_SET(refglobs);
+	STRING_LIST(refglobs);
 	int c;
 
 	for_opt(c, verify_options) {
 		switch (c) {
 		case IMAGEX_REF_OPTION:
-			ret = string_set_append(&refglobs, optarg);
+			ret = string_list_append(&refglobs, optarg);
 			if (ret)
 				goto out_free_refglobs;
 			break;
@@ -4319,7 +4319,7 @@ imagex_verify(int argc, tchar **argv, int cmd)
 out_wimlib_free:
 	wimlib_free(wim);
 out_free_refglobs:
-	string_set_destroy(&refglobs);
+	string_list_destroy(&refglobs);
 	return ret;
 
 out_usage:

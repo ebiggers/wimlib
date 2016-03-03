@@ -69,7 +69,7 @@ struct win32_apply_ctx {
 	} wimboot;
 
 	/* External backing information  */
-	struct string_set *prepopulate_pats;
+	struct string_list *prepopulate_pats;
 	void *mem_prepopulate_pats;
 	bool tried_to_load_prepopulate_list;
 
@@ -338,7 +338,7 @@ load_prepopulate_pats(struct win32_apply_ctx *ctx)
 	const struct blob_descriptor *blob;
 	int ret;
 	void *buf;
-	struct string_set *s;
+	struct string_list *strings;
 	void *mem;
 	struct text_file_section sec;
 
@@ -366,14 +366,14 @@ load_prepopulate_pats(struct win32_apply_ctx *ctx)
 	if (ret)
 		return ret;
 
-	s = CALLOC(1, sizeof(struct string_set));
-	if (!s) {
+	strings = CALLOC(1, sizeof(struct string_list));
+	if (!strings) {
 		FREE(buf);
 		return WIMLIB_ERR_NOMEM;
 	}
 
 	sec.name = T("PrepopulateList");
-	sec.strings = s;
+	sec.strings = strings;
 
 	ret = do_load_text_file(path, buf, blob->size, &mem, &sec, 1,
 				LOAD_TEXT_FILE_REMOVE_QUOTES |
@@ -382,10 +382,10 @@ load_prepopulate_pats(struct win32_apply_ctx *ctx)
 	STATIC_ASSERT(OS_PREFERRED_PATH_SEPARATOR == WIM_PATH_SEPARATOR);
 	FREE(buf);
 	if (ret) {
-		FREE(s);
+		FREE(strings);
 		return ret;
 	}
-	ctx->prepopulate_pats = s;
+	ctx->prepopulate_pats = strings;
 	ctx->mem_prepopulate_pats = mem;
 	return 0;
 }
@@ -2436,7 +2436,7 @@ static wchar_t *bootloader_pattern_strings[] = {
 	L"\\Windows\\System32\\CodeIntegrity\\driver.stl",
 };
 
-static const struct string_set bootloader_patterns = {
+static const struct string_list bootloader_patterns = {
 	.strings = bootloader_pattern_strings,
 	.num_strings = ARRAY_LEN(bootloader_pattern_strings),
 };

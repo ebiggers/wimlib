@@ -141,23 +141,23 @@ translate_text_buffer(const u8 *buf_raw, size_t bufsize_raw,
 }
 
 static int
-string_set_append(struct string_set *set, tchar *str)
+string_list_append(struct string_list *list, tchar *str)
 {
-	size_t num_alloc_strings = set->num_alloc_strings;
+	size_t num_alloc_strings = list->num_alloc_strings;
 
-	if (set->num_strings == num_alloc_strings) {
+	if (list->num_strings == num_alloc_strings) {
 		tchar **new_strings;
 
 		num_alloc_strings = max(num_alloc_strings * 3 / 2,
 					num_alloc_strings + 4);
-		new_strings = REALLOC(set->strings,
-				      sizeof(set->strings[0]) * num_alloc_strings);
+		new_strings = REALLOC(list->strings,
+				      sizeof(list->strings[0]) * num_alloc_strings);
 		if (!new_strings)
 			return WIMLIB_ERR_NOMEM;
-		set->strings = new_strings;
-		set->num_alloc_strings = num_alloc_strings;
+		list->strings = new_strings;
+		list->num_alloc_strings = num_alloc_strings;
 	}
-	set->strings[set->num_strings++] = str;
+	list->strings[list->num_strings++] = str;
 	return 0;
 }
 
@@ -264,8 +264,8 @@ parse_text_file(const tchar *path, tchar *buf, size_t buflen,
 				return ret;
 		}
 
-		ret = string_set_append(pos_sections[current_section].strings,
-					line_begin);
+		ret = string_list_append(pos_sections[current_section].strings,
+					 line_begin);
 		if (ret)
 			return ret;
 	}
@@ -293,8 +293,7 @@ parse_text_file(const tchar *path, tchar *buf, size_t buflen,
  *	consists of the name of the section (e.g. [ExclusionList], like in the
  *	INI file format), along with a pointer to the list of lines parsed for
  *	that section.  Use an empty name to indicate the destination of lines
- *	not in any section.  Each list must be initialized to an empty string
- *	set.
+ *	not in any section.  Each list must be initialized to empty.
  * @num_pos_sections
  *	Number of entries in the @pos_sections array.
  * @flags

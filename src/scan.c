@@ -195,9 +195,9 @@ read_capture_config(const tchar *config_file, const void *buf,
 	 * [CompressionFolderList].  This is a known issue that doesn't seem to
 	 * have any real consequences, so don't issue warnings about not
 	 * recognizing those sections.  */
-	STRING_SET(prepopulate_pats);
-	STRING_SET(compression_exclusion_pats);
-	STRING_SET(compression_folder_pats);
+	STRING_LIST(prepopulate_pats);
+	STRING_LIST(compression_exclusion_pats);
+	STRING_LIST(compression_folder_pats);
 
 	struct text_file_section sections[] = {
 		{T("ExclusionList"),
@@ -257,7 +257,7 @@ destroy_capture_config(struct capture_config *config)
  * the patterns in @list.  Path separators in @path must be WIM_PATH_SEPARATOR.
  */
 bool
-match_pattern_list(const tchar *path, const struct string_set *list)
+match_pattern_list(const tchar *path, const struct string_list *list)
 {
 	for (size_t i = 0; i < list->num_strings; i++)
 		if (match_path(path, list->strings[i], true))

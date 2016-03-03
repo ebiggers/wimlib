@@ -33,7 +33,7 @@ read_path_list_file(const tchar *listfile,
 		    tchar ***paths_ret, size_t *num_paths_ret,
 		    void **mem_ret)
 {
-	STRING_SET(paths);
+	STRING_LIST(paths);
 	struct text_file_section tmp = {
 		.name = T(""),
 		.strings = &paths,

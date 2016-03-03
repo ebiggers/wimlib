@@ -16,10 +16,10 @@ struct wim_inode;
 struct capture_config {
 
 	/* List of path patterns to exclude  */
-	struct string_set exclusion_pats;
+	struct string_list exclusion_pats;
 
 	/* List of path patterns to include, overriding exclusion_pats  */
-	struct string_set exclusion_exception_pats;
+	struct string_list exclusion_exception_pats;
 
 	void *buf;
 };
@@ -84,7 +84,7 @@ extern void
 destroy_capture_config(struct capture_config *config);
 
 extern bool
-match_pattern_list(const tchar *path, const struct string_set *list);
+match_pattern_list(const tchar *path, const struct string_list *list);
 
 extern int
 try_exclude(const tchar *full_path, const struct scan_params *params);
