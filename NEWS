@@ -25,6 +25,8 @@ Version 1.9.1-BETA:
 
 		VSS support is no longer marked "experimental".
 
+		Added missing license file for libdivsufsort-lite.
+
 Version 1.9.0:
 	Added experimental support for Windows VSS (Volume Shadow Copy Service).
 	The new '--snapshot' argument to 'wimcapture' makes wimlib automatically

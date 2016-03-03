@@ -78,6 +78,12 @@ ${ARCH}-w64-mingw32-strip $DESTDIR/*.{dll,exe}
 
 cp NEWS README* COPYING* $DESTDIR
 cp $WINDEPDIR/COPYING* $DESTDIR
+
+sed -n '/^#/q; s/^[\/\* ]*//; p' src/divsufsort.c > $DESTDIR/COPYING.libdivsufsort-lite
+if ! grep -q 'Copyright' $DESTDIR/COPYING.libdivsufsort-lite; then
+	echo "ERROR: failed to extract libdivsufsort-lite license text" 1>&2
+	exit 1
+fi
 (
 	cd $DESTDIR
 	for fil in NEWS README* COPYING*; do
