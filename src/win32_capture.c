@@ -31,7 +31,6 @@
 
 #include "wimlib/assert.h"
 #include "wimlib/blob_table.h"
-#include "wimlib/capture.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
@@ -39,11 +38,12 @@
 #include "wimlib/object_id.h"
 #include "wimlib/paths.h"
 #include "wimlib/reparse.h"
+#include "wimlib/scan.h"
 #include "wimlib/win32_vss.h"
 #include "wimlib/wof.h"
 
 struct winnt_scan_ctx {
-	struct capture_params *params;
+	struct scan_params *params;
 	bool is_ntfs;
 	u32 vol_flags;
 	unsigned long num_get_sd_access_denied;
@@ -910,7 +910,7 @@ out_close_root_dir:
 }
 
 static int
-winnt_rpfix_progress(struct capture_params *params, const wchar_t *path,
+winnt_rpfix_progress(struct scan_params *params, const wchar_t *path,
 		     const struct link_reparse_point *link, int scan_status)
 {
 	size_t print_name_nchars = link->print_name_nbytes / sizeof(wchar_t);
@@ -921,12 +921,12 @@ winnt_rpfix_progress(struct capture_params *params, const wchar_t *path,
 
 	params->progress.scan.cur_path = path;
 	params->progress.scan.symlink_target = print_name0;
-	return do_capture_progress(params, scan_status, NULL);
+	return do_scan_progress(params, scan_status, NULL);
 }
 
 static int
 winnt_try_rpfix(struct reparse_buffer_disk *rpbuf, u16 *rpbuflen_p,
-		const wchar_t *path, struct capture_params *params)
+		const wchar_t *path, struct scan_params *params)
 {
 	struct link_reparse_point link;
 	const wchar_t *rel_target;
@@ -1019,7 +1019,7 @@ winnt_try_rpfix(struct reparse_buffer_disk *rpbuf, u16 *rpbuflen_p,
  * capture root.  */
 static noinline_for_stack int
 winnt_load_reparse_data(HANDLE h, struct wim_inode *inode,
-			const wchar_t *full_path, struct capture_params *params)
+			const wchar_t *full_path, struct scan_params *params)
 {
 	struct reparse_buffer_disk rpbuf;
 	NTSTATUS status;
@@ -1361,7 +1361,7 @@ set_sort_key(struct wim_inode *inode, u64 sort_key)
 static inline bool
 should_try_to_use_wimboot_hash(const struct wim_inode *inode,
 			       const struct winnt_scan_ctx *ctx,
-			       const struct capture_params *params)
+			       const struct scan_params *params)
 {
 	/* Directories and encrypted files aren't valid for external backing. */
 	if (inode->i_attributes & (FILE_ATTRIBUTE_DIRECTORY |
@@ -1802,16 +1802,16 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 out_progress:
 	ctx->params->progress.scan.cur_path = full_path;
 	if (likely(root))
-		ret = do_capture_progress(ctx->params, WIMLIB_SCAN_DENTRY_OK, inode);
+		ret = do_scan_progress(ctx->params, WIMLIB_SCAN_DENTRY_OK, inode);
 	else
-		ret = do_capture_progress(ctx->params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
+		ret = do_scan_progress(ctx->params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
 out:
 	if (likely(h))
 		NtClose(h);
 	if (unlikely(ret)) {
 		free_dentry_tree(root, ctx->params->blob_table);
 		root = NULL;
-		ret = report_capture_error(ctx->params, ret, full_path);
+		ret = report_scan_error(ctx->params, ret, full_path);
 	}
 	*root_ret = root;
 	return ret;
@@ -2779,9 +2779,9 @@ generate_wim_structures_recursive(struct wim_dentry **root_ret,
 out_progress:
 	ctx->params->progress.scan.cur_path = path;
 	if (likely(root))
-		ret = do_capture_progress(ctx->params, WIMLIB_SCAN_DENTRY_OK, inode);
+		ret = do_scan_progress(ctx->params, WIMLIB_SCAN_DENTRY_OK, inode);
 	else
-		ret = do_capture_progress(ctx->params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
+		ret = do_scan_progress(ctx->params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
 out:
 	if (--ni->num_aliases == 0) {
 		/* Memory usage optimization: when we don't need the ntfs_inode
@@ -2851,7 +2851,7 @@ out:
 int
 win32_build_dentry_tree(struct wim_dentry **root_ret,
 			const wchar_t *root_disk_path,
-			struct capture_params *params)
+			struct scan_params *params)
 {
 	wchar_t *path = NULL;
 	struct winnt_scan_ctx ctx = { .params = params };

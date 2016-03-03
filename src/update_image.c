@@ -56,7 +56,6 @@
 #include "wimlib/alloca.h"
 #include "wimlib/assert.h"
 #include "wimlib/blob_table.h"
-#include "wimlib/capture.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
@@ -64,6 +63,7 @@
 #include "wimlib/metadata.h"
 #include "wimlib/paths.h"
 #include "wimlib/progress.h"
+#include "wimlib/scan.h"
 #include "wimlib/xml_windows.h"
 
 /* Saved specification of a "primitive" update operation that was performed.  */
@@ -786,9 +786,9 @@ execute_add_command(struct update_command_journal *j,
 	tchar *fs_source_path;
 	tchar *wim_target_path;
 	const tchar *config_file;
-	struct capture_params params;
+	struct scan_params params;
 	struct capture_config config;
-	capture_tree_t capture_tree = platform_default_capture_tree;
+	scan_tree_t scan_tree = platform_default_scan_tree;
 	struct wim_dentry *branch;
 
 	add_flags = add_cmd->add.add_flags;
@@ -800,7 +800,7 @@ execute_add_command(struct update_command_journal *j,
 
 #ifdef WITH_NTFS_3G
 	if (add_flags & WIMLIB_ADD_FLAG_NTFS)
-		capture_tree = ntfs_3g_build_dentry_tree;
+		scan_tree = ntfs_3g_build_dentry_tree;
 #endif
 
 	ret = get_capture_config(config_file, &config,
@@ -826,7 +826,7 @@ execute_add_command(struct update_command_journal *j,
 
 	if (WIMLIB_IS_WIM_ROOT_PATH(wim_target_path))
 		params.add_flags |= WIMLIB_ADD_FLAG_ROOT;
-	ret = (*capture_tree)(&branch, fs_source_path, &params);
+	ret = (*scan_tree)(&branch, fs_source_path, &params);
 	if (ret)
 		goto out_destroy_config;
 
@@ -861,7 +861,7 @@ execute_add_command(struct update_command_journal *j,
 		/* If a capture configuration file was explicitly specified when
 		 * capturing an image in WIMBoot mode, save it as
 		 * /Windows/System32/WimBootCompress.ini in the WIM image. */
-		ret = platform_default_capture_tree(&branch, config_file, &params);
+		ret = platform_default_scan_tree(&branch, config_file, &params);
 		if (ret)
 			goto out_destroy_config;
 

@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014 Eric Biggers
+ * Copyright (C) 2012-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -33,10 +33,10 @@
 #include <unistd.h>
 
 #include "wimlib/blob_table.h"
-#include "wimlib/capture.h"
 #include "wimlib/dentry.h"
 #include "wimlib/error.h"
 #include "wimlib/reparse.h"
+#include "wimlib/scan.h"
 #include "wimlib/timestamp.h"
 #include "wimlib/unix_data.h"
 
@@ -136,13 +136,13 @@ static int
 unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 				 char *path, size_t path_len,
 				 int dirfd, const char *relpath,
-				 struct capture_params *params);
+				 struct scan_params *params);
 
 static int
 unix_scan_directory(struct wim_dentry *dir_dentry,
 		    char *full_path, size_t full_path_len,
 		    int parent_dirfd, const char *dir_relpath,
-		    struct capture_params *params)
+		    struct scan_params *params)
 {
 
 	int dirfd;
@@ -277,7 +277,7 @@ unix_relativize_link_target(char *target, u64 ino, u64 dev)
 
 static noinline_for_stack int
 unix_scan_symlink(const char *full_path, int dirfd, const char *relpath,
-		  struct wim_inode *inode, struct capture_params *params)
+		  struct wim_inode *inode, struct scan_params *params)
 {
 	char orig_target[REPARSE_POINT_MAX_SIZE];
 	char *target = orig_target;
@@ -313,7 +313,7 @@ unix_scan_symlink(const char *full_path, int dirfd, const char *relpath,
 			inode->i_rp_flags &= ~WIM_RP_FLAG_NOT_FIXED;
 			status = WIMLIB_SCAN_DENTRY_FIXED_SYMLINK;
 		}
-		ret = do_capture_progress(params, status, NULL);
+		ret = do_scan_progress(params, status, NULL);
 		if (ret)
 			return ret;
 	}
@@ -338,7 +338,7 @@ static int
 unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 				 char *full_path, size_t full_path_len,
 				 int dirfd, const char *relpath,
-				 struct capture_params *params)
+				 struct scan_params *params)
 {
 	struct wim_dentry *tree = NULL;
 	struct wim_inode *inode = NULL;
@@ -380,9 +380,9 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 				goto out;
 			}
 			params->progress.scan.cur_path = full_path;
-			ret = do_capture_progress(params,
-						  WIMLIB_SCAN_DENTRY_UNSUPPORTED,
-						  NULL);
+			ret = do_scan_progress(params,
+					       WIMLIB_SCAN_DENTRY_UNSUPPORTED,
+					       NULL);
 			goto out;
 		}
 	}
@@ -443,14 +443,14 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 out_progress:
 	params->progress.scan.cur_path = full_path;
 	if (likely(tree))
-		ret = do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
+		ret = do_scan_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
 	else
-		ret = do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
+		ret = do_scan_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
 out:
 	if (unlikely(ret)) {
 		free_dentry_tree(tree, params->blob_table);
 		tree = NULL;
-		ret = report_capture_error(params, ret, full_path);
+		ret = report_scan_error(params, ret, full_path);
 	}
 	*tree_ret = tree;
 	return ret;
@@ -461,13 +461,12 @@ out:
  *	Builds a tree of WIM dentries from an on-disk directory tree (UNIX
  *	version; no NTFS-specific data is captured).
  *
- * @root_ret:   Place to return a pointer to the root of the dentry tree.  Only
- *		modified if successful.  Set to NULL if the file or directory was
- *		excluded from capture.
+ * @root_ret:   Place to return a pointer to the root of the dentry tree.  Set
+ *		to NULL if the file or directory was excluded from capture.
  *
  * @root_disk_path:  The path to the root of the directory tree on disk.
  *
- * @params:     See doc for `struct capture_params'.
+ * @params:     See doc for `struct scan_params'.
  *
  * @return:	0 on success, nonzero on failure.  It is a failure if any of
  *		the files cannot be `stat'ed, or if any of the needed
@@ -478,8 +477,7 @@ out:
  */
 int
 unix_build_dentry_tree(struct wim_dentry **root_ret,
-		       const char *root_disk_path,
-		       struct capture_params *params)
+		       const char *root_disk_path, struct scan_params *params)
 {
 	size_t path_len;
 	size_t path_bufsz;

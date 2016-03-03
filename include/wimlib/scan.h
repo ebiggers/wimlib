@@ -1,5 +1,5 @@
-#ifndef _WIMLIB_CAPTURE_H
-#define _WIMLIB_CAPTURE_H
+#ifndef _WIMLIB_SCAN_H
+#define _WIMLIB_SCAN_H
 
 #include "wimlib.h"
 #include "wimlib/inode_table.h"
@@ -14,32 +14,40 @@ struct wim_dentry;
 struct wim_inode;
 
 struct capture_config {
+
+	/* List of path patterns to exclude  */
 	struct string_set exclusion_pats;
+
+	/* List of path patterns to include, overriding exclusion_pats  */
 	struct string_set exclusion_exception_pats;
+
 	void *buf;
 };
 
-/* Common parameters to implementations of building an in-memory dentry tree
- * from an on-disk directory structure. */
-struct capture_params {
-	/* Pointer to the blob table of the WIM.  */
+/* Scan parameters: common parameters to implementations of building an
+ * in-memory dentry tree from an external directory structure.  */
+struct scan_params {
+
+	/* The blob table within which any new blobs discovered during the scan
+	 * will be deduplicated.  */
 	struct blob_table *blob_table;
 
-	/* List of blobs that have been added so far, but without their SHA-1
-	 * message digests being calculated (as a shortcut).  */
+	/* List of new blobs that have been discovered without their SHA-1
+	 * message digests having been calculated (as a shortcut).  */
 	struct list_head *unhashed_blobs;
 
-	/* Hash table of inodes that have been captured for this tree so far. */
+	/* Map from (inode number, device number) pair to inode for new inodes
+	 * that have been discovered so far.  */
 	struct wim_inode_table *inode_table;
 
-	/* The set of security descriptors that have been captured for this
-	 * image so far. */
+	/* The set of unique security descriptors to which each newly
+	 * discovered, unique security descriptor will be added.  */
 	struct wim_sd_set *sd_set;
 
-	/* Pointer to the capture configuration.  */
+	/* The capture configuration in effect, or NULL if none.  */
 	struct capture_config *config;
 
-	/* Flags that affect the capture operation (WIMLIB_ADD_FLAG_*) */
+	/* Flags that affect the scan operation (WIMLIB_ADD_FLAG_*) */
 	int add_flags;
 
 	/* If non-NULL, the user-supplied progress function. */
@@ -49,21 +57,21 @@ struct capture_params {
 	/* Progress data.  */
 	union wimlib_progress_info progress;
 
-	/* The capture implementation must set this to the number of characters
-	 * that try_exclude() will strip from the path before testing exclusion
-	 * patterns from the capture configuration file.  */
+	/* Before calling try_exclude(), the scan implementation must set this
+	 * to the number of characters that try_exclude() will strip from the
+	 * path when testing exclusion patterns.  */
 	size_t capture_root_nchars;
 
-	/* Can be used by the capture implementation.  */
+	/* Can be used by the scan implementation.  */
 	u64 capture_root_ino;
 	u64 capture_root_dev;
 };
 
-/* capture_common.c */
+/* scan.c */
 
 extern int
-do_capture_progress(struct capture_params *params, int status,
-		    const struct wim_inode *inode);
+do_scan_progress(struct scan_params *params, int status,
+		 const struct wim_inode *inode);
 
 extern int
 mangle_pat(tchar *pat, const tchar *path, unsigned long line_no);
@@ -79,17 +87,16 @@ extern bool
 match_pattern_list(const tchar *path, const struct string_set *list);
 
 extern int
-try_exclude(const tchar *full_path, const struct capture_params *params);
+try_exclude(const tchar *full_path, const struct scan_params *params);
 
-typedef int (*capture_tree_t)(struct wim_dentry **, const tchar *,
-			      struct capture_params *);
+typedef int (*scan_tree_t)(struct wim_dentry **, const tchar *,
+			   struct scan_params *);
 
 #ifdef WITH_NTFS_3G
 /* ntfs-3g_capture.c */
 extern int
 ntfs_3g_build_dentry_tree(struct wim_dentry **root_ret,
-			  const tchar *device,
-			  struct capture_params *params);
+			  const tchar *device, struct scan_params *params);
 #endif
 
 #ifdef __WIN32__
@@ -97,22 +104,20 @@ ntfs_3g_build_dentry_tree(struct wim_dentry **root_ret,
 extern int
 win32_build_dentry_tree(struct wim_dentry **root_ret,
 			const tchar *root_disk_path,
-			struct capture_params *params);
-#define platform_default_capture_tree win32_build_dentry_tree
+			struct scan_params *params);
+#define platform_default_scan_tree win32_build_dentry_tree
 #else
 /* unix_capture.c */
 extern int
 unix_build_dentry_tree(struct wim_dentry **root_ret,
-		       const tchar *root_disk_path,
-		       struct capture_params *params);
-#define platform_default_capture_tree unix_build_dentry_tree
+		       const tchar *root_disk_path, struct scan_params *params);
+#define platform_default_scan_tree unix_build_dentry_tree
 #endif
 
 #define WIMLIB_ADD_FLAG_ROOT	0x80000000
 
 static inline int
-report_capture_error(struct capture_params *params, int error_code,
-		     const tchar *path)
+report_scan_error(struct scan_params *params, int error_code, const tchar *path)
 {
 	return report_error(params->progfunc, params->progctx, error_code, path);
 }
@@ -124,4 +129,4 @@ extern void
 attach_scanned_tree(struct wim_dentry *parent, struct wim_dentry *child,
 		    struct blob_table *blob_table);
 
-#endif /* _WIMLIB_CAPTURE_H */
+#endif /* _WIMLIB_SCAN_H */

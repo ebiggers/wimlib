@@ -1,9 +1,9 @@
 /*
- * capture_common.c - Mostly code to handle excluding paths from capture.
+ * scan.c - Helper routines for directory tree scans
  */
 
 /*
- * Copyright (C) 2013, 2014 Eric Biggers
+ * Copyright (C) 2013-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -26,12 +26,12 @@
 #include <string.h>
 
 #include "wimlib/blob_table.h"
-#include "wimlib/capture.h"
 #include "wimlib/dentry.h"
 #include "wimlib/error.h"
 #include "wimlib/paths.h"
 #include "wimlib/pattern.h"
 #include "wimlib/progress.h"
+#include "wimlib/scan.h"
 #include "wimlib/textfile.h"
 
 /*
@@ -39,7 +39,7 @@
  * and possibly call the progress function provided by the library user.
  *
  * @params
- *	Flags, optional progress function, and progress data for the capture
+ *	Flags, optional progress function, and progress data for the scan
  *	operation.
  * @status
  *	Status of the scanned file.
@@ -50,8 +50,8 @@
  *	via additional hard links, inode->i_nlink will be greater than 1.
  */
 int
-do_capture_progress(struct capture_params *params, int status,
-		    const struct wim_inode *inode)
+do_scan_progress(struct scan_params *params, int status,
+		 const struct wim_inode *inode)
 {
 	int ret;
 	tchar *cookie;
@@ -286,7 +286,7 @@ match_pattern_list(const tchar *path, const struct string_set *list)
  *	> 0 (wimlib error code) if error
  */
 int
-try_exclude(const tchar *full_path, const struct capture_params *params)
+try_exclude(const tchar *full_path, const struct scan_params *params)
 {
 	int ret;
 

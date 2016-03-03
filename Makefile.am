@@ -37,7 +37,6 @@ libwim_la_SOURCES =		\
 	src/add_image.c		\
 	src/avl_tree.c		\
 	src/blob_table.c	\
-	src/capture_common.c	\
 	src/compress.c		\
 	src/compress_common.c	\
 	src/compress_parallel.c	\
@@ -76,6 +75,7 @@ libwim_la_SOURCES =		\
 	src/registry.c		\
 	src/reparse.c		\
 	src/resource.c		\
+	src/scan.c		\
 	src/security.c		\
 	src/sha1.c		\
 	src/solid.c		\
@@ -101,7 +101,6 @@ libwim_la_SOURCES =		\
 	include/wimlib/bitops.h		\
 	include/wimlib/blob_table.h	\
 	include/wimlib/bt_matchfinder.h	\
-	include/wimlib/capture.h	\
 	include/wimlib/case.h		\
 	include/wimlib/compiler.h	\
 	include/wimlib/compressor_ops.h	\
@@ -139,6 +138,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/registry.h	\
 	include/wimlib/reparse.h	\
 	include/wimlib/resource.h	\
+	include/wimlib/scan.h		\
 	include/wimlib/security.h	\
 	include/wimlib/security_descriptor.h	\
 	include/wimlib/sha1.h		\

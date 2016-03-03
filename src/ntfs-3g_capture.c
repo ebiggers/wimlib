@@ -39,7 +39,6 @@
 #include "wimlib/alloca.h"
 #include "wimlib/assert.h"
 #include "wimlib/blob_table.h"
-#include "wimlib/capture.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
@@ -48,6 +47,7 @@
 #include "wimlib/object_id.h"
 #include "wimlib/paths.h"
 #include "wimlib/reparse.h"
+#include "wimlib/scan.h"
 #include "wimlib/security.h"
 
 /* NTFS-3g 2013 renamed MS_RDONLY to NTFS_MNT_RDONLY.  We can't check for the
@@ -611,7 +611,7 @@ struct readdir_ctx {
 	size_t path_len;
 	struct dos_name_map dos_name_map;
 	struct ntfs_volume_wrapper *volume;
-	struct capture_params *params;
+	struct scan_params *params;
 	int ret;
 };
 
@@ -622,7 +622,7 @@ ntfs_3g_build_dentry_tree_recursive(struct wim_dentry **root_p,
 				    size_t path_len,
 				    int name_type,
 				    struct ntfs_volume_wrapper *volume,
-				    struct capture_params *params);
+				    struct scan_params *params);
 
 static int
 filldir(void *_ctx, const ntfschar *name, const int name_nchars,
@@ -676,7 +676,7 @@ static int
 ntfs_3g_recurse_directory(ntfs_inode *ni, char *path, size_t path_len,
 			  struct wim_dentry *parent,
 			  struct ntfs_volume_wrapper *volume,
-			  struct capture_params *params)
+			  struct scan_params *params)
 {
 	int ret;
 	s64 pos = 0;
@@ -721,7 +721,7 @@ ntfs_3g_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				    size_t path_len,
 				    int name_type,
 				    struct ntfs_volume_wrapper *volume,
-				    struct capture_params *params)
+				    struct scan_params *params)
 {
 	u32 attributes;
 	int ret;
@@ -759,7 +759,7 @@ ntfs_3g_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 			goto out;
 		}
 		params->progress.scan.cur_path = path;
-		ret = do_capture_progress(params, WIMLIB_SCAN_DENTRY_UNSUPPORTED, NULL);
+		ret = do_scan_progress(params, WIMLIB_SCAN_DENTRY_UNSUPPORTED, NULL);
 		goto out;
 	}
 
@@ -838,16 +838,16 @@ ntfs_3g_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 out_progress:
 	params->progress.scan.cur_path = path;
 	if (root == NULL)
-		ret = do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
+		ret = do_scan_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
 	else
-		ret = do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
+		ret = do_scan_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
 out:
 	if (ni)
 		ntfs_inode_close(ni);
 	if (unlikely(ret)) {
 		free_dentry_tree(root, params->blob_table);
 		root = NULL;
-		ret = report_capture_error(params, ret, path);
+		ret = report_scan_error(params, ret, path);
 	}
 	*root_ret = root;
 	return ret;
@@ -855,8 +855,7 @@ out:
 
 int
 ntfs_3g_build_dentry_tree(struct wim_dentry **root_ret,
-			  const char *device,
-			  struct capture_params *params)
+			  const char *device, struct scan_params *params)
 {
 	struct ntfs_volume_wrapper *volume;
 	ntfs_volume *vol;
