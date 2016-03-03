@@ -50,10 +50,10 @@
 #include "wimlib/scan.h"
 #include "wimlib/security.h"
 
-/* NTFS-3g 2013 renamed MS_RDONLY to NTFS_MNT_RDONLY.  We can't check for the
+/* NTFS-3G 2013 renamed MS_RDONLY to NTFS_MNT_RDONLY.  We can't check for the
  * existence of NTFS_MNT_RDONLY at compilation time because it's an enum.  We
  * also can't check for MS_RDONLY being missing because it's also a system
- * constant.  So check if the NTFS-3g specific MS_IGNORE_HIBERFILE is defined;
+ * constant.  So check if the NTFS-3G specific MS_IGNORE_HIBERFILE is defined;
  * if yes, then we need to use the old MS_RDONLY.  */
 #ifdef MS_IGNORE_HIBERFILE
 #  define NTFS_MNT_RDONLY MS_RDONLY
@@ -271,7 +271,7 @@ set_attr_sort_key(ntfs_inode *ni, struct ntfs_location *loc)
 /*
  * Add a new stream to the specified inode, with duplicate checking.
  *
- * This works around a problem where NTFS-3g can list multiple unnamed data
+ * This works around a problem where NTFS-3G can list multiple unnamed data
  * streams for a single file.  In this case we can only keep one.  We'll prefer
  * one that is nonempty.
  */
@@ -753,7 +753,7 @@ ntfs_3g_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	if (unlikely(attributes & FILE_ATTRIBUTE_ENCRYPTED)) {
 		if (params->add_flags & WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE)
 		{
-			ERROR("Can't archive \"%s\" because NTFS-3g capture mode "
+			ERROR("Can't archive \"%s\" because NTFS-3G capture mode "
 			      "does not support encrypted files and directories", path);
 			ret = WIMLIB_ERR_UNSUPPORTED_FILE;
 			goto out;
@@ -812,7 +812,7 @@ ntfs_3g_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	if (ret)
 		goto out;
 
-	/* Reparse-point fixups are a no-op because in NTFS-3g capture mode we
+	/* Reparse-point fixups are a no-op because in NTFS-3G capture mode we
 	 * only allow capturing an entire volume. */
 	if (params->add_flags & WIMLIB_ADD_FLAG_RPFIX &&
 	    inode_is_symlink(inode))

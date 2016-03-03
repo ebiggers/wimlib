@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 
-/* Note: the NTFS-3g headers define CASE_SENSITIVE, hence the WIMLIB prefix.  */
+/* Note: the NTFS-3G headers define CASE_SENSITIVE, hence the WIMLIB prefix.  */
 typedef enum {
 	/* Use either case-sensitive or case-insensitive search, depending on
 	 * the variable @default_ignore_case.  */

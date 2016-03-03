@@ -263,7 +263,7 @@ static const tchar * const error_strings[] = {
 		= T("The WIM was not captured such that it can be "
 		    "applied from a pipe"),
 	[WIMLIB_ERR_NTFS_3G]
-		= T("NTFS-3g encountered an error (check errno)"),
+		= T("NTFS-3G encountered an error (check errno)"),
 	[WIMLIB_ERR_OPEN]
 		= T("Failed to open a file"),
 	[WIMLIB_ERR_OPENDIR]

@@ -77,7 +77,7 @@ struct wim_dentry {
 	 * excluding the terminating null  */
 	u16 d_extraction_name_nchars;
 
-	/* When capturing from an NTFS volume using NTFS-3g, this flag is set on
+	/* When capturing from an NTFS volume using NTFS-3G, this flag is set on
 	 * dentries that were created from a filename in the WIN32 or WIN32+DOS
 	 * namespaces rather than the POSIX namespace.  Otherwise this will
 	 * always be 0.  */

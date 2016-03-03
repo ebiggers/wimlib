@@ -5,7 +5,7 @@
  * much information as possible, including security data, file attributes, DOS
  * names, alternate data streams, and object IDs.
  *
- * Note: because NTFS-3g offers inode-based interfaces, we actually don't need
+ * Note: because NTFS-3G offers inode-based interfaces, we actually don't need
  * to deal with paths at all!  (Other than for error messages.)
  */
 
@@ -302,7 +302,7 @@ ntfs_3g_restore_dos_name(ntfs_inode *ni, ntfs_inode *dir_ni,
 		goto out_close;
 	}
 
-	/* Unlike most other NTFS-3g functions, ntfs_set_ntfs_dos_name()
+	/* Unlike most other NTFS-3G functions, ntfs_set_ntfs_dos_name()
 	 * changes the directory's last modification timestamp...
 	 * Change it back.  */
 	return ntfs_3g_restore_timestamps(vol, dentry->d_parent->d_inode);
@@ -1015,7 +1015,7 @@ ntfs_3g_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	struct wim_dentry *root;
 	int ret;
 
-	/* For NTFS-3g extraction mode we require that the dentries to extract
+	/* For NTFS-3G extraction mode we require that the dentries to extract
 	 * form a single tree.  */
 	root = list_first_entry(dentry_list, struct wim_dentry,
 				d_extraction_list_node);
@@ -1023,7 +1023,7 @@ ntfs_3g_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	/* Mount the NTFS volume.  */
 	vol = ntfs_mount(ctx->common.target, 0);
 	if (!vol) {
-		ERROR_WITH_ERRNO("Failed to mount \"%s\" with NTFS-3g",
+		ERROR_WITH_ERRNO("Failed to mount \"%s\" with NTFS-3G",
 				 ctx->common.target);
 		return WIMLIB_ERR_NTFS_3G;
 	}
@@ -1064,7 +1064,7 @@ ntfs_3g_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 
 out_unmount:
 	if (ntfs_umount(ctx->vol, FALSE) && !ret) {
-		ERROR_WITH_ERRNO("Failed to unmount \"%s\" with NTFS-3g",
+		ERROR_WITH_ERRNO("Failed to unmount \"%s\" with NTFS-3G",
 				 ctx->common.target);
 		ret = WIMLIB_ERR_NTFS_3G;
 	}
@@ -1072,7 +1072,7 @@ out_unmount:
 }
 
 const struct apply_operations ntfs_3g_apply_ops = {
-	.name			= "NTFS-3g",
+	.name			= "NTFS-3G",
 	.get_supported_features = ntfs_3g_get_supported_features,
 	.extract                = ntfs_3g_extract,
 	.context_size           = sizeof(struct ntfs_3g_apply_ctx),

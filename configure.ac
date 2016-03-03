@@ -138,7 +138,7 @@ if test "$WITH_NTFS_3G" = "yes"; then
 		 libntfs-3g, or configure --without-ntfs-3g to disable this
 		 feature.])])
 	PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES libntfs-3g"
-	AC_DEFINE([WITH_NTFS_3G], [1], [Define to 1 if using NTFS-3g support])
+	AC_DEFINE([WITH_NTFS_3G], [1], [Define to 1 if using NTFS-3G support])
 fi
 AM_CONDITIONAL([WITH_NTFS_3G], [test "$WITH_NTFS_3G" = "yes"])
 

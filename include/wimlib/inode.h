@@ -191,7 +191,7 @@ struct wim_inode {
 			struct wim_dentry *i_first_extraction_alias;
 
 		#ifdef WITH_NTFS_3G
-			/* In NTFS-3g extraction mode, this is set to the Master
+			/* In NTFS-3G extraction mode, this is set to the Master
 			 * File Table (MFT) number of the NTFS file that was
 			 * created for this inode.  */
 			u64 i_mft_no;

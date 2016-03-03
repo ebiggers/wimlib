@@ -28,7 +28,7 @@
  * wimlib_extract_pathlist().  Internally, all end up calling
  * do_wimlib_extract_paths() and extract_trees().
  *
- * Although wimlib supports multiple extraction modes/backends (NTFS-3g, UNIX,
+ * Although wimlib supports multiple extraction modes/backends (NTFS-3G, UNIX,
  * Win32), this file does not itself have code to extract files or directories
  * to any specific target; instead, it handles generic functionality and relies
  * on lower-level callback functions declared in `struct apply_operations' to do
@@ -1542,7 +1542,7 @@ check_extract_flags(const WIMStruct *wim, int *extract_flags_p)
 
 #ifndef WITH_NTFS_3G
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS) {
-		ERROR("wimlib was compiled without support for NTFS-3g, so\n"
+		ERROR("wimlib was compiled without support for NTFS-3G, so\n"
 		      "        it cannot apply a WIM image directly to an NTFS volume.");
 		return WIMLIB_ERR_UNSUPPORTED;
 	}

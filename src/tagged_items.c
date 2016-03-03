@@ -52,7 +52,7 @@ struct tagged_item_header {
 	u8 data[];
 };
 
-/* Unconfirmed: are all 64 bytes of the object ID always present?  Since NTFS-3g
+/* Unconfirmed: are all 64 bytes of the object ID always present?  Since NTFS-3G
  * permits shorter object IDs, we'll do the same for now.  */
 #define OBJECT_ID_MIN_LENGTH	16
 

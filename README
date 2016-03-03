@@ -90,7 +90,7 @@ platform-dependent way:
     Windows-specific data are ordinarily ignored; however, there is also special
     support for capturing and extracting images directly to/from unmounted NTFS
     volumes.  This was made possible with the help of libntfs-3g from the
-    NTFS-3g project.
+    NTFS-3G project.
 
 For both platforms the code for NTFS capture and extraction is complete enough
 that it is possible to apply an image from the "install.wim" contained in recent
@@ -209,7 +209,7 @@ Windows (XP and later).
 As much code as possible is shared among all supported platforms, but there
 necessarily are some differences in what features are supported on each platform
 and how they are implemented.  Most notable is that file tree scanning and
-extraction are implemented separately for Windows, UNIX, and UNIX (NTFS-3g
+extraction are implemented separately for Windows, UNIX, and UNIX (NTFS-3G
 mode), to ensure a fast and feature-rich implementation of each platform/mode.
 
 wimlib is mainly used on x86 and x86_64 CPUs, but it should also work on a
@@ -240,7 +240,7 @@ The algorithms used by wimlib's compression and decompression codecs are
 inspired by a variety of sources, including open source projects and computer
 science papers.
 
-The code in ntfs-3g_apply.c and ntfs-3g_capture.c uses the NTFS-3g library,
+The code in ntfs-3g_apply.c and ntfs-3g_capture.c uses the NTFS-3G library,
 which is a library for reading and writing to NTFS filesystems (the filesystem
 used by recent versions of Windows).  See
 http://www.tuxera.com/community/ntfs-3g-download/ for more information.

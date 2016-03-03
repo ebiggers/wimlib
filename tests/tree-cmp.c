@@ -4,7 +4,7 @@
  * There are two modes:
  * 	- Normal mode for any filesystems.  We compare file names, contents,
  * 	sizes, modes, access times, and hard links.
- * 	- NTFS mode for NTFS-3g mounted volumes.  In this mode we need to
+ * 	- NTFS mode for NTFS-3G mounted volumes.  In this mode we need to
  * 	  compare various NTFS-specific attributes such as named data streams
  * 	  and DOS names.
  *
