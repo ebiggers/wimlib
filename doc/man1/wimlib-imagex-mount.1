@@ -185,10 +185,6 @@ mount is read-only.
 In combination with \fB--commit\fR, force the WIM image to be committed even if
 there are open file descriptors to the WIM image.  Any such file descriptors
 will be immediately closed, and the WIM image will be committed and unmounted.
-.IP
-\fB--lazy\fR is a deprecated alias for \fB--force\fR.  (Unmounts are now "lazy"
-by default with regards to the kernel-level mountpoint, except in the case with
-\fB--commit\fR described above.)
 .TP
 \fB--check\fR
 When writing \fIWIMFILE\fR, include an integrity table.  Has no effect if the
