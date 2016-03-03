@@ -25,7 +25,9 @@ The Windows distribution of wimlib is a ZIP file containing the following items:
     included; download the source if you want it.
 
   * License files for all software included.  These are all free software
-    licenses.
+    licenses.  COPYING.txt is the main license, and it refers to
+    COPYING.GPLv3.txt and COPYING.LGPLv3.txt.  The other licenses are for
+    third-party software included in the library.
 
 Note that there are separate ZIP files for 32-bit (i686) and 64-bit (x86_64)
 binaries.  They are both fully supported, but you should prefer the 64-bit
