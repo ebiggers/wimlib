@@ -2405,7 +2405,7 @@ load_files_from_mft(const wchar_t *path, struct ntfs_inode_map *inode_map)
 			 QUERY_FILE_LAYOUT_INCLUDE_STREAMS_WITH_NO_CLUSTERS_ALLOCATED,
 		.FilterType = QUERY_FILE_LAYOUT_FILTER_TYPE_NONE,
 	};
-	const size_t outsize = 32768;
+	size_t outsize = 32768;
 	QUERY_FILE_LAYOUT_OUTPUT *out = NULL;
 	int ret;
 	NTSTATUS status;
@@ -2417,27 +2417,38 @@ load_files_from_mft(const wchar_t *path, struct ntfs_inode_map *inode_map)
 		goto out;
 	}
 
-	out = MALLOC(outsize);
-	if (!out) {
-		ret = WIMLIB_ERR_NOMEM;
-		goto out;
-	}
-
-	while (NT_SUCCESS(status = winnt_fsctl(h, FSCTL_QUERY_FILE_LAYOUT,
-					       &in, sizeof(in),
-					       out, outsize, NULL)))
-	{
-		const FILE_LAYOUT_ENTRY *file =
-			(const void *)out + out->FirstFileOffset;
-		for (;;) {
-			ret = load_one_file(file, inode_map);
-			if (ret)
-				goto out;
-			if (file->NextFileOffset == 0)
-				break;
-			file = (const void *)file + file->NextFileOffset;
+	for (;;) {
+		/* Allocate a buffer for the output of the ioctl.  */
+		out = MALLOC(outsize);
+		if (!out) {
+			ret = WIMLIB_ERR_NOMEM;
+			goto out;
 		}
-		in.Flags &= ~QUERY_FILE_LAYOUT_RESTART;
+
+		/* Execute FSCTL_QUERY_FILE_LAYOUT until it fails.  */
+		while (NT_SUCCESS(status = winnt_fsctl(h,
+						       FSCTL_QUERY_FILE_LAYOUT,
+						       &in, sizeof(in),
+						       out, outsize, NULL)))
+		{
+			const FILE_LAYOUT_ENTRY *file =
+				(const void *)out + out->FirstFileOffset;
+			for (;;) {
+				ret = load_one_file(file, inode_map);
+				if (ret)
+					goto out;
+				if (file->NextFileOffset == 0)
+					break;
+				file = (const void *)file + file->NextFileOffset;
+			}
+			in.Flags &= ~QUERY_FILE_LAYOUT_RESTART;
+		}
+
+		/* Enlarge the buffer if needed.  */
+		if (status != STATUS_BUFFER_TOO_SMALL)
+			break;
+		FREE(out);
+		outsize *= 2;
 	}
 
 	/* Normally, FSCTL_QUERY_FILE_LAYOUT fails with STATUS_END_OF_FILE after
