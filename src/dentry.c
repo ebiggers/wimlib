@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers
+ * Copyright (C) 2012-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -92,10 +92,10 @@ struct wim_dentry_on_disk {
 	le32 attributes;
 
 	/* A value that specifies the security descriptor for this file or
-	 * directory.  If -1, the file or directory has no security descriptor.
-	 * Otherwise, it is a 0-based index into the WIM image's table of
-	 * security descriptors (see: `struct wim_security_data') */
-	sle32 security_id;
+	 * directory.  If 0xFFFFFFFF, the file or directory has no security
+	 * descriptor.  Otherwise, it is a 0-based index into the WIM image's
+	 * table of security descriptors (see: `struct wim_security_data') */
+	le32 security_id;
 
 	/* Offset, in bytes, from the start of the uncompressed metadata
 	 * resource of this directory's child directory entries, or 0 if this

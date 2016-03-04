@@ -26,17 +26,10 @@ typedef uint16_t _bitwise_attr le16;
 typedef uint32_t _bitwise_attr le32;
 typedef uint64_t _bitwise_attr le64;
 
-/* Signed little endian types of exact size (declare as unsigned to avoid sign
- * extension on big-endian architectures) */
-typedef uint16_t _bitwise_attr sle16;
-typedef uint32_t _bitwise_attr sle32;
-typedef uint64_t _bitwise_attr sle64;
-
 /* Unsigned big endian types of exact size */
 typedef uint16_t _bitwise_attr be16;
 typedef uint32_t _bitwise_attr be32;
 typedef uint64_t _bitwise_attr be64;
-
 #endif
 
 /* A pointer to 'utf16lechar' indicates a UTF-16LE encoded string */
