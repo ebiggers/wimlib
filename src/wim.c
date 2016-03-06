@@ -944,10 +944,10 @@ test_locale_ctype_utf8(void)
 #else
 	char *ctype = nl_langinfo(CODESET);
 
-	return (!strstr(ctype, "UTF-8") ||
-		!strstr(ctype, "UTF8") ||
-		!strstr(ctype, "utf8") ||
-		!strstr(ctype, "utf-8"));
+	return (strstr(ctype, "UTF-8") ||
+		strstr(ctype, "UTF8") ||
+		strstr(ctype, "utf8") ||
+		strstr(ctype, "utf-8"));
 #endif
 }
 

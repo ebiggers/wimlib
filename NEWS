@@ -10,6 +10,8 @@ Version 1.9.1-BETA:
 	Made some minor build-related updates.  Notably, enabled "silent" make
 	rules; this makes the output cleaner when building from source.
 
+	Non UTF-8 locales are now detected correctly.
+
 	Some Windows-specific updates:
 		Fixed a bug where duplicate backslashes could be generated in
 		link targets when extracting symbolic links and junctions.
