@@ -1129,7 +1129,7 @@ adjust_compression_attribute(HANDLE h, const struct wim_dentry *dentry,
 	status = winnt_fsctl(h, FSCTL_SET_COMPRESSION,
 			     &compression_state, sizeof(USHORT), NULL, 0, NULL);
 	if (NT_SUCCESS(status))
-		return status;
+		return 0;
 
 	winnt_error(status, L"Can't %s compression attribute on \"%ls\"",
 		    (compressed ? "set" : "clear"), current_path(ctx));
