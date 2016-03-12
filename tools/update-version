@@ -1,13 +1,13 @@
 #!/bin/bash
 
-oldver='1\.8\.3'
-oldmonth=November
-oldyear=2015
+oldver='1\.9\.0'
+oldmonth=January
+oldyear=2016
 
 newmajor=1
 newminor=9
-newpatch=0
-newmonth=January
+newpatch=1
+newmonth=March
 newyear=2016
 
 

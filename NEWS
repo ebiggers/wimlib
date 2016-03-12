@@ -1,4 +1,4 @@
-Version 1.9.1-BETA:
+Version 1.9.1:
 	Object IDs are now saved and restored on Windows and in NTFS-3G mode.
 
 	Reduced memory usage when exporting large numbers of WIM images.
