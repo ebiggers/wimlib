@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014 Eric Biggers
+ * Copyright (C) 2012-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -436,7 +436,7 @@ unix_extract_if_empty_file(const struct wim_dentry *dentry,
 
 		path = unix_build_extraction_path(dentry, ctx);
 	retry_create:
-		fd = open(path, O_TRUNC | O_CREAT | O_WRONLY | O_NOFOLLOW, 0644);
+		fd = open(path, O_EXCL | O_CREAT | O_WRONLY | O_NOFOLLOW, 0644);
 		if (fd < 0) {
 			if (errno == EEXIST && !unlink(path))
 				goto retry_create;
@@ -577,7 +577,7 @@ unix_begin_extract_blob_instance(const struct blob_descriptor *blob,
 	first_dentry = inode_first_extraction_dentry(inode);
 	first_path = unix_build_extraction_path(first_dentry, ctx);
 retry_create:
-	fd = open(first_path, O_TRUNC | O_CREAT | O_WRONLY | O_NOFOLLOW, 0644);
+	fd = open(first_path, O_EXCL | O_CREAT | O_WRONLY | O_NOFOLLOW, 0644);
 	if (fd < 0) {
 		if (errno == EEXIST && !unlink(first_path))
 			goto retry_create;
