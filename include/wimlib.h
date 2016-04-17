@@ -3043,7 +3043,7 @@ wimlib_extract_pathlist(WIMStruct *wim, int image,
  * to match no files, and there is a flag (::WIMLIB_EXTRACT_FLAG_STRICT_GLOB) to
  * enable the strict behavior if desired.
  *
- * Symbolic are not be dereferenced when paths in the image are interpreted.
+ * Symbolic links are not dereferenced when paths in the image are interpreted.
  *
  * @param wim
  *	WIM from which to extract the paths, specified as a pointer to the
