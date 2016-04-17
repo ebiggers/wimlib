@@ -11,7 +11,7 @@
  */
 
 /*
- * Copyright (C) 2014 Eric Biggers
+ * Copyright (C) 2014-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -219,30 +219,6 @@ out:
 }
 
 /*
- * Allocate a new WIM data source ID.
- *
- * @old_hdr
- *	Previous WimOverlay.dat contents, or NULL if file did not exist.
- *
- * Returns the new data source ID.
- */
-static u64
-alloc_new_data_source_id(const struct WimOverlay_dat_header *old_hdr)
-{
-	if (!old_hdr)
-		return 0;
-
-	for (u64 id = 0; ; id++) {
-		for (u32 i = 0; i < old_hdr->num_entries_1; i++)
-			if (id == old_hdr->entry_1s[i].data_source_id)
-				goto next;
-		return id;
-	next:
-		;
-	}
-}
-
-/*
  * Calculate the size of WimOverlay.dat with one entry added.
  *
  * @old_hdr
@@ -263,7 +239,7 @@ calculate_wimoverlay_dat_size(const struct WimOverlay_dat_header *old_hdr,
 
 	size_64 = sizeof(struct WimOverlay_dat_header);
 	if (old_hdr) {
-		for (u32 i = 0; i < old_hdr->num_entries_1; i++) {
+		for (u32 i = 0; i < old_hdr->num_entries; i++) {
 			size_64 += sizeof(struct WimOverlay_dat_entry_1);
 			size_64 += old_hdr->entry_1s[i].entry_2_length;
 		}
@@ -366,17 +342,16 @@ fill_in_wimoverlay_dat(u8 *buf,
 	new_hdr->magic = WIMOVERLAY_DAT_MAGIC;
 	new_hdr->wim_provider_version = WIM_PROVIDER_CURRENT_VERSION;
 	new_hdr->unknown_0x08 = 0x00000028;
-	new_hdr->num_entries_1 = (old_hdr ? old_hdr->num_entries_1 : 0) + 1;
-	new_hdr->num_entries_2 = (old_hdr ? old_hdr->num_entries_2 : 0) + 1;
-	new_hdr->unknown_0x14 = 0x00000000;
+	new_hdr->num_entries = (old_hdr ? old_hdr->num_entries : 0) + 1;
+	new_hdr->next_data_source_id = (old_hdr ? old_hdr->next_data_source_id : 0) + 1;
 
 	p += sizeof(struct WimOverlay_dat_header);
 
 	/* Copy WIM-specific information for old entries  */
 	entry_2_offset = sizeof(struct WimOverlay_dat_header) +
-			(new_hdr->num_entries_1 * sizeof(struct WimOverlay_dat_entry_1));
+			(new_hdr->num_entries * sizeof(struct WimOverlay_dat_entry_1));
 	if (old_hdr) {
-		for (u32 i = 0; i < old_hdr->num_entries_1; i++) {
+		for (u32 i = 0; i < old_hdr->num_entries; i++) {
 			new_entry_1 = (struct WimOverlay_dat_entry_1 *)p;
 
 			p = mempcpy(p, &old_hdr->entry_1s[i],
@@ -402,7 +377,7 @@ fill_in_wimoverlay_dat(u8 *buf,
 
 	/* Copy WIM location information for old entries  */
 	if (old_hdr) {
-		for (u32 i = 0; i < old_hdr->num_entries_1; i++) {
+		for (u32 i = 0; i < old_hdr->num_entries; i++) {
 			wimlib_assert(new_hdr->entry_1s[i].entry_2_offset == p - buf);
 			wimlib_assert(old_hdr->entry_1s[i].entry_2_length ==
 				      new_hdr->entry_1s[i].entry_2_length);
@@ -511,7 +486,7 @@ prepare_wimoverlay_dat(const struct WimOverlay_dat_header *old_hdr,
 	if (ret)
 		return ret;
 
-	new_data_source_id = alloc_new_data_source_id(old_hdr);
+	new_data_source_id = old_hdr ? old_hdr->next_data_source_id : 0;
 
 	new_entry_2_size = sizeof(struct WimOverlay_dat_entry_2) +
 				((wcslen(wim_path) - 2 + 1) * sizeof(wchar_t));
@@ -637,9 +612,7 @@ retry:
 
 	if (hdr->magic != WIMOVERLAY_DAT_MAGIC ||
 	    hdr->wim_provider_version != WIM_PROVIDER_CURRENT_VERSION ||
-	    hdr->unknown_0x08 != 0x00000028 ||
-	    (hdr->num_entries_1 != hdr->num_entries_2) ||
-	    hdr->unknown_0x14 != 0x00000000)
+	    hdr->unknown_0x08 != 0x00000028)
 	{
 		ERROR("\"%ls\": Header contains unexpected data:", path);
 		if (wimlib_print_errors) {
@@ -652,22 +625,32 @@ retry:
 		goto out_free_contents;
 	}
 
-	if ((u64)hdr->num_entries_1 * sizeof(struct WimOverlay_dat_entry_1) >
+	if ((u64)hdr->num_entries * sizeof(struct WimOverlay_dat_entry_1) >
 	    info.nFileSizeLow - sizeof(struct WimOverlay_dat_header))
 	{
 		ERROR("\"%ls\": File is unexpectedly small "
 		      "(only %"PRIu32" bytes, but has %"PRIu32" entries)",
-		      path, (u32)info.nFileSizeLow, hdr->num_entries_1);
+		      path, (u32)info.nFileSizeLow, hdr->num_entries);
 		ret = WIMLIB_ERR_UNSUPPORTED;
 		goto out_free_contents;
 	}
 
-	for (u32 i = 0; i < hdr->num_entries_1; i++) {
+	for (u32 i = 0; i < hdr->num_entries; i++) {
 		const struct WimOverlay_dat_entry_1 *entry_1;
 		const struct WimOverlay_dat_entry_2 *entry_2;
 		u32 wim_file_name_length;
 
 		entry_1 = &hdr->entry_1s[i];
+
+		if (entry_1->data_source_id >= hdr->next_data_source_id) {
+			ERROR("\"%ls\": value of next_data_source_id "
+			      "(0x%016"PRIx64") is unexpected, since entry "
+			      "%"PRIu32" has data source ID 0x%016"PRIx64,
+			      path, hdr->next_data_source_id,
+			      i, entry_1->data_source_id);
+			ret = WIMLIB_ERR_UNSUPPORTED;
+			goto out_free_contents;
+		}
 
 		if (((u64)entry_1->entry_2_offset +
 		     (u64)entry_1->entry_2_length) >

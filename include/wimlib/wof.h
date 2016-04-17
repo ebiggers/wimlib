@@ -170,16 +170,12 @@ struct WimOverlay_dat_header {
 	/* Set to 0x00000028  */
 	le32 unknown_0x08;
 
-	/* Set to number of WIMs registered;
-	 * also the number of 'struct WimOverlay_dat_entry_1' that follow.  */
-	le32 num_entries_1;
+	/* Set to number of WIMs registered (listed in the file)  */
+	le32 num_entries;
 
-	/* Set to number of WIMs registered;
-	 * also the number of 'struct WimOverlay_dat_entry_2' that follow.  */
-	le32 num_entries_2;
-
-	/* Set to 0  */
-	le32 unknown_0x14;
+	/* The next available data source ID.  This is tracked so that data
+	 * source IDs are never reused, even if a WIM is unregistered.  */
+	le64 next_data_source_id;
 
 	struct WimOverlay_dat_entry_1 entry_1s[];
 } _packed_attribute;
