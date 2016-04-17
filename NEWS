@@ -1,3 +1,13 @@
+Version 1.9.2-BETA:
+	On UNIX, wimlib can now overwrite readonly files when extracting.
+
+	On Windows, when applying a WIM image in "WIMBoot mode" when the WOF
+	driver is not loaded, wimlib can now correctly register a new WIM file
+	with the target volume when the target volume previously had had WIM
+	files unregistered.
+
+	Added a new testing program.
+
 Version 1.9.1:
 	Object IDs are now saved and restored on Windows and in NTFS-3G mode.
 
