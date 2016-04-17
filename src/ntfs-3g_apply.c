@@ -120,6 +120,8 @@ sid_size(const wimlib_SID *sid)
  *   bug.  However, removing the DACL is not a valid workaround because this
  *   changes the meaning of the security descriptor--- an empty DACL allows no
  *   access, whereas a "null" DACL allows all access.
+ * - Versions before 2016.2.22 reject security descriptors containing SIDs with
+ *   too many subauthorities.  We do not work around this.
  *
  * If the security descriptor was fixed, this function returns an allocated
  * buffer containing the fixed security descriptor, and its size is updated.
@@ -335,8 +337,8 @@ ntfs_3g_restore_reparse_point(ntfs_inode *ni, const struct wim_inode *inode,
 				"tag.  The preceding error may have been caused "
 				"by a known bug in libntfs-3g where it does not "
 				"correctly validate non-Microsoft reparse "
-				"points.  This bug may be fixed in the 2016 "
-				"release of libntfs-3g.");
+				"points.  This bug was fixed in NTFS-3G version "
+				"2016.2.22.");
 		}
 		return WIMLIB_ERR_SET_REPARSE_DATA;
 	}
@@ -477,7 +479,8 @@ ntfs_3g_set_metadata(ntfs_inode *ni, const struct wim_inode *inode,
 					"\nThis error occurred because libntfs-3g thinks "
 					"the security descriptor is invalid.  If you "
 					"are extracting a Windows 10 image, this may be "
-					"caused by a known bug in libntfs-3g.  See: "
+					"caused by a known bug in libntfs-3g.  This bug "
+					"was fixed in NTFS-3G version 2016.2.22.  See: "
 					"https://wimlib.net/forums/viewtopic.php?f=1&t=4 "
 					"for more information.\n\n");
 			}
@@ -574,9 +577,10 @@ ntfs_3g_create_directories(struct wim_dentry *root,
 
 	/* Set the DOS name of any directory that has one.  In addition, create
 	 * empty attributes for directories that have them.  Note that creating
-	 * an empty reparse point attribute must happen *after* setting the
-	 * DOS name in order to work around a case where
-	 * ntfs_set_ntfs_dos_name() fails with EOPNOTSUPP.  */
+	 * an empty reparse point attribute must happen *after* setting the DOS
+	 * name in order to work around a case where ntfs_set_ntfs_dos_name()
+	 * fails with EOPNOTSUPP.  This bug was fixed in NTFS-3G version
+	 * 2016.2.22.  */
 	list_for_each_entry(dentry, dentry_list, d_extraction_list_node) {
 		const struct wim_inode *inode = dentry->d_inode;
 
