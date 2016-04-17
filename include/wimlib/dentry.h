@@ -119,6 +119,10 @@ struct wim_dentry {
 	 * that needs to be extracted as part of the current extraction
 	 * operation, or NULL if this is the last alias.  */
 	struct wim_dentry *d_next_extraction_alias;
+
+#ifdef ENABLE_TEST_SUPPORT
+	struct wim_dentry *d_corresponding;
+#endif
 };
 
 static inline bool

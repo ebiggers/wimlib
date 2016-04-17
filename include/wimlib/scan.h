@@ -114,6 +114,12 @@ unix_build_dentry_tree(struct wim_dentry **root_ret,
 #define platform_default_scan_tree unix_build_dentry_tree
 #endif
 
+#ifdef ENABLE_TEST_SUPPORT
+extern int
+generate_dentry_tree(struct wim_dentry **root_ret,
+		     const tchar *root_disk_path, struct scan_params *params);
+#endif
+
 #define WIMLIB_ADD_FLAG_ROOT	0x80000000
 
 static inline int

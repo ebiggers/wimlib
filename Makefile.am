@@ -181,6 +181,16 @@ libwim_la_SOURCES += src/unix_apply.c		\
 PLATFORM_LIBS =
 endif
 
+if ENABLE_TEST_SUPPORT
+libwim_la_SOURCES += src/test_support.c		\
+		     include/wimlib/test_support.h
+if WINDOWS_NATIVE_BUILD
+# Workaround for "multiple definition" error when math symbols are present in
+# both libmsvcrt.a and ntdll.a
+AM_LDFLAGS += -Wl,--allow-multiple-definition
+endif
+endif
+
 libwim_la_CFLAGS =		\
 	$(AM_CFLAGS)		\
 	$(PTHREAD_CFLAGS)	\
@@ -338,5 +348,10 @@ TESTS =
 else
 TESTS = $(dist_check_SCRIPTS)
 endif
+
+# Extra test programs (not run by 'make check')
+EXTRA_PROGRAMS = tests/wlfuzz
+tests_wlfuzz_SOURCES = tests/wlfuzz.c
+tests_wlfuzz_LDADD = $(top_builddir)/libwim.la
 
 ##############################################################################

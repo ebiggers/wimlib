@@ -42,6 +42,7 @@
 
 #include "wimlib.h"
 #include "wimlib/error.h"
+#include "wimlib/test_support.h"
 #include "wimlib/util.h"
 #include "wimlib/win32.h"
 
@@ -346,6 +347,10 @@ static const tchar * const error_strings[] = {
 		= T("A file being added to a WIM image was concurrently modified"),
 	[WIMLIB_ERR_SNAPSHOT_FAILURE]
 		= T("Unable to create a filesystem snapshot"),
+#ifdef ENABLE_TEST_SUPPORT
+	[WIMLIB_ERR_IMAGES_ARE_DIFFERENT]
+		= T("A difference was detected between the two images being compared"),
+#endif
 };
 
 WIMLIBAPI const tchar *

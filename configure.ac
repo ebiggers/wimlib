@@ -268,6 +268,19 @@ AC_ARG_WITH(pkgconfigdir,
             [pkgconfigdir='${libdir}/pkgconfig'])
 AC_SUBST(pkgconfigdir)
 
+AC_MSG_CHECKING([whether to enable supporting code for tests])
+AC_ARG_ENABLE([test-support],
+	      [AS_HELP_STRING([--enable-test-support],
+			      [Enable supporting code for tests (developers only)])],
+	      [ENABLE_TEST_SUPPORT=$enableval],
+	      [ENABLE_TEST_SUPPORT=no])
+AC_MSG_RESULT([$ENABLE_TEST_SUPPORT])
+if test "$ENABLE_TEST_SUPPORT" = "yes" ; then
+	AC_DEFINE([ENABLE_TEST_SUPPORT], [1],
+		  [Define to 1 to enable supporting code for tests])
+fi
+AM_CONDITIONAL([ENABLE_TEST_SUPPORT], [test "$ENABLE_TEST_SUPPORT" = "yes"])
+
 ###############################################################################
 
 AC_SUBST([PKGCONFIG_PRIVATE_REQUIRES], [$PKGCONFIG_PRIVATE_REQUIRES])

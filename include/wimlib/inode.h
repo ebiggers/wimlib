@@ -226,6 +226,10 @@ struct wim_inode {
 
 	/* Next stream ID to be assigned  */
 	u32 i_next_stream_id;
+
+#ifdef ENABLE_TEST_SUPPORT
+	struct wim_inode *i_corresponding;
+#endif
 };
 
 /* Optional extra data for a WIM inode  */

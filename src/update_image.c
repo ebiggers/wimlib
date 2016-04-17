@@ -64,6 +64,7 @@
 #include "wimlib/paths.h"
 #include "wimlib/progress.h"
 #include "wimlib/scan.h"
+#include "wimlib/test_support.h"
 #include "wimlib/xml_windows.h"
 
 /* Saved specification of a "primitive" update operation that was performed.  */
@@ -803,6 +804,11 @@ execute_add_command(struct update_command_journal *j,
 		scan_tree = ntfs_3g_build_dentry_tree;
 #endif
 
+#ifdef ENABLE_TEST_SUPPORT
+	if (add_flags & WIMLIB_ADD_FLAG_GENERATE_TEST_DATA)
+		scan_tree = generate_dentry_tree;
+#endif
+
 	ret = get_capture_config(config_file, &config,
 				 add_flags, fs_source_path);
 	if (ret)
@@ -1206,6 +1212,9 @@ check_add_command(struct wimlib_update_command *cmd,
 			  WIMLIB_ADD_FLAG_NO_REPLACE |
 			  WIMLIB_ADD_FLAG_TEST_FILE_EXCLUSION |
 			  WIMLIB_ADD_FLAG_SNAPSHOT |
+		#ifdef ENABLE_TEST_SUPPORT
+			  WIMLIB_ADD_FLAG_GENERATE_TEST_DATA |
+		#endif
 			  WIMLIB_ADD_FLAG_FILE_PATHS_UNNEEDED))
 		return WIMLIB_ERR_INVALID_PARAM;
 
