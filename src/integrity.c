@@ -7,7 +7,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013 Eric Biggers
+ * Copyright (C) 2012-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -113,8 +113,9 @@ read_integrity_table(WIMStruct *wim, u64 num_checked_bytes,
 	struct integrity_table *table;
 	int ret;
 
-	if (wim->hdr.integrity_table_reshdr.uncompressed_size < 8)
-		goto invalid;
+	STATIC_ASSERT(sizeof(struct integrity_table) == 12);
+	if (wim->hdr.integrity_table_reshdr.uncompressed_size < 12)
+		return WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
 
 	ret = wim_reshdr_to_data(&wim->hdr.integrity_table_reshdr, wim, &buf);
 	if (ret)
@@ -131,14 +132,11 @@ read_integrity_table(WIMStruct *wim, u64 num_checked_bytes,
 	    table->num_entries != DIV_ROUND_UP(num_checked_bytes, table->chunk_size))
 	{
 		FREE(table);
-		goto invalid;
+		return WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
 	}
 
 	*table_ret = table;
 	return 0;
-
-invalid:
-	return WIMLIB_ERR_INVALID_INTEGRITY_TABLE;
 }
 
 /*
