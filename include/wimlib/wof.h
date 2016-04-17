@@ -1,7 +1,7 @@
 /*
  * wof.h
  *
- * Definitions for the Windows Overlay File System Filter (WOF) ioctls, as well
+ * Definitions for the Windows Overlay Filesystem filter (WOF) ioctls, as well
  * some definitions for associated undocumented data structures.  See
  * http://msdn.microsoft.com/en-us/library/windows/hardware/ff540367(v=vs.85).aspx
  * for more information about the documented ioctls.
@@ -17,7 +17,7 @@
 #include "wimlib/types.h"
 
 /*
- * The Windows Overlay FileSystem Filter (WOF, a.k.a. wof.sys) is a filesystem
+ * The Windows Overlay Filesystem filter (WOF, a.k.a. wof.sys) is a filesystem
  * filter driver, available in Windows 8.1 and later, which allows files to be
  * "externally backed", meaning that their data is stored in another location,
  * possibly in compressed form.

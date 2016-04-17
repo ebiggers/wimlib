@@ -220,7 +220,7 @@ win32_get_drive_path(const wchar_t *file_path, wchar_t drive_path[7])
 	return 0;
 }
 
-/* Try to attach an instance of the Windows Overlay File System Filter Driver to
+/* Try to attach an instance of the Windows Overlay Filesystem filter driver to
  * the specified drive (such as C:)  */
 bool
 win32_try_to_attach_wof(const wchar_t *drive)

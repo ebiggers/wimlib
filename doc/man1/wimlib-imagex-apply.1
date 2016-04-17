@@ -365,9 +365,8 @@ target volume is NTFS or another filesystem that supports reparse points.
 .IP ""
 In addition, this option works best when running on Windows 8.1 Update 1 or
 later, since that is the first version of Windows that contains the Windows
-Overlay File System Filter Driver ("WOF").  If the WOF driver is detected,
-wimlib will create the WIMBoot "pointer files" using documented ioctls provided
-by WOF.
+Overlay Filesystem filter driver ("WOF").  If the WOF driver is detected, wimlib
+will create the WIMBoot "pointer files" using documented ioctls provided by WOF.
 .IP ""
 Otherwise, if the WOF driver is not detected, wimlib will create the reparse
 points and edit the file "\\System Volume Information\\WimOverlay.dat" on the

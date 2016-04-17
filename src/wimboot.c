@@ -7,7 +7,7 @@
  * information about WIMBoot.
  *
  * Note that WIMBoot pointer files are actually implemented on top of the
- * Windows Overlay File System Filter (WOF).  See wof.h for more info.
+ * Windows Overlay Filesystem filter (WOF).  See wof.h for more info.
  */
 
 /*
@@ -974,15 +974,7 @@ out_free_in:
 	FREE(in);
 out:
 	if (ret == WIMLIB_ERR_UNSUPPORTED) {
-	#if 0
-		WARNING(
-		"The version of Windows you are running does not appear to support\n"
-		"        the Windows Overlay File System Filter Driver.  This is normally\n"
-		"        available on Windows 8.1 Update 1 or later.  Therefore, wimlib\n"
-		"        will attempt to update the WimOverlay.dat file directly.\n");
-	#else
 		WARNING("WOF driver is not available; updating WimOverlay.dat directly.");
-	#endif
 		ret = update_wimoverlay_manually(drive_path + 4, wim_path,
 						 wim_guid, image,
 						 data_source_id_ret);

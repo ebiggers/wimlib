@@ -829,7 +829,7 @@ should_rewrite_blob_uncompressed(const struct write_blobs_ctx *ctx,
 	 * Exception: if the compressed size happens to be *exactly* the same as
 	 * the uncompressed size, then the blob *must* be written uncompressed
 	 * in order to remain compatible with the Windows Overlay Filesystem
-	 * Filter Driver (WOF).
+	 * filter driver (WOF).
 	 *
 	 * TODO: we are currently assuming that the optimization for
 	 * single-chunk resources in maybe_rewrite_blob_uncompressed() prevents
