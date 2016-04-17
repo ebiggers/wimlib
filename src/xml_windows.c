@@ -405,7 +405,7 @@ set_info_from_kernel32(struct windows_info_ctx *ctx,
 		goto invalid;
 
 	pe_hdr = (u8 *)contents + e_lfanew;
-	if (*(u32 *)pe_hdr != cpu_to_le32(0x00004550))	/* "PE\0\0"  */
+	if (*(le32 *)pe_hdr != cpu_to_le32(0x00004550))	/* "PE\0\0"  */
 		goto invalid;
 
 	pe_arch = le16_to_cpu(*(le16 *)(pe_hdr + 4));
