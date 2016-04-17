@@ -4334,8 +4334,9 @@ wimlib_unmount_image(const wimlib_tchar *dir, int unmount_flags);
  * @ingroup G_mounting_wim_images
  *
  * Same as wimlib_unmount_image(), but allows specifying a progress function.
- * If changes are committed from a read-write mount, the progress function will
- * receive ::WIMLIB_PROGRESS_MSG_WRITE_STREAMS messages.
+ * The progress function will receive a ::WIMLIB_PROGRESS_MSG_UNMOUNT_BEGIN
+ * message.  In addition, if changes are committed from a read-write mount, the
+ * progress function will receive ::WIMLIB_PROGRESS_MSG_WRITE_STREAMS messages.
  */
 extern int
 wimlib_unmount_image_with_progress(const wimlib_tchar *dir,
