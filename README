@@ -275,9 +275,13 @@ the code has been entirely rewritten and improved (main author: Eric Biggers).
 Windows support has been available since version 1.3.0 (March 2013).  A list of
 version-to-version changes can be found in the NEWS file.
 
-                             LICENSE AND DISCLAIMER
+                                    NOTICES
 
-See COPYING for information about the license.
+wimlib is free software that comes with NO WARRANTY, to the extent permitted by
+law.  See the COPYING file for more details.
+
+Bug reports, suggestions, and other contributions are appreciated and may be
+sent via email to ebiggers3@gmail.com or posted to https://wimlib.net/forums.
 
 wimlib is independently developed and does not contain any code, data, or files
 copyrighted by Microsoft.  It is not known to be affected by any patents.
@@ -287,5 +291,6 @@ libcrypto (OpenSSL), configure with --without-libcrypto.  This replaces the SHA1
 implementation with built-in code and there will be no difference in
 functionality.
 
-wimlib comes with no warranty whatsoever.  Please submit a bug report (to
-ebiggers3@gmail.com) if you find a bug in wimlib and/or wimlib-imagex.
+Note: copyright years may be listed using range notation, e.g., 2012-2016,
+indicating that every year in the range, inclusive, is a copyrightable year that
+would otherwise be listed individually.
