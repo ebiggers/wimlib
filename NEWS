@@ -8,6 +8,9 @@ Version 1.9.2-BETA:
 
 	Added a new testing program.
 
+	Clarified the main license text and updated public domain dedications
+	for certain files to be more thorough.
+
 Version 1.9.1:
 	Object IDs are now saved and restored on Windows and in NTFS-3G mode.
 
