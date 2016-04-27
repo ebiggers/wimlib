@@ -1,16 +1,22 @@
-Unless otherwise specified, wimlib and all programs and scripts distributed with
-it may be redistributed and/or modified under the terms of the GNU General
-Public License; either version 3 of the License, or (at your option) any later
-version.  See COPYING.GPLv3.
+Unless otherwise specified, wimlib and its associated programs, scripts,
+documentation, and other files may be redistributed and/or modified under the
+terms of the GNU General Public License; either version 3 of the License, or (at
+your option) any later version.  There is NO WARRANTY, to the extent permitted
+by law.  See the file COPYING.GPLv3 for more details.
 
-However, the following exception is granted.  When not prohibited by conflict
-with a third-party software license, you may opt to redistribute and/or modify
-the library portion of wimlib under the terms of the GNU Lesser General Public
-License; either version 3 of the License, or (at your option) any later version.
-See COPYING.LGPLv3.
+Moreover, when not prohibited by conflict with a third-party software license,
+the library portion of wimlib may be redistributed and/or modified under the
+terms of the GNU Lesser General Public License; either version 3 of the License,
+or (at your option) any later version.  There is NO WARRANTY, to the extent
+permitted by law.  See the file COPYING.LGPLv3 for more details.
 
-The following paragraph is informational only.  The above exception is known to
-be relevant for the third-party library "libntfs-3g", which is licensed GPLv2+.
-On UNIX-like systems, wimlib can optionally be compiled with libntfs-3g support.
+----------------------------------------
+
+NOTE! The primary reason for the GPL/LGPL "dual licensing" for the library is
+that on UNIX-like systems, wimlib can optionally be linked to the third-party
+library "libntfs-3g", which is licensed GPLv2+.  Under some interpretations of
+the GPL, this would require that wimlib be licensed under the GPL as well.
 However, a binary copy of wimlib that was compiled without libntfs-3g support
-need not be affected by the libntfs-3g license (for example).
+(for example; the exception may be applicable in other situations as well)
+logically cannot be affected by libntfs-3g's license and should therefore be
+free to be redistributed under the LGPL instead of the GPL.
