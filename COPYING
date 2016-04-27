@@ -20,3 +20,9 @@ However, a binary copy of wimlib that was compiled without libntfs-3g support
 (for example; the exception may be applicable in other situations as well)
 logically cannot be affected by libntfs-3g's license and should therefore be
 free to be redistributed under the LGPL instead of the GPL.
+
+NOTE! The file COPYING.CC0 contains a public domain dedication.  This public
+domain dedication does not apply to wimlib as a whole, but rather to individual
+source code files which the author(s) have elected to place into the public
+domain, as noted in the corresponding file headers.  As usual, such code carries
+NO WARRANTY, to the extent permitted by law.  See COPYING.CC0 for more details.

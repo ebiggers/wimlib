@@ -1,8 +1,26 @@
 /*
- * decompressfile.c
+ * decompressfile.c - decompression API example
  *
- * An example of using wimlib's compression API to decompress a file compressed
- * with the compressfile.c program.
+ * The following copying information applies to this specific source code file:
+ *
+ * Written in 2014 by Eric Biggers <ebiggers3@gmail.com>
+ *
+ * To the extent possible under law, the author(s) have dedicated all copyright
+ * and related and neighboring rights to this software to the public domain
+ * worldwide via the Creative Commons Zero 1.0 Universal Public Domain
+ * Dedication (the "CC0").
+ *
+ * This software is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE. See the CC0 for more details.
+ *
+ * You should have received a copy of the CC0 along with this software; if not
+ * see <http://creativecommons.org/publicdomain/zero/1.0/>.
+ */
+
+/*
+ * This an example of using wimlib's compression API to decompress a file
+ * compressed with the compressfile.c program.
  *
  * This program does *not* have anything to do with WIM files other than the
  * fact that this makes use of compression formats that are used in WIM files.
@@ -24,9 +42,6 @@
  *
  * The compressed file format created here is simply a series of compressed
  * chunks.  A real format would need to have checksums and other metadata.
- *
- * The author dedicates this file to the public domain.
- * You can do whatever you want with this file.
  */
 
 #define _GNU_SOURCE

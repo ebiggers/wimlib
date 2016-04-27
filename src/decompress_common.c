@@ -3,11 +3,21 @@
  *
  * Code for decompression shared among multiple compression formats.
  *
- * Author:  Eric Biggers
- * Year:    2012 - 2014
+ * The following copying information applies to this specific source code file:
  *
- * The author dedicates this file to the public domain.
- * You can do whatever you want with this file.
+ * Written in 2012-2015 by Eric Biggers <ebiggers3@gmail.com>
+ *
+ * To the extent possible under law, the author(s) have dedicated all copyright
+ * and related and neighboring rights to this software to the public domain
+ * worldwide via the Creative Commons Zero 1.0 Universal Public Domain
+ * Dedication (the "CC0").
+ *
+ * This software is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE. See the CC0 for more details.
+ *
+ * You should have received a copy of the CC0 along with this software; if not
+ * see <http://creativecommons.org/publicdomain/zero/1.0/>.
  */
 
 #ifdef HAVE_CONFIG_H
