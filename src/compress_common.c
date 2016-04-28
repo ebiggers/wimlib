@@ -1,6 +1,8 @@
 /*
  * compress_common.c
  *
+ * Code for compression shared among multiple compression formats.
+ *
  * The following copying information applies to this specific source code file:
  *
  * Written in 2012-2014 by Eric Biggers <ebiggers3@gmail.com>

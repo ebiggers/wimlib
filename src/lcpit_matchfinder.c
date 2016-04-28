@@ -1,6 +1,9 @@
 /*
  * lcpit_matchfinder.c
  *
+ * A match-finder for Lempel-Ziv compression based on bottom-up construction and
+ * traversal of the Longest Common Prefix (LCP) interval tree.
+ *
  * The following copying information applies to this specific source code file:
  *
  * Written in 2014-2015 by Eric Biggers <ebiggers3@gmail.com>
