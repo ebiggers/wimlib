@@ -502,7 +502,7 @@ When this option is provided, the capture or append of the new image will be
 optimized by not reading files that, based on metadata such as timestamps,
 appear not to have been modified since they were archived in the existing
 \fIIMAGE\fR.  Barring manipulation of timestamps, this option only affects
-performance and does not change the resulting WIM image.
+performance and does not change the resulting WIM image (but see note below).
 .IP ""
 As shown, the full syntax for the argument to this option is to specify the WIM
 file, a colon, and the image; for example, "--update-of mywim.wim:1".  However,
@@ -510,6 +510,21 @@ the WIM file and colon may be omitted, in which case the WIM file will default
 to the WIM file being appended to for append operations, or the WIM file from
 which a delta is being taken (only if \fB--delta-from\fR is specified exactly
 once) for capture operations.
+.IP ""
+Note: in the Windows version of wimlib, it has been observed that
+\fB--update-of\fR mode is not completely reliable at detecting changes in file
+contents, sometimes causing the old contents of a few files to be archived
+rather than the current contents.  The cause of this problem is that Windows
+does not immediately update a file's last modification timestamp after every
+write to that file.  Unfortunately, there is no known way for applications like
+wimlib to automatically work around this bug.  Manual workarounds are possible;
+theoretically, taking any action that causes the problematic files to be closed,
+such as restarting applications or the computer itself, should cause the files'
+last modification timestamps to be updated.  Also note that wimlib compares file
+sizes as well as timestamps in determining whether a file has changed, which
+helps make the problem less likely to occur; and the problem does not occur on
+other operating systems such as Linux which maintain files' last modification
+timestamps correctly.
 .TP
 \fB--delta-from\fR=\fIWIMFILE\fR
 For \fBwimlib-imagex capture\fR only: capture the new WIM as a "delta" from
