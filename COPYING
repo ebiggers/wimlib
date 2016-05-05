@@ -4,11 +4,11 @@ terms of the GNU General Public License; either version 3 of the License, or (at
 your option) any later version.  There is NO WARRANTY, to the extent permitted
 by law.  See the file COPYING.GPLv3 for more details.
 
-Moreover, when not prohibited by conflict with a third-party software license,
-the library portion of wimlib may be redistributed and/or modified under the
-terms of the GNU Lesser General Public License; either version 3 of the License,
-or (at your option) any later version.  There is NO WARRANTY, to the extent
-permitted by law.  See the file COPYING.LGPLv3 for more details.
+Alternatively, when not prohibited by conflict with a third-party software
+license, the library portion of wimlib may be redistributed and/or modified
+under the terms of the GNU Lesser General Public License; either version 3 of
+the License, or (at your option) any later version.  There is NO WARRANTY, to
+the extent permitted by law.  See the file COPYING.LGPLv3 for more details.
 
 ----------------------------------------
 
