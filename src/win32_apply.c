@@ -1471,10 +1471,11 @@ retry:
 /*
  * Create a nondirectory file or named data stream at the current path,
  * superseding any that already exists at that path.  If successful, return an
- * open handle to the file or named data stream.
+ * open handle to the file or named data stream with the requested permissions.
  */
 static int
-supersede_file_or_stream(struct win32_apply_ctx *ctx, HANDLE *h_ret)
+supersede_file_or_stream(struct win32_apply_ctx *ctx, DWORD perms,
+			 HANDLE *h_ret)
 {
 	NTSTATUS status;
 	bool retried = false;
@@ -1483,7 +1484,7 @@ supersede_file_or_stream(struct win32_apply_ctx *ctx, HANDLE *h_ret)
 	 * FILE_ATTRIBUTE_ENCRYPTED doesn't get set before we want it to be.  */
 retry:
 	status = do_create_file(h_ret,
-				GENERIC_READ | GENERIC_WRITE | DELETE,
+				perms,
 				NULL,
 				FILE_ATTRIBUTE_SYSTEM,
 				FILE_CREATE,
@@ -1595,7 +1596,13 @@ create_empty_streams(const struct wim_dentry *dentry,
 			build_extraction_path_with_ads(dentry, ctx,
 						       strm->stream_name,
 						       utf16le_len_chars(strm->stream_name));
-			ret = supersede_file_or_stream(ctx, &h);
+			/*
+			 * Note: do not request any permissions on the handle.
+			 * Otherwise, we may encounter a Windows bug where the
+			 * parent directory DACL denies read access to the new
+			 * named data stream, even when using backup semantics!
+			 */
+			ret = supersede_file_or_stream(ctx, 0, &h);
 
 			build_extraction_path(dentry, ctx);
 
@@ -1683,25 +1690,6 @@ retry:
 					     sizeof(basic_info),
 					     FileBasicInformation);
 		}
-
-		/* Also try to remove the directory's DACL.  This isn't supposed
-		 * to be necessary because we *always* use backup semantics.
-		 * However, there is a case where NtCreateFile() fails with
-		 * STATUS_ACCESS_DENIED when creating a named data stream that
-		 * was just deleted, using a directory-relative open.  I have no
-		 * idea why Windows is broken in this case.  */
-		if (!(ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS)) {
-			static const SECURITY_DESCRIPTOR_RELATIVE desc = {
-				.Revision = SECURITY_DESCRIPTOR_REVISION1,
-				.Control = SE_SELF_RELATIVE | SE_DACL_PRESENT,
-				.Owner = 0,
-				.Group = 0,
-				.Sacl = 0,
-				.Dacl = 0,
-			};
-			NtSetSecurityObject(h, DACL_SECURITY_INFORMATION,
-					    (void *)&desc);
-		}
 	}
 
 	if (!dentry_is_root(dentry)) {
@@ -1771,7 +1759,9 @@ create_nondirectory_inode(HANDLE *h_ret, const struct wim_dentry *dentry,
 
 	build_extraction_path(dentry, ctx);
 
-	ret = supersede_file_or_stream(ctx, &h);
+	ret = supersede_file_or_stream(ctx,
+				       GENERIC_READ | GENERIC_WRITE | DELETE,
+				       &h);
 	if (ret)
 		goto out;
 

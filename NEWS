@@ -1,6 +1,9 @@
 Version 1.9.2-BETA:
 	On UNIX, wimlib can now overwrite readonly files when extracting.
 
+	On Windows, fixed a bug where wimlib could leave a null DACL (a.k.a. "no
+	NTFS permissions") set on some existing directories after extraction.
+
 	On Windows, when applying a WIM image in "WIMBoot mode" when the WOF
 	driver is not loaded, wimlib can now correctly register a new WIM file
 	with the target volume when the target volume previously had had WIM
