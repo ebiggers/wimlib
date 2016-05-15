@@ -10,8 +10,8 @@ if [ ! -e src/wim.c ]; then
 	exit 1
 fi
 
-if [ $# -ne 1 ]; then
-	echo "Usage: $0 i686|x86_64" 1>&2
+if [ $# -lt 1 ]; then
+	echo "Usage: $0 i686|x86_64 [EXTRA_CONFIGURE_ARG]..." 1>&2
 	exit 1
 fi
 
@@ -44,7 +44,8 @@ fi
 # Compile wimlib
 
 if ! grep -q "./configure --host=${ARCH}-w64-mingw32" config.log || \
-	! grep -q "configure: exit 0" config.log
+	! grep -q "configure: exit 0" config.log || \
+	[ $# -gt 0 ]
 then
 	extra_args=
 	if [ $ARCH = x86_64 ]; then
@@ -59,7 +60,7 @@ then
 		LDFLAGS="-L$SYSROOT/lib"				\
 		PKG_CONFIG_PATH="$SYSROOT/lib/pkgconfig"		\
 		--without-libcrypto					\
-		$extra_args
+		$extra_args "$@"
 	$MAKE clean
 fi
 $MAKE
