@@ -331,6 +331,7 @@ static const struct option join_options[] = {
 	{NULL, 0, NULL, 0},
 };
 
+#if WIM_MOUNTING_SUPPORTED
 static const struct option mount_options[] = {
 	{T("check"),             no_argument,       NULL, IMAGEX_CHECK_OPTION},
 	{T("debug"),             no_argument,       NULL, IMAGEX_DEBUG_OPTION},
@@ -341,6 +342,7 @@ static const struct option mount_options[] = {
 	{T("allow-other"),       no_argument,       NULL, IMAGEX_ALLOW_OTHER_OPTION},
 	{NULL, 0, NULL, 0},
 };
+#endif
 
 static const struct option optimize_options[] = {
 	{T("check"),       no_argument,       NULL, IMAGEX_CHECK_OPTION},
@@ -365,6 +367,7 @@ static const struct option split_options[] = {
 	{NULL, 0, NULL, 0},
 };
 
+#if WIM_MOUNTING_SUPPORTED
 static const struct option unmount_options[] = {
 	{T("commit"),  no_argument, NULL, IMAGEX_COMMIT_OPTION},
 	{T("check"),   no_argument, NULL, IMAGEX_CHECK_OPTION},
@@ -374,6 +377,7 @@ static const struct option unmount_options[] = {
 	{T("new-image"), no_argument, NULL, IMAGEX_NEW_IMAGE_OPTION},
 	{NULL, 0, NULL, 0},
 };
+#endif
 
 static const struct option update_options[] = {
 	/* Careful: some of the options here set the defaults for update
