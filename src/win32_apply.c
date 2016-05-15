@@ -1631,28 +1631,16 @@ create_directory(const struct wim_dentry *dentry, struct win32_apply_ctx *ctx)
 	int ret;
 
 	/* DELETE is needed for set_short_name(); GENERIC_READ and GENERIC_WRITE
-	 * are needed for adjust_compression_attribute(); WRITE_DAC is needed to
-	 * remove the directory's DACL if the directory already existed  */
-	perms = GENERIC_READ | GENERIC_WRITE | WRITE_DAC;
+	 * are needed for adjust_compression_attribute().  */
+	perms = GENERIC_READ | GENERIC_WRITE;
 	if (!dentry_is_root(dentry))
 		perms |= DELETE;
 
 	/* FILE_ATTRIBUTE_SYSTEM is needed to ensure that
 	 * FILE_ATTRIBUTE_ENCRYPTED doesn't get set before we want it to be.  */
-retry:
 	status = create_file(&h, perms, NULL, FILE_ATTRIBUTE_SYSTEM,
 			     FILE_OPEN_IF, FILE_DIRECTORY_FILE, dentry, ctx);
 	if (unlikely(!NT_SUCCESS(status))) {
-		if (status == STATUS_ACCESS_DENIED) {
-			if (perms & WRITE_DAC) {
-				perms &= ~WRITE_DAC;
-				goto retry;
-			}
-			if (perms & DELETE) {
-				perms &= ~DELETE;
-				goto retry;
-			}
-		}
 		const wchar_t *path = current_path(ctx);
 		winnt_error(status, L"Can't create directory \"%ls\"", path);
 
