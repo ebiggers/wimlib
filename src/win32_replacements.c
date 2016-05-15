@@ -483,13 +483,15 @@ win32_strerror_r_replacement(int errnum, wchar_t *buf, size_t buflen)
 	return 0;
 }
 
+#define MAX_IO_AMOUNT 1048576
+
 static int
 do_pread_or_pwrite(int fd, void *buf, size_t count, off_t offset,
 		   bool is_pwrite)
 {
 	HANDLE h;
 	LARGE_INTEGER orig_offset;
-	DWORD bytes_read_or_written;
+	DWORD result = 0xFFFFFFFF;
 	LARGE_INTEGER relative_offset;
 	OVERLAPPED overlapped;
 	BOOL bret;
@@ -517,16 +519,20 @@ do_pread_or_pwrite(int fd, void *buf, size_t count, off_t offset,
 	overlapped.OffsetHigh = offset >> 32;
 
 	/* Do the read or write at the specified offset */
+	count = min(count, MAX_IO_AMOUNT);
+	SetLastError(0);
 	if (is_pwrite)
-		bret = WriteFile(h, buf, count, &bytes_read_or_written, &overlapped);
+		bret = WriteFile(h, buf, count, &result, &overlapped);
 	else
-		bret = ReadFile(h, buf, count, &bytes_read_or_written, &overlapped);
+		bret = ReadFile(h, buf, count, &result, &overlapped);
 	if (!bret) {
 		err = GetLastError();
 		win32_error(err, L"Failed to %s %zu bytes at offset %"PRIu64,
 			    (is_pwrite ? "write" : "read"), count, offset);
 		goto error;
 	}
+
+	wimlib_assert(result <= count);
 
 	/* Restore the original position */
 	if (!SetFilePointerEx(h, orig_offset, NULL, FILE_BEGIN)) {
@@ -536,7 +542,7 @@ do_pread_or_pwrite(int fd, void *buf, size_t count, off_t offset,
 		goto error;
 	}
 
-	return bytes_read_or_written;
+	return result;
 
 error:
 	if (err)
@@ -548,7 +554,7 @@ error:
  * offset, so it is not safe to use with readers/writers on the same file
  * descriptor.  */
 ssize_t
-pread(int fd, void *buf, size_t count, off_t offset)
+win32_pread(int fd, void *buf, size_t count, off_t offset)
 {
 	return do_pread_or_pwrite(fd, buf, count, offset, false);
 }
@@ -557,9 +563,57 @@ pread(int fd, void *buf, size_t count, off_t offset)
  * offset, so it is not safe to use with readers/writers on the same file
  * descriptor. */
 ssize_t
-pwrite(int fd, const void *buf, size_t count, off_t offset)
+win32_pwrite(int fd, const void *buf, size_t count, off_t offset)
 {
 	return do_pread_or_pwrite(fd, (void*)buf, count, offset, true);
+}
+
+/* Replacement for read() which doesn't hide the Win32 error code */
+ssize_t
+win32_read(int fd, void *buf, size_t count)
+{
+	HANDLE h = (HANDLE)_get_osfhandle(fd);
+	DWORD result = 0xFFFFFFFF;
+
+	if (h == INVALID_HANDLE_VALUE)
+		return -1;
+
+	count = min(count, MAX_IO_AMOUNT);
+	SetLastError(0);
+	if (!ReadFile(h, buf, count, &result, NULL)) {
+		DWORD err = GetLastError();
+		win32_error(err,
+			    L"Error reading %zu bytes from fd %d", count, fd);
+		set_errno_from_win32_error(err);
+		return -1;
+	}
+
+	wimlib_assert(result <= count);
+	return result;
+}
+
+/* Replacement for write() which doesn't hide the Win32 error code */
+ssize_t
+win32_write(int fd, const void *buf, size_t count)
+{
+	HANDLE h = (HANDLE)_get_osfhandle(fd);
+	DWORD result = 0xFFFFFFFF;
+
+	if (h == INVALID_HANDLE_VALUE)
+		return -1;
+
+	count = min(count, MAX_IO_AMOUNT);
+	SetLastError(0);
+	if (!WriteFile(h, buf, count, &result, NULL)) {
+		DWORD err = GetLastError();
+		win32_error(err,
+			    L"Error writing %zu bytes to fd %d", count, fd);
+		set_errno_from_win32_error(err);
+		return -1;
+	}
+
+	wimlib_assert(result <= count);
+	return result;
 }
 
 /* Replacement for glob() in Windows native builds that operates on wide

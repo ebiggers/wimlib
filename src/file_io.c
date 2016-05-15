@@ -29,7 +29,14 @@
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
 #include "wimlib/util.h"
-#include "wimlib/win32.h" /* For pread(), pwrite() replacements */
+
+#ifdef __WIN32__
+#  include "wimlib/win32.h"
+#  define read win32_read
+#  define write win32_write
+#  define pread win32_pread
+#  define pwrite win32_pwrite
+#endif
 
 /*
  * Wrapper around read() that checks for errors and keeps retrying until all

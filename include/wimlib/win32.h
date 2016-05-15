@@ -52,10 +52,16 @@ extern FILE *
 win32_open_logfile(const wchar_t *path);
 
 extern ssize_t
-pread(int fd, void *buf, size_t count, off_t offset);
+win32_read(int fd, void *buf, size_t count);
 
 extern ssize_t
-pwrite(int fd, const void *buf, size_t count, off_t offset);
+win32_write(int fd, const void *buf, size_t count);
+
+extern ssize_t
+win32_pread(int fd, void *buf, size_t count, off_t offset);
+
+extern ssize_t
+win32_pwrite(int fd, const void *buf, size_t count, off_t offset);
 
 #endif /* __WIN32__ */
 
