@@ -40,6 +40,8 @@
 /tags
 /tests/*.log
 /tests/*.trs
+/tests/wlfuzz
+/tests/wlfuzz.exe
 /tools/windeps/*.tar.*
 /tools/windeps/COPYING.*
 /tools/windeps/build_*
