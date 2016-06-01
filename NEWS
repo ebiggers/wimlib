@@ -1,4 +1,4 @@
-Version 1.9.2-BETA:
+Version 1.9.2:
 	On UNIX, wimlib can now overwrite readonly files when extracting.
 
 	On Windows, fixed a bug where wimlib could leave a null DACL (a.k.a. "no
