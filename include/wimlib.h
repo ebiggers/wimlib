@@ -16,7 +16,7 @@
  * Windows Imaging Format.  This documentation is intended for developers only.
  * If you have installed wimlib and want to know how to use the @b wimlib-imagex
  * program, please see the manual pages and also the <a
- * href="https://wimlib.net/gitlist/wimlib/blob/master/README">README file</a>.
+ * href="https://wimlib.net/git/?p=wimlib;a=blob;f=README">README file</a>.
  *
  * @section sec_installing Installing
  *
@@ -45,7 +45,7 @@
  * distribution.  Also see @ref sec_basic_wim_handling_concepts below.
  *
  * There is also the <a
- * href="https://wimlib.net/gitlist/wimlib/blob/master/programs/imagex.c">
+ * href="https://wimlib.net/git/?p=wimlib;a=blob;f=programs/imagex.c">
  * source code of <b>wimlib-imagex</b></a>, which is complicated but uses most
  * capabilities of wimlib.
  *
