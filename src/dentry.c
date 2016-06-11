@@ -1532,7 +1532,6 @@ err_free_dentry:
 	return ret;
 }
 
-/* Is the dentry named "." or ".." ?  */
 static bool
 dentry_is_dot_or_dotdot(const struct wim_dentry *dentry)
 {
@@ -1546,6 +1545,46 @@ dentry_is_dot_or_dotdot(const struct wim_dentry *dentry)
 				return true;
 		}
 	}
+	return false;
+}
+
+static bool
+dentry_contains_embedded_null(const struct wim_dentry *dentry)
+{
+	for (unsigned i = 0; i < dentry->d_name_nbytes / 2; i++)
+		if (dentry->d_name[i] == cpu_to_le16('\0'))
+			return true;
+	return false;
+}
+
+static bool
+should_ignore_dentry(struct wim_dentry *dir, const struct wim_dentry *dentry)
+{
+	/* All dentries except the root must be named. */
+	if (!dentry_has_long_name(dentry)) {
+		WARNING("Ignoring unnamed file in directory \"%"TS"\"",
+			dentry_full_path(dir));
+		return true;
+	}
+
+	/* Don't allow files named "." or "..".  Such filenames could be used in
+	 * path traversal attacks. */
+	if (dentry_is_dot_or_dotdot(dentry)) {
+		WARNING("Ignoring file named \".\" or \"..\" in directory "
+			"\"%"TS"\"", dentry_full_path(dir));
+		return true;
+	}
+
+	/* Don't allow filenames containing embedded null characters.  Although
+	 * the null character is already considered an unsupported character for
+	 * extraction by all targets, it is probably a good idea to just forbid
+	 * such names entirely. */
+	if (dentry_contains_embedded_null(dentry)) {
+		WARNING("Ignoring filename with embedded null character in "
+			"directory \"%"TS"\"", dentry_full_path(dir));
+		return true;
+	}
+
 	return false;
 }
 
@@ -1575,18 +1614,8 @@ read_dentry_tree_recursive(const u8 * restrict buf, size_t buf_len,
 		if (child == NULL)
 			return 0;
 
-		/* All dentries except the root should be named.  */
-		if (unlikely(!dentry_has_long_name(child))) {
-			WARNING("Ignoring unnamed dentry in "
-				"directory \"%"TS"\"", dentry_full_path(dir));
-			free_dentry(child);
-			continue;
-		}
-
-		/* Don't allow files named "." or "..".  */
-		if (unlikely(dentry_is_dot_or_dotdot(child))) {
-			WARNING("Ignoring file named \".\" or \"..\"; "
-				"potentially malicious archive!!!");
+		/* Ignore dentries with bad names.  */
+		if (unlikely(should_ignore_dentry(dir, child))) {
 			free_dentry(child);
 			continue;
 		}
