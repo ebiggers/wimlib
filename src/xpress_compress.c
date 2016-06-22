@@ -964,7 +964,6 @@ xpress_find_matches(struct xpress_compressor * restrict c,
 				bt_matchfinder_skip_position(&c->bt_mf,
 							     in_begin,
 							     in_next - in_begin,
-							     max_len,
 							     nice_len,
 							     c->max_search_depth,
 							     next_hashes);

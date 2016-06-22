@@ -1883,7 +1883,6 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 						   bt_matchfinder_skip_position,
 						   in_begin,
 						   in_next - in_begin,
-						   max_len,
 						   nice_len,
 						   c->max_search_depth,
 						   next_hashes);

@@ -3,7 +3,7 @@
  *
  * The following copying information applies to this specific source code file:
  *
- * Written in 2014-2015 by Eric Biggers <ebiggers3@gmail.com>
+ * Written in 2014-2016 by Eric Biggers <ebiggers3@gmail.com>
  *
  * To the extent possible under law, the author(s) have dedicated all copyright
  * and related and neighboring rights to this software to the public domain
@@ -244,8 +244,7 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 		matchptr = &in_begin[cur_node];
 
 		if (matchptr[len] == in_next[len]) {
-			len = lz_extend(in_next, matchptr, len + 1,
-					(record_matches ? max_len : nice_len));
+			len = lz_extend(in_next, matchptr, len + 1, max_len);
 			if (!record_matches || len > best_len) {
 				if (record_matches) {
 					best_len = len;
@@ -357,7 +356,6 @@ static inline void
 TEMPLATED(bt_matchfinder_skip_position)(struct TEMPLATED(bt_matchfinder) *mf,
 					const u8 *in_begin,
 					ptrdiff_t cur_pos,
-					u32 max_len,
 					u32 nice_len,
 					u32 max_search_depth,
 					u32 next_hashes[static 2])
@@ -366,7 +364,7 @@ TEMPLATED(bt_matchfinder_skip_position)(struct TEMPLATED(bt_matchfinder) *mf,
 	TEMPLATED(bt_matchfinder_advance_one_byte)(mf,
 						   in_begin,
 						   cur_pos,
-						   max_len,
+						   nice_len,
 						   nice_len,
 						   max_search_depth,
 						   next_hashes,
