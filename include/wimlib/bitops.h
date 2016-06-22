@@ -100,14 +100,20 @@ ffsw(machine_word_t v)
 		return ffs64(v);
 }
 
-/* Round up to nearest power of 2  */
+/* Return the log base 2 of 'n', rounded up to the nearest integer. */
+static inline unsigned
+ilog2_ceil(size_t n)
+{
+        if (n <= 1)
+                return 0;
+        return 1 + flsw(n - 1);
+}
 
+/* Round 'n' up to the nearest power of 2 */
 static inline size_t
 roundup_pow_of_2(size_t n)
 {
-	if (n <= 1)
-		return 1;
-	return (size_t)1 << (1 + flsw(n - 1));
+	return (size_t)1 << ilog2_ceil(n);
 }
 
 #endif /* _WIMLIB_BITOPS_H */

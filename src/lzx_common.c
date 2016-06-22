@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers
+ * Copyright (C) 2012-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -76,17 +76,10 @@ const u8 lzx_extra_offset_bits[LZX_MAX_OFFSET_SLOTS] = {
 unsigned
 lzx_get_window_order(size_t max_bufsize)
 {
-	unsigned order;
-
 	if (max_bufsize == 0 || max_bufsize > LZX_MAX_WINDOW_SIZE)
 		return 0;
 
-	order = fls32(max_bufsize);
-
-	if (((u32)1 << order) != max_bufsize)
-		order++;
-
-	return max(order, LZX_MIN_WINDOW_ORDER);
+	return max(ilog2_ceil(max_bufsize), LZX_MIN_WINDOW_ORDER);
 }
 
 /* Given a valid LZX window order, return the number of symbols that will exist
