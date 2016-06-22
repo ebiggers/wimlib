@@ -274,12 +274,12 @@ repeat_byte(u8 b)
 {
 	machine_word_t v;
 
-	STATIC_ASSERT(WORDSIZE == 4 || WORDSIZE == 8);
+	STATIC_ASSERT(WORDBITS == 32 || WORDBITS == 64);
 
 	v = b;
 	v |= v << 8;
 	v |= v << 16;
-	v |= v << ((WORDSIZE == 8) ? 32 : 0);
+	v |= v << ((WORDBITS == 64) ? 32 : 0);
 	return v;
 }
 
@@ -310,13 +310,11 @@ lz_copy(u8 *dst, u32 length, u32 offset, const u8 *winend, u32 min_length)
 	 * example, if a word is 8 bytes and the match is of length 5, then
 	 * we'll simply copy 8 bytes.  This is okay as long as we don't write
 	 * beyond the end of the output buffer, hence the check for (winend -
-	 * end >= WORDSIZE - 1).
+	 * end >= WORDBYTES - 1).
 	 */
-	if (UNALIGNED_ACCESS_IS_FAST &&
-	    likely(winend - end >= WORDSIZE - 1))
-	{
+	if (UNALIGNED_ACCESS_IS_FAST && likely(winend - end >= WORDBYTES - 1)) {
 
-		if (offset >= WORDSIZE) {
+		if (offset >= WORDBYTES) {
 			/* The source and destination words don't overlap.  */
 
 			/* To improve branch prediction, one iteration of this
@@ -326,14 +324,14 @@ lz_copy(u8 *dst, u32 length, u32 offset, const u8 *winend, u32 min_length)
 			 * and we'll need to continue copying.  */
 
 			copy_word_unaligned(src, dst);
-			src += WORDSIZE;
-			dst += WORDSIZE;
+			src += WORDBYTES;
+			dst += WORDBYTES;
 
 			if (dst < end) {
 				do {
 					copy_word_unaligned(src, dst);
-					src += WORDSIZE;
-					dst += WORDSIZE;
+					src += WORDBYTES;
+					dst += WORDBYTES;
 				} while (dst < end);
 			}
 			return;
@@ -346,19 +344,19 @@ lz_copy(u8 *dst, u32 length, u32 offset, const u8 *winend, u32 min_length)
 			machine_word_t v = repeat_byte(*(dst - 1));
 			do {
 				store_word_unaligned(v, dst);
-				src += WORDSIZE;
-				dst += WORDSIZE;
+				src += WORDBYTES;
+				dst += WORDBYTES;
 			} while (dst < end);
 			return;
 		}
 		/*
 		 * We don't bother with special cases for other 'offset <
-		 * WORDSIZE', which are usually rarer than 'offset == 1'.  Extra
-		 * checks will just slow things down.  Actually, it's possible
-		 * to handle all the 'offset < WORDSIZE' cases using the same
-		 * code, but it still becomes more complicated doesn't seem any
-		 * faster overall; it definitely slows down the more common
-		 * 'offset == 1' case.
+		 * WORDBYTES', which are usually rarer than 'offset == 1'.
+		 * Extra checks will just slow things down.  Actually, it's
+		 * possible to handle all the 'offset < WORDBYTES' cases using
+		 * the same code, but it still becomes more complicated doesn't
+		 * seem any faster overall; it definitely slows down the more
+		 * common 'offset == 1' case.
 		 */
 	}
 

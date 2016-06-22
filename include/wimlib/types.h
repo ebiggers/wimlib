@@ -47,6 +47,7 @@ typedef struct WIMStruct WIMStruct;
  */
 typedef size_t machine_word_t;
 
-#define WORDSIZE	sizeof(machine_word_t)
+#define WORDBYTES	sizeof(machine_word_t)
+#define WORDBITS	(8 * WORDBYTES)
 
 #endif /* _WIMLIB_TYPES_H */

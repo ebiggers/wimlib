@@ -542,7 +542,7 @@ struct lzx_output_bitstream {
 
 /* Can the specified number of bits always be added to 'bitbuf' after any
  * pending 16-bit coding units have been flushed?  */
-#define CAN_BUFFER(n)	((n) <= (8 * sizeof(machine_word_t)) - 15)
+#define CAN_BUFFER(n)	((n) <= WORDBITS - 15)
 
 /*
  * Initialize the output bitstream.
@@ -892,7 +892,7 @@ lzx_write_sequences(struct lzx_output_bitstream *os, int block_type,
 		if (litrunlen) {  /* Is the literal run nonempty?  */
 
 			/* Verify optimization is enabled on 64-bit  */
-			STATIC_ASSERT(sizeof(machine_word_t) < 8 ||
+			STATIC_ASSERT(WORDBITS < 64 ||
 				      CAN_BUFFER(4 * MAIN_CODEWORD_LIMIT));
 
 			if (CAN_BUFFER(4 * MAIN_CODEWORD_LIMIT)) {
@@ -968,7 +968,7 @@ lzx_write_sequences(struct lzx_output_bitstream *os, int block_type,
 				 14 + ALIGNED_CODEWORD_LIMIT)
 
 		/* Verify optimization is enabled on 64-bit  */
-		STATIC_ASSERT(sizeof(machine_word_t) < 8 || CAN_BUFFER(MAX_MATCH_BITS));
+		STATIC_ASSERT(WORDBITS < 64 || CAN_BUFFER(MAX_MATCH_BITS));
 
 		/* Output the main symbol for the match.  */
 

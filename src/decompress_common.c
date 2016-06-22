@@ -157,7 +157,7 @@ make_huffman_decode_table(u16 decode_table[const],
 	unsigned decode_table_pos;
 
 #ifdef USE_WORD_FILL
-	const unsigned entries_per_word = WORDSIZE / sizeof(decode_table[0]);
+	const unsigned entries_per_word = WORDBYTES / sizeof(decode_table[0]);
 #endif
 
 #ifdef USE_SSE2_FILL
@@ -291,11 +291,11 @@ make_huffman_decode_table(u16 decode_table[const],
 			aliased_word_t *p;
 			unsigned n;
 
-			STATIC_ASSERT(WORDSIZE == 4 || WORDSIZE == 8);
+			STATIC_ASSERT(WORDBITS == 32 || WORDBITS == 64);
 
 			v = MAKE_DIRECT_ENTRY(sorted_syms[sym_idx], codeword_len);
 			v |= v << 16;
-			v |= v << (WORDSIZE == 8 ? 32 : 0);
+			v |= v << (WORDBITS == 64 ? 32 : 0);
 
 			p = (aliased_word_t *)decode_table_ptr;
 			n = stores_per_loop;

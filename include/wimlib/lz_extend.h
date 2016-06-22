@@ -32,17 +32,17 @@ static inline u32
 lz_extend(const u8 * const strptr, const u8 * const matchptr,
 	  u32 len, const u32 max_len)
 {
-	while (UNALIGNED_ACCESS_IS_FAST && len + WORDSIZE <= max_len) {
+	while (UNALIGNED_ACCESS_IS_FAST && len + WORDBYTES <= max_len) {
 		machine_word_t v = load_word_unaligned(matchptr + len) ^
 				   load_word_unaligned(strptr + len);
 		if (v != 0) {
 			if (CPU_IS_LITTLE_ENDIAN)
 				len += ffsw(v) >> 3;
 			else
-				len += (8 * WORDSIZE - 1 - flsw(v)) >> 3;
+				len += (WORDBITS - 1 - flsw(v)) >> 3;
 			return len;
 		}
-		len += WORDSIZE;
+		len += WORDBYTES;
 	}
 
 	while (len < max_len && matchptr[len] == strptr[len])

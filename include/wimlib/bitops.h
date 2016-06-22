@@ -55,8 +55,8 @@ fls64(u64 v)
 static inline unsigned
 flsw(machine_word_t v)
 {
-	STATIC_ASSERT(WORDSIZE == 4 || WORDSIZE == 8);
-	if (WORDSIZE == 4)
+	STATIC_ASSERT(WORDBITS == 32 || WORDBITS == 64);
+	if (WORDBITS == 32)
 		return fls32(v);
 	else
 		return fls64(v);
@@ -93,8 +93,8 @@ ffs64(u64 v)
 static inline unsigned
 ffsw(machine_word_t v)
 {
-	STATIC_ASSERT(WORDSIZE == 4 || WORDSIZE == 8);
-	if (WORDSIZE == 4)
+	STATIC_ASSERT(WORDBITS == 32 || WORDBITS == 64);
+	if (WORDBITS == 32)
 		return ffs32(v);
 	else
 		return ffs64(v);
