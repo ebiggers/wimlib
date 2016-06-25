@@ -320,8 +320,13 @@ unix_scan_symlink(const char *full_path, int dirfd, const char *relpath,
 
 	/* Translate the UNIX symlink target into a Windows reparse point.  */
 	ret = wim_inode_set_symlink(inode, target, params->blob_table);
-	if (ret)
+	if (unlikely(ret)) {
+		if (ret == WIMLIB_ERR_INVALID_UTF8_STRING) {
+			ERROR("\"%s\": target of symbolic link is not valid "
+			      "UTF-8.  This is not supported.", full_path);
+		}
 		return ret;
+	}
 
 	/* On Windows, a reparse point can be set on both directory and
 	 * non-directory files.  Usually, a link that is intended to point to a
@@ -389,8 +394,13 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 
 	ret = inode_table_new_dentry(params->inode_table, relpath,
 				     stbuf.st_ino, stbuf.st_dev, false, &tree);
-	if (ret)
+	if (unlikely(ret)) {
+		if (ret == WIMLIB_ERR_INVALID_UTF8_STRING) {
+			ERROR("\"%s\": filename is not valid UTF-8.  "
+			      "This is not supported.", full_path);
+		}
 		goto out;
+	}
 
 	inode = tree->d_inode;
 
