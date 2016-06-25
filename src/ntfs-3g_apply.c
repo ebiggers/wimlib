@@ -168,8 +168,17 @@ ntfs_3g_restore_dos_name(ntfs_inode *ni, ntfs_inode *dir_ni,
 	}
 	utf16le_put_tstr(dos_name);
 	if (ret) {
+		int err = errno;
 		ERROR_WITH_ERRNO("Failed to set DOS name of \"%s\" in NTFS "
 				 "volume", dentry_full_path(dentry));
+		if (err == EILSEQ) {
+			ERROR("This error may have been caused by a known "
+			      "bug in libntfs-3g where it is unable to set "
+			      "DOS names on files whose long names contain "
+			      "unpaired surrogate characters.  This bug "
+			      "was fixed in the development version of "
+			      "NTFS-3G in June 2016.");
+		}
 		ret = WIMLIB_ERR_SET_SHORT_NAME;
 		goto out_close;
 	}
