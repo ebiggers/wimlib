@@ -50,7 +50,6 @@
 #include "wimlib/object_id.h"
 #include "wimlib/reparse.h"
 #include "wimlib/security.h"
-#include "wimlib/security_descriptor.h"
 
 static int
 ntfs_3g_get_supported_features(const char *target,
@@ -95,135 +94,6 @@ struct ntfs_3g_apply_ctx {
 	ntfs_inode *ntfs_reparse_inodes[MAX_OPEN_FILES];
 	struct wim_inode *wim_reparse_inodes[MAX_OPEN_FILES];
 };
-
-static size_t
-sid_size(const wimlib_SID *sid)
-{
-	return offsetof(wimlib_SID, sub_authority) +
-		sizeof(le32) * sid->sub_authority_count;
-}
-
-/*
- * sd_fixup - Fix up a Windows NT security descriptor for libntfs-3g.
- *
- * libntfs-3g validates security descriptors before setting them, but old
- * versions contain bugs causing it to reject unusual but valid security
- * descriptors:
- *
- * - Versions before 2013.1.13 reject security descriptors ending with an empty
- *   SACL (System Access Control List).  This bug can be worked around either by
- *   moving the empty SACL earlier in the security descriptor or by removing the
- *   SACL entirely.  The latter work-around is valid because an empty SACL is
- *   equivalent to a "null", or non-existent, SACL.
- * - Versions before 2014.2.15 reject security descriptors ending with an empty
- *   DACL (Discretionary Access Control List).  This is very similar to the SACL
- *   bug.  However, removing the DACL is not a valid workaround because this
- *   changes the meaning of the security descriptor--- an empty DACL allows no
- *   access, whereas a "null" DACL allows all access.
- * - Versions before 2016.2.22 reject security descriptors containing SIDs with
- *   too many subauthorities.  We do not work around this.
- *
- * If the security descriptor was fixed, this function returns an allocated
- * buffer containing the fixed security descriptor, and its size is updated.
- * Otherwise (or if no memory is available) NULL is returned.
- */
-static void *
-sd_fixup(const void *_desc, size_t *size_p)
-{
-	u32 owner_offset, group_offset, dacl_offset, sacl_offset;
-	bool owner_valid, group_valid;
-	size_t size = *size_p;
-	const wimlib_SECURITY_DESCRIPTOR_RELATIVE *desc = _desc;
-	wimlib_SECURITY_DESCRIPTOR_RELATIVE *desc_new;
-	const wimlib_SID *owner, *group, *sid;
-
-	/* Don't attempt to fix clearly invalid security descriptors.  */
-	if (size < sizeof(wimlib_SECURITY_DESCRIPTOR_RELATIVE))
-		return NULL;
-
-	if (le16_to_cpu(desc->control) & wimlib_SE_DACL_PRESENT)
-		dacl_offset = le32_to_cpu(desc->dacl_offset);
-	else
-		dacl_offset = 0;
-
-	if (le16_to_cpu(desc->control) & wimlib_SE_SACL_PRESENT)
-		sacl_offset = le32_to_cpu(desc->sacl_offset);
-	else
-		sacl_offset = 0;
-
-	/* Check if the security descriptor will be affected by one of the bugs.
-	 * If not, do nothing and return.  */
-	if (!((sacl_offset != 0 && sacl_offset == size - sizeof(wimlib_ACL)) ||
-	      (dacl_offset != 0 && dacl_offset == size - sizeof(wimlib_ACL))))
-		return NULL;
-
-	owner_offset = le32_to_cpu(desc->owner_offset);
-	group_offset = le32_to_cpu(desc->group_offset);
-	owner = (const wimlib_SID*)((const u8*)desc + owner_offset);
-	group = (const wimlib_SID*)((const u8*)desc + group_offset);
-
-	/* We'll try to move the owner or group SID to the end of the security
-	 * descriptor to avoid the bug.  This is only possible if at least one
-	 * is valid.  */
-	owner_valid = (owner_offset != 0) &&
-			(owner_offset % 4 == 0) &&
-			(owner_offset <= size - sizeof(SID)) &&
-			(owner_offset + sid_size(owner) <= size) &&
-			(owner_offset >= sizeof(wimlib_SECURITY_DESCRIPTOR_RELATIVE));
-	group_valid = (group_offset != 0) &&
-			(group_offset % 4 == 0) &&
-			(group_offset <= size - sizeof(SID)) &&
-			(group_offset + sid_size(group) <= size) &&
-			(group_offset >= sizeof(wimlib_SECURITY_DESCRIPTOR_RELATIVE));
-	if (owner_valid) {
-		sid = owner;
-	} else if (group_valid) {
-		sid = group;
-	} else {
-		return NULL;
-	}
-
-	desc_new = MALLOC(size + sid_size(sid));
-	if (!desc_new)
-		return NULL;
-
-	memcpy(desc_new, desc, size);
-	if (owner_valid)
-		desc_new->owner_offset = cpu_to_le32(size);
-	else if (group_valid)
-		desc_new->group_offset = cpu_to_le32(size);
-	memcpy((u8*)desc_new + size, sid, sid_size(sid));
-	*size_p = size + sid_size(sid);
-	return desc_new;
-}
-
-/* Set the security descriptor @desc of size @desc_size on the NTFS inode @ni.
-  */
-static int
-ntfs_3g_set_security_descriptor(ntfs_inode *ni, const void *desc, size_t desc_size)
-{
-	struct SECURITY_CONTEXT sec_ctx;
-	void *desc_fixed = NULL;
-	int ret = 0;
-
-	memset(&sec_ctx, 0, sizeof(sec_ctx));
-	sec_ctx.vol = ni->vol;
-
-retry:
-	if (ntfs_set_ntfs_acl(&sec_ctx, ni, desc, desc_size, 0)) {
-		if (desc_fixed == NULL) {
-			desc_fixed = sd_fixup(desc, &desc_size);
-			if (desc_fixed != NULL) {
-				desc = desc_fixed;
-				goto retry;
-			}
-		}
-		ret = WIMLIB_ERR_SET_SECURITY;
-	}
-
-	FREE(desc_fixed);
-	return ret;
-}
 
 static int
 ntfs_3g_set_timestamps(ntfs_inode *ni, const struct wim_inode *inode)
@@ -457,13 +327,14 @@ ntfs_3g_set_metadata(ntfs_inode *ni, const struct wim_inode *inode,
 	if (inode_has_security_descriptor(inode)
 	    && !(extract_flags & WIMLIB_EXTRACT_FLAG_NO_ACLS))
 	{
+		struct SECURITY_CONTEXT sec_ctx = { ctx->vol };
 		const void *desc;
 		size_t desc_size;
 
 		desc = sd->descriptors[inode->i_security_id];
 		desc_size = sd->sizes[inode->i_security_id];
 
-		ret = ntfs_3g_set_security_descriptor(ni, desc, desc_size);
+		ret = ntfs_set_ntfs_acl(&sec_ctx, ni, desc, desc_size, 0);
 
 		if (unlikely(ret)) {
 			int err = errno;
@@ -474,17 +345,15 @@ ntfs_3g_set_metadata(ntfs_inode *ni, const struct wim_inode *inode,
 				fprintf(wimlib_error_file,
 					"The security descriptor is: ");
 				print_byte_field(desc, desc_size, wimlib_error_file);
-				fprintf(wimlib_error_file, "\n");
 				fprintf(wimlib_error_file,
-					"\nThis error occurred because libntfs-3g thinks "
-					"the security descriptor is invalid.  If you "
-					"are extracting a Windows 10 image, this may be "
-					"caused by a known bug in libntfs-3g.  This bug "
-					"was fixed in NTFS-3G version 2016.2.22.  See: "
-					"https://wimlib.net/forums/viewtopic.php?f=1&t=4 "
-					"for more information.\n\n");
+					"\n\nThis error occurred because libntfs-3g thinks "
+					"the security descriptor is invalid.  There "
+					"are several known bugs with libntfs-3g's "
+					"security descriptor validation logic in older "
+					"versions.  Please upgrade to NTFS-3G version "
+					"2016.2.22 or later if you haven't already.\n");
 			}
-			return ret;
+			return WIMLIB_ERR_SET_SECURITY;
 		}
 	}
 
