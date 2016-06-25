@@ -64,12 +64,14 @@ struct wim_xml_info {
 	/* The number of WIM images (the length of 'images')  */
 	int image_count;
 
+#if TCHAR_IS_UTF16LE
 	/* Temporary memory for UTF-8 => 'tchar' string translations.  When an
 	 * API function needs to return a 'tchar' string, it uses one of these
 	 * array slots to hold the string and returns a pointer to it.  */
 	tchar *strings[128];
 	size_t next_string_idx;
 	size_t num_strings;
+#endif
 };
 
 /*----------------------------------------------------------------------------*
@@ -144,18 +146,21 @@ node_get_timestamp(const xmlNode *node)
 static int
 tstr_get_utf8(const tchar *tstr, const xmlChar **utf8_ret)
 {
-	if (wimlib_mbs_is_utf8) {
-		*utf8_ret = (xmlChar *)tstr;
-		return 0;
-	}
-	return tstr_to_utf8_simple(tstr, (char **)utf8_ret);
+#if TCHAR_IS_UTF16LE
+	return utf16le_to_utf8(tstr, tstrlen(tstr) * sizeof(tchar),
+			       (char **)utf8_ret, NULL);
+#else
+	*utf8_ret = (const xmlChar *)tstr;
+	return 0;
+#endif
 }
 
 static void
 tstr_put_utf8(const xmlChar *utf8)
 {
-	if (!wimlib_mbs_is_utf8)
-		FREE((void *)utf8);
+#if TCHAR_IS_UTF16LE
+	FREE((char *)utf8);
+#endif
 }
 
 /* Retrieve the text contents of an XML element as a 'tchar' string.  If not
@@ -163,26 +168,29 @@ tstr_put_utf8(const xmlChar *utf8)
 static const tchar *
 node_get_ttext(struct wim_xml_info *info, xmlNode *node)
 {
-	const xmlChar *text;
+	const xmlChar *text = node_get_text(node);
+
+#if TCHAR_IS_UTF16LE
 	tchar **ttext_p;
 
-	text = node_get_text(node);
-
-	if (!text || wimlib_mbs_is_utf8)
-		return (const tchar *)text;
+	if (!text)
+		return NULL;
 
 	ttext_p = &info->strings[info->next_string_idx];
 	if (info->num_strings >= ARRAY_LEN(info->strings)) {
 		FREE(*ttext_p);
 		*ttext_p = NULL;
 	}
-	if (utf8_to_tstr_simple(text, ttext_p))
+	if (utf8_to_tstr(text, strlen(text), ttext_p, NULL))
 		return NULL;
 	if (info->num_strings < ARRAY_LEN(info->strings))
 		info->num_strings++;
 	info->next_string_idx++;
 	info->next_string_idx %= ARRAY_LEN(info->strings);
 	return *ttext_p;
+#else
+	return text;
+#endif
 }
 
 /* Unlink the specified node from its parent, then free it (recursively).  */
@@ -335,10 +343,12 @@ static struct wim_xml_info *
 alloc_wim_xml_info(void)
 {
 	struct wim_xml_info *info = MALLOC(sizeof(*info));
+#if TCHAR_IS_UTF16LE
 	if (info) {
 		info->next_string_idx = 0;
 		info->num_strings = 0;
 	}
+#endif
 	return info;
 }
 
@@ -609,8 +619,10 @@ xml_free_info_struct(struct wim_xml_info *info)
 	if (info) {
 		xmlFreeDoc(info->doc);
 		FREE(info->images);
+	#if TCHAR_IS_UTF16LE
 		for (size_t i = 0; i < info->num_strings; i++)
 			FREE(info->strings[i]);
+	#endif
 		FREE(info);
 	}
 }

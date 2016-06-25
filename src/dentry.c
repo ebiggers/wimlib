@@ -484,7 +484,6 @@ int
 calculate_dentry_full_path(struct wim_dentry *dentry)
 {
 	size_t ulen;
-	size_t dummy;
 	const struct wim_dentry *d;
 
 	if (dentry->d_full_path)
@@ -513,7 +512,7 @@ calculate_dentry_full_path(struct wim_dentry *dentry)
 	wimlib_assert(p == ubuf);
 
 	return utf16le_to_tstr(ubuf, ulen * sizeof(utf16lechar),
-			       &dentry->d_full_path, &dummy);
+			       &dentry->d_full_path, NULL);
 }
 
 /*

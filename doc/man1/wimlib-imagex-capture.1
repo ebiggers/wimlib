@@ -69,12 +69,14 @@ With \fB--unix-data\fR: UNIX owners, groups, and modes
 With \fB--unix-data\fR: device nodes, FIFOs, and UNIX domain sockets
 .PP
 There is no support for storing extended attributes (e.g. SELinux security
-labels and POSIX ACLs).  Also note that last status change times (ctime) are not
-stored.
-.PP
-Pedantic note: A limitation of the WIM format prevents the unusual case where a
-single symbolic link file itself has multiple names (hard links); in this
-unlikely case, each symbolic link is stored as an independent file.
+labels and POSIX ACLs), last status change times (ctimes), or hard link
+information for symbolic link files (each symbolic link will be stored as an
+independent file).  In addition, filenames and symbolic link targets on UNIX
+filesystems which are not valid UTF-8 with the addition of surrogate codepoints
+are unsupported.  Note: if you have a filesystem containing filenames in another
+multibyte encoding, such as ISO-8859-1, and you wish to archive it with wimlib,
+you may be able to mount it with an option which causes its filenames to be
+presented as UTF-8.
 .SH NTFS VOLUME CAPTURE (UNIX)
 This section documents how \fBwimlib-imagex\fR captures files directly from
 an NTFS volume image on UNIX-like systems.

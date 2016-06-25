@@ -187,9 +187,6 @@ static const tchar * const error_strings[] = {
 		= T("An error was returned by fuse_main()"),
 	[WIMLIB_ERR_GLOB_HAD_NO_MATCHES]
 		= T("The provided file glob did not match any files"),
-	[WIMLIB_ERR_ICONV_NOT_AVAILABLE]
-		= T("The iconv() function does not seem to work. "
-		  "Maybe check to make sure the directory /usr/lib/gconv exists"),
 	[WIMLIB_ERR_IMAGE_COUNT]
 		= T("Inconsistent image count among the metadata "
 			"resources, the WIM header, and/or the XML data"),
@@ -215,8 +212,6 @@ static const tchar * const error_strings[] = {
 		= T("An entry in the WIM's lookup table is invalid"),
 	[WIMLIB_ERR_INVALID_METADATA_RESOURCE]
 		= T("The metadata resource is invalid"),
-	[WIMLIB_ERR_INVALID_MULTIBYTE_STRING]
-		= T("A string was not valid in the current locale's character encoding"),
 	[WIMLIB_ERR_INVALID_OVERLAY]
 		= T("Conflicting files in overlay when creating a WIM image"),
 	[WIMLIB_ERR_INVALID_PARAM]
@@ -230,9 +225,9 @@ static const tchar * const error_strings[] = {
 	[WIMLIB_ERR_INVALID_RESOURCE_HASH]
 		= T("The SHA-1 message digest of a WIM resource did not match the expected value"),
 	[WIMLIB_ERR_INVALID_UTF8_STRING]
-		= T("A string provided as input by the user was not a valid UTF-8 string"),
+		= T("A string was not a valid UTF-8 string"),
 	[WIMLIB_ERR_INVALID_UTF16_STRING]
-		= T("A string in a WIM dentry is not a valid UTF-16LE string"),
+		= T("A string was not a valid UTF-16 string"),
 	[WIMLIB_ERR_IS_DIRECTORY]
 		= T("One of the specified paths to delete was a directory"),
 	[WIMLIB_ERR_IS_SPLIT_WIM]

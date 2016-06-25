@@ -1082,9 +1082,3 @@ const struct apply_operations ntfs_3g_apply_ops = {
 	.context_size           = sizeof(struct ntfs_3g_apply_ctx),
 	.single_tree_only	= true,
 };
-
-void
-libntfs3g_global_init(void)
-{
-       ntfs_set_char_encoding(setlocale(LC_ALL, ""));
-}

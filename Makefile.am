@@ -204,7 +204,6 @@ libwim_la_LDFLAGS = $(AM_LDFLAGS) -version-info 26:0:11
 libwim_la_LIBADD =		\
 	$(PTHREAD_LIBS)		\
 	$(LIBXML2_LIBS)		\
-	$(LTLIBICONV)		\
 	$(LIBNTFS_3G_LIBS)	\
 	$(LIBFUSE_LIBS)		\
 	$(LIBRT_LIBS)		\

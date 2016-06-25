@@ -200,17 +200,6 @@ driver (WOF).  With the \fB--wimboot\fR option, \fBwimapply\fR will extract
 VSS snapshot support.  On Windows, \fBwimcapture\fR or \fBwimappend\fR with the
 \fB--snapshot\fR option will automatically create a temporary VSS snapshot and
 capture the image from it.  This can be used to image a "live" Windows system.
-.SH LOCALES AND CHARACTER ENCODINGS
-WIM files themselves store file and stream names using Windows native "wide
-character strings", which are UTF-16.  On Windows, wimlib works using these same
-strings, so conversions are usually not necessary and there should be no
-problems with character encodings.
-.PP
-On UNIX-like systems, wimlib works primarily in the locale-dependent multibyte
-encoding, which you are strongly recommended to set to UTF-8 to avoid any
-problems.  You can alternatively set the environmental variable
-\fBWIMLIB_IMAGEX_USE_UTF8\fR to force \fBwimlib-imagex\fR to use UTF-8
-internally, even if the current locale is not UTF-8 compatible.
 .SH CASE SENSITIVITY
 By default, the case sensitivity of \fBwimlib-imagex\fR differs somewhat
 between UNIX-like systems and Windows.  WIM images may (but usually do not) have

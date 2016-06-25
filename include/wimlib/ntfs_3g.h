@@ -9,9 +9,6 @@ struct blob_descriptor;
 struct ntfs_location;
 struct read_blob_callbacks;
 
-extern void
-libntfs3g_global_init(void);
-
 extern int
 read_ntfs_attribute_prefix(const struct blob_descriptor *blob, u64 size,
 			   const struct read_blob_callbacks *cbs);

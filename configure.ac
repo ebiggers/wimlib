@@ -102,16 +102,6 @@ AX_PTHREAD([], [AC_MSG_ERROR(["cannot find pthreads library"])])
 PKG_CHECK_MODULES([LIBXML2], [libxml-2.0])
 PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES libxml-2.0"
 
-# ------------------------------ libiconv -------------------------------------
-AM_ICONV
-if test "$am_cv_func_iconv" != "yes"; then
-	AC_MSG_ERROR([Cannot find the iconv() function.  iconv() is used to
-		      convert between encodings of WIM filenames and XML data.
-		      wimlib cannot be compiled without it.  iconv() is
-		      available in the latest version of glibc and sometimes in
-		      other libraries.])
-fi
-
 ###############################################################################
 #			  Configuration options				      #
 ###############################################################################

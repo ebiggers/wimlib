@@ -141,20 +141,21 @@
  * messages and strings (as well as all documentation, for that matter) are only
  * available in English.
  *
- * @section sec_encodings Locales and character encodings
+ * @section sec_encodings Character encoding
  *
  * To support Windows as well as UNIX-like systems, wimlib's API typically takes
- * and returns strings of ::wimlib_tchar, which are in a platform-dependent
- * encoding.
+ * and returns strings of ::wimlib_tchar which have a platform-dependent type
+ * and encoding.
  *
- * On Windows, each ::wimlib_tchar is 2 bytes and is the same as a "wchar_t",
- * and the encoding is UTF-16LE.
+ * On Windows, each ::wimlib_tchar is a 2-byte <tt>wchar_t</tt>.  The encoding
+ * is meant to be UTF-16LE.  However, unpaired surrogates are permitted because
+ * neither Windows nor the NTFS filesystem forbids them in filenames.
  *
- * On UNIX-like systems, each ::wimlib_tchar is 1 byte and is simply a "char",
- * and the encoding is the locale-dependent multibyte encoding.  I recommend you
- * set your locale to a UTF-8 capable locale to avoid any issues.  Also, by
- * default, wimlib on UNIX will assume the locale is UTF-8 capable unless you
- * call wimlib_global_init() after having set your desired locale.
+ * On UNIX-like systems, each ::wimlib_tchar is a 1 byte <tt>char</tt>.  The
+ * encoding is meant to be UTF-8.  However, for compatibility with Windows-style
+ * filenames that are not valid UTF-16LE, surrogate codepoints are permitted.
+ * Other multibyte encodings (e.g. ISO-8859-1) or garbage sequences of bytes are
+ * not permitted.
  *
  * @section sec_advanced Additional information and features
  *
@@ -2323,9 +2324,7 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 /** @addtogroup G_general
  * @{ */
 
-/** Assume that strings are represented in UTF-8, even if this is not the
- * locale's character encoding.  This flag is ignored on Windows, where wimlib
- * always uses UTF-16LE.  */
+/** Deprecated; no longer has any effect.  */
 #define WIMLIB_INIT_FLAG_ASSUME_UTF8			0x00000001
 
 /** Windows-only: do not attempt to acquire additional privileges (currently
@@ -2462,7 +2461,6 @@ enum wimlib_error_code {
 	WIMLIB_ERR_DECOMPRESSION                      = 2,
 	WIMLIB_ERR_FUSE                               = 6,
 	WIMLIB_ERR_GLOB_HAD_NO_MATCHES                = 8,
-	WIMLIB_ERR_ICONV_NOT_AVAILABLE                = 9,
 	WIMLIB_ERR_IMAGE_COUNT                        = 10,
 	WIMLIB_ERR_IMAGE_NAME_COLLISION               = 11,
 	WIMLIB_ERR_INSUFFICIENT_PRIVILEGES            = 12,
@@ -2475,7 +2473,6 @@ enum wimlib_error_code {
 	WIMLIB_ERR_INVALID_INTEGRITY_TABLE            = 19,
 	WIMLIB_ERR_INVALID_LOOKUP_TABLE_ENTRY         = 20,
 	WIMLIB_ERR_INVALID_METADATA_RESOURCE          = 21,
-	WIMLIB_ERR_INVALID_MULTIBYTE_STRING           = 22,
 	WIMLIB_ERR_INVALID_OVERLAY                    = 23,
 	WIMLIB_ERR_INVALID_PARAM                      = 24,
 	WIMLIB_ERR_INVALID_PART_NUMBER                = 25,
@@ -3278,9 +3275,8 @@ wimlib_get_xml_data(WIMStruct *wim, void **buf_ret, size_t *bufsize_ret);
  *
  * Initialization function for wimlib.  Call before using any other wimlib
  * function (except possibly wimlib_set_print_errors()).  If not done manually,
- * this function will be called automatically with @p init_flags set to
- * ::WIMLIB_INIT_FLAG_ASSUME_UTF8.  This function does nothing if called again
- * after it has already successfully run.
+ * this function will be called automatically with a flags argument of 0.  This
+ * function does nothing if called again after it has already successfully run.
  *
  * @param init_flags
  *	Bitwise OR of flags prefixed with WIMLIB_INIT_FLAG.

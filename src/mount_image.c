@@ -2484,7 +2484,7 @@ wimlib_unmount_image_with_progress(const char *dir, int unmount_flags,
 	int mount_flags;
 	int ret;
 
-	ret = wimlib_global_init(WIMLIB_INIT_FLAG_ASSUME_UTF8);
+	ret = wimlib_global_init(0);
 	if (ret)
 		return ret;
 

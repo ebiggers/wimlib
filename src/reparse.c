@@ -252,7 +252,7 @@ wim_inode_readlink(const struct wim_inode *inode, char *buf, size_t bufsize,
 	if (parse_link_reparse_point(&rpbuf, rpbuflen, &link))
 		return -EINVAL;
 
-	/* Translate the substitute name to the current multibyte encoding.  */
+	/* Translate the substitute name to a multibyte string.  */
 	if (utf16le_to_tstr(link.substitute_name, link.substitute_name_nbytes,
 			    &target_buffer, &target_len))
 		return -errno;

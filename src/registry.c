@@ -681,12 +681,11 @@ append_subkey_name(const struct nk *sub_nk, void *_next_subkey_p)
 			subkey[i] = sub_nk->name[i];
 		subkey[name_size] = '\0';
 	} else {
-		size_t dummy;
 		enum hive_status status;
 
 		status = translate_wimlib_error(
 			utf16le_to_tstr((utf16lechar *)sub_nk->name,
-					name_size, &subkey, &dummy));
+					name_size, &subkey, NULL));
 		if (status != HIVE_OK)
 			return status;
 	}

@@ -48,7 +48,6 @@
 /tools/windeps/libxml2*
 /tools/windeps/mingw*
 /tools/windeps/sysroot_*
-/tools/windeps/win-iconv*
 /tools/windeps/winpthreads*
 /wimlib-*-bin/
 /wimlib-*.tar

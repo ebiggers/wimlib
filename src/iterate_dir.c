@@ -50,12 +50,11 @@ stream_to_wimlib_stream_entry(const struct wim_inode *inode,
 	const u8 *hash;
 
 	if (stream_is_named(strm)) {
-		size_t dummy;
 		int ret;
 
 		ret = utf16le_get_tstr(strm->stream_name,
 				       utf16le_len_bytes(strm->stream_name),
-				       &wstream->stream_name, &dummy);
+				       &wstream->stream_name, NULL);
 		if (ret)
 			return ret;
 	}
@@ -87,7 +86,6 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry, struct wim_dentry *dentry,
 		   WIMStruct *wim, int flags)
 {
 	int ret;
-	size_t dummy;
 	const struct wim_inode *inode = dentry->d_inode;
 	const struct wim_inode_stream *strm;
 	struct wimlib_unix_data unix_data;
@@ -95,12 +93,12 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry, struct wim_dentry *dentry,
 	u32 object_id_len;
 
 	ret = utf16le_get_tstr(dentry->d_name, dentry->d_name_nbytes,
-			       &wdentry->filename, &dummy);
+			       &wdentry->filename, NULL);
 	if (ret)
 		return ret;
 
 	ret = utf16le_get_tstr(dentry->d_short_name, dentry->d_short_name_nbytes,
-			       &wdentry->dos_name, &dummy);
+			       &wdentry->dos_name, NULL);
 	if (ret)
 		return ret;
 

@@ -4620,31 +4620,6 @@ main(int argc, tchar **argv)
 	imagex_info_file = stdout;
 	invocation_name = tbasename(argv[0]);
 
-#ifndef __WIN32__
-	if (getenv("WIMLIB_IMAGEX_USE_UTF8")) {
-		init_flags |= WIMLIB_INIT_FLAG_ASSUME_UTF8;
-	} else {
-		char *codeset;
-
-		setlocale(LC_ALL, "");
-		codeset = nl_langinfo(CODESET);
-		if (!strstr(codeset, "UTF-8") &&
-		    !strstr(codeset, "UTF8") &&
-		    !strstr(codeset, "utf-8") &&
-		    !strstr(codeset, "utf8"))
-		{
-			fprintf(stderr,
-"WARNING: Running %"TS" in a UTF-8 locale is recommended!\n"
-"         Maybe try: `export LANG=en_US.UTF-8'?\n"
-"         Alternatively, set the environmental variable WIMLIB_IMAGEX_USE_UTF8\n"
-"         to any value to force wimlib to use UTF-8.\n",
-			invocation_name);
-
-		}
-	}
-
-#endif /* !__WIN32__ */
-
 	{
 		tchar *igcase = tgetenv(T("WIMLIB_IMAGEX_IGNORE_CASE"));
 		if (igcase != NULL) {
