@@ -468,37 +468,142 @@ set_random_streams(struct wim_inode *inode, struct generation_context *ctx,
 	return 0;
 }
 
-static int
-generate_random_file_name(tchar name[], int max_len,
-			  struct generation_context *ctx)
+static inline bool
+is_valid_windows_filename_char(utf16lechar c)
 {
-	int length;
+	return le16_to_cpu(c) > 31 &&
+		c != cpu_to_le16('/') &&
+		c != cpu_to_le16('<') &&
+		c != cpu_to_le16('>') &&
+		c != cpu_to_le16(':') &&
+		c != cpu_to_le16('"') &&
+		c != cpu_to_le16('/' ) &&
+		c != cpu_to_le16('\\') &&
+		c != cpu_to_le16('|') &&
+		c != cpu_to_le16('?') &&
+		c != cpu_to_le16('*');
+}
+
+/* Is the character valid in a filename on the current platform? */
+static inline bool
+is_valid_filename_char(utf16lechar c)
+{
+#ifdef __WIN32__
+	return is_valid_windows_filename_char(c);
+#else
+	return c != cpu_to_le16('\0') && c != cpu_to_le16('/');
+#endif
+}
+
+/* Generate a random filename and return its length. */
+static int
+generate_random_filename(utf16lechar name[], int max_len,
+			 struct generation_context *ctx)
+{
+	int len;
+
+	/* Choose the length of the name. */
 	switch (rand32() % 8) {
 	default:
 		/* short name  */
-		length = 1 + (rand32() % 6);
+		len = 1 + (rand32() % 6);
 		break;
 	case 2:
 	case 3:
 	case 4:
 		/* medium-length name  */
-		length = 7 + (rand32() % 8);
+		len = 7 + (rand32() % 8);
 		break;
 	case 5:
 	case 6:
 		/* long name  */
-		length = 15 + (rand32() % 15);
+		len = 15 + (rand32() % 15);
 		break;
 	case 7:
 		/* very long name  */
-		length = 30 + (rand32() % 90);
+		len = 30 + (rand32() % 90);
 		break;
 	}
-	length = min(length, max_len);
-	for (int i = 0; i < length; i++)
-		name[i] = 'a' + (rand32() % 26);
-	name[length] = 0;
-	return length;
+	len = min(len, max_len);
+
+	/* Generate the characters in the name. */
+	for (int i = 0; i < len; i++) {
+		do {
+			name[i] = rand16();
+		} while (!is_valid_filename_char(name[i]));
+	}
+
+	/* Add a null terminator. */
+	name[len] = cpu_to_le16('\0');
+
+	return len;
+}
+
+/* The set of characters which are valid in short filenames. */
+static const char valid_short_name_chars[] = {
+	'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N',
+	'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+	'!', '#', '$', '%', '&', '\'', '(', ')', '-', '@', '^', '_', '`', '{',
+	'}', '~',
+	/* TODO: why doesn't Windows accept these characters? */
+	/* ' ', */
+	/*128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141,*/
+	/*142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155,*/
+	/*156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169,*/
+	/*170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183,*/
+	/*184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197,*/
+	/*198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211,*/
+	/*212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225,*/
+	/*226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239,*/
+	/*240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253,*/
+	/*254, 255*/
+};
+
+static int
+generate_short_name_component(utf16lechar p[], int len)
+{
+	for (int i = 0; i < len; i++) {
+		char c = valid_short_name_chars[rand32() %
+						ARRAY_LEN(valid_short_name_chars)];
+		p[i] = cpu_to_le16(c);
+	}
+#if 0 /* TODO: we aren't using space yet anyway */
+	while (len > 1 && p[len - 1] == cpu_to_le16(' '))
+		len--;
+	if (p[len - 1] == cpu_to_le16(' '))
+		p[len - 1] = cpu_to_le16('A');
+#endif
+	return len;
+}
+
+/* Generate a random short (8.3) filename and return its length.
+ * The @name array must have length >= 13 (8 + 1 + 3 + 1). */
+static int
+generate_random_short_name(utf16lechar name[], struct generation_context *ctx)
+{
+	/*
+	 * Legal short names on Windows consist of 1 to 8 characters, optionally
+	 * followed by a dot then 1 to 3 more characters.  Only certain
+	 * characters are allowed.  In addition, trailing spaces are not
+	 * significant.
+	 */
+	int base_len = 1 + (rand32() % 8);
+	int ext_len = rand32() % 4;
+	int total_len;
+
+	base_len = generate_short_name_component(name, base_len);
+
+	if (ext_len) {
+		name[base_len] = cpu_to_le16('.');
+		ext_len = generate_short_name_component(&name[base_len + 1],
+							ext_len);
+		total_len = base_len + 1 + ext_len;
+	} else {
+		total_len = base_len;
+	}
+	name[total_len] = cpu_to_le16('\0');
+	return total_len;
 }
 
 static u64
@@ -526,8 +631,10 @@ select_num_children(u32 depth, struct generation_context *ctx)
 }
 
 static bool
-is_name_forbidden_in_win32_namespace(const utf16lechar *name)
+is_name_valid_in_win32_namespace(const utf16lechar *name)
 {
+	const utf16lechar *p;
+
 	static const utf16lechar forbidden_names[][5] = {
 		{ cpu_to_le16('C'), cpu_to_le16('O'), cpu_to_le16('N'), },
 		{ cpu_to_le16('P'), cpu_to_le16('R'), cpu_to_le16('N'), },
@@ -553,64 +660,58 @@ is_name_forbidden_in_win32_namespace(const utf16lechar *name)
 		{ cpu_to_le16('L'), cpu_to_le16('P'), cpu_to_le16('T'), cpu_to_le16('9'), },
 	};
 
-	if (!name)
+	/* The name must be nonempty. */
+	if (!name || !*name)
 		return false;
 
+	/* All characters must be valid on Windows. */
+	for (p = name; *p; p++)
+		if (!is_valid_windows_filename_char(*p))
+			return false;
+
+	/* There can't be a trailing dot or space. */
+	if (p[-1] == cpu_to_le16('.') || p[-1] == cpu_to_le16(' '))
+		return false;
+
+	/* The name can't be one of the reserved names (case insensitively). */
 	for (size_t i = 0; i < ARRAY_LEN(forbidden_names); i++)
 		if (!cmp_utf16le_strings_z(forbidden_names[i], name, true))
-			return true;
+			return false;
 
-	return false;
+	return true;
 }
 
 static int
 set_random_short_name(struct wim_dentry *dir, struct wim_dentry *child,
 		      struct generation_context *ctx)
 {
-	tchar name[12 + 1];
-	int ret;
-	const utf16lechar *short_name;
+	utf16lechar name[12 + 1];
+	int name_len;
 	u32 hash;
 	struct wim_dentry **bucket;
 
 	/* If the long name is not allowed in the Win32 namespace, then it
 	 * cannot be assigned a corresponding short name.  */
-	if (is_name_forbidden_in_win32_namespace(child->d_name))
+	if (!is_name_valid_in_win32_namespace(child->d_name))
 		return 0;
 
 retry:
 	/* Don't select a short name that is already used by a long name within
 	 * the same directory.  */
 	do {
-		int len = generate_random_file_name(name, 12, ctx);
-
-		/* Legal short names on Windows take one of the following forms:
-		 *
-		 *    - 1 to 8 characters
-		 *    - 1 to 8 characters, then a dot, then 1 to 3 characters */
-		if (len >= 9) {
-			if (len == 9)
-				len--;
-			else
-				name[8] = T('.');
-		}
-		name[len] = 0;
-	} while (get_dentry_child_with_name(dir, name,
-					    WIMLIB_CASE_PLATFORM_DEFAULT));
+		name_len = generate_random_short_name(name, ctx);
+	} while (get_dentry_child_with_utf16le_name(dir, name, name_len * 2,
+						    WIMLIB_CASE_INSENSITIVE));
 
 
 	/* Don't select a short name that is already used by another short name
 	 * within the same directory.  */
 	hash = 0;
-	for (const tchar *p = name; *p; p++)
-		hash = (hash * 31) + totlower(*p);
-	ret = tstr_get_utf16le(name, &short_name);
-	if (ret)
-		return ret;
+	for (const utf16lechar *p = name; *p; p++)
+		hash = (hash * 31) + *p;
 	FREE(child->d_short_name);
-	child->d_short_name = utf16le_dup(short_name);
-	child->d_short_name_nbytes = utf16le_len_bytes(short_name);
-	tstr_put_utf16le(short_name);
+	child->d_short_name = memdup(name, (name_len + 1) * 2);
+	child->d_short_name_nbytes = name_len * 2;
 
 	if (!child->d_short_name)
 		return WIMLIB_ERR_NOMEM;
@@ -618,12 +719,15 @@ retry:
 	bucket = &ctx->used_short_names[hash % ARRAY_LEN(ctx->used_short_names)];
 
 	for (struct wim_dentry *d = *bucket; d != NULL;
-	     d = d->d_next_extraction_alias)
-		if (!cmp_utf16le_strings_z(child->d_short_name,
-					   d->d_short_name, true))
+	     d = d->d_next_extraction_alias) {
+		if (!cmp_utf16le_strings(child->d_short_name, name_len,
+					 d->d_short_name, d->d_short_name_nbytes / 2,
+					 true)) {
 			goto retry;
+		}
+	}
 
-	if (is_name_forbidden_in_win32_namespace(child->d_short_name))
+	if (!is_name_valid_in_win32_namespace(child->d_short_name))
 		goto retry;
 
 	child->d_next_extraction_alias = *bucket;
@@ -659,34 +763,43 @@ generate_dentry_tree_recursive(struct wim_dentry *dir, u32 depth,
 	for (u32 i = 0; i < num_children; i++) {
 
 		/* Generate the next child dentry.  */
-
-		tchar name[128 + 1];
-		struct wim_dentry *duplicate;
 		struct wim_inode *inode;
 		u64 ino;
 		bool is_directory;
+		utf16lechar name[63 + 1]; /* for UNIX extraction: 63 * 4 <= 255 */
+		int name_len;
+		struct wim_dentry *duplicate;
 
-		/* Choose a long filename that is unique within the directory.*/
-		do {
-			generate_random_file_name(name, 128, ctx);
-		} while (get_dentry_child_with_name(dir, name,
-						    WIMLIB_CASE_PLATFORM_DEFAULT));
-
-		/* Decide whether to create a directory or not.
-		 * If not a directory, also decide on the inode number (i.e. we
-		 * may generate a "hard link" to an existing file).  */
+		/* Decide whether to create a directory or not.  If not a
+		 * directory, also decide on the inode number (i.e. we may
+		 * generate a "hard link" to an existing file).  */
 		is_directory = ((rand32() % 16) <= 6);
 		if (is_directory)
 			ino = 0;
 		else
 			ino = select_inode_number(ctx);
 
-		/* Create the dentry and add it to the directory.  */
-		ret = inode_table_new_dentry(ctx->params->inode_table, name,
+		/* Create the dentry. */
+		ret = inode_table_new_dentry(ctx->params->inode_table, NULL,
 					     ino, 0, is_directory, &child);
 		if (ret)
 			return ret;
 
+		/* Choose a filename that is unique within the directory.*/
+		do {
+			name_len = generate_random_filename(name,
+							    ARRAY_LEN(name) - 1,
+							    ctx);
+		} while (get_dentry_child_with_utf16le_name(dir, name, name_len * 2,
+							    WIMLIB_CASE_PLATFORM_DEFAULT));
+
+		ret = dentry_set_name_utf16le(child, name, name_len * 2);
+		if (ret) {
+			free_dentry(child);
+			return ret;
+		}
+
+		/* Add the dentry to the directory. */
 		duplicate = dentry_add_child(dir, child);
 		wimlib_assert(!duplicate);
 
