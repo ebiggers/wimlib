@@ -154,7 +154,8 @@ dependencies were already included and this section is irrelevant.
 
 * libntfs-3g (optional but recommended)
 	Unless configured --without-ntfs-3g, wimlib requires the library and
-	headers for libntfs-3g version 2011-4-12 or later to be installed.
+	headers for libntfs-3g to be installed.  The minimum required version is
+	2011-4-12, but newer versions contain important bug fixes.
 
 * OpenSSL / libcrypto (optional)
 	wimlib can use the SHA-1 message digest implementation from libcrypto
