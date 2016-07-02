@@ -1,3 +1,22 @@
+Version 1.10.0-BETA:
+	The LZX compression ratio has been slightly improved.  The default mode,
+	LZX level 50, is now almost as good as the old LZX level 100, while
+	being nearly the same speed as before.
+
+	On UNIX-like systems, wimlib can now process Windows filenames that are
+	not valid Unicode due to the presence of unpaired surrogates.
+
+	On UNIX-like systems, wimlib now always assumes UTF-8 encoding with the
+	addition of surrogate codepoints.  Consequently, the environmental
+	variable WIMLIB_IMAGEX_USE_UTF8 and the flag
+	WIMLIB_INIT_FLAG_ASSUME_UTF8 no longer have any effect.
+
+	wimlib no longer depends on iconv.
+
+	Workarounds for bugs in libntfs-3g version 2013.1.13 and earlier have
+	been removed.  Users are advised to upgrade to a later version of
+	libntfs-3g.
+
 Version 1.9.2:
 	On UNIX, wimlib can now overwrite readonly files when extracting.
 
