@@ -70,38 +70,43 @@
 #include "wimlib/decompressor_ops.h"
 #include "wimlib/decompress_common.h"
 #include "wimlib/error.h"
+#include "wimlib/util.h"
 #include "wimlib/xpress_constants.h"
 
 /* This value is chosen for fast decompression.  */
 #define XPRESS_TABLEBITS 11
 
-static int
-xpress_decompress(const void *restrict compressed_data, size_t compressed_size,
-		  void *restrict uncompressed_data, size_t uncompressed_size,
-		  void *restrict _ctx)
-{
-	const u8 * const in_begin = compressed_data;
-	u8 * const out_begin = uncompressed_data;
-	u8 *out_next = out_begin;
-	u8 * const out_end = out_begin + uncompressed_size;
+struct xpress_decompressor {
 	union {
 		DECODE_TABLE(decode_table, XPRESS_NUM_SYMBOLS,
 			     XPRESS_TABLEBITS, XPRESS_MAX_CODEWORD_LEN);
 		u8 lens[XPRESS_NUM_SYMBOLS];
-	} u;
+	};
+} _aligned_attribute(DECODE_TABLE_ALIGNMENT);
+
+static int
+xpress_decompress(const void *restrict compressed_data, size_t compressed_size,
+		  void *restrict uncompressed_data, size_t uncompressed_size,
+		  void *restrict _d)
+{
+	struct xpress_decompressor *d  = _d;
+	const u8 * const in_begin = compressed_data;
+	u8 * const out_begin = uncompressed_data;
+	u8 *out_next = out_begin;
+	u8 * const out_end = out_begin + uncompressed_size;
 	struct input_bitstream is;
 
 	/* Read the Huffman codeword lengths.  */
 	if (compressed_size < XPRESS_NUM_SYMBOLS / 2)
 		return -1;
 	for (int i = 0; i < XPRESS_NUM_SYMBOLS / 2; i++) {
-		u.lens[2 * i + 0] = in_begin[i] & 0xf;
-		u.lens[2 * i + 1] = in_begin[i] >> 4;
+		d->lens[2 * i + 0] = in_begin[i] & 0xf;
+		d->lens[2 * i + 1] = in_begin[i] >> 4;
 	}
 
 	/* Build a decoding table for the Huffman code.  */
-	if (make_huffman_decode_table(u.decode_table, XPRESS_NUM_SYMBOLS,
-				      XPRESS_TABLEBITS, u.lens,
+	if (make_huffman_decode_table(d->decode_table, XPRESS_NUM_SYMBOLS,
+				      XPRESS_TABLEBITS, d->lens,
 				      XPRESS_MAX_CODEWORD_LEN))
 		return -1;
 
@@ -116,7 +121,7 @@ xpress_decompress(const void *restrict compressed_data, size_t compressed_size,
 		u32 length;
 		u32 offset;
 
-		sym = read_huffsym(&is, u.decode_table,
+		sym = read_huffsym(&is, d->decode_table,
 				   XPRESS_TABLEBITS, XPRESS_MAX_CODEWORD_LEN);
 		if (sym < XPRESS_NUM_CHARS) {
 			/* Literal  */
@@ -150,15 +155,29 @@ xpress_decompress(const void *restrict compressed_data, size_t compressed_size,
 }
 
 static int
-xpress_create_decompressor(size_t max_block_size, void **dec_ret)
+xpress_create_decompressor(size_t max_block_size, void **d_ret)
 {
+	struct xpress_decompressor *d;
+
 	if (max_block_size > XPRESS_MAX_OFFSET + 1)
 		return WIMLIB_ERR_INVALID_PARAM;
 
+	d = ALIGNED_MALLOC(sizeof(*d), DECODE_TABLE_ALIGNMENT);
+	if (!d)
+		return WIMLIB_ERR_NOMEM;
+
+	*d_ret = d;
 	return 0;
+}
+
+static void
+xpress_free_decompressor(void *_d)
+{
+	ALIGNED_FREE(_d);
 }
 
 const struct decompressor_ops xpress_decompressor_ops = {
 	.create_decompressor = xpress_create_decompressor,
 	.decompress	     = xpress_decompress,
+	.free_decompressor   = xpress_free_decompressor,
 };
