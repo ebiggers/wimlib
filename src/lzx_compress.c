@@ -968,7 +968,8 @@ lzx_write_sequences(struct lzx_output_bitstream *os, int block_type,
 		adjusted_offset = seq->adjusted_offset_and_match_hdr >> 9;
 
 		num_extra_bits = lzx_extra_offset_bits[offset_slot];
-		extra_bits = adjusted_offset - lzx_offset_slot_base[offset_slot];
+		extra_bits = adjusted_offset - (lzx_offset_slot_base[offset_slot] +
+						LZX_OFFSET_ADJUSTMENT);
 
 	#define MAX_MATCH_BITS	(MAIN_CODEWORD_LIMIT + LENGTH_CODEWORD_LIMIT + \
 				 14 + ALIGNED_CODEWORD_LIMIT)
@@ -2762,7 +2763,8 @@ lzx_init_offset_slot_tabs(struct lzx_compressor *c)
 	for (; adjusted_offset < ARRAY_LEN(c->offset_slot_tab_1);
 	     adjusted_offset++)
 	{
-		if (adjusted_offset >= lzx_offset_slot_base[slot + 1])
+		if (adjusted_offset >= lzx_offset_slot_base[slot + 1] +
+				       LZX_OFFSET_ADJUSTMENT)
 			slot++;
 		c->offset_slot_tab_1[adjusted_offset] = slot;
 	}
@@ -2771,7 +2773,8 @@ lzx_init_offset_slot_tabs(struct lzx_compressor *c)
 	for (; adjusted_offset < LZX_MAX_WINDOW_SIZE;
 	     adjusted_offset += (u32)1 << 14)
 	{
-		if (adjusted_offset >= lzx_offset_slot_base[slot + 1])
+		if (adjusted_offset >= lzx_offset_slot_base[slot + 1] +
+				       LZX_OFFSET_ADJUSTMENT)
 			slot++;
 		c->offset_slot_tab_2[adjusted_offset >> 14] = slot;
 	}

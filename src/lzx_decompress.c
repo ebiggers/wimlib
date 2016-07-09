@@ -414,9 +414,6 @@ lzx_decompress_block(struct lzx_decompressor *d, struct input_bitstream *is,
 				offset += bitstream_read_bits(is, num_extra_bits);
 			}
 
-			/* Adjust the offset.  */
-			offset -= LZX_OFFSET_ADJUSTMENT;
-
 			/* Update the match offset LRU queue.  */
 			STATIC_ASSERT(LZX_NUM_RECENT_OFFSETS == 3);
 			recent_offsets[2] = recent_offsets[1];

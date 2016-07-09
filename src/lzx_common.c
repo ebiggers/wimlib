@@ -40,19 +40,19 @@
 #include "wimlib/util.h"
 
 /* Mapping: offset slot => first match offset that uses that offset slot.
- */
-const u32 lzx_offset_slot_base[LZX_MAX_OFFSET_SLOTS + 1] = {
-	0      , 1      , 2      , 3      , 4      ,	/* 0  --- 4  */
-	6      , 8      , 12     , 16     , 24     ,	/* 5  --- 9  */
-	32     , 48     , 64     , 96     , 128    ,    /* 10 --- 14 */
-	192    , 256    , 384    , 512    , 768    ,    /* 15 --- 19 */
-	1024   , 1536   , 2048   , 3072   , 4096   ,    /* 20 --- 24 */
-	6144   , 8192   , 12288  , 16384  , 24576  ,    /* 25 --- 29 */
-	32768  , 49152  , 65536  , 98304  , 131072 ,    /* 30 --- 34 */
-	196608 , 262144 , 393216 , 524288 , 655360 ,    /* 35 --- 39 */
-	786432 , 917504 , 1048576, 1179648, 1310720,    /* 40 --- 44 */
-	1441792, 1572864, 1703936, 1835008, 1966080,    /* 45 --- 49 */
-	2097152						/* extra     */
+ * The offset slots for repeat offsets map to "fake" offsets < 1.  */
+const s32 lzx_offset_slot_base[LZX_MAX_OFFSET_SLOTS + 1] = {
+        -2     , -1     , 0      , 1      , 2      ,    /* 0  --- 4  */
+        4      , 6      , 10     , 14     , 22     ,    /* 5  --- 9  */
+        30     , 46     , 62     , 94     , 126    ,    /* 10 --- 14 */
+        190    , 254    , 382    , 510    , 766    ,    /* 15 --- 19 */
+        1022   , 1534   , 2046   , 3070   , 4094   ,    /* 20 --- 24 */
+        6142   , 8190   , 12286  , 16382  , 24574  ,    /* 25 --- 29 */
+        32766  , 49150  , 65534  , 98302  , 131070 ,    /* 30 --- 34 */
+        196606 , 262142 , 393214 , 524286 , 655358 ,    /* 35 --- 39 */
+        786430 , 917502 , 1048574, 1179646, 1310718,    /* 40 --- 44 */
+        1441790, 1572862, 1703934, 1835006, 1966078,    /* 45 --- 49 */
+        2097150                                         /* extra     */
 };
 
 /* Mapping: offset slot => how many extra bits must be read and added to the
@@ -93,10 +93,9 @@ lzx_get_num_main_syms(unsigned window_order)
 	 * disallows this case.  This reduces the number of needed offset slots
 	 * by 1.  */
 	u32 window_size = (u32)1 << window_order;
-	u32 max_adjusted_offset = (window_size - LZX_MIN_MATCH_LEN - 1) +
-				  LZX_OFFSET_ADJUSTMENT;
+	u32 max_offset = window_size - LZX_MIN_MATCH_LEN - 1;
 	unsigned num_offset_slots = 30;
-	while (max_adjusted_offset >= lzx_offset_slot_base[num_offset_slots])
+	while (max_offset >= lzx_offset_slot_base[num_offset_slots])
 		num_offset_slots++;
 
 	return LZX_NUM_CHARS + (num_offset_slots * LZX_NUM_LEN_HEADERS);
