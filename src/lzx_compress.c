@@ -889,7 +889,12 @@ lzx_write_sequences(struct lzx_output_bitstream *os, int block_type,
 		    const struct lzx_codes *codes)
 {
 	const struct lzx_sequence *seq = sequences;
-	u32 ones_if_aligned = 0 - (block_type == LZX_BLOCKTYPE_ALIGNED);
+	unsigned min_aligned_offset_slot;
+
+	if (block_type == LZX_BLOCKTYPE_ALIGNED)
+		min_aligned_offset_slot = LZX_MIN_ALIGNED_OFFSET_SLOT;
+	else
+		min_aligned_offset_slot = LZX_MAX_OFFSET_SLOTS;
 
 	for (;;) {
 		/* Output the next sequence.  */
@@ -1001,7 +1006,7 @@ lzx_write_sequences(struct lzx_output_bitstream *os, int block_type,
 		 * there are at least extra 3 offset bits required.  All other
 		 * extra offset bits are output verbatim.  */
 
-		if ((adjusted_offset & ones_if_aligned) >= 16) {
+		if (offset_slot >= min_aligned_offset_slot) {
 
 			lzx_add_bits(os, extra_bits >> LZX_NUM_ALIGNED_OFFSET_BITS,
 				     num_extra_bits - LZX_NUM_ALIGNED_OFFSET_BITS);
@@ -1422,7 +1427,7 @@ lzx_walk_item_list(struct lzx_compressor *c, u32 block_size, bool is_16_bit,
 		/* Record a match. */
 
 		/* Tally the aligned offset symbol if needed. */
-		if (adjusted_offset >= 16)
+		if (adjusted_offset >= LZX_MIN_ALIGNED_OFFSET + LZX_OFFSET_ADJUSTMENT)
 			c->freqs.aligned[adjusted_offset & LZX_ALIGNED_OFFSET_BITMASK]++;
 
 		/* Record the adjusted length. */
@@ -1704,7 +1709,7 @@ lzx_find_min_cost_path(struct lzx_compressor * const restrict c,
 				u32 cost;
 
 			#if CONSIDER_ALIGNED_COSTS
-				if (offset >= 16 - LZX_OFFSET_ADJUSTMENT)
+				if (offset >= LZX_MIN_ALIGNED_OFFSET)
 					base_cost += c->costs.aligned[adjusted_offset &
 								      LZX_ALIGNED_OFFSET_BITMASK];
 			#endif
@@ -1845,7 +1850,7 @@ lzx_compute_match_costs(struct lzx_compressor *c)
 		unsigned i;
 
 	#if CONSIDER_ALIGNED_COSTS
-		if (offset_slot >= 8)
+		if (offset_slot >= LZX_MIN_ALIGNED_OFFSET_SLOT)
 			extra_cost -= LZX_NUM_ALIGNED_OFFSET_BITS * BIT_COST;
 	#endif
 

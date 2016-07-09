@@ -65,6 +65,13 @@
 /* Number of bits in which each aligned offset codeword length is represented.  */
 #define LZX_ALIGNEDCODE_ELEMENT_SIZE	3
 
+/* The first offset slot which requires an aligned offset symbol in aligned
+ * offset blocks.  */
+#define LZX_MIN_ALIGNED_OFFSET_SLOT	8
+
+/* The offset slot base for LZX_MIN_ALIGNED_OFFSET_SLOT.  */
+#define LZX_MIN_ALIGNED_OFFSET		14
+
 /* Maximum lengths (in bits) for length-limited Huffman code construction.  */
 #define LZX_MAX_MAIN_CODEWORD_LEN	16
 #define LZX_MAX_LEN_CODEWORD_LEN	16

@@ -355,7 +355,7 @@ lzx_decompress_block(struct lzx_decompressor *d, struct input_bitstream *is,
 					      d->alignedcode_lens,
 					      LZX_MAX_ALIGNED_CODEWORD_LEN))
 			return -1;
-		min_aligned_offset_slot = 8;
+		min_aligned_offset_slot = LZX_MIN_ALIGNED_OFFSET_SLOT;
 		memcpy(d->extra_offset_bits, d->extra_offset_bits_minus_aligned,
 		       sizeof(lzx_extra_offset_bits));
 	} else {
@@ -522,8 +522,9 @@ lzx_create_decompressor(size_t max_block_size, void **d_ret)
 		      sizeof(lzx_extra_offset_bits));
 	memcpy(d->extra_offset_bits_minus_aligned, lzx_extra_offset_bits,
 	       sizeof(lzx_extra_offset_bits));
-	for (unsigned offset_slot = 8; offset_slot < LZX_MAX_OFFSET_SLOTS;
-	     offset_slot++) {
+	for (unsigned offset_slot = LZX_MIN_ALIGNED_OFFSET_SLOT;
+	     offset_slot < LZX_MAX_OFFSET_SLOTS; offset_slot++)
+	{
 		d->extra_offset_bits_minus_aligned[offset_slot] -=
 				LZX_NUM_ALIGNED_OFFSET_BITS;
 	}
