@@ -409,18 +409,11 @@ lzx_decompress_block(struct lzx_decompressor *d, struct input_bitstream *is,
 		}
 		recent_offsets[0] = offset;
 
-		/* Validate the match, then copy it to the current position.  */
-
-		if (unlikely(length > block_end - out_next))
+		/* Validate the match and copy it to the current position.  */
+		if (unlikely(lz_copy(length, offset, out_begin,
+				     out_next, block_end, LZX_MIN_MATCH_LEN)))
 			return -1;
-
-		if (unlikely(offset > out_next - out_begin))
-			return -1;
-
-		lz_copy(out_next, length, offset, block_end, LZX_MIN_MATCH_LEN);
-
 		out_next += length;
-
 	} while (out_next != block_end);
 
 	return 0;

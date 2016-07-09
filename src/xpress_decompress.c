@@ -138,14 +138,10 @@ xpress_decompress(const void *restrict compressed_data, size_t compressed_size,
 			}
 			length += XPRESS_MIN_MATCH_LEN;
 
-			if (unlikely(offset > out_next - out_begin))
+			if (unlikely(lz_copy(length, offset,
+					     out_begin, out_next, out_end,
+					     XPRESS_MIN_MATCH_LEN)))
 				return -1;
-
-			if (unlikely(length > out_end - out_next))
-				return -1;
-
-			lz_copy(out_next, length, offset, out_end,
-				XPRESS_MIN_MATCH_LEN);
 
 			out_next += length;
 		}

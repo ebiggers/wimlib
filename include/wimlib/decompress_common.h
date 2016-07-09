@@ -431,70 +431,86 @@ repeat_byte(u8 b)
 }
 
 /*
- * Copy an LZ77 match at (dst - offset) to dst.
+ * Copy an LZ77 match of 'length' bytes from the match source at 'out_next -
+ * offset' to the match destination at 'out_next'.  The source and destination
+ * may overlap.
  *
- * The length and offset must be already validated --- that is, (dst - offset)
- * can't underrun the output buffer, and (dst + length) can't overrun the output
- * buffer.  Also, the length cannot be 0.
+ * This handles validating the length and offset.  It is validated that the
+ * beginning of the match source is '>= out_begin' and that end of the match
+ * destination is '<= out_end'.  The return value is 0 if the match was valid
+ * (and was copied), otherwise -1.
  *
- * @winend points to the byte past the end of the output buffer.
- * This function won't write any data beyond this position.
+ * 'min_length' is a hint which specifies the minimum possible match length.
+ * This should be a compile-time constant.
  */
-static inline void
-lz_copy(u8 *dst, u32 length, u32 offset, const u8 *winend, u32 min_length)
+static inline int
+lz_copy(u32 length, u32 offset, u8 *out_begin, u8 *out_next, u8 *out_end,
+	u32 min_length)
 {
-	const u8 *src = dst - offset;
-	const u8 * const end = dst + length;
+	const u8 *src;
+	u8 *end;
+
+	/* Validate the offset. */
+	if (unlikely(offset > out_next - out_begin))
+		return -1;
 
 	/*
-	 * Try to copy one machine word at a time.  On i386 and x86_64 this is
-	 * faster than copying one byte at a time, unless the data is
-	 * near-random and all the matches have very short lengths.  Note that
-	 * since this requires unaligned memory accesses, it won't necessarily
-	 * be faster on every architecture.
+	 * Fast path: copy a match which is no longer than a few words, is not
+	 * overlapped such that copying a word at a time would produce incorrect
+	 * results, and is not too close to the end of the buffer.  Note that
+	 * this might copy more than the length of the match, but that's okay in
+	 * this scenario.
+	 */
+	src = out_next - offset;
+	if (UNALIGNED_ACCESS_IS_FAST && length <= 3 * WORDBYTES &&
+	    offset >= WORDBYTES && out_end - out_next >= 3 * WORDBYTES)
+	{
+		copy_word_unaligned(src + WORDBYTES*0, out_next + WORDBYTES*0);
+		copy_word_unaligned(src + WORDBYTES*1, out_next + WORDBYTES*1);
+		copy_word_unaligned(src + WORDBYTES*2, out_next + WORDBYTES*2);
+		return 0;
+	}
+
+	/* Validate the length.  This isn't needed in the fast path above, due
+	 * to the additional conditions tested, but we do need it here. */
+	if (unlikely(length > out_end - out_next))
+		return -1;
+	end = out_next + length;
+
+	/*
+	 * Try to copy one word at a time.  On i386 and x86_64 this is faster
+	 * than copying one byte at a time, unless the data is near-random and
+	 * all the matches have very short lengths.  Note that since this
+	 * requires unaligned memory accesses, it won't necessarily be faster on
+	 * every architecture.
 	 *
 	 * Also note that we might copy more than the length of the match.  For
 	 * example, if a word is 8 bytes and the match is of length 5, then
 	 * we'll simply copy 8 bytes.  This is okay as long as we don't write
-	 * beyond the end of the output buffer, hence the check for (winend -
+	 * beyond the end of the output buffer, hence the check for (out_end -
 	 * end >= WORDBYTES - 1).
 	 */
-	if (UNALIGNED_ACCESS_IS_FAST && likely(winend - end >= WORDBYTES - 1)) {
-
+	if (UNALIGNED_ACCESS_IS_FAST && likely(out_end - end >= WORDBYTES - 1))
+	{
 		if (offset >= WORDBYTES) {
-			/* The source and destination words don't overlap.  */
-
-			/* To improve branch prediction, one iteration of this
-			 * loop is unrolled.  Most matches are short and will
-			 * fail the first check.  But if that check passes, then
-			 * it becomes increasing likely that the match is long
-			 * and we'll need to continue copying.  */
-
-			copy_word_unaligned(src, dst);
-			src += WORDBYTES;
-			dst += WORDBYTES;
-
-			if (dst < end) {
-				do {
-					copy_word_unaligned(src, dst);
-					src += WORDBYTES;
-					dst += WORDBYTES;
-				} while (dst < end);
-			}
-			return;
+			/* The source and destination words don't overlap. */
+			do {
+				copy_word_unaligned(src, out_next);
+				src += WORDBYTES;
+				out_next += WORDBYTES;
+			} while (out_next < end);
+			return 0;
 		} else if (offset == 1) {
-
 			/* Offset 1 matches are equivalent to run-length
 			 * encoding of the previous byte.  This case is common
-			 * if the data contains many repeated bytes.  */
-
-			machine_word_t v = repeat_byte(*(dst - 1));
+			 * if the data contains many repeated bytes. */
+			machine_word_t v = repeat_byte(*(out_next - 1));
 			do {
-				store_word_unaligned(v, dst);
+				store_word_unaligned(v, out_next);
 				src += WORDBYTES;
-				dst += WORDBYTES;
-			} while (dst < end);
-			return;
+				out_next += WORDBYTES;
+			} while (out_next < end);
+			return 0;
 		}
 		/*
 		 * We don't bother with special cases for other 'offset <
@@ -508,22 +524,16 @@ lz_copy(u8 *dst, u32 length, u32 offset, const u8 *winend, u32 min_length)
 	}
 
 	/* Fall back to a bytewise copy.  */
-
-	if (min_length >= 2) {
-		*dst++ = *src++;
-		length--;
-	}
-	if (min_length >= 3) {
-		*dst++ = *src++;
-		length--;
-	}
-	if (min_length >= 4) {
-		*dst++ = *src++;
-		length--;
-	}
+	if (min_length >= 2)
+		*out_next++ = *src++;
+	if (min_length >= 3)
+		*out_next++ = *src++;
+	if (min_length >= 4)
+		*out_next++ = *src++;
 	do {
-		*dst++ = *src++;
-	} while (--length);
+		*out_next++ = *src++;
+	} while (out_next != end);
+	return 0;
 }
 
 #endif /* _WIMLIB_DECOMPRESS_COMMON_H */

@@ -822,12 +822,10 @@ lzms_decompress(const void * const restrict in, const size_t in_nbytes,
 
 			length = lzms_decode_length(d, &is);
 
-			if (unlikely(length > out_end - out_next))
-				return -1;
-			if (unlikely(offset > out_next - (u8 *)out))
+			if (unlikely(lz_copy(length, offset, out, out_next, out_end,
+					     LZMS_MIN_MATCH_LENGTH)))
 				return -1;
 
-			lz_copy(out_next, length, offset, out_end, LZMS_MIN_MATCH_LENGTH);
 			out_next += length;
 		} else {
 			/* Delta match  */
