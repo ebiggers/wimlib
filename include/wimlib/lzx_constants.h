@@ -72,6 +72,11 @@
 /* The offset slot base for LZX_MIN_ALIGNED_OFFSET_SLOT.  */
 #define LZX_MIN_ALIGNED_OFFSET		14
 
+/* The maximum number of extra offset bits in verbatim blocks.  (One would need
+ * to subtract LZX_NUM_ALIGNED_OFFSET_BITS to get the number of extra offset
+ * bits in *aligned* blocks.)  */
+#define LZX_MAX_NUM_EXTRA_BITS		17
+
 /* Maximum lengths (in bits) for length-limited Huffman code construction.  */
 #define LZX_MAX_MAIN_CODEWORD_LEN	16
 #define LZX_MAX_LEN_CODEWORD_LEN	16

@@ -976,8 +976,11 @@ lzx_write_sequences(struct lzx_output_bitstream *os, int block_type,
 		extra_bits = adjusted_offset - (lzx_offset_slot_base[offset_slot] +
 						LZX_OFFSET_ADJUSTMENT);
 
-	#define MAX_MATCH_BITS	(MAIN_CODEWORD_LIMIT + LENGTH_CODEWORD_LIMIT + \
-				 14 + ALIGNED_CODEWORD_LIMIT)
+	#define MAX_MATCH_BITS (MAIN_CODEWORD_LIMIT +		\
+				LENGTH_CODEWORD_LIMIT +		\
+				LZX_MAX_NUM_EXTRA_BITS -	\
+				LZX_NUM_ALIGNED_OFFSET_BITS +	\
+				ALIGNED_CODEWORD_LIMIT)
 
 		/* Verify optimization is enabled on 64-bit  */
 		STATIC_ASSERT(WORDBITS < 64 || CAN_BUFFER(MAX_MATCH_BITS));
@@ -1011,7 +1014,8 @@ lzx_write_sequences(struct lzx_output_bitstream *os, int block_type,
 			lzx_add_bits(os, extra_bits >> LZX_NUM_ALIGNED_OFFSET_BITS,
 				     num_extra_bits - LZX_NUM_ALIGNED_OFFSET_BITS);
 			if (!CAN_BUFFER(MAX_MATCH_BITS))
-				lzx_flush_bits(os, 14);
+				lzx_flush_bits(os, LZX_MAX_NUM_EXTRA_BITS -
+						   LZX_NUM_ALIGNED_OFFSET_BITS);
 
 			lzx_add_bits(os, codes->codewords.aligned[adjusted_offset &
 								  LZX_ALIGNED_OFFSET_BITMASK],
@@ -1020,11 +1024,11 @@ lzx_write_sequences(struct lzx_output_bitstream *os, int block_type,
 			if (!CAN_BUFFER(MAX_MATCH_BITS))
 				lzx_flush_bits(os, ALIGNED_CODEWORD_LIMIT);
 		} else {
-			STATIC_ASSERT(CAN_BUFFER(17));
+			STATIC_ASSERT(CAN_BUFFER(LZX_MAX_NUM_EXTRA_BITS));
 
 			lzx_add_bits(os, extra_bits, num_extra_bits);
 			if (!CAN_BUFFER(MAX_MATCH_BITS))
-				lzx_flush_bits(os, 17);
+				lzx_flush_bits(os, LZX_MAX_NUM_EXTRA_BITS);
 		}
 
 		if (CAN_BUFFER(MAX_MATCH_BITS))
