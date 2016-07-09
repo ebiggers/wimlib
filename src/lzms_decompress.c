@@ -376,7 +376,7 @@ lzms_input_bitstream_init(struct lzms_input_bitstream *is,
 
 /* Ensure that at least @num_bits bits are in the bitbuffer variable.
  * @num_bits cannot be more than 32.  */
-static inline void
+static forceinline void
 lzms_ensure_bits(struct lzms_input_bitstream *is, unsigned num_bits)
 {
 	unsigned avail;
@@ -408,14 +408,14 @@ lzms_ensure_bits(struct lzms_input_bitstream *is, unsigned num_bits)
 }
 
 /* Get @num_bits bits from the bitbuffer variable.  */
-static inline bitbuf_t
+static forceinline bitbuf_t
 lzms_peek_bits(struct lzms_input_bitstream *is, unsigned num_bits)
 {
 	return (is->bitbuf >> 1) >> (BITBUF_NBITS - num_bits - 1);
 }
 
 /* Remove @num_bits bits from the bitbuffer variable.  */
-static inline void
+static forceinline void
 lzms_remove_bits(struct lzms_input_bitstream *is, unsigned num_bits)
 {
 	is->bitbuf <<= num_bits;
@@ -423,7 +423,7 @@ lzms_remove_bits(struct lzms_input_bitstream *is, unsigned num_bits)
 }
 
 /* Remove and return @num_bits bits from the bitbuffer variable.  */
-static inline bitbuf_t
+static forceinline bitbuf_t
 lzms_pop_bits(struct lzms_input_bitstream *is, unsigned num_bits)
 {
 	bitbuf_t bits = lzms_peek_bits(is, num_bits);
@@ -432,7 +432,7 @@ lzms_pop_bits(struct lzms_input_bitstream *is, unsigned num_bits)
 }
 
 /* Read @num_bits bits from the input bitstream.  */
-static inline bitbuf_t
+static forceinline bitbuf_t
 lzms_read_bits(struct lzms_input_bitstream *is, unsigned num_bits)
 {
 	lzms_ensure_bits(is, num_bits);
@@ -457,7 +457,7 @@ lzms_range_decoder_init(struct lzms_range_decoder *rd,
  * probability entry to use.  The state and probability entry will be updated
  * based on the decoded bit.
  */
-static inline int
+static forceinline int
 lzms_decode_bit(struct lzms_range_decoder *rd, u32 *state_p, u32 num_states,
 		struct lzms_probability_entry *probs)
 {
@@ -597,7 +597,7 @@ lzms_rebuild_huffman_code(struct lzms_huffman_rebuild_info *rebuild_info)
 
 /* XXX: mostly copied from read_huffsym() in decompress_common.h because LZMS
  * needs its own bitstream */
-static inline unsigned
+static forceinline unsigned
 lzms_decode_huffman_symbol(struct lzms_input_bitstream *is, u16 decode_table[],
 			   unsigned table_bits, u32 freqs[],
 			   struct lzms_huffman_rebuild_info *rebuild_info)
@@ -627,7 +627,7 @@ lzms_decode_huffman_symbol(struct lzms_input_bitstream *is, u16 decode_table[],
 	return symbol;
 }
 
-static inline unsigned
+static forceinline unsigned
 lzms_decode_literal(struct lzms_decompressor *d,
 		    struct lzms_input_bitstream *is)
 {
@@ -638,7 +638,7 @@ lzms_decode_literal(struct lzms_decompressor *d,
 					  &d->literal_rebuild_info);
 }
 
-static inline u32
+static forceinline u32
 lzms_decode_lz_offset(struct lzms_decompressor *d,
 		      struct lzms_input_bitstream *is)
 {
@@ -651,7 +651,7 @@ lzms_decode_lz_offset(struct lzms_decompressor *d,
 	       lzms_read_bits(is, lzms_extra_offset_bits[slot]);
 }
 
-static inline u32
+static forceinline u32
 lzms_decode_length(struct lzms_decompressor *d,
 		   struct lzms_input_bitstream *is)
 {
@@ -668,7 +668,7 @@ lzms_decode_length(struct lzms_decompressor *d,
 	return length;
 }
 
-static inline u32
+static forceinline u32
 lzms_decode_delta_offset(struct lzms_decompressor *d,
 			 struct lzms_input_bitstream *is)
 {
@@ -681,7 +681,7 @@ lzms_decode_delta_offset(struct lzms_decompressor *d,
 	       lzms_read_bits(is, lzms_extra_offset_bits[slot]);
 }
 
-static inline unsigned
+static forceinline unsigned
 lzms_decode_delta_power(struct lzms_decompressor *d,
 			struct lzms_input_bitstream *is)
 {

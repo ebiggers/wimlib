@@ -141,7 +141,7 @@ struct TEMPLATED(hc_matchfinder) {
 
 /* Return the number of bytes that must be allocated for a 'hc_matchfinder' that
  * can work with buffers up to the specified size.  */
-static inline size_t
+static forceinline size_t
 TEMPLATED(hc_matchfinder_size)(size_t max_bufsize)
 {
 	return sizeof(struct TEMPLATED(hc_matchfinder)) +
@@ -149,7 +149,7 @@ TEMPLATED(hc_matchfinder_size)(size_t max_bufsize)
 }
 
 /* Prepare the matchfinder for a new input buffer.  */
-static inline void
+static forceinline void
 TEMPLATED(hc_matchfinder_init)(struct TEMPLATED(hc_matchfinder) *mf)
 {
 	memset(mf, 0, sizeof(*mf));
@@ -184,7 +184,7 @@ TEMPLATED(hc_matchfinder_init)(struct TEMPLATED(hc_matchfinder) *mf)
  * Return the length of the match found, or 'best_len' if no match longer than
  * 'best_len' was found.
  */
-static inline u32
+static forceinline u32
 TEMPLATED(hc_matchfinder_longest_match)(struct TEMPLATED(hc_matchfinder) * const restrict mf,
 					const u8 * const restrict in_begin,
 					const ptrdiff_t cur_pos,
@@ -353,7 +353,7 @@ out:
  *
  * Returns @in_next + @count.
  */
-static inline const u8 *
+static forceinline const u8 *
 TEMPLATED(hc_matchfinder_skip_positions)(struct TEMPLATED(hc_matchfinder) * const restrict mf,
 					 const u8 * const restrict in_begin,
 					 const ptrdiff_t cur_pos,

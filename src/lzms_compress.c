@@ -427,7 +427,7 @@ lzms_init_offset_slot_tabs(struct lzms_compressor *c)
  * Return the length slot for the specified match length, using the compressor's
  * acceleration table if the length is small enough.
  */
-static inline unsigned
+static forceinline unsigned
 lzms_comp_get_length_slot(const struct lzms_compressor *c, u32 length)
 {
 	if (likely(length <= MAX_FAST_LENGTH))
@@ -439,7 +439,7 @@ lzms_comp_get_length_slot(const struct lzms_compressor *c, u32 length)
  * Return the offset slot for the specified match offset, using the compressor's
  * acceleration tables to speed up the mapping.
  */
-static inline unsigned
+static forceinline unsigned
 lzms_comp_get_offset_slot(const struct lzms_compressor *c, u32 offset)
 {
 	if (offset < 0xe4a5)
@@ -529,7 +529,7 @@ lzms_range_encoder_flush(struct lzms_range_encoder *rc)
  * @prob is the probability out of LZMS_PROBABILITY_DENOMINATOR that the next
  * bit is 0 rather than 1.
  */
-static inline void
+static forceinline void
 lzms_range_encode_bit(struct lzms_range_encoder *rc, int bit, u32 prob)
 {
 	/* Normalize if needed.  */
@@ -551,7 +551,7 @@ lzms_range_encode_bit(struct lzms_range_encoder *rc, int bit, u32 prob)
  * Encode a bit.  This wraps around lzms_range_encode_bit() to handle using and
  * updating the state and its corresponding probability entry.
  */
-static inline void
+static forceinline void
 lzms_encode_bit(int bit, unsigned *state_p, unsigned num_states,
 		struct lzms_probability_entry *probs,
 		struct lzms_range_encoder *rc)
@@ -644,7 +644,7 @@ lzms_output_bitstream_init(struct lzms_output_bitstream *os,
  * @max_num_bits is a compile-time constant that specifies the maximum number of
  * bits that can ever be written at this call site.
  */
-static inline void
+static forceinline void
 lzms_write_bits(struct lzms_output_bitstream *os, const u32 bits,
 		const unsigned num_bits, const unsigned max_num_bits)
 {
@@ -725,7 +725,7 @@ lzms_rebuild_huffman_code(struct lzms_huffman_rebuild_info *rebuild_info)
  * Encode a symbol using the specified Huffman code.  Then, if the Huffman code
  * needs to be rebuilt, rebuild it and return true; otherwise return false.
  */
-static inline bool
+static forceinline bool
 lzms_huffman_encode_symbol(unsigned sym,
 			   const u32 *codewords, const u8 *lens, u32 *freqs,
 			   struct lzms_output_bitstream *os,
@@ -936,7 +936,7 @@ lzms_encode_nonempty_item_list(struct lzms_compressor *c,
 	} while (cur_node != end_node);
 }
 
-static inline void
+static forceinline void
 lzms_encode_item_list(struct lzms_compressor *c,
 		      struct lzms_optimum_node *end_node)
 {
@@ -1003,14 +1003,14 @@ lzms_compute_bit_costs(void)
 #endif
 
 /* Return the cost to encode a 0 bit in the specified context.  */
-static inline u32
+static forceinline u32
 lzms_bit_0_cost(unsigned state, const struct lzms_probability_entry *probs)
 {
 	return lzms_bit_costs[probs[state].num_recent_zero_bits];
 }
 
 /* Return the cost to encode a 1 bit in the specified context.  */
-static inline u32
+static forceinline u32
 lzms_bit_1_cost(unsigned state, const struct lzms_probability_entry *probs)
 {
 	return lzms_bit_costs[LZMS_PROBABILITY_DENOMINATOR -
@@ -1018,7 +1018,7 @@ lzms_bit_1_cost(unsigned state, const struct lzms_probability_entry *probs)
 }
 
 /* Return the cost to encode a literal, including the main bit.  */
-static inline u32
+static forceinline u32
 lzms_literal_cost(struct lzms_compressor *c, unsigned main_state, unsigned literal)
 {
 	return lzms_bit_0_cost(main_state, c->probs.main) +
@@ -1043,14 +1043,14 @@ lzms_update_fast_length_costs(struct lzms_compressor *c)
 
 /* Return the cost to encode the specified match length, which must not exceed
  * MAX_FAST_LENGTH.  */
-static inline u32
+static forceinline u32
 lzms_fast_length_cost(const struct lzms_compressor *c, u32 length)
 {
 	return c->fast_length_cost_tab[length];
 }
 
 /* Return the cost to encode the specified LZ match offset.  */
-static inline u32
+static forceinline u32
 lzms_lz_offset_cost(const struct lzms_compressor *c, u32 offset)
 {
 	unsigned slot = lzms_comp_get_offset_slot(c, offset);
@@ -1059,7 +1059,7 @@ lzms_lz_offset_cost(const struct lzms_compressor *c, u32 offset)
 }
 
 /* Return the cost to encode the specified delta power and raw offset.  */
-static inline u32
+static forceinline u32
 lzms_delta_source_cost(const struct lzms_compressor *c, u32 power, u32 raw_offset)
 {
 	unsigned slot = lzms_comp_get_offset_slot(c, raw_offset);
@@ -1122,31 +1122,31 @@ lzms_update_lru_queues(struct lzms_adaptive_state *state)
 	state->prev_delta_pair = state->upcoming_delta_pair;
 }
 
-static inline void
+static forceinline void
 lzms_update_state(u8 *state_p, int bit, unsigned num_states)
 {
 	*state_p = ((*state_p << 1) | bit) & (num_states - 1);
 }
 
-static inline void
+static forceinline void
 lzms_update_main_state(struct lzms_adaptive_state *state, int is_match)
 {
 	lzms_update_state(&state->main_state, is_match, LZMS_NUM_MAIN_PROBS);
 }
 
-static inline void
+static forceinline void
 lzms_update_match_state(struct lzms_adaptive_state *state, int is_delta)
 {
 	lzms_update_state(&state->match_state, is_delta, LZMS_NUM_MATCH_PROBS);
 }
 
-static inline void
+static forceinline void
 lzms_update_lz_state(struct lzms_adaptive_state *state, int is_rep)
 {
 	lzms_update_state(&state->lz_state, is_rep, LZMS_NUM_LZ_PROBS);
 }
 
-static inline void
+static forceinline void
 lzms_update_lz_rep_states(struct lzms_adaptive_state *state, int rep_idx)
 {
 	for (int i = 0; i < rep_idx; i++)
@@ -1156,13 +1156,13 @@ lzms_update_lz_rep_states(struct lzms_adaptive_state *state, int rep_idx)
 		lzms_update_state(&state->lz_rep_states[rep_idx], 0, LZMS_NUM_LZ_REP_PROBS);
 }
 
-static inline void
+static forceinline void
 lzms_update_delta_state(struct lzms_adaptive_state *state, int is_rep)
 {
 	lzms_update_state(&state->delta_state, is_rep, LZMS_NUM_DELTA_PROBS);
 }
 
-static inline void
+static forceinline void
 lzms_update_delta_rep_states(struct lzms_adaptive_state *state, int rep_idx)
 {
 	for (int i = 0; i < rep_idx; i++)
@@ -1199,7 +1199,7 @@ lzms_init_delta_matchfinder(struct lzms_compressor *c)
  * NBYTES_HASHED_FOR_DELTA bytes of the sequence beginning at @p when taken in a
  * delta context with the specified @span.
  */
-static inline u32
+static forceinline u32
 lzms_delta_hash(const u8 *p, const u32 pos, u32 span)
 {
 	/* A delta match has a certain span and an offset that is a multiple of
@@ -1222,7 +1222,7 @@ lzms_delta_hash(const u8 *p, const u32 pos, u32 span)
  * specified @span and having the initial @len, extend the match as far as
  * possible, up to a limit of @max_len.
  */
-static inline u32
+static forceinline u32
 lzms_extend_delta_match(const u8 *in_next, const u8 *matchptr,
 			u32 len, u32 max_len, u32 span)
 {

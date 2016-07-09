@@ -284,7 +284,7 @@ build_LCPIT(u32 intervals[restrict], u32 pos_data[restrict], const u32 n)
  * around by just continuing until we get to a link that actually takes us
  * higher in the tree.  This can be described as a lazy-update scheme.
  */
-static inline u32
+static forceinline u32
 lcpit_advance_one_byte(const u32 cur_pos,
 		       u32 pos_data[restrict],
 		       u32 intervals[restrict],
@@ -486,7 +486,7 @@ build_LCPIT_huge(u64 intervals64[restrict], u32 pos_data[restrict], const u32 n)
 
 /* Like lcpit_advance_one_byte(), but for buffers larger than
  * MAX_NORMAL_BUFSIZE.  */
-static inline u32
+static forceinline u32
 lcpit_advance_one_byte_huge(const u32 cur_pos,
 			    u32 pos_data[restrict],
 			    u64 intervals64[restrict],
@@ -538,14 +538,14 @@ lcpit_advance_one_byte_huge(const u32 cur_pos,
 	return matchptr - matches;
 }
 
-static inline u64
+static forceinline u64
 get_pos_data_size(size_t max_bufsize)
 {
 	return (u64)max((u64)max_bufsize + PREFETCH_SAFETY,
 			DIVSUFSORT_TMP_LEN) * sizeof(u32);
 }
 
-static inline u64
+static forceinline u64
 get_intervals_size(size_t max_bufsize)
 {
 	return ((u64)max_bufsize + PREFETCH_SAFETY) *

@@ -23,14 +23,14 @@ extern unsigned
 lzms_get_slot(u32 value, const u32 slot_base_tab[], unsigned num_slots);
 
 /* Return the offset slot for the specified offset  */
-static inline unsigned
+static forceinline unsigned
 lzms_get_offset_slot(u32 offset)
 {
 	return lzms_get_slot(offset, lzms_offset_slot_base, LZMS_MAX_NUM_OFFSET_SYMS);
 }
 
 /* Return the length slot for the specified length  */
-static inline unsigned
+static forceinline unsigned
 lzms_get_length_slot(u32 length)
 {
 	return lzms_get_slot(length, lzms_length_slot_base, LZMS_NUM_LENGTH_SYMS);
@@ -71,7 +71,7 @@ extern void
 lzms_init_probabilities(struct lzms_probabilites *probs);
 
 /* Given a decoded or encoded bit, update the probability entry.  */
-static inline void
+static forceinline void
 lzms_update_probability_entry(struct lzms_probability_entry *entry, int bit)
 {
 	STATIC_ASSERT(LZMS_PROBABILITY_DENOMINATOR == sizeof(entry->recent_bits) * 8);
@@ -108,7 +108,7 @@ lzms_update_probability_entry(struct lzms_probability_entry *entry, int bit)
 
 /* Given a probability entry, return the chance out of
  * LZMS_PROBABILITY_DENOMINATOR that the next decoded bit will be a 0.  */
-static inline u32
+static forceinline u32
 lzms_get_probability(const struct lzms_probability_entry *prob_entry)
 {
 	u32 prob = prob_entry->num_recent_zero_bits;

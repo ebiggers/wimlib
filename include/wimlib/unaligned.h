@@ -30,13 +30,13 @@ struct type##_unaligned {					\
 	type v;							\
 } _packed_attribute;						\
 								\
-static inline type						\
+static forceinline type						\
 load_##type##_unaligned(const void *p)				\
 {								\
 	return ((const struct type##_unaligned *)p)->v;		\
 }								\
 								\
-static inline void						\
+static forceinline void						\
 store_##type##_unaligned(type val, void *p)			\
 {								\
 	((struct type##_unaligned *)p)->v = val;		\
@@ -57,7 +57,7 @@ DEFINE_UNALIGNED_TYPE(machine_word_t);
 #define load_word_unaligned	load_machine_word_t_unaligned
 #define store_word_unaligned	store_machine_word_t_unaligned
 
-static inline u16
+static forceinline u16
 get_unaligned_le16(const u8 *p)
 {
 	if (UNALIGNED_ACCESS_IS_FAST)
@@ -66,7 +66,7 @@ get_unaligned_le16(const u8 *p)
 		return ((u16)p[1] << 8) | p[0];
 }
 
-static inline u32
+static forceinline u32
 get_unaligned_le32(const u8 *p)
 {
 	if (UNALIGNED_ACCESS_IS_FAST)
@@ -76,7 +76,7 @@ get_unaligned_le32(const u8 *p)
 			((u32)p[1] << 8) | p[0];
 }
 
-static inline void
+static forceinline void
 put_unaligned_le16(u16 v, u8 *p)
 {
 	if (UNALIGNED_ACCESS_IS_FAST) {
@@ -87,7 +87,7 @@ put_unaligned_le16(u16 v, u8 *p)
 	}
 }
 
-static inline void
+static forceinline void
 put_unaligned_le32(u32 v, u8 *p)
 {
 	if (UNALIGNED_ACCESS_IS_FAST) {
@@ -106,7 +106,7 @@ put_unaligned_le32(u32 v, u8 *p)
  * bits contain the first 3 bytes, arranged in octets in a platform-dependent
  * order, at the memory location from which the input 32-bit value was loaded.
  */
-static inline u32
+static forceinline u32
 loaded_u32_to_u24(u32 v)
 {
 	if (CPU_IS_LITTLE_ENDIAN)
@@ -121,7 +121,7 @@ loaded_u32_to_u24(u32 v)
  * in the 24 bits is platform-dependent.  At least LOAD_U24_REQUIRED_NBYTES
  * bytes must be available at @p; note that this may be more than 3.
  */
-static inline u32
+static forceinline u32
 load_u24_unaligned(const u8 *p)
 {
 #if UNALIGNED_ACCESS_IS_FAST

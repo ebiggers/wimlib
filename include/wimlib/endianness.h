@@ -47,7 +47,7 @@
 	 (((u64)(n) & 0x00FF000000000000) >> 40)	|	\
 	 (((u64)(n) & 0xFF00000000000000) >> 56))
 
-static inline u16 do_bswap16(u16 n)
+static forceinline u16 do_bswap16(u16 n)
 {
 #ifdef compiler_bswap16
 	return compiler_bswap16(n);
@@ -56,7 +56,7 @@ static inline u16 do_bswap16(u16 n)
 #endif
 }
 
-static inline u32 do_bswap32(u32 n)
+static forceinline u32 do_bswap32(u32 n)
 {
 #ifdef compiler_bswap32
 	return compiler_bswap32(n);
@@ -65,7 +65,7 @@ static inline u32 do_bswap32(u32 n)
 #endif
 }
 
-static inline u64 do_bswap64(u64 n)
+static forceinline u64 do_bswap64(u64 n)
 {
 #ifdef compiler_bswap64
 	return compiler_bswap64(n);

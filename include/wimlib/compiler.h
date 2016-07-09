@@ -50,10 +50,9 @@
 #  define WIMLIBAPI __attribute__((visibility("default")))
 #endif
 
-/* Declare that the annotated function should be inlined.  Currently, we force
- * the compiler to honor this because we use 'inline' in highly tuned code, e.g.
- * compression codecs.  */
-#define inline			inline __attribute__((always_inline))
+/* Declare that the annotated function should always be inlined.  This might be
+ * desirable in highly tuned code, e.g. compression codecs.  */
+#define forceinline		inline __attribute__((always_inline))
 
 /* Declare that the annotated function should *not* be inlined.  */
 #define noinline		__attribute__((noinline))

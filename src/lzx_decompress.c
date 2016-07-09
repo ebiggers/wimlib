@@ -118,7 +118,7 @@ struct lzx_decompressor {
 } _aligned_attribute(DECODE_TABLE_ALIGNMENT);
 
 /* Read a Huffman-encoded symbol using the precode. */
-static inline unsigned
+static forceinline unsigned
 read_presym(const struct lzx_decompressor *d, struct input_bitstream *is)
 {
 	return read_huffsym(is, d->precode_decode_table,
@@ -126,7 +126,7 @@ read_presym(const struct lzx_decompressor *d, struct input_bitstream *is)
 }
 
 /* Read a Huffman-encoded symbol using the main code. */
-static inline unsigned
+static forceinline unsigned
 read_mainsym(const struct lzx_decompressor *d, struct input_bitstream *is)
 {
 	return read_huffsym(is, d->maincode_decode_table,
@@ -134,7 +134,7 @@ read_mainsym(const struct lzx_decompressor *d, struct input_bitstream *is)
 }
 
 /* Read a Huffman-encoded symbol using the length code. */
-static inline unsigned
+static forceinline unsigned
 read_lensym(const struct lzx_decompressor *d, struct input_bitstream *is)
 {
 	return read_huffsym(is, d->lencode_decode_table,
@@ -142,7 +142,7 @@ read_lensym(const struct lzx_decompressor *d, struct input_bitstream *is)
 }
 
 /* Read a Huffman-encoded symbol using the aligned offset code. */
-static inline unsigned
+static forceinline unsigned
 read_alignedsym(const struct lzx_decompressor *d, struct input_bitstream *is)
 {
 	return read_huffsym(is, d->alignedcode_decode_table,

@@ -30,7 +30,7 @@
  * input value must be nonzero!
  */
 
-static inline unsigned
+static forceinline unsigned
 bsr32(u32 v)
 {
 #ifdef compiler_bsr32
@@ -43,7 +43,7 @@ bsr32(u32 v)
 #endif
 }
 
-static inline unsigned
+static forceinline unsigned
 bsr64(u64 v)
 {
 #ifdef compiler_bsr64
@@ -56,7 +56,7 @@ bsr64(u64 v)
 #endif
 }
 
-static inline unsigned
+static forceinline unsigned
 bsrw(machine_word_t v)
 {
 	STATIC_ASSERT(WORDBITS == 32 || WORDBITS == 64);
@@ -72,7 +72,7 @@ bsrw(machine_word_t v)
  * input value must be nonzero!
  */
 
-static inline unsigned
+static forceinline unsigned
 bsf32(u32 v)
 {
 #ifdef compiler_bsf32
@@ -85,7 +85,7 @@ bsf32(u32 v)
 #endif
 }
 
-static inline unsigned
+static forceinline unsigned
 bsf64(u64 v)
 {
 #ifdef compiler_bsf64
@@ -98,7 +98,7 @@ bsf64(u64 v)
 #endif
 }
 
-static inline unsigned
+static forceinline unsigned
 bsfw(machine_word_t v)
 {
 	STATIC_ASSERT(WORDBITS == 32 || WORDBITS == 64);
@@ -109,7 +109,7 @@ bsfw(machine_word_t v)
 }
 
 /* Return the log base 2 of 'n', rounded up to the nearest integer. */
-static inline unsigned
+static forceinline unsigned
 ilog2_ceil(size_t n)
 {
         if (n <= 1)
@@ -118,7 +118,7 @@ ilog2_ceil(size_t n)
 }
 
 /* Round 'n' up to the nearest power of 2 */
-static inline size_t
+static forceinline size_t
 roundup_pow_of_2(size_t n)
 {
 	return (size_t)1 << ilog2_ceil(n);

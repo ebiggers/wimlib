@@ -279,7 +279,7 @@ xpress_init_output(struct xpress_output_bitstream *os, void *buffer, size_t size
  * If the output buffer space is exhausted, then the bits will be ignored, and
  * xpress_flush_output() will return 0 when it gets called.
  */
-static inline void
+static forceinline void
 xpress_write_bits(struct xpress_output_bitstream *os,
 		  const u32 bits, const unsigned num_bits)
 {
@@ -303,7 +303,7 @@ xpress_write_bits(struct xpress_output_bitstream *os,
 /*
  * Interweave a literal byte into the output bitstream.
  */
-static inline void
+static forceinline void
 xpress_write_byte(struct xpress_output_bitstream *os, u8 byte)
 {
 	if (os->next_byte < os->end)
@@ -313,7 +313,7 @@ xpress_write_byte(struct xpress_output_bitstream *os, u8 byte)
 /*
  * Interweave two literal bytes into the output bitstream.
  */
-static inline void
+static forceinline void
 xpress_write_u16(struct xpress_output_bitstream *os, u16 v)
 {
 	if (os->end - os->next_byte >= 2) {
@@ -338,7 +338,7 @@ xpress_flush_output(struct xpress_output_bitstream *os)
 	return os->next_byte - os->start;
 }
 
-static inline void
+static forceinline void
 xpress_write_extra_length_bytes(struct xpress_output_bitstream *os,
 				unsigned adjusted_len)
 {
@@ -353,7 +353,7 @@ xpress_write_extra_length_bytes(struct xpress_output_bitstream *os,
 }
 
 /* Output a match or literal.  */
-static inline void
+static forceinline void
 xpress_write_item(struct xpress_item item, struct xpress_output_bitstream *os,
 		  const u32 codewords[], const u8 lens[])
 {
@@ -484,7 +484,7 @@ xpress_write(struct xpress_compressor *c, void *out, size_t out_nbytes_avail,
 
 /* Tally the Huffman symbol for a literal and return the intermediate
  * representation of that literal.  */
-static inline struct xpress_item
+static forceinline struct xpress_item
 xpress_record_literal(struct xpress_compressor *c, unsigned literal)
 {
 	c->freqs[literal]++;
@@ -496,7 +496,7 @@ xpress_record_literal(struct xpress_compressor *c, unsigned literal)
 
 /* Tally the Huffman symbol for a match and return the intermediate
  * representation of that match.  */
-static inline struct xpress_item
+static forceinline struct xpress_item
 xpress_record_match(struct xpress_compressor *c, unsigned length, unsigned offset)
 {
 	unsigned adjusted_len = length - XPRESS_MIN_MATCH_LEN;

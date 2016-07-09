@@ -30,7 +30,7 @@
  * next-highest @num_bits bits of the product as the hash value, as those have
  * the most randomness.
  */
-static inline u32
+static forceinline u32
 lz_hash(u32 seq, unsigned num_bits)
 {
 	return (u32)(seq * 0x1E35A7BD) >> (32 - num_bits);

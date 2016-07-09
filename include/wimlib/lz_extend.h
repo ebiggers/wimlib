@@ -28,7 +28,7 @@
  * Return the number of bytes at @matchptr that match the bytes at @strptr, up
  * to a maximum of @max_len.  Initially, @len bytes are matched.
  */
-static inline u32
+static forceinline u32
 lz_extend(const u8 * const strptr, const u8 * const matchptr,
 	  u32 len, const u32 max_len)
 {
