@@ -188,7 +188,7 @@ read_compressed_wim_resource(const struct wim_resource_descriptor * const rdesc,
 		}
 	}
 
-	const u32 chunk_order = fls32(chunk_size);
+	const u32 chunk_order = bsr32(chunk_size);
 
 	/* Calculate the total number of chunks the resource is divided into.  */
 	const u64 num_chunks = (rdesc->uncompressed_size + chunk_size - 1) >> chunk_order;

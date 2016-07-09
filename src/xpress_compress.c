@@ -413,7 +413,7 @@ xpress_write_item_list(struct xpress_output_bitstream *os,
 			unsigned sym;
 
 			adjusted_len = length - XPRESS_MIN_MATCH_LEN;
-			log2_offset = fls32(offset);
+			log2_offset = bsr32(offset);
 			len_hdr = min(0xF, adjusted_len);
 			sym = XPRESS_NUM_CHARS + ((log2_offset << 4) | len_hdr);
 
@@ -501,7 +501,7 @@ xpress_record_match(struct xpress_compressor *c, unsigned length, unsigned offse
 {
 	unsigned adjusted_len = length - XPRESS_MIN_MATCH_LEN;
 	unsigned len_hdr = min(adjusted_len, 0xF);
-	unsigned log2_offset = fls32(offset);
+	unsigned log2_offset = bsr32(offset);
 	unsigned sym = XPRESS_NUM_CHARS + ((log2_offset << 4) | len_hdr);
 
 	c->freqs[sym]++;
@@ -755,7 +755,7 @@ xpress_tally_item_list(struct xpress_compressor *c,
 			unsigned sym;
 
 			adjusted_len = length - XPRESS_MIN_MATCH_LEN;
-			log2_offset = fls32(offset);
+			log2_offset = bsr32(offset);
 			len_hdr = min(0xF, adjusted_len);
 			sym = XPRESS_NUM_CHARS + ((log2_offset << 4) | len_hdr);
 
@@ -831,7 +831,7 @@ xpress_find_min_cost_path(struct xpress_compressor *c, size_t in_nbytes,
 				u32 offset_cost;
 
 				offset = match->offset;
-				log2_offset = fls32(offset);
+				log2_offset = bsr32(offset);
 				offset_cost = log2_offset;
 				do {
 					unsigned len_hdr;
@@ -860,7 +860,7 @@ xpress_find_min_cost_path(struct xpress_compressor *c, size_t in_nbytes,
 				u32 offset_cost;
 
 				offset = match->offset;
-				log2_offset = fls32(offset);
+				log2_offset = bsr32(offset);
 				offset_cost = log2_offset;
 				do {
 					unsigned adjusted_len;

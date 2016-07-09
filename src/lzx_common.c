@@ -288,7 +288,7 @@ lzx_e8_filter(u8 *data, u32 size, void (*process_target)(void *, s32))
 			 * 'valid_mask' ensures we never process an E8 byte that
 			 * was itself part of a translation target.  */
 			while ((e8_mask &= valid_mask)) {
-				unsigned bit = ffs32(e8_mask);
+				unsigned bit = bsf32(e8_mask);
 				(*process_target)(p + bit + 1, p + bit - data);
 				valid_mask &= ~((u64)0x1F << bit);
 			}

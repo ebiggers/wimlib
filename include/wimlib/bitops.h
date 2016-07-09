@@ -24,13 +24,17 @@
 #include "wimlib/compiler.h"
 #include "wimlib/types.h"
 
-/* Find Last Set bit   */
+/*
+ * Bit Scan Reverse (BSR) - find the 0-based index (relative to the least
+ * significant bit) of the *most* significant 1 bit in the input value.  The
+ * input value must be nonzero!
+ */
 
 static inline unsigned
-fls32(u32 v)
+bsr32(u32 v)
 {
-#ifdef compiler_fls32
-	return compiler_fls32(v);
+#ifdef compiler_bsr32
+	return compiler_bsr32(v);
 #else
 	unsigned bit = 0;
 	while ((v >>= 1) != 0)
@@ -40,10 +44,10 @@ fls32(u32 v)
 }
 
 static inline unsigned
-fls64(u64 v)
+bsr64(u64 v)
 {
-#ifdef compiler_fls64
-	return compiler_fls64(v);
+#ifdef compiler_bsr64
+	return compiler_bsr64(v);
 #else
 	unsigned bit = 0;
 	while ((v >>= 1) != 0)
@@ -53,22 +57,26 @@ fls64(u64 v)
 }
 
 static inline unsigned
-flsw(machine_word_t v)
+bsrw(machine_word_t v)
 {
 	STATIC_ASSERT(WORDBITS == 32 || WORDBITS == 64);
 	if (WORDBITS == 32)
-		return fls32(v);
+		return bsr32(v);
 	else
-		return fls64(v);
+		return bsr64(v);
 }
 
-/* Find First Set bit   */
+/*
+ * Bit Scan Forward (BSF) - find the 0-based index (relative to the least
+ * significant bit) of the *least* significant 1 bit in the input value.  The
+ * input value must be nonzero!
+ */
 
 static inline unsigned
-ffs32(u32 v)
+bsf32(u32 v)
 {
-#ifdef compiler_ffs32
-	return compiler_ffs32(v);
+#ifdef compiler_bsf32
+	return compiler_bsf32(v);
 #else
 	unsigned bit;
 	for (bit = 0; !(v & 1); bit++, v >>= 1)
@@ -78,10 +86,10 @@ ffs32(u32 v)
 }
 
 static inline unsigned
-ffs64(u64 v)
+bsf64(u64 v)
 {
-#ifdef compiler_ffs64
-	return compiler_ffs64(v);
+#ifdef compiler_bsf64
+	return compiler_bsf64(v);
 #else
 	unsigned bit;
 	for (bit = 0; !(v & 1); bit++, v >>= 1)
@@ -91,13 +99,13 @@ ffs64(u64 v)
 }
 
 static inline unsigned
-ffsw(machine_word_t v)
+bsfw(machine_word_t v)
 {
 	STATIC_ASSERT(WORDBITS == 32 || WORDBITS == 64);
 	if (WORDBITS == 32)
-		return ffs32(v);
+		return bsf32(v);
 	else
-		return ffs64(v);
+		return bsf64(v);
 }
 
 /* Return the log base 2 of 'n', rounded up to the nearest integer. */
@@ -106,7 +114,7 @@ ilog2_ceil(size_t n)
 {
         if (n <= 1)
                 return 0;
-        return 1 + flsw(n - 1);
+        return 1 + bsrw(n - 1);
 }
 
 /* Round 'n' up to the nearest power of 2 */

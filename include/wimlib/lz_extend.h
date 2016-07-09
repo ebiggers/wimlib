@@ -37,9 +37,9 @@ lz_extend(const u8 * const strptr, const u8 * const matchptr,
 				   load_word_unaligned(strptr + len);
 		if (v != 0) {
 			if (CPU_IS_LITTLE_ENDIAN)
-				len += ffsw(v) >> 3;
+				len += bsfw(v) >> 3;
 			else
-				len += (WORDBITS - 1 - flsw(v)) >> 3;
+				len += (WORDBITS - 1 - bsrw(v)) >> 3;
 			return len;
 		}
 		len += WORDBYTES;

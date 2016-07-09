@@ -171,10 +171,10 @@
 #endif
 
 /* (Optional) Find Last Set bit and Find First Set bit macros.  */
-#define compiler_fls32(n)	(31 - __builtin_clz(n))
-#define compiler_fls64(n)	(63 - __builtin_clzll(n))
-#define compiler_ffs32(n)	__builtin_ctz(n)
-#define compiler_ffs64(n)	__builtin_ctzll(n)
+#define compiler_bsr32(n)	(31 - __builtin_clz(n))
+#define compiler_bsr64(n)	(63 - __builtin_clzll(n))
+#define compiler_bsf32(n)	__builtin_ctz(n)
+#define compiler_bsf64(n)	__builtin_ctzll(n)
 
 /* Optional definitions for checking with 'sparse'.  */
 #ifdef __CHECKER__
