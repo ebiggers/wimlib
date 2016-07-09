@@ -58,9 +58,9 @@
  *	fail during decompression if the Huffman symbol 256 is not found after
  *	the actual data."
  *
- * This is the case for the implementation in WIMGAPI.  However, wimlib's
- * decompressor in this file currently does not care if this extra symbol is
- * there or not.
+ * This is the case with Microsoft's implementation in WIMGAPI, for example.  So
+ * although our implementation doesn't currently check for this extra symbol,
+ * compressors would be wise to add it.
  */
 
 #ifdef HAVE_CONFIG_H
