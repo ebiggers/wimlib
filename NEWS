@@ -3,6 +3,8 @@ Version 1.10.0-BETA:
 	LZX level 50, is now almost as good as the old LZX level 100, while
 	being nearly the same speed as before.
 
+	Decompression performance has been slightly improved.
+
 	On UNIX-like systems, wimlib can now process Windows filenames that are
 	not valid Unicode due to the presence of unpaired surrogates.
 
