@@ -31,6 +31,7 @@
 #include <errno.h>
 
 #include <ntfs-3g/attrib.h>
+#include <ntfs-3g/compat.h> /* for ENODATA, if needed */
 #include <ntfs-3g/object_id.h>
 #include <ntfs-3g/reparse.h>
 #include <ntfs-3g/security.h>
