@@ -348,7 +348,12 @@ struct lzms_decompressor {
 	u32 delta_power_freqs[LZMS_NUM_DELTA_POWER_SYMS];
 	struct lzms_huffman_rebuild_info delta_power_rebuild_info;
 
-	u32 codewords[LZMS_MAX_NUM_SYMS];
+	/* Temporary space for lzms_build_huffman_code() */
+	union {
+		u32 codewords[LZMS_MAX_NUM_SYMS];
+		DECODE_TABLE_WORKING_SPACE(working_space, LZMS_MAX_NUM_SYMS,
+					   LZMS_MAX_CODEWORD_LENGTH);
+	};
 
 	}; // struct
 
@@ -517,7 +522,8 @@ lzms_build_huffman_code(struct lzms_huffman_rebuild_info *rebuild_info)
 				  rebuild_info->num_syms,
 				  rebuild_info->table_bits,
 				  (u8 *)rebuild_info->decode_table,
-				  LZMS_MAX_CODEWORD_LENGTH);
+				  LZMS_MAX_CODEWORD_LENGTH,
+				  (u16 *)rebuild_info->codewords);
 
 	rebuild_info->num_syms_until_rebuild = rebuild_info->rebuild_freq;
 }

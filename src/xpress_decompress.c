@@ -82,6 +82,8 @@ struct xpress_decompressor {
 			     XPRESS_TABLEBITS, XPRESS_MAX_CODEWORD_LEN);
 		u8 lens[XPRESS_NUM_SYMBOLS];
 	};
+	DECODE_TABLE_WORKING_SPACE(working_space, XPRESS_NUM_SYMBOLS,
+				   XPRESS_MAX_CODEWORD_LEN);
 } _aligned_attribute(DECODE_TABLE_ALIGNMENT);
 
 static int
@@ -107,7 +109,8 @@ xpress_decompress(const void *restrict compressed_data, size_t compressed_size,
 	/* Build a decoding table for the Huffman code.  */
 	if (make_huffman_decode_table(d->decode_table, XPRESS_NUM_SYMBOLS,
 				      XPRESS_TABLEBITS, d->lens,
-				      XPRESS_MAX_CODEWORD_LEN))
+				      XPRESS_MAX_CODEWORD_LEN,
+				      d->working_space))
 		return -1;
 
 	/* Decode the matches and literals.  */

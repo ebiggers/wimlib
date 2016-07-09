@@ -93,6 +93,21 @@ struct lzx_decompressor {
 		u8 extra_offset_bits[LZX_MAX_OFFSET_SLOTS];
 	};
 
+	union {
+		DECODE_TABLE_WORKING_SPACE(maincode_working_space,
+					   LZX_MAINCODE_MAX_NUM_SYMBOLS,
+					   LZX_MAX_MAIN_CODEWORD_LEN);
+		DECODE_TABLE_WORKING_SPACE(lencode_working_space,
+					   LZX_LENCODE_NUM_SYMBOLS,
+					   LZX_MAX_LEN_CODEWORD_LEN);
+		DECODE_TABLE_WORKING_SPACE(alignedcode_working_space,
+					   LZX_ALIGNEDCODE_NUM_SYMBOLS,
+					   LZX_MAX_ALIGNED_CODEWORD_LEN);
+		DECODE_TABLE_WORKING_SPACE(precode_working_space,
+					   LZX_PRECODE_NUM_SYMBOLS,
+					   LZX_MAX_PRE_CODEWORD_LEN);
+	};
+
 	unsigned window_order;
 	unsigned num_main_syms;
 
@@ -157,7 +172,8 @@ lzx_read_codeword_lens(struct lzx_decompressor *d, struct input_bitstream *is,
 				      LZX_PRECODE_NUM_SYMBOLS,
 				      LZX_PRECODE_TABLEBITS,
 				      d->precode_lens,
-				      LZX_MAX_PRE_CODEWORD_LEN))
+				      LZX_MAX_PRE_CODEWORD_LEN,
+				      d->precode_working_space))
 		return -1;
 
 	/* Decode the codeword lengths.  */
@@ -333,14 +349,16 @@ lzx_decompress_block(struct lzx_decompressor *d, struct input_bitstream *is,
 				      d->num_main_syms,
 				      LZX_MAINCODE_TABLEBITS,
 				      d->maincode_lens,
-				      LZX_MAX_MAIN_CODEWORD_LEN))
+				      LZX_MAX_MAIN_CODEWORD_LEN,
+				      d->maincode_working_space))
 		return -1;
 
 	if (make_huffman_decode_table(d->lencode_decode_table,
 				      LZX_LENCODE_NUM_SYMBOLS,
 				      LZX_LENCODE_TABLEBITS,
 				      d->lencode_lens,
-				      LZX_MAX_LEN_CODEWORD_LEN))
+				      LZX_MAX_LEN_CODEWORD_LEN,
+				      d->lencode_working_space))
 		return -1;
 
 	if (block_type == LZX_BLOCKTYPE_ALIGNED) {
@@ -348,7 +366,8 @@ lzx_decompress_block(struct lzx_decompressor *d, struct input_bitstream *is,
 					      LZX_ALIGNEDCODE_NUM_SYMBOLS,
 					      LZX_ALIGNEDCODE_TABLEBITS,
 					      d->alignedcode_lens,
-					      LZX_MAX_ALIGNED_CODEWORD_LEN))
+					      LZX_MAX_ALIGNED_CODEWORD_LEN,
+					      d->alignedcode_working_space))
 			return -1;
 		min_aligned_offset_slot = LZX_MIN_ALIGNED_OFFSET_SLOT;
 		memcpy(d->extra_offset_bits, d->extra_offset_bits_minus_aligned,

@@ -110,16 +110,19 @@
  *	The maximum codeword length permitted for this code.  All entries in
  *	'lens' must be less than or equal to this value.
  *
+ * @working_space
+ *	A temporary array that was declared with DECODE_TABLE_WORKING_SPACE().
+ *
  * Returns 0 on success, or -1 if the lengths do not form a valid prefix code.
  */
 int
 make_huffman_decode_table(u16 decode_table[], unsigned num_syms,
 			  unsigned table_bits, const u8 lens[],
-			  unsigned max_codeword_len)
+			  unsigned max_codeword_len, u16 working_space[])
 {
-	u16 len_counts[max_codeword_len + 1];
-	u16 offsets[max_codeword_len + 1];
-	u16 sorted_syms[num_syms];
+	u16 * const len_counts = &working_space[0];
+	u16 * const offsets = &working_space[1 * (max_codeword_len + 1)];
+	u16 * const sorted_syms = &working_space[2 * (max_codeword_len + 1)];
 	s32 remainder = 1;
 	void *entry_ptr = decode_table;
 	unsigned codeword_len = 1;
