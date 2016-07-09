@@ -64,7 +64,7 @@
 
 /* These values are chosen for fast decompression.  */
 #define LZX_MAINCODE_TABLEBITS		11
-#define LZX_LENCODE_TABLEBITS		10
+#define LZX_LENCODE_TABLEBITS		9
 #define LZX_PRECODE_TABLEBITS		6
 #define LZX_ALIGNEDCODE_TABLEBITS	7
 
@@ -72,28 +72,23 @@
 
 struct lzx_decompressor {
 
-	u16 maincode_decode_table[(1 << LZX_MAINCODE_TABLEBITS) +
-					(LZX_MAINCODE_MAX_NUM_SYMBOLS * 2)]
-					_aligned_attribute(DECODE_TABLE_ALIGNMENT);
+	DECODE_TABLE(maincode_decode_table, LZX_MAINCODE_MAX_NUM_SYMBOLS,
+		     LZX_MAINCODE_TABLEBITS, LZX_MAX_MAIN_CODEWORD_LEN);
 	u8 maincode_lens[LZX_MAINCODE_MAX_NUM_SYMBOLS + LZX_READ_LENS_MAX_OVERRUN];
 
-
-	u16 lencode_decode_table[(1 << LZX_LENCODE_TABLEBITS) +
-					(LZX_LENCODE_NUM_SYMBOLS * 2)]
-					_aligned_attribute(DECODE_TABLE_ALIGNMENT);
+	DECODE_TABLE(lencode_decode_table, LZX_LENCODE_NUM_SYMBOLS,
+		     LZX_LENCODE_TABLEBITS, LZX_MAX_LEN_CODEWORD_LEN);
 	u8 lencode_lens[LZX_LENCODE_NUM_SYMBOLS + LZX_READ_LENS_MAX_OVERRUN];
 
 	union {
-		u16 alignedcode_decode_table[(1 << LZX_ALIGNEDCODE_TABLEBITS) +
-						(LZX_ALIGNEDCODE_NUM_SYMBOLS * 2)]
-						_aligned_attribute(DECODE_TABLE_ALIGNMENT);
+		DECODE_TABLE(alignedcode_decode_table, LZX_ALIGNEDCODE_NUM_SYMBOLS,
+			     LZX_ALIGNEDCODE_TABLEBITS, LZX_MAX_ALIGNED_CODEWORD_LEN);
 		u8 alignedcode_lens[LZX_ALIGNEDCODE_NUM_SYMBOLS];
 	};
 
 	union {
-		u16 precode_decode_table[(1 << LZX_PRECODE_TABLEBITS) +
-					 (LZX_PRECODE_NUM_SYMBOLS * 2)]
-						_aligned_attribute(DECODE_TABLE_ALIGNMENT);
+		DECODE_TABLE(precode_decode_table, LZX_PRECODE_NUM_SYMBOLS,
+			     LZX_PRECODE_TABLEBITS, LZX_MAX_PRE_CODEWORD_LEN);
 		u8 precode_lens[LZX_PRECODE_NUM_SYMBOLS];
 		u8 extra_offset_bits[LZX_MAX_OFFSET_SLOTS];
 	};

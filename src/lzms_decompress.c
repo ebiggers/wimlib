@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2013, 2014, 2015 Eric Biggers
+ * Copyright (C) 2013-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -257,10 +257,10 @@
 
 /* The TABLEBITS values can be changed; they only affect decoding speed.  */
 #define LZMS_LITERAL_TABLEBITS		10
-#define LZMS_LENGTH_TABLEBITS		10
-#define LZMS_LZ_OFFSET_TABLEBITS	10
-#define LZMS_DELTA_OFFSET_TABLEBITS	10
-#define LZMS_DELTA_POWER_TABLEBITS	8
+#define LZMS_LENGTH_TABLEBITS		9
+#define LZMS_LZ_OFFSET_TABLEBITS	11
+#define LZMS_DELTA_OFFSET_TABLEBITS	11
+#define LZMS_DELTA_POWER_TABLEBITS	7
 
 struct lzms_range_decoder {
 
@@ -323,33 +323,28 @@ struct lzms_decompressor {
 
 	struct lzms_probabilites probs;
 
-	u16 literal_decode_table[(1 << LZMS_LITERAL_TABLEBITS) +
-				 (2 * LZMS_NUM_LITERAL_SYMS)]
-		_aligned_attribute(DECODE_TABLE_ALIGNMENT);
+	DECODE_TABLE(literal_decode_table, LZMS_NUM_LITERAL_SYMS,
+		     LZMS_LITERAL_TABLEBITS, LZMS_MAX_CODEWORD_LENGTH);
 	u32 literal_freqs[LZMS_NUM_LITERAL_SYMS];
 	struct lzms_huffman_rebuild_info literal_rebuild_info;
 
-	u16 lz_offset_decode_table[(1 << LZMS_LZ_OFFSET_TABLEBITS) +
-				   ( 2 * LZMS_MAX_NUM_OFFSET_SYMS)]
-		_aligned_attribute(DECODE_TABLE_ALIGNMENT);
+	DECODE_TABLE(lz_offset_decode_table, LZMS_MAX_NUM_OFFSET_SYMS,
+		     LZMS_LZ_OFFSET_TABLEBITS, LZMS_MAX_CODEWORD_LENGTH);
 	u32 lz_offset_freqs[LZMS_MAX_NUM_OFFSET_SYMS];
 	struct lzms_huffman_rebuild_info lz_offset_rebuild_info;
 
-	u16 length_decode_table[(1 << LZMS_LENGTH_TABLEBITS) +
-				(2 * LZMS_NUM_LENGTH_SYMS)]
-		_aligned_attribute(DECODE_TABLE_ALIGNMENT);
+	DECODE_TABLE(length_decode_table, LZMS_NUM_LENGTH_SYMS,
+		     LZMS_LENGTH_TABLEBITS, LZMS_MAX_CODEWORD_LENGTH);
 	u32 length_freqs[LZMS_NUM_LENGTH_SYMS];
 	struct lzms_huffman_rebuild_info length_rebuild_info;
 
-	u16 delta_offset_decode_table[(1 << LZMS_DELTA_OFFSET_TABLEBITS) +
-				      (2 * LZMS_MAX_NUM_OFFSET_SYMS)]
-		_aligned_attribute(DECODE_TABLE_ALIGNMENT);
+	DECODE_TABLE(delta_offset_decode_table, LZMS_MAX_NUM_OFFSET_SYMS,
+		     LZMS_DELTA_OFFSET_TABLEBITS, LZMS_MAX_CODEWORD_LENGTH);
 	u32 delta_offset_freqs[LZMS_MAX_NUM_OFFSET_SYMS];
 	struct lzms_huffman_rebuild_info delta_offset_rebuild_info;
 
-	u16 delta_power_decode_table[(1 << LZMS_DELTA_POWER_TABLEBITS) +
-				     (2 * LZMS_NUM_DELTA_POWER_SYMS)]
-		_aligned_attribute(DECODE_TABLE_ALIGNMENT);
+	DECODE_TABLE(delta_power_decode_table, LZMS_NUM_DELTA_POWER_SYMS,
+		     LZMS_DELTA_POWER_TABLEBITS, LZMS_MAX_CODEWORD_LENGTH);
 	u32 delta_power_freqs[LZMS_NUM_DELTA_POWER_SYMS];
 	struct lzms_huffman_rebuild_info delta_power_rebuild_info;
 
@@ -594,43 +589,36 @@ lzms_rebuild_huffman_code(struct lzms_huffman_rebuild_info *rebuild_info)
 	lzms_dilute_symbol_frequencies(rebuild_info->freqs, rebuild_info->num_syms);
 }
 
+/* XXX: mostly copied from read_huffsym() in decompress_common.h because LZMS
+ * needs its own bitstream */
 static inline unsigned
 lzms_decode_huffman_symbol(struct lzms_input_bitstream *is, u16 decode_table[],
 			   unsigned table_bits, u32 freqs[],
 			   struct lzms_huffman_rebuild_info *rebuild_info)
 {
-	unsigned key_bits;
 	unsigned entry;
-	unsigned sym;
+	unsigned symbol;
+	unsigned length;
 
 	lzms_ensure_bits(is, LZMS_MAX_CODEWORD_LENGTH);
 
-	/* Index the decode table by the next table_bits bits of the input.  */
-	key_bits = lzms_peek_bits(is, table_bits);
-	entry = decode_table[key_bits];
-	if (likely(entry < 0xC000)) {
-		/* Fast case: The decode table directly provided the symbol and
-		 * codeword length.  The low 11 bits are the symbol, and the
-		 * high 5 bits are the codeword length.  */
-		lzms_remove_bits(is, entry >> 11);
-		sym = entry & 0x7FF;
-	} else {
-		/* Slow case: The codeword for the symbol is longer than
-		 * table_bits, so the symbol does not have an entry directly in
-		 * the first (1 << table_bits) entries of the decode table.
-		 * Traverse the appropriate binary tree bit-by-bit in order to
-		 * decode the symbol.  */
+	entry = decode_table[lzms_peek_bits(is, table_bits)];
+	symbol = entry >> DECODE_TABLE_SYMBOL_SHIFT;
+	length = entry & DECODE_TABLE_LENGTH_MASK;
+
+	if (entry >= (1U << (table_bits + DECODE_TABLE_SYMBOL_SHIFT))) {
 		lzms_remove_bits(is, table_bits);
-		do {
-			key_bits = (entry & 0x3FFF) + lzms_pop_bits(is, 1);
-		} while ((entry = decode_table[key_bits]) >= 0xC000);
-		sym = entry;
+		entry = decode_table[symbol + lzms_peek_bits(is, length)];
+		symbol = entry >> DECODE_TABLE_SYMBOL_SHIFT;
+		length = entry & DECODE_TABLE_LENGTH_MASK;
 	}
 
-	freqs[sym]++;
+	lzms_remove_bits(is, length);
+
+	freqs[symbol]++;
 	if (--rebuild_info->num_syms_until_rebuild == 0)
 		lzms_rebuild_huffman_code(rebuild_info);
-	return sym;
+	return symbol;
 }
 
 static inline unsigned

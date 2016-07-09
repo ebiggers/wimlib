@@ -6,7 +6,7 @@
 
 /*
  *
- * Copyright (C) 2012, 2013, 2015 Eric Biggers
+ * Copyright (C) 2012-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -73,7 +73,7 @@
 #include "wimlib/xpress_constants.h"
 
 /* This value is chosen for fast decompression.  */
-#define XPRESS_TABLEBITS 12
+#define XPRESS_TABLEBITS 11
 
 static int
 xpress_decompress(const void *restrict compressed_data, size_t compressed_size,
@@ -85,8 +85,8 @@ xpress_decompress(const void *restrict compressed_data, size_t compressed_size,
 	u8 *out_next = out_begin;
 	u8 * const out_end = out_begin + uncompressed_size;
 	union {
-		u16 decode_table[(1 << XPRESS_TABLEBITS) + 2 * XPRESS_NUM_SYMBOLS]
-				_aligned_attribute(DECODE_TABLE_ALIGNMENT);
+		DECODE_TABLE(decode_table, XPRESS_NUM_SYMBOLS,
+			     XPRESS_TABLEBITS, XPRESS_MAX_CODEWORD_LEN);
 		u8 lens[XPRESS_NUM_SYMBOLS];
 	} u;
 	struct input_bitstream is;

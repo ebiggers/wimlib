@@ -192,6 +192,10 @@
 #  define STATIC_ASSERT(expr)	((void)sizeof(char[1 - 2 * !(expr)]))
 #endif
 
+/* STATIC_ASSERT_ZERO() - verify the truth of an expression at compilation time
+ * and also produce a result of value '0' to be used in constant expressions */
+#define STATIC_ASSERT_ZERO(expr) ((int)sizeof(char[-!(expr)]))
+
 #define CONCAT_IMPL(s1, s2)	s1##s2
 
 /* CONCAT() - concatenate two tokens at preprocessing time.  */
