@@ -173,16 +173,15 @@ bitstream_read_u32(struct input_bitstream *is)
 }
 
 /* Read into @dst_buffer an array of literal bytes embedded in the bitstream.
- * Return either a pointer to the byte past the last written, or NULL if the
- * read overflows the input buffer.  */
-static inline void *
+ * Return 0 if there were enough bytes remaining in the input, otherwise -1. */
+static inline int
 bitstream_read_bytes(struct input_bitstream *is, void *dst_buffer, size_t count)
 {
 	if (unlikely(is->end - is->next < count))
-		return NULL;
+		return -1;
 	memcpy(dst_buffer, is->next, count);
 	is->next += count;
-	return (u8 *)dst_buffer + count;
+	return 0;
 }
 
 /* Align the input bitstream on a coding-unit boundary.  */
