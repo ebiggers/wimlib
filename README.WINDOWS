@@ -91,7 +91,7 @@ from source, potentially with customizations.  Although wimlib's build system is
 designed for UNIX-like systems and is easiest to use on Linux, it's possible to
 build Windows binaries on Windows using Cygwin with MinGW.  To do this, follow
 the instructions below.  For the sake of example, I'll assume you are building a
-32-bit version of wimlib v1.9.0.
+32-bit version of wimlib v1.10.0.
 
 Run the Cygwin installer, available from https://www.cygwin.com/setup-x86.exe.
 When you get to the package selection screen, choose the following additional
@@ -102,16 +102,15 @@ packages from category "Devel":
     - mingw64-i686-binutils
     - mingw64-i686-libxml2
     - mingw64-i686-winpthreads
-    - mingw64-i686-win-iconv
     - mingw64-i686-pkg-config
 
-Download wimlib's source code from https://wimlib.net/downloads/wimlib-1.9.0.tar.gz.
+Download wimlib's source code from https://wimlib.net/downloads/wimlib-1.10.0.tar.gz.
 
 Start a Cygwin terminal and run the following commands:
 
     cd /cygdrive/c/Users/example/Downloads # (or wherever you downloaded the source to)
-    tar xf wimlib-1.9.0.tar.gz
-    cd wimlib-1.9.0
+    tar xf wimlib-1.10.0.tar.gz
+    cd wimlib-1.10.0
     ./configure --host=i686-w64-mingw32
     make
 
@@ -123,7 +122,6 @@ i686-w64-mingw32-strip to strip them.
 
 libwim-15.dll will be linked to several other DLLs which you will need as well:
 
-    - iconv.dll
     - libwinpthread-1.dll
     - libxml2-2.dll
     - libgcc_s_sjlj-1.dll
