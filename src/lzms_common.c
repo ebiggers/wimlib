@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2013, 2014 Eric Biggers
+ * Copyright (C) 2013-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -391,7 +391,11 @@ find_next_opcode_sse4_2(u8 *p)
 		"  pcmpestri $0x0, (%[p]), %[potential_opcodes]      \n"
 		"  jnc 1b                                            \n"
 		"2:                                                  \n"
+	#ifdef __ILP32__ /* x32 ABI (x86_64 with 32-bit pointers) */
+		"  add %%ecx, %[p]                                   \n"
+	#else
 		"  add %%rcx, %[p]                                   \n"
+	#endif
 		: [p] "+r" (p)
 		: [potential_opcodes] "x" (potential_opcodes), "a" (6), "d" (16)
 		: "rcx", "cc"
