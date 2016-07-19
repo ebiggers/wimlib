@@ -22,16 +22,7 @@
 #ifndef _AVL_TREE_H_
 #define _AVL_TREE_H_
 
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h> /* for uintptr_t */
-
-#ifdef __GNUC__
-#  define AVL_INLINE inline __attribute__((always_inline))
-#else
-#  define AVL_INLINE inline
-#  warning "AVL tree functions may not be inlined as intended"
-#endif
+#include "wimlib/types.h"
 
 /* Node in an AVL tree.  Embed this in some other data structure.  */
 struct avl_tree_node {
@@ -65,14 +56,14 @@ struct avl_tree_node {
 
 /* Returns a pointer to the parent of the specified AVL tree node, or NULL if it
  * is already the root of the tree.  */
-static AVL_INLINE struct avl_tree_node *
+static forceinline struct avl_tree_node *
 avl_get_parent(const struct avl_tree_node *node)
 {
 	return (struct avl_tree_node *)(node->parent_balance & ~3);
 }
 
 /* Marks the specified AVL tree node as unlinked from any tree.  */
-static AVL_INLINE void
+static forceinline void
 avl_tree_node_set_unlinked(struct avl_tree_node *node)
 {
 	node->parent_balance = (uintptr_t)node;
@@ -81,7 +72,7 @@ avl_tree_node_set_unlinked(struct avl_tree_node *node)
 /* Returns true iff the specified AVL tree node has been marked with
  * avl_tree_node_set_unlinked() and has not subsequently been inserted into a
  * tree.  */
-static AVL_INLINE bool
+static forceinline bool
 avl_tree_node_is_unlinked(const struct avl_tree_node *node)
 {
 	return node->parent_balance == (uintptr_t)node;
@@ -140,7 +131,7 @@ avl_tree_rebalance_after_insert(struct avl_tree_node **root_ptr,
  *	return result ? true : false;
  * }
  */
-static AVL_INLINE struct avl_tree_node *
+static forceinline struct avl_tree_node *
 avl_tree_lookup(const struct avl_tree_node *root,
 		const void *cmp_ctx,
 		int (*cmp)(const void *, const struct avl_tree_node *))
@@ -163,7 +154,7 @@ avl_tree_lookup(const struct avl_tree_node *root,
  * function.  Specifically, with this function the item being searched for is
  * expected to be in the same format as those already in the tree, with an
  * embedded 'struct avl_tree_node'.  */
-static AVL_INLINE struct avl_tree_node *
+static forceinline struct avl_tree_node *
 avl_tree_lookup_node(const struct avl_tree_node *root,
 		     const struct avl_tree_node *node,
 		     int (*cmp)(const struct avl_tree_node *,
@@ -235,7 +226,7 @@ avl_tree_lookup_node(const struct avl_tree_node *root,
  *	return true;
  * }
  */
-static AVL_INLINE struct avl_tree_node *
+static forceinline struct avl_tree_node *
 avl_tree_insert(struct avl_tree_node **root_ptr,
 		struct avl_tree_node *item,
 		int (*cmp)(const struct avl_tree_node *,

@@ -93,7 +93,7 @@ avl_tree_next_in_postorder(const struct avl_tree_node *prev,
  * specified AVL tree node.
  * Note: for all calls of this, 'sign' is constant at compilation time,
  * so the compiler can remove the conditional.  */
-static AVL_INLINE struct avl_tree_node *
+static forceinline struct avl_tree_node *
 avl_get_child(const struct avl_tree_node *parent, int sign)
 {
 	if (sign < 0)
@@ -106,7 +106,7 @@ avl_get_child(const struct avl_tree_node *parent, int sign)
  * specified AVL tree node.
  * Note: for all calls of this, 'sign' is constant at compilation time,
  * so the compiler can remove the conditional.  */
-static AVL_INLINE void
+static forceinline void
 avl_set_child(struct avl_tree_node *parent, int sign,
 	      struct avl_tree_node *child)
 {
@@ -117,7 +117,7 @@ avl_set_child(struct avl_tree_node *parent, int sign,
 }
 
 /* Sets the parent and balance factor of the specified AVL tree node.  */
-static AVL_INLINE void
+static forceinline void
 avl_set_parent_balance(struct avl_tree_node *node, struct avl_tree_node *parent,
 		       int balance_factor)
 {
@@ -125,7 +125,7 @@ avl_set_parent_balance(struct avl_tree_node *node, struct avl_tree_node *parent,
 }
 
 /* Sets the parent of the specified AVL tree node.  */
-static AVL_INLINE void
+static forceinline void
 avl_set_parent(struct avl_tree_node *node, struct avl_tree_node *parent)
 {
 	node->parent_balance = (uintptr_t)parent | (node->parent_balance & 3);
@@ -133,7 +133,7 @@ avl_set_parent(struct avl_tree_node *node, struct avl_tree_node *parent)
 
 /* Returns the balance factor of the specified AVL tree node --- that is, the
  * height of its right subtree minus the height of its left subtree.  */
-static AVL_INLINE int
+static forceinline int
 avl_get_balance_factor(const struct avl_tree_node *node)
 {
 	return (int)(node->parent_balance & 3) - 1;
@@ -142,13 +142,13 @@ avl_get_balance_factor(const struct avl_tree_node *node)
 /* Adds @amount to the balance factor of the specified AVL tree node.
  * The caller must ensure this still results in a valid balance factor
  * (-1, 0, or 1).  */
-static AVL_INLINE void
+static forceinline void
 avl_adjust_balance_factor(struct avl_tree_node *node, int amount)
 {
 	node->parent_balance += amount;
 }
 
-static AVL_INLINE void
+static forceinline void
 avl_replace_child(struct avl_tree_node **root_ptr,
 		  struct avl_tree_node *parent,
 		  struct avl_tree_node *old_child,
@@ -191,7 +191,7 @@ avl_replace_child(struct avl_tree_node **root_ptr,
  *
  * This updates pointers but not balance factors!
  */
-static AVL_INLINE void
+static forceinline void
 avl_rotate(struct avl_tree_node ** const root_ptr,
 	   struct avl_tree_node * const A, const int sign)
 {
@@ -250,7 +250,7 @@ avl_rotate(struct avl_tree_node ** const root_ptr,
  * See comment in avl_handle_subtree_growth() for explanation of balance
  * factor updates.
  */
-static AVL_INLINE struct avl_tree_node *
+static forceinline struct avl_tree_node *
 avl_do_double_rotate(struct avl_tree_node ** const root_ptr,
 		     struct avl_tree_node * const B,
 		     struct avl_tree_node * const A, const int sign)
@@ -308,7 +308,7 @@ avl_do_double_rotate(struct avl_tree_node ** const root_ptr,
  * Indeed, a single node insertion cannot require that more than one
  * (single or double) rotation be done.
  */
-static AVL_INLINE bool
+static forceinline bool
 avl_handle_subtree_growth(struct avl_tree_node ** const root_ptr,
 			  struct avl_tree_node * const node,
 			  struct avl_tree_node * const parent,
@@ -513,7 +513,7 @@ avl_tree_rebalance_after_insert(struct avl_tree_node **root_ptr,
  * decreased in height by 1.  Also in the latter case, *left_deleted_ret
  * will be set.
  */
-static AVL_INLINE struct avl_tree_node *
+static forceinline struct avl_tree_node *
 avl_handle_subtree_shrink(struct avl_tree_node ** const root_ptr,
 			  struct avl_tree_node *parent,
 			  const int sign,
@@ -627,7 +627,7 @@ avl_handle_subtree_shrink(struct avl_tree_node ** const root_ptr,
 /* Swaps node X, which must have 2 children, with its in-order successor, then
  * unlinks node X.  Returns the parent of X just before unlinking, without its
  * balance factor having been updated to account for the unlink.  */
-static AVL_INLINE struct avl_tree_node *
+static forceinline struct avl_tree_node *
 avl_tree_swap_with_successor(struct avl_tree_node **root_ptr,
 			     struct avl_tree_node *X,
 			     bool *left_deleted_ret)
