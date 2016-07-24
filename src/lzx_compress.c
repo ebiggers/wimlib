@@ -1920,12 +1920,17 @@ lzx_cost_for_probability(float prob)
 	 *	entropy = -log2(probability)
 	 *
 	 * Use this to get the cost in fractional bits.  Then multiply by our
-	 * scaling factor of BIT_COST and truncate to a u32.
+	 * scaling factor of BIT_COST and convert to an integer.
 	 *
 	 * In addition, the minimum cost is BIT_COST (one bit) because the
 	 * entropy coding method will be Huffman codes.
+	 *
+	 * Careful: even though 'prob' should be <= 1.0, 'log2f_fast(prob)' may
+	 * be positive due to inaccuracy in our log2 approximation.  Therefore,
+	 * we cannot, in general, assume the computed cost is non-negative, and
+	 * we should make sure negative costs get rounded up correctly.
 	 */
-	u32 cost = -log2f_fast(prob) * BIT_COST;
+	s32 cost = -log2f_fast(prob) * BIT_COST;
 	return max(cost, BIT_COST);
 }
 
