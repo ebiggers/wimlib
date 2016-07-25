@@ -805,11 +805,14 @@ out:
 	return ret;
 }
 
-/* Note: contrary to its documentation, ntfs_attr_pwrite() can return a short
- * count in non-error cases --- specifically, when writing to a compressed
- * attribute and the requested count exceeds the size of an NTFS "compression
- * block".  Therefore, we must continue calling ntfs_attr_pwrite() until all
- * bytes have been written or a real error has occurred.  */
+/*
+ * Note: prior to NTFS-3G version 2016.2.22, ntfs_attr_pwrite() could return a
+ * short count in non-error cases, contrary to its documentation.  Specifically,
+ * a short count could be returned when writing to a compressed attribute and
+ * the requested count exceeded the size of an NTFS "compression block".
+ * Therefore, we must continue calling ntfs_attr_pwrite() until all bytes have
+ * been written or a real error has occurred.
+ */
 static bool
 ntfs_3g_full_pwrite(ntfs_attr *na, u64 offset, size_t size, const u8 *data)
 {
