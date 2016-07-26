@@ -41,16 +41,8 @@ struct wim_dentry {
 	struct wim_inode *d_inode;
 
 	/* Node for the parent's balanced binary search tree of child dentries
-	 * sorted by case sensitive long name (root i_children).  */
+	 * keyed by filename (root i_children).  */
 	struct avl_tree_node d_index_node;
-
-	/* Node for the parent's balanced binary search tree of child dentries,
-	 * sorted by case insensitive long name (root i_children_ci). */
-	struct avl_tree_node d_index_node_ci;
-
-	/* List of dentries in a directory that have different case sensitive
-	 * long names but share the same case insensitive long name.  */
-	struct list_head d_ci_conflict_list;
 
 	/* The parent of this directory entry. (The root is its own parent.)  */
 	struct wim_dentry *d_parent;
@@ -138,36 +130,25 @@ extern int
 for_dentry_in_tree(struct wim_dentry *root,
 		   int (*visitor)(struct wim_dentry *, void *), void *args);
 
-/* Iterate through each @child dentry of the @dir directory inode,
- * in sorted order by case sensitive name.  */
+/* Iterate through each @child dentry of the @dir directory inode in
+ * collation order.  */
 #define for_inode_child(child, dir)					\
 	avl_tree_for_each_in_order((child), (dir)->i_children,		\
 				   struct wim_dentry, d_index_node)
 
-/* Iterate through each @child dentry of the @parent dentry,
- * in sorted order by case sensitive name.  */
+/* Iterate through each @child dentry of the @parent dentry in
+ * collation order.  */
 #define for_dentry_child(child, parent) \
 	for_inode_child((child), (parent)->d_inode)
 
-/* Iterate through each @child dentry of the @dir directory inode,
- * in sorted order by case insensitive name.  */
-#define for_inode_child_case_insensitive(child, dir)			\
-	avl_tree_for_each_in_order((child), (dir)->i_children_ci,	\
-				   struct wim_dentry, d_index_node_ci)
-
-/* Iterate through each @child dentry of the @parent dentry,
- * in sorted order by case insensitive name.  */
-#define for_dentry_child_case_insensitive(child, parent) \
-	for_inode_child_case_insensitive((child), (parent)->d_inode)
-
-/* Iterate through each @child dentry of the @dir directory inode,
- * in postorder (safe for freeing the child dentries).  */
+/* Iterate through each @child dentry of the @dir directory inode in
+ * postorder (safe for freeing the child dentries).  */
 #define for_inode_child_postorder(child, dir)				\
 	avl_tree_for_each_in_postorder((child), (dir)->i_children,	\
 				       struct wim_dentry, d_index_node)
 
-/* Iterate through each @child dentry of the @parent dentry,
- * in postorder (safe for freeing the child dentries).  */
+/* Iterate through each @child dentry of the @parent dentry in
+ * postorder (safe for freeing the child dentries).  */
 #define for_dentry_child_postorder(child, parent) \
 	for_inode_child_postorder((child), (parent)->d_inode)
 
@@ -180,6 +161,20 @@ for_dentry_in_tree(struct wim_dentry *root,
  * dentry_has_children(@parent) == true.  */
 #define dentry_any_child(parent) \
 	inode_any_child((parent)->d_inode)
+
+extern struct wim_dentry *
+dentry_get_first_ci_match(struct wim_dentry *dentry);
+
+extern struct wim_dentry *
+dentry_get_next_ci_match(struct wim_dentry *dentry,
+			 struct wim_dentry *ci_match);
+
+/* Iterate through all other dentries which have the same case insensitive name
+ * as the one given.  */
+#define dentry_for_each_ci_match(ci_match, dentry)			\
+	for ((ci_match) = dentry_get_first_ci_match((dentry));		\
+	     (ci_match);						\
+	     (ci_match) = dentry_get_next_ci_match((dentry), (ci_match)))
 
 extern void
 calculate_subdir_offsets(struct wim_dentry *root, u64 *subdir_offset_p);

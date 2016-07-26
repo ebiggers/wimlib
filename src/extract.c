@@ -761,9 +761,7 @@ dentry_calculate_extraction_name(struct wim_dentry *dentry,
 
 	if (!ctx->supported_features.case_sensitive_filenames) {
 		struct wim_dentry *other;
-		list_for_each_entry(other, &dentry->d_ci_conflict_list,
-				    d_ci_conflict_list)
-		{
+		dentry_for_each_ci_match(other, dentry) {
 			if (will_extract_dentry(other)) {
 				if (ctx->extract_flags &
 				    WIMLIB_EXTRACT_FLAG_ALL_CASE_CONFLICTS) {

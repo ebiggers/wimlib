@@ -5,6 +5,8 @@ Version 1.10.0-BETA:
 
 	Decompression performance has been slightly improved.
 
+	Filenames are now always listed in NTFS collation order.
+
 	On UNIX-like systems, wimlib can now process Windows filenames that are
 	not valid Unicode due to the presence of unpaired surrogates.
 
@@ -14,6 +16,8 @@ Version 1.10.0-BETA:
 	WIMLIB_INIT_FLAG_ASSUME_UTF8 no longer have any effect.
 
 	wimlib no longer depends on iconv.
+
+	Reduced memory usage slightly.
 
 	Workarounds for bugs in libntfs-3g version 2013.1.13 and earlier have
 	been removed.  Users are advised to upgrade to a later version of
