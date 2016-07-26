@@ -725,8 +725,7 @@ avl_tree_swap_with_successor(struct avl_tree_node **root_ptr,
  *	remove from the tree.
  *
  * Note: This function *only* removes the node and rebalances the tree.
- * It does not free any memory, nor does it do the equivalent of
- * avl_tree_node_set_unlinked().
+ * It does not free any memory.
  */
 void
 avl_tree_remove(struct avl_tree_node **root_ptr, struct avl_tree_node *node)

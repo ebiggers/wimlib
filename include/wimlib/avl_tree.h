@@ -62,22 +62,6 @@ avl_get_parent(const struct avl_tree_node *node)
 	return (struct avl_tree_node *)(node->parent_balance & ~3);
 }
 
-/* Marks the specified AVL tree node as unlinked from any tree.  */
-static forceinline void
-avl_tree_node_set_unlinked(struct avl_tree_node *node)
-{
-	node->parent_balance = (uintptr_t)node;
-}
-
-/* Returns true iff the specified AVL tree node has been marked with
- * avl_tree_node_set_unlinked() and has not subsequently been inserted into a
- * tree.  */
-static forceinline bool
-avl_tree_node_is_unlinked(const struct avl_tree_node *node)
-{
-	return node->parent_balance == (uintptr_t)node;
-}
-
 /* (Internal use only)  */
 extern void
 avl_tree_rebalance_after_insert(struct avl_tree_node **root_ptr,
