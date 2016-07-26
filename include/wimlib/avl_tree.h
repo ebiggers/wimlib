@@ -262,7 +262,10 @@ extern struct avl_tree_node *
 avl_tree_first_in_order(const struct avl_tree_node *root);
 
 extern struct avl_tree_node *
-avl_tree_next_in_order(const struct avl_tree_node *prev);
+avl_tree_next_in_order(const struct avl_tree_node *node);
+
+extern struct avl_tree_node *
+avl_tree_prev_in_order(const struct avl_tree_node *node);
 
 extern struct avl_tree_node *
 avl_tree_first_in_postorder(const struct avl_tree_node *root);

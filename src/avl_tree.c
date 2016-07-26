@@ -41,21 +41,41 @@ avl_tree_first_in_order(const struct avl_tree_node *root)
 /* Continues an in-order traversal of the tree: returns the next-greatest-valued
  * node, or NULL if there is none.  */
 struct avl_tree_node *
-avl_tree_next_in_order(const struct avl_tree_node *prev)
+avl_tree_next_in_order(const struct avl_tree_node *node)
 {
 	const struct avl_tree_node *next;
 
-	if (prev->right)
-		for (next = prev->right;
+	if (node->right)
+		for (next = node->right;
 		     next->left;
 		     next = next->left)
 			;
 	else
-		for (next = avl_get_parent(prev);
-		     next && prev == next->right;
-		     prev = next, next = avl_get_parent(next))
+		for (next = avl_get_parent(node);
+		     next && node == next->right;
+		     node = next, next = avl_get_parent(next))
 			;
 	return (struct avl_tree_node *)next;
+}
+
+/* Continues a *reverse* in-order traversal of the tree: returns the
+ * previous-greatest-valued node, or NULL if there is none.  */
+struct avl_tree_node *
+avl_tree_prev_in_order(const struct avl_tree_node *node)
+{
+	const struct avl_tree_node *prev;
+
+	if (node->left)
+		for (prev = node->left;
+		     prev->right;
+		     prev = prev->right)
+			;
+	else
+		for (prev = avl_get_parent(node);
+		     prev && node == prev->left;
+		     node = prev, prev = avl_get_parent(prev))
+			;
+	return (struct avl_tree_node *)prev;
 }
 
 /* Starts a postorder traversal of the tree.  */
