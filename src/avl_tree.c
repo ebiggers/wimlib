@@ -4,7 +4,7 @@
  *
  * The following copying information applies to this specific source code file:
  *
- * Written in 2014 by Eric Biggers <ebiggers3@gmail.com>
+ * Written in 2014-2016 by Eric Biggers <ebiggers3@gmail.com>
  *
  * To the extent possible under law, the author(s) have dedicated all copyright
  * and related and neighboring rights to this software to the public domain
@@ -25,17 +25,62 @@
 
 #include "wimlib/avl_tree.h"
 
+/* Returns the left child (sign < 0) or the right child (sign > 0) of the
+ * specified AVL tree node.
+ * Note: for all calls of this, 'sign' is constant at compilation time,
+ * so the compiler can remove the conditional.  */
+static AVL_INLINE struct avl_tree_node *
+avl_get_child(const struct avl_tree_node *parent, int sign)
+{
+	if (sign < 0)
+		return parent->left;
+	else
+		return parent->right;
+}
+
+static AVL_INLINE struct avl_tree_node *
+avl_tree_first_or_last_in_order(const struct avl_tree_node *root, int sign)
+{
+	const struct avl_tree_node *first = root;
+
+	if (first)
+		while (avl_get_child(first, +sign))
+			first = avl_get_child(first, +sign);
+	return (struct avl_tree_node *)first;
+}
+
 /* Starts an in-order traversal of the tree: returns the least-valued node, or
  * NULL if the tree is empty.  */
 struct avl_tree_node *
 avl_tree_first_in_order(const struct avl_tree_node *root)
 {
-	const struct avl_tree_node *first = root;
+	return avl_tree_first_or_last_in_order(root, -1);
+}
 
-	if (first)
-		while (first->left)
-			first = first->left;
-	return (struct avl_tree_node *)first;
+/* Starts a *reverse* in-order traversal of the tree: returns the
+ * greatest-valued node, or NULL if the tree is empty.  */
+struct avl_tree_node *
+avl_tree_last_in_order(const struct avl_tree_node *root)
+{
+	return avl_tree_first_or_last_in_order(root, 1);
+}
+
+static AVL_INLINE struct avl_tree_node *
+avl_tree_next_or_prev_in_order(const struct avl_tree_node *node, int sign)
+{
+	const struct avl_tree_node *next;
+
+	if (avl_get_child(node, +sign))
+		for (next = avl_get_child(node, +sign);
+		     avl_get_child(next, -sign);
+		     next = avl_get_child(next, -sign))
+			;
+	else
+		for (next = avl_get_parent(node);
+		     next && node == avl_get_child(next, +sign);
+		     node = next, next = avl_get_parent(next))
+			;
+	return (struct avl_tree_node *)next;
 }
 
 /* Continues an in-order traversal of the tree: returns the next-greatest-valued
@@ -43,19 +88,7 @@ avl_tree_first_in_order(const struct avl_tree_node *root)
 struct avl_tree_node *
 avl_tree_next_in_order(const struct avl_tree_node *node)
 {
-	const struct avl_tree_node *next;
-
-	if (node->right)
-		for (next = node->right;
-		     next->left;
-		     next = next->left)
-			;
-	else
-		for (next = avl_get_parent(node);
-		     next && node == next->right;
-		     node = next, next = avl_get_parent(next))
-			;
-	return (struct avl_tree_node *)next;
+	return avl_tree_next_or_prev_in_order(node, 1);
 }
 
 /* Continues a *reverse* in-order traversal of the tree: returns the
@@ -63,19 +96,7 @@ avl_tree_next_in_order(const struct avl_tree_node *node)
 struct avl_tree_node *
 avl_tree_prev_in_order(const struct avl_tree_node *node)
 {
-	const struct avl_tree_node *prev;
-
-	if (node->left)
-		for (prev = node->left;
-		     prev->right;
-		     prev = prev->right)
-			;
-	else
-		for (prev = avl_get_parent(node);
-		     prev && node == prev->left;
-		     node = prev, prev = avl_get_parent(prev))
-			;
-	return (struct avl_tree_node *)prev;
+	return avl_tree_next_or_prev_in_order(node, -1);
 }
 
 /* Starts a postorder traversal of the tree.  */
@@ -109,24 +130,11 @@ avl_tree_next_in_postorder(const struct avl_tree_node *prev,
 	return (struct avl_tree_node *)next;
 }
 
-/* Returns the left child (sign < 0) or the right child (sign > 0) of the
- * specified AVL tree node.
- * Note: for all calls of this, 'sign' is constant at compilation time,
- * so the compiler can remove the conditional.  */
-static forceinline struct avl_tree_node *
-avl_get_child(const struct avl_tree_node *parent, int sign)
-{
-	if (sign < 0)
-		return parent->left;
-	else
-		return parent->right;
-}
-
 /* Sets the left child (sign < 0) or the right child (sign > 0) of the
  * specified AVL tree node.
  * Note: for all calls of this, 'sign' is constant at compilation time,
  * so the compiler can remove the conditional.  */
-static forceinline void
+static AVL_INLINE void
 avl_set_child(struct avl_tree_node *parent, int sign,
 	      struct avl_tree_node *child)
 {
@@ -137,7 +145,7 @@ avl_set_child(struct avl_tree_node *parent, int sign,
 }
 
 /* Sets the parent and balance factor of the specified AVL tree node.  */
-static forceinline void
+static AVL_INLINE void
 avl_set_parent_balance(struct avl_tree_node *node, struct avl_tree_node *parent,
 		       int balance_factor)
 {
@@ -145,7 +153,7 @@ avl_set_parent_balance(struct avl_tree_node *node, struct avl_tree_node *parent,
 }
 
 /* Sets the parent of the specified AVL tree node.  */
-static forceinline void
+static AVL_INLINE void
 avl_set_parent(struct avl_tree_node *node, struct avl_tree_node *parent)
 {
 	node->parent_balance = (uintptr_t)parent | (node->parent_balance & 3);
@@ -153,7 +161,7 @@ avl_set_parent(struct avl_tree_node *node, struct avl_tree_node *parent)
 
 /* Returns the balance factor of the specified AVL tree node --- that is, the
  * height of its right subtree minus the height of its left subtree.  */
-static forceinline int
+static AVL_INLINE int
 avl_get_balance_factor(const struct avl_tree_node *node)
 {
 	return (int)(node->parent_balance & 3) - 1;
@@ -162,13 +170,13 @@ avl_get_balance_factor(const struct avl_tree_node *node)
 /* Adds @amount to the balance factor of the specified AVL tree node.
  * The caller must ensure this still results in a valid balance factor
  * (-1, 0, or 1).  */
-static forceinline void
+static AVL_INLINE void
 avl_adjust_balance_factor(struct avl_tree_node *node, int amount)
 {
 	node->parent_balance += amount;
 }
 
-static forceinline void
+static AVL_INLINE void
 avl_replace_child(struct avl_tree_node **root_ptr,
 		  struct avl_tree_node *parent,
 		  struct avl_tree_node *old_child,
@@ -211,7 +219,7 @@ avl_replace_child(struct avl_tree_node **root_ptr,
  *
  * This updates pointers but not balance factors!
  */
-static forceinline void
+static AVL_INLINE void
 avl_rotate(struct avl_tree_node ** const root_ptr,
 	   struct avl_tree_node * const A, const int sign)
 {
@@ -270,7 +278,7 @@ avl_rotate(struct avl_tree_node ** const root_ptr,
  * See comment in avl_handle_subtree_growth() for explanation of balance
  * factor updates.
  */
-static forceinline struct avl_tree_node *
+static AVL_INLINE struct avl_tree_node *
 avl_do_double_rotate(struct avl_tree_node ** const root_ptr,
 		     struct avl_tree_node * const B,
 		     struct avl_tree_node * const A, const int sign)
@@ -328,7 +336,7 @@ avl_do_double_rotate(struct avl_tree_node ** const root_ptr,
  * Indeed, a single node insertion cannot require that more than one
  * (single or double) rotation be done.
  */
-static forceinline bool
+static AVL_INLINE bool
 avl_handle_subtree_growth(struct avl_tree_node ** const root_ptr,
 			  struct avl_tree_node * const node,
 			  struct avl_tree_node * const parent,
@@ -533,7 +541,7 @@ avl_tree_rebalance_after_insert(struct avl_tree_node **root_ptr,
  * decreased in height by 1.  Also in the latter case, *left_deleted_ret
  * will be set.
  */
-static forceinline struct avl_tree_node *
+static AVL_INLINE struct avl_tree_node *
 avl_handle_subtree_shrink(struct avl_tree_node ** const root_ptr,
 			  struct avl_tree_node *parent,
 			  const int sign,
@@ -647,7 +655,7 @@ avl_handle_subtree_shrink(struct avl_tree_node ** const root_ptr,
 /* Swaps node X, which must have 2 children, with its in-order successor, then
  * unlinks node X.  Returns the parent of X just before unlinking, without its
  * balance factor having been updated to account for the unlink.  */
-static forceinline struct avl_tree_node *
+static AVL_INLINE struct avl_tree_node *
 avl_tree_swap_with_successor(struct avl_tree_node **root_ptr,
 			     struct avl_tree_node *X,
 			     bool *left_deleted_ret)

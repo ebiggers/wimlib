@@ -4,7 +4,7 @@
  *
  * The following copying information applies to this specific source code file:
  *
- * Written in 2014 by Eric Biggers <ebiggers3@gmail.com>
+ * Written in 2014-2016 by Eric Biggers <ebiggers3@gmail.com>
  *
  * To the extent possible under law, the author(s) have dedicated all copyright
  * and related and neighboring rights to this software to the public domain
@@ -23,6 +23,7 @@
 #define _AVL_TREE_H_
 
 #include "wimlib/types.h"
+#define AVL_INLINE forceinline
 
 /* Node in an AVL tree.  Embed this in some other data structure.  */
 struct avl_tree_node {
@@ -56,7 +57,7 @@ struct avl_tree_node {
 
 /* Returns a pointer to the parent of the specified AVL tree node, or NULL if it
  * is already the root of the tree.  */
-static forceinline struct avl_tree_node *
+static AVL_INLINE struct avl_tree_node *
 avl_get_parent(const struct avl_tree_node *node)
 {
 	return (struct avl_tree_node *)(node->parent_balance & ~3);
@@ -115,7 +116,7 @@ avl_tree_rebalance_after_insert(struct avl_tree_node **root_ptr,
  *	return result ? true : false;
  * }
  */
-static forceinline struct avl_tree_node *
+static AVL_INLINE struct avl_tree_node *
 avl_tree_lookup(const struct avl_tree_node *root,
 		const void *cmp_ctx,
 		int (*cmp)(const void *, const struct avl_tree_node *))
@@ -138,7 +139,7 @@ avl_tree_lookup(const struct avl_tree_node *root,
  * function.  Specifically, with this function the item being searched for is
  * expected to be in the same format as those already in the tree, with an
  * embedded 'struct avl_tree_node'.  */
-static forceinline struct avl_tree_node *
+static AVL_INLINE struct avl_tree_node *
 avl_tree_lookup_node(const struct avl_tree_node *root,
 		     const struct avl_tree_node *node,
 		     int (*cmp)(const struct avl_tree_node *,
@@ -210,7 +211,7 @@ avl_tree_lookup_node(const struct avl_tree_node *root,
  *	return true;
  * }
  */
-static forceinline struct avl_tree_node *
+static AVL_INLINE struct avl_tree_node *
 avl_tree_insert(struct avl_tree_node **root_ptr,
 		struct avl_tree_node *item,
 		int (*cmp)(const struct avl_tree_node *,
@@ -244,6 +245,9 @@ avl_tree_remove(struct avl_tree_node **root_ptr, struct avl_tree_node *node);
 
 extern struct avl_tree_node *
 avl_tree_first_in_order(const struct avl_tree_node *root);
+
+extern struct avl_tree_node *
+avl_tree_last_in_order(const struct avl_tree_node *root);
 
 extern struct avl_tree_node *
 avl_tree_next_in_order(const struct avl_tree_node *node);
@@ -295,6 +299,18 @@ avl_tree_next_in_postorder(const struct avl_tree_node *prev,
 		      avl_tree_entry(_cur, struct_name,			\
 				     struct_member), 1);		\
 	     _cur = avl_tree_next_in_order(_cur))
+
+/*
+ * Like avl_tree_for_each_in_order(), but uses the reverse order.
+ */
+#define avl_tree_for_each_in_reverse_order(child_struct, root,		\
+					   struct_name, struct_member)	\
+	for (struct avl_tree_node *_cur =				\
+		avl_tree_last_in_order(root);				\
+	     _cur && ((child_struct) =					\
+		      avl_tree_entry(_cur, struct_name,			\
+				     struct_member), 1);		\
+	     _cur = avl_tree_prev_in_order(_cur))
 
 /*
  * Like avl_tree_for_each_in_order(), but iterates through the nodes in
