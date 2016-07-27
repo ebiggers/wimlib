@@ -64,7 +64,6 @@ AC_CHECK_FUNCS([futimens utimensat flock mempcpy	\
 # Header checks, most of which are only here to satisfy conditional includes
 # made by the libntfs-3g headers.
 AC_CHECK_HEADERS([alloca.h		\
-		  attr/xattr.h		\
 		  byteswap.h		\
 		  endian.h		\
 		  errno.h		\
@@ -78,6 +77,7 @@ AC_CHECK_HEADERS([alloca.h		\
 		  sys/file.h		\
 		  sys/sysctl.h		\
 		  sys/times.h		\
+		  sys/xattr.h		\
 		  time.h		\
 		  utime.h])
 
@@ -157,12 +157,6 @@ if test "$WITH_FUSE" = "yes"; then
 	Extensions Library)!  wimlib needs this for the POSIX message queue
 	functions, which are used in the code for mounting WIM images.  Recent
 	versions of glibc include this library.  Either install this library, or
-	configure --without-fuse to disable support for mounting WIM images.])])
-
-	AC_CHECK_LIB([attr], [getxattr], [],
-		     [AC_MSG_ERROR([Cannot find libattr!
-	wimlib needs this for the extended attribute functions, which are used
-	in the code for mounting WIM images.  Either install this library, or
 	configure --without-fuse to disable support for mounting WIM images.])])
 
 	PKGCONFIG_PRIVATE_LIBS="$PKGCONFIG_PRIVATE_LIBS -lrt"

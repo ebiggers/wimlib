@@ -27,10 +27,15 @@
 #include <unistd.h>
 #include <stdbool.h>
 #include <sys/stat.h>
-#ifdef HAVE_ATTR_XATTR_H
-#include <attr/xattr.h>
+#include <sys/types.h>
+#ifdef HAVE_SYS_XATTR_H
+#  include <sys/xattr.h>
 #endif
 #include <assert.h>
+
+#ifndef ENOATTR
+#  define ENOATTR ENODATA
+#endif
 
 typedef uint64_t u64;
 
@@ -165,7 +170,7 @@ static void cmp(const char *file1, const char *file2, size_t size)
 	close(fd2);
 }
 
-#ifdef HAVE_ATTR_XATTR_H
+#ifdef HAVE_SYS_XATTR_H
 /* Compares an extended attribute of the files. */
 static void cmp_xattr(const char *file1, const char *file2,
 		      const char *xattr_name, ssize_t max_size,
@@ -270,13 +275,13 @@ static void cmp_ads(const char *file1, const char *file2)
 		free(list2);
 	}
 }
-#endif
+#endif /* HAVE_SYS_XATTR_H */
 
 /* Compares special NTFS data of the files, as accessed through extended
  * attributes. */
 static void special_cmp(const char *file1, const char *file2)
 {
-#ifdef HAVE_ATTR_XATTR_H
+#ifdef HAVE_SYS_XATTR_H
 	cmp_xattr(file1, file2, "system.ntfs_acl", 0, false);
 	cmp_xattr(file1, file2, "system.ntfs_attrib", 0, false);
 	cmp_xattr(file1, file2, "system.ntfs_dos_name", 0, true);
@@ -287,7 +292,7 @@ static void special_cmp(const char *file1, const char *file2)
 #else
 	fprintf(stderr, "tree-cmp: Warning: cannot compare xattrs of `%s' and `%s'\n",
 			file1, file2);
-	fprintf(stderr, "          You need to install the attr development files for this.\n");
+	fprintf(stderr, "          Extended attributes are not supported on this platform.\n");
 #endif
 }
 

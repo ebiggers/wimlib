@@ -146,12 +146,6 @@ dependencies were already included and this section is irrelevant.
 	automatically be loaded if you try to mount a WIM image.  For more
 	information see http://fuse.sourceforge.net/.
 
-* libattr (optional but recommended)
-	Unless configured --without-fuse, wimlib also requires libattr.  Almost
-	all Linux distributions should include this; however, you may need to
-	install the header files, which might be in a package named "attr-dev",
-	"libattr1-dev", or similar.
-
 * libntfs-3g (optional but recommended)
 	Unless configured --without-ntfs-3g, wimlib requires the library and
 	headers for libntfs-3g to be installed.  The minimum required version is
@@ -190,7 +184,7 @@ This section documents the most important options that may be passed to the
 
 --without-fuse
 	The --without-fuse option disables support for mounting WIM images.
-	This removes dependencies on libfuse, librt, and libattr.  The wimmount,
+	This removes dependencies on libfuse and librt.  The wimmount,
 	wimmountrw, and wimunmount commands will not work.
 
 	The default is --with-fuse when building for Linux, and --without-fuse

@@ -39,9 +39,8 @@
 
 #define FUSE_USE_VERSION 26
 
-#include <sys/types.h> /* sometimes required before <attr/xattr.h> */
-
-#include <attr/xattr.h>
+#include <sys/types.h> /* sometimes required before <sys/xattr.h> */
+#include <sys/xattr.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fuse.h>
@@ -69,6 +68,10 @@
 
 #ifndef O_NOFOLLOW
 #  define O_NOFOLLOW 0  /* Security only...  */
+#endif
+
+#ifndef ENOATTR
+#  define ENOATTR ENODATA
 #endif
 
 #define WIMFS_MQUEUE_NAME_LEN 32

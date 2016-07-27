@@ -39,7 +39,7 @@ Development files for wimlib
 Summary:  Library to extract, create, modify, and mount WIM files
 Group:  System Environment/Libraries
 Requires:  fuse
-BuildRequires: libxml2-devel, fuse, fuse-devel, openssl-devel, libattr-devel
+BuildRequires: libxml2-devel, fuse, fuse-devel, openssl-devel, attr
 BuildRequires: ntfs-3g-devel, ntfsprogs, libtool, pkgconfig
 %description -n libwim15
 wimlib is a C library for extracting, creating, modifying, and mounting WIM
