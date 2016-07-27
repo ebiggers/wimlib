@@ -878,7 +878,16 @@ ntfs_3g_build_dentry_tree(struct wim_dentry **root_ret,
 	volume->vol = vol;
 	volume->refcnt = 1;
 
-	ntfs_open_secure(vol);
+	/* Currently, libntfs-3g users that need to read security descriptors
+	 * are required to call ntfs_open_secure() to open the volume's security
+	 * descriptor index, "$Secure".  This is only required to work on NTFS
+	 * v3.0+, as older versions did not have a security descriptor index. */
+	if (ntfs_open_secure(vol) && vol->major_ver >= 3) {
+		ERROR_WITH_ERRNO("Unable to open security descriptor index of "
+				 "NTFS volume \"%s\"", device);
+		ret = WIMLIB_ERR_NTFS_3G;
+		goto out_put_ntfs_volume;
+	}
 
 	/* We don't want to capture the special NTFS files such as $Bitmap.  Not
 	 * to be confused with "hidden" or "system" files which are real files
@@ -890,7 +899,7 @@ ntfs_3g_build_dentry_tree(struct wim_dentry **root_ret,
 	path = MALLOC(32768);
 	if (!path) {
 		ret = WIMLIB_ERR_NOMEM;
-		goto out_put_ntfs_volume;
+		goto out_close_secure;
 	}
 
 	path[0] = '/';
@@ -899,10 +908,17 @@ ntfs_3g_build_dentry_tree(struct wim_dentry **root_ret,
 						  FILE_NAME_POSIX, volume,
 						  params);
 	FREE(path);
+out_close_secure:
+	/* Undo the effects of ntfs_open_secure().  This is not yet done
+	 * automatically by ntfs_umount().  But NULL out the inode to
+	 * potentially be robust against future versions doing so. */
+	if (vol->secure_ni) {
+		ntfs_index_ctx_put(vol->secure_xsii);
+		ntfs_index_ctx_put(vol->secure_xsdh);
+		ntfs_inode_close(vol->secure_ni);
+		vol->secure_ni = NULL;
+	}
 out_put_ntfs_volume:
-	ntfs_index_ctx_put(vol->secure_xsii);
-	ntfs_index_ctx_put(vol->secure_xsdh);
-	ntfs_inode_close(vol->secure_ni);
 	put_ntfs_volume(volume);
 	return ret;
 }
