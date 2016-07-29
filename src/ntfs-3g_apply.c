@@ -914,6 +914,16 @@ ntfs_3g_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	}
 	ctx->vol = vol;
 
+	/* Opening $Secure is required to set security descriptors in NTFS v3.0
+	 * format, where security descriptors are stored in a per-volume index
+	 * rather than being fully specified for each file.  */
+	if (ntfs_open_secure(vol) && vol->major_ver >= 3) {
+		ERROR_WITH_ERRNO("Unable to open security descriptor index of "
+				 "NTFS volume \"%s\"", ctx->common.target);
+		ret = WIMLIB_ERR_NTFS_3G;
+		goto out_unmount;
+	}
+
 	/* Create all inodes and aliases, including short names, and set
 	 * metadata (attributes, security descriptors, and timestamps).  */
 
@@ -948,6 +958,17 @@ ntfs_3g_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	 * ntfs_set_ntfs_dos_name() does, but we handle this elsewhere).  */
 
 out_unmount:
+	if (vol->secure_ni) {
+		ntfs_index_ctx_put(vol->secure_xsii);
+		ntfs_index_ctx_put(vol->secure_xsdh);
+		if (ntfs_inode_close(vol->secure_ni) && !ret) {
+			ERROR_WITH_ERRNO("Failed to close security descriptor "
+					 "index of NTFS volume \"%s\"",
+					 ctx->common.target);
+			ret = WIMLIB_ERR_NTFS_3G;
+		}
+		vol->secure_ni = NULL;
+	}
 	if (ntfs_umount(ctx->vol, FALSE) && !ret) {
 		ERROR_WITH_ERRNO("Failed to unmount \"%s\" with NTFS-3G",
 				 ctx->common.target);

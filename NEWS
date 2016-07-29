@@ -19,6 +19,9 @@ Version 1.10.0-BETA:
 
 	Reduced memory usage slightly.
 
+	When a WIM image is applied in NTFS-3G mode, security descriptors are
+	now created in NTFS v3.0 format when supported by the volume.
+
 	Workarounds for bugs in libntfs-3g version 2013.1.13 and earlier have
 	been removed.  Users are advised to upgrade to a later version of
 	libntfs-3g.
