@@ -308,8 +308,28 @@ win32_get_supported_features(const wchar_t *target,
 
 	supported_features->timestamps = 1;
 
-	/* Note: Windows does not support case sensitive filenames!  At least
-	 * not without changing the registry and rebooting...  */
+	if (vol_flags & FILE_CASE_SENSITIVE_SEARCH) {
+		/*
+		 * The filesystem supports case-sensitive filenames.  But does
+		 * the operating system as well?  This normally requires the
+		 * registry setting ObCaseInsensitive=0.  We can test it
+		 * indirectly by attempting to open the "\SystemRoot" symbolic
+		 * link using a name with the wrong case.  If we get
+		 * STATUS_OBJECT_NAME_NOT_FOUND instead of STATUS_ACCESS_DENIED,
+		 * then case-sensitive names must be enabled.
+		 */
+		UNICODE_STRING path;
+		OBJECT_ATTRIBUTES attr;
+		HANDLE h;
+		NTSTATUS status;
+
+		RtlInitUnicodeString(&path, L"\\systemroot");
+		InitializeObjectAttributes(&attr, &path, 0, NULL, NULL);
+
+		status = NtOpenSymbolicLinkObject(&h, 0, &attr);
+		if (status == STATUS_OBJECT_NAME_NOT_FOUND)
+			supported_features->case_sensitive_filenames = 1;
+	}
 
 	return 0;
 }

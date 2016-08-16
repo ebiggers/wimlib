@@ -174,8 +174,9 @@ information, at least to the extent supported by the destination filesystem.
 Pedantic note: since Windows is not fully compatible with its own filesystem
 (NTFS), on Windows wimlib cannot archive certain files that may exist on a valid
 NTFS filesystem but are inaccessible to the Windows API, for example two files
-with names differing only in case in the same directory, or a file whose name
-contains certain characters considered invalid by Windows.  If you run into
+with names differing only in case in the same directory (unless
+ObCaseInsensitive has been set to 0 in the Windows registry), or a file whose
+name contains certain characters considered invalid by Windows.  If you run into
 problems archiving such files consider using the \fBNTFS VOLUME CAPTURE
 (UNIX)\fR mode from Linux.
 .SH OPTIONS

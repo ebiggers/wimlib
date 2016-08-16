@@ -337,15 +337,20 @@ byte except '\\0' and \'/', so on a POSIX-compliant system this option will only
 have an effect in the unlikely case that the WIM image for some reason has a
 filename containing one of these characters.
 .IP ""
-On Windows, filenames are case-insensitive, cannot include the characters '/',
-\'\\0', '\\', ':', '*', '?', '"', '<', '>', or '|', and cannot end with a space
-or period.  Ordinarily, files in WIM images should meet these conditions as
-well. However, it is not guaranteed, and in particular a WIM image captured with
-\fBwimlib-imagex\fR on a POSIX-compliant system could contain such files.  By
-default, invalid names will be ignored, and if there are multiple names
+On Windows, filenames are case-insensitive(*), cannot include the characters
+'/', \'\\0', '\\', ':', '*', '?', '"', '<', '>', or '|', and cannot end with a
+space or period.  Ordinarily, files in WIM images should meet these conditions
+as well. However, it is not guaranteed, and in particular a WIM image captured
+with \fBwimlib-imagex\fR on a POSIX-compliant system could contain such files.
+By default, invalid names will be ignored, and if there are multiple names
 differing only in case, one will be chosen to extract arbitrarily; however, with
 \fB--include-invalid-names\fR, all names will be sanitized and extracted in some
 form.
+.IP ""
+(*) Unless the ObCaseInsensitive setting has been set to 0 in the Windows
+registry, in which case certain software, including the Windows version of
+\fBwimlib-imagex\fR, will honor case-sensitive filenames on NTFS and other
+compatible filesystems.
 .TP
 \fB--wimboot\fR
 Windows only: Instead of extracting the files themselves, extract "pointer

@@ -95,6 +95,13 @@ NtSetSecurityObject(IN HANDLE Handle,
                     IN SECURITY_INFORMATION SecurityInformation,
                     IN PSECURITY_DESCRIPTOR SecurityDescriptor);
 
+NTSTATUS
+NTAPI
+NtOpenSymbolicLinkObject(PHANDLE LinkHandle,
+			 ACCESS_MASK DesiredAccess,
+			 POBJECT_ATTRIBUTES ObjectAttributes);
+
+
 /* Dynamically loaded ntdll functions */
 
 extern NTSTATUS (WINAPI *func_RtlDosPathNameToNtPathName_U_WithStatus)

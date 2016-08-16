@@ -26,6 +26,10 @@ Version 1.10.0-BETA:
 	been removed.  Users are advised to upgrade to a later version of
 	libntfs-3g.
 
+	On Windows, wimlib now supports case-sensitive filename extraction when
+	supported by the underlying operating system and filesystem (operating
+	system support requires a registry setting).
+
 Version 1.9.2:
 	On UNIX, wimlib can now overwrite readonly files when extracting.
 
