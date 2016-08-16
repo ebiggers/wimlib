@@ -2976,9 +2976,9 @@ imagex_export(int argc, tchar **argv, int cmd)
 		wim_is_new = false;
 		/* Destination file exists. */
 
-		if (!S_ISREG(stbuf.st_mode)) {
-			imagex_error(T("\"%"TS"\" is not a regular file"),
-				     dest_wimfile);
+		if (!S_ISREG(stbuf.st_mode) && !S_ISBLK(stbuf.st_mode)) {
+			imagex_error(T("\"%"TS"\" is not a regular file "
+				       "or block device"), dest_wimfile);
 			ret = -1;
 			goto out_free_src_wim;
 		}
