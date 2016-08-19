@@ -193,16 +193,16 @@ get_cell_pointer(const struct regf *regf, le32 offset, size_t wanted_size)
 	u32 total = le32_to_cpu(regf->total_hbin_size);
 	u32 offs = le32_to_cpu(offset);
 	const struct cell *cell;
-	s32 actual_size;
+	u32 actual_size;
 
 	if ((offs > total) || (offs & 7) || (wanted_size > total - offs))
 		return NULL;
 
 	cell = (const struct cell *)&regf->hbin_area[offs];
-	actual_size = le32_to_cpu(cell->size);
-	if (actual_size >= 0) /* Cell not in use?  */
+	actual_size = -le32_to_cpu(cell->size);
+	if (actual_size > INT32_MAX) /* Cell unused, or size was INT32_MIN?  */
 		return NULL;
-	if (wanted_size > -actual_size) /* Cell too small?  */
+	if (wanted_size > actual_size) /* Cell too small?  */
 		return NULL;
 	return cell;
 }
