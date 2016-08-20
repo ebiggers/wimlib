@@ -1,4 +1,4 @@
-Version 1.10.0-BETA:
+Version 1.10.0:
 	The LZX compression ratio has been slightly improved.  The default mode,
 	LZX level 50, is now almost as good as the old LZX level 100, while
 	being nearly the same speed as before.
