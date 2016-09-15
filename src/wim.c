@@ -25,9 +25,6 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#ifndef __WIN32__
-#  include <langinfo.h>
-#endif
 #include <pthread.h>
 #include <stdlib.h>
 #include <unistd.h>
