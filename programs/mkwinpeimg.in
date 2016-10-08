@@ -437,7 +437,9 @@ modify_boot_wim() {
 	exec 3>&-
 
 	stat_busy "Rebuilding WIM with changes made"
-	wimlib-imagex update "$boot_wim" --rebuild \
+	# Use case-insensitive mode; some Windows PE images contain a "windows"
+	# directory instead of a "Windows" directory...
+	WIMLIB_IMAGEX_IGNORE_CASE=1 wimlib-imagex update "$boot_wim" --rebuild \
 		< "$tmp_dir/__mkwinpeimg.update.cmds" > /dev/null || stat_fail
 	stat_done
 }
