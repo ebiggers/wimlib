@@ -220,9 +220,8 @@ src/sha1-ssse3.lo:src/sha1-ssse3.asm
 	-DINTEL_SHA1_UPDATE_FUNCNAME=$(NASM_SYMBOL_PREFIX)sha1_transform_blocks_ssse3	    \
 	-DINTEL_SHA1_UPDATE_DEFAULT_DISPATCH=$(NASM_SYMBOL_PREFIX)sha1_transform_blocks_default  \
 	$< -o $@
-
-EXTRA_DIST += build-aux/nasm_lt.sh
 endif
+EXTRA_DIST += build-aux/nasm_lt.sh
 
 ##############################################################################
 #				Programs				     #
