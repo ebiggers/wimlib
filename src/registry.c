@@ -353,7 +353,7 @@ lookup_subkey_cb(const struct nk *sub_nk, void *_ctx)
 
 	if (names_equal(ctx->key_name, ctx->key_name_nchars,
 			sub_nk->name, le16_to_cpu(sub_nk->name_size),
-			(sub_nk->flags & NK_COMPRESSED_NAME)))
+			(sub_nk->flags & NK_COMPRESSED_NAME) != 0))
 	{
 		ctx->result = sub_nk;
 		return HIVE_ITERATION_STOPPED;
@@ -489,7 +489,7 @@ lookup_value(const struct regf *regf, const tchar *key_name,
 
 		if (names_equal(value_uname, value_uname_nchars,
 				vk->name, name_size,
-				 (vk->flags & VK_COMPRESSED_NAME)))
+				(vk->flags & VK_COMPRESSED_NAME) != 0))
 		{
 			*vk_ret = vk;
 			status = HIVE_OK;
