@@ -122,9 +122,9 @@ read_integrity_table(WIMStruct *wim, u64 num_checked_bytes,
 		return ret;
 	table = buf;
 
-	table->size        = le32_to_cpu(table->size);
-	table->num_entries = le32_to_cpu(table->num_entries);
-	table->chunk_size  = le32_to_cpu(table->chunk_size);
+	table->size        = le32_to_cpu((_force_attr le32)table->size);
+	table->num_entries = le32_to_cpu((_force_attr le32)table->num_entries);
+	table->chunk_size  = le32_to_cpu((_force_attr le32)table->chunk_size);
 
 	if (table->size != wim->hdr.integrity_table_reshdr.uncompressed_size ||
 	    table->size != (u64)table->num_entries * SHA1_HASH_SIZE + 12 ||
@@ -313,9 +313,9 @@ write_integrity_table(WIMStruct *wim,
 
 	new_table_size = new_table->size;
 
-	new_table->size        = cpu_to_le32(new_table->size);
-	new_table->num_entries = cpu_to_le32(new_table->num_entries);
-	new_table->chunk_size  = cpu_to_le32(new_table->chunk_size);
+	new_table->size        = (_force_attr u32)cpu_to_le32(new_table->size);
+	new_table->num_entries = (_force_attr u32)cpu_to_le32(new_table->num_entries);
+	new_table->chunk_size  = (_force_attr u32)cpu_to_le32(new_table->chunk_size);
 
 	ret = write_wim_resource_from_buffer(new_table,
 					     new_table_size,
