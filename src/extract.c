@@ -1754,13 +1754,11 @@ extract_single_image(WIMStruct *wim, int image,
 }
 
 static const tchar * const filename_forbidden_chars =
-T(
 #ifdef __WIN32__
-"<>:\"/\\|?*"
+T("<>:\"/\\|?*");
 #else
-"/"
+T("/");
 #endif
-);
 
 /* This function checks if it is okay to use a WIM image's name as a directory
  * name.  */
