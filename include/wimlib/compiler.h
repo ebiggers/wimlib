@@ -185,7 +185,9 @@
 #endif
 
 /* STATIC_ASSERT() - verify the truth of an expression at compilation time.  */
-#if __STDC_VERSION__ >= 201112L
+#ifdef __CHECKER__
+#  define STATIC_ASSERT(expr)
+#elif __STDC_VERSION__ >= 201112L
 #  define STATIC_ASSERT(expr)	_Static_assert((expr), "")
 #else
 #  define STATIC_ASSERT(expr)	((void)sizeof(char[1 - 2 * !(expr)]))
