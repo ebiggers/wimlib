@@ -669,9 +669,8 @@ is_name_valid_in_win32_namespace(const utf16lechar *name)
 		if (!is_valid_windows_filename_char(*p))
 			return false;
 
-	/* There can't be a trailing dot or space. */
-	if (p[-1] == cpu_to_le16('.') || p[-1] == cpu_to_le16(' '))
-		return false;
+	/* Note: a trailing dot or space is permitted, even though on Windows
+	 * such a file can only be accessed using a WinNT-style path. */
 
 	/* The name can't be one of the reserved names (case insensitively). */
 	for (size_t i = 0; i < ARRAY_LEN(forbidden_names); i++)
