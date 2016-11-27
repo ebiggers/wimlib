@@ -440,14 +440,14 @@ typedef struct WIMStruct WIMStruct;
 #define WIMLIB_WIMSTRUCT_DECLARED
 #endif
 
-#ifdef __WIN32__
+#ifdef _WIN32
 typedef wchar_t wimlib_tchar;
 #else
 /** See @ref sec_encodings */
 typedef char wimlib_tchar;
 #endif
 
-#ifdef __WIN32__
+#ifdef _WIN32
 /** Path separator for WIM paths passed back to progress callbacks.
  * This is forward slash on UNIX and backslash on Windows.  */
 #  define WIMLIB_WIM_PATH_SEPARATOR '\\'
