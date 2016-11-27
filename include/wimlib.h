@@ -389,7 +389,7 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <stdbool.h>
-#include <inttypes.h>
+#include <stdint.h>
 #include <time.h>
 
 /** @addtogroup G_general
