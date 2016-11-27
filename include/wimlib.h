@@ -31,13 +31,16 @@
  *
  * Download the Windows binary distribution with the appropriate architecture
  * (i686 or x86_64 --- also called "x86" and "amd64" respectively) from
- * https://wimlib.net.  Link your program with the libwim-15.dll file.  Make
- * sure to also download the source code so you can get wimlib.h, as it is not
- * included in the binary distribution.  If you need to access the DLL from
- * other programming languages, note that the calling convention is "cdecl".
+ * https://wimlib.net.  Link your program with libwim-15.dll.  If needed by your
+ * programming language or development environment, the import library
+ * libwim.lib and C/C++ header wimlib.h can be found in the directory "devel" in
+ * the ZIP file.
  *
- * Note that wimlib is developed using MinGW-w64, and there may be a little work
- * required if you plan to use the header and DLL with Visual Studio.
+ * If you need to access the DLL from non-C/C++ programming languages, note that
+ * the calling convention is "cdecl".
+ *
+ * If you want to build wimlib from source on Windows, see README.WINDOWS.  This
+ * is only needed if you are making modifications to wimlib.
  *
  * @section sec_examples Examples
  *

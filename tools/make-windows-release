@@ -126,6 +126,12 @@ done
 
 gen_pdf_from_man_page wimlib-imagex
 
+# Install development files
+
+mkdir $DESTDIR/devel
+cp .libs/libwim.dll.a $DESTDIR/devel/libwim.lib
+cp include/wimlib.h $DESTDIR/devel/
+
 # Generate ZIP file
 
 rm -f $ZIPFILE
