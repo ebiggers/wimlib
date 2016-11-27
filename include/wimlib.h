@@ -408,6 +408,29 @@
 extern "C" {
 #endif
 
+/*
+ * To represent file timestamps, wimlib's API uses the POSIX 'struct timespec'.
+ * This was probably a mistake because it doesn't play well with Visual Studio.
+ * In old VS versions it isn't present at all; in newer VS versions it is
+ * supposedly present, but I wouldn't trust it to be the same size as the one
+ * MinGW uses.  The solution is to define a compatible structure ourselves when
+ * this header is included on Windows and the compiler is not MinGW.
+ */
+#if defined(_WIN32) && !defined(__GNUC__)
+typedef struct {
+	/* Seconds since start of UNIX epoch (January 1, 1970) */
+#ifdef _WIN64
+	int64_t tv_sec;
+#else
+	int32_t tv_sec;
+#endif
+	/* Nanoseconds (0-999999999) */
+	int32_t tv_nsec;
+} wimlib_timespec;
+#else
+#  define wimlib_timespec  struct timespec  /* standard definition */
+#endif
+
 /**
  * Opaque structure that represents a WIM, possibly backed by an on-disk file.
  * See @ref sec_basic_wim_handling_concepts for more information.
@@ -1559,13 +1582,13 @@ struct wimlib_dir_entry {
 	uint64_t hard_link_group_id;
 
 	/** Time this file was created.  */
-	struct timespec creation_time;
+	wimlib_timespec creation_time;
 
 	/** Time this file was last written to.  */
-	struct timespec last_write_time;
+	wimlib_timespec last_write_time;
 
 	/** Time this file was last accessed.  */
-	struct timespec last_access_time;
+	wimlib_timespec last_access_time;
 
 	/** The UNIX user ID of this file.  This is a wimlib extension.
 	 *

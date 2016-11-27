@@ -121,9 +121,19 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry, struct wim_dentry *dentry,
 	wdentry->num_links = inode->i_nlink;
 	wdentry->attributes = inode->i_attributes;
 	wdentry->hard_link_group_id = inode->i_ino;
+
+	/* For Windows builds, to maintain ABI compatibility with previous
+	 * versions of the DLLs, double-check that we're using the expected size
+	 * for 'struct timespec'. */
+#ifdef _WIN64
+	STATIC_ASSERT(sizeof(struct timespec) == 16);
+#elif defined(_WIN32)
+	STATIC_ASSERT(sizeof(struct timespec) == 8);
+#endif
 	wdentry->creation_time = wim_timestamp_to_timespec(inode->i_creation_time);
 	wdentry->last_write_time = wim_timestamp_to_timespec(inode->i_last_write_time);
 	wdentry->last_access_time = wim_timestamp_to_timespec(inode->i_last_access_time);
+
 	if (inode_get_unix_data(inode, &unix_data)) {
 		wdentry->unix_uid = unix_data.uid;
 		wdentry->unix_gid = unix_data.gid;
