@@ -388,7 +388,13 @@
 
 #include <stdio.h>
 #include <stddef.h>
-#include <stdbool.h>
+#ifndef __cplusplus
+#  if defined(_MSC_VER) && _MSC_VER < 1800 /* VS pre-2013? */
+     typedef unsigned char bool;
+#  else
+#    include <stdbool.h>
+#  endif
+#endif
 #include <stdint.h>
 #include <time.h>
 
