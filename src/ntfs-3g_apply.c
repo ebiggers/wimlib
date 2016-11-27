@@ -167,7 +167,7 @@ ntfs_3g_restore_dos_name(ntfs_inode *ni, ntfs_inode *dir_ni,
 		ret = -1;
 	}
 	utf16le_put_tstr(dos_name);
-	if (ret) {
+	if (unlikely(ret)) {
 		int err = errno;
 		ERROR_WITH_ERRNO("Failed to set DOS name of \"%s\" in NTFS "
 				 "volume", dentry_full_path(dentry));
@@ -178,6 +178,19 @@ ntfs_3g_restore_dos_name(ntfs_inode *ni, ntfs_inode *dir_ni,
 			      "unpaired surrogate characters.  This bug "
 			      "was fixed in the development version of "
 			      "NTFS-3G in June 2016.");
+		}
+		if (err == EINVAL) {
+			utf16lechar c =
+				dentry->d_name[dentry->d_name_nbytes / 2 - 1];
+			if (c == cpu_to_le16('.') || c == cpu_to_le16(' ')) {
+				ERROR("This error was probably caused by a "
+				      "known bug in libntfs-3g where it is "
+				      "unable to set DOS names on files whose "
+				      "long names end with a dot or space "
+				      "character.  See "
+				      "https://wimlib.net/forums/viewtopic.php?f=1&t=294 "
+				      "for more information.");
+			}
 		}
 		ret = WIMLIB_ERR_SET_SHORT_NAME;
 		goto out_close;
