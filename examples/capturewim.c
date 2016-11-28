@@ -3,7 +3,7 @@
  *
  * The following copying information applies to this specific source code file:
  *
- * Written in 2014 by Eric Biggers <ebiggers3@gmail.com>
+ * Written in 2014-2016 by Eric Biggers <ebiggers3@gmail.com>
  *
  * To the extent possible under law, the author(s) have dedicated all copyright
  * and related and neighboring rights to this software to the public domain
@@ -20,6 +20,21 @@
 
 #include <wimlib.h>
 #include <stdio.h>
+
+/*
+ * Windows compatibility defines for string encoding.  Applications using wimlib
+ * that need to run on both UNIX and Windows will need to do something similar
+ * to this, whereas applications that only need to run on one or the other can
+ * just use their platform's convention directly.
+ */
+#ifdef _WIN32
+#  define main		wmain
+   typedef wchar_t	tchar;
+#  define TS		"ls"
+#else
+   typedef char		tchar;
+#  define TS		"s"
+#endif
 
 #define TO_PERCENT(numerator, denominator) \
 	((float)(((denominator) == 0) ? 0 : ((numerator) * 100 / (float)(denominator))))
@@ -40,12 +55,12 @@ write_progress(enum wimlib_progress_msg msg,
 	return WIMLIB_PROGRESS_STATUS_CONTINUE;
 }
 
-int main(int argc, char **argv)
+int main(int argc, tchar **argv)
 {
 	int ret;
 	WIMStruct *wim = NULL;
-	const char *srcdir;
-	const char *wimpath;
+	const tchar *srcdir;
+	const tchar *wimpath;
 
 	/* Check for the correct number of arguments.  */
 	if (argc != 3) {
@@ -88,8 +103,8 @@ out:
 
 	/* Check for error status.  */
 	if (ret != 0) {
-		fprintf(stderr, "wimlib error %d: %s\n",
-			ret, wimlib_get_error_string(ret));
+		fprintf(stderr, "wimlib error %d: %" TS"\n",
+			ret, wimlib_get_error_string((enum wimlib_error_code)ret));
 	}
 
 	/* Free global memory (optional).  */

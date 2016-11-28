@@ -4,7 +4,7 @@
  *
  * The following copying information applies to this specific source code file:
  *
- * Written in 2014 by Eric Biggers <ebiggers3@gmail.com>
+ * Written in 2014-2016 by Eric Biggers <ebiggers3@gmail.com>
  *
  * To the extent possible under law, the author(s) have dedicated all copyright
  * and related and neighboring rights to this software to the public domain
@@ -22,13 +22,29 @@
 #include <wimlib.h>
 #include <string.h>
 
-int main(int argc, char **argv)
+/*
+ * Windows compatibility defines for string encoding.  Applications using wimlib
+ * that need to run on both UNIX and Windows will need to do something similar
+ * to this, whereas applications that only need to run on one or the other can
+ * just use their platform's convention directly.
+ */
+#ifdef _WIN32
+#  define main		wmain
+   typedef wchar_t	tchar;
+#  define TS		"ls"
+#else
+   typedef char		tchar;
+#  define TS		"s"
+#endif
+
+int main(int argc, tchar **argv)
 {
 	int ret;
-	char *wimfile;
-	char *wim_target_path;
-	char *fs_source_path;
+	tchar *wimfile;
+	tchar *wim_target_path;
+	tchar *fs_source_path;
 	WIMStruct *wim = NULL;
+	struct wimlib_update_command cmds[1];
 
 	/* Check for the correct number of arguments.  */
 	if (argc != 4) {
@@ -52,8 +68,6 @@ int main(int argc, char **argv)
 	 * wimlib_add_tree() is actually sufficient for this case, but for the
 	 * sake of demonstration we will use the more general function
 	 * wimlib_update_image().  */
-
-	struct wimlib_update_command cmds[1];
 
 	memset(cmds, 0, sizeof(cmds));
 
@@ -99,8 +113,8 @@ out:
 
 	/* Check for error status.  */
 	if (ret != 0) {
-		fprintf(stderr, "wimlib error %d: %s\n",
-			ret, wimlib_get_error_string(ret));
+		fprintf(stderr, "wimlib error %d: %" TS"\n",
+			ret, wimlib_get_error_string((enum wimlib_error_code)ret));
 	}
 
 	/* Free global memory (optional).  */
