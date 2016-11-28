@@ -1,3 +1,18 @@
+Version 1.11.0-BETA1:
+	Updated 'mkwinpeimg' to work correctly on images that have a "windows"
+	(lower case) directory rather than a "Windows" (upper case) directory.
+
+	Fixed configuring with --enable-ssse3-sha1 from release tarball
+	(the file nasm_lt.sh was missing).
+
+	The development files needed to link with wimlib using Visual Studio are
+	now included in the Windows release archives.
+
+	wimlib.h can now be included by Visual Studio without errors.
+
+	The example programs can now be compiled in C++ mode, and they also now
+	work on Windows.
+
 Version 1.10.0:
 	The LZX compression ratio has been slightly improved.  The default mode,
 	LZX level 50, is now almost as good as the old LZX level 100, while
