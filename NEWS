@@ -2,6 +2,9 @@ Version 1.11.0-BETA1:
 	Updated 'mkwinpeimg' to work correctly on images that have a "windows"
 	(lower case) directory rather than a "Windows" (upper case) directory.
 
+	On Windows, improved the way in which files deduplicated with Windows'
+	Data Deduplication feature are captured.
+
 	Fixed configuring with --enable-ssse3-sha1 from release tarball
 	(the file nasm_lt.sh was missing).
 

@@ -1050,6 +1050,21 @@ winnt_load_reparse_data(HANDLE h, struct wim_inode *inode,
 		return WIMLIB_ERR_INVALID_REPARSE_DATA;
 	}
 
+	if (le32_to_cpu(rpbuf.rptag) == WIM_IO_REPARSE_TAG_DEDUP) {
+		/*
+		 * Windows treats Data Deduplication reparse points specially.
+		 * Reads from the unnamed data stream actually return the
+		 * redirected file contents, even with FILE_OPEN_REPARSE_POINT.
+		 * Deduplicated files also cannot be properly restored without
+		 * also restoring the "System Volume Information" directory,
+		 * which wimlib excludes by default.  Therefore, the logical
+		 * behavior for us seems to be to ignore the reparse point and
+		 * treat the file as a normal file.
+		 */
+		inode->i_attributes &= ~FILE_ATTRIBUTE_REPARSE_POINT;
+		return 0;
+	}
+
 	if (params->add_flags & WIMLIB_ADD_FLAG_RPFIX) {
 		ret = winnt_try_rpfix(&rpbuf, &rpbuflen, full_path, params);
 		if (ret == RP_FIXED)

@@ -239,6 +239,7 @@ struct wim_inode_extra {
  */
 #define WIM_IO_REPARSE_TAG_MOUNT_POINT		0xA0000003
 #define WIM_IO_REPARSE_TAG_SYMLINK		0xA000000C
+#define WIM_IO_REPARSE_TAG_DEDUP		0x80000013
 #define WIM_IO_REPARSE_TAG_WOF			0x80000017
 
 /* Flags for the rp_flags field.  Currently the only known flag is NOT_FIXED,

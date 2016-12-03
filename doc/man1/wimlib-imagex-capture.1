@@ -98,8 +98,7 @@ possible, including:
 All data streams of all unencrypted files, including the unnamed data stream as
 well as all named data streams.
 .IP \[bu]
-Reparse points, including symbolic links, junction points, and other reparse
-points.
+Reparse points.  See \fBREPARSE POINTS AND SYMLINKS\fR for details.
 .IP \[bu]
 File and directory creation, access, and modification timestamps, using the
 native NTFS resolution of 100 nanoseconds.
@@ -124,6 +123,9 @@ opaque and hand it off to the appropriate API function).
 The sparse attribute on sparse files will be saved, but the data stored will be
 the full data of the file rather than the "sparse" data.  (The data is, however,
 subject to the WIM format's compression.)
+.IP \[bu]
+Some types of reparse points are transparently dereferenced by Windows but not
+by NTFS-3G.  See \fBREPARSE POINTS AND SYMLINKS\fR.
 .SH DIRECTORY CAPTURE (WINDOWS)
 On Windows, \fBwimlib-imagex capture\fR and \fBwimlib-imagex append\fR
 natively support Windows-specific and NTFS-specific data.  They therefore act
@@ -138,10 +140,8 @@ try to archive as much data and metadata as possible, including:
 .IP \[bu] 4
 All data streams of all files.
 .IP \[bu]
-Reparse points, including symbolic links, junction points, and other reparse
-points, if supported by the source filesystem.  (Note: see \fB--rpfix\fR and
-\fB--norpfix\fR for documentation on exactly how absolute symbolic links and
-junctions are captured.)
+Reparse points, if supported by the source filesystem.  See \fBREPARSE POINTS
+AND SYMLINKS\fR for details.
 .IP \[bu]
 File and directory creation, access, and modification timestamps.  These are
 stored with Windows NT's native timestamp resolution of 100 nanoseconds.
@@ -179,6 +179,29 @@ ObCaseInsensitive has been set to 0 in the Windows registry), or a file whose
 name contains certain characters considered invalid by Windows.  If you run into
 problems archiving such files consider using the \fBNTFS VOLUME CAPTURE
 (UNIX)\fR mode from Linux.
+.SH REPARSE POINTS AND SYMLINKS
+A "symbolic link" (or "symlink") is a special file which "points to" some other
+file or directory.  On Windows, a "reparse point" is a generalization of a
+symlink which allows access to a file or directory to be redirected in a more
+complex way.  Windows uses reparse points to support symlinks, and sometimes
+uses them for various other features as well.  Normally, applications can choose
+whether they want to "dereference" reparse points and symlinks or not.
+.PP
+The default behavior of \fBwimcapture\fR is that reparse points and symlinks are
+\fInot\fR dereferenced, meaning that the reparse points or symlinks themselves
+are stored in the archive rather than the files or data they point to.  There is
+a \fB--dereference\fR option, but it is currently only supported by the UNIX
+version of \fBwimcapture\fR on UNIX filesystems (it's not yet implemented for
+Windows filesystems).
+.PP
+Windows also treats certain types of reparse points specially.  For example,
+Windows applications reading from deduplicated, WIM-backed, or system-compressed
+files always see the dereferenced data, even if they ask not to.  Therefore,
+\fBwimcapture\fR on Windows will store these files dereferenced, not as reparse
+points.  But \fBwimcapture\fR on UNIX in NTFS-3G mode cannot dereference these
+files and will store them as reparse points instead.  This difference can be
+significant in certain situations, e.g. when capturing deduplicated files which,
+to be readable after extraction, require that the chunk store also be present.
 .SH OPTIONS
 .TP 6
 \fB--boot\fR

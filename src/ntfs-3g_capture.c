@@ -65,6 +65,7 @@
 struct ntfs_volume_wrapper {
 	ntfs_volume *vol;
 	size_t refcnt;
+	bool dedup_warned;
 };
 
 /* Description of where data is located in an NTFS volume  */
@@ -229,6 +230,27 @@ read_reparse_header(ntfs_inode *ni, struct wim_inode *inode)
 	inode->i_reparse_tag = le32_to_cpu(hdr.rptag);
 	inode->i_rp_reserved = le16_to_cpu(hdr.rpreserved);
 	return 0;
+}
+
+
+static void
+warn_special_reparse_points(const struct wim_inode *inode,
+			    const struct scan_params *params,
+			    struct ntfs_volume_wrapper *volume)
+{
+	if (inode->i_reparse_tag == WIM_IO_REPARSE_TAG_DEDUP &&
+	    (params->add_flags & WIMLIB_ADD_FLAG_WINCONFIG) &&
+	    !volume->dedup_warned)
+	{
+		WARNING(
+	  "Filesystem includes files deduplicated with Windows'\n"
+"          Data Deduplication feature, which to properly restore\n"
+"          would require that the chunk store in \"System Volume Information\"\n"
+"          be included in the WIM image. By default \"System Volume Information\"\n"
+"          is excluded, so you may want to use a custom capture configuration\n"
+"          file which includes it.");
+		volume->dedup_warned = true;
+	}
 }
 
 static int
@@ -793,6 +815,8 @@ ntfs_3g_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 						volume, AT_REPARSE_POINT);
 		if (ret)
 			goto out;
+
+		warn_special_reparse_points(inode, params, volume);
 	}
 
 	/* Load the object ID.  */
@@ -863,7 +887,7 @@ ntfs_3g_build_dentry_tree(struct wim_dentry **root_ret,
 	char *path;
 	int ret;
 
-	volume = MALLOC(sizeof(struct ntfs_volume_wrapper));
+	volume = CALLOC(1, sizeof(struct ntfs_volume_wrapper));
 	if (!volume)
 		return WIMLIB_ERR_NOMEM;
 
