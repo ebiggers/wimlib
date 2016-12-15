@@ -10,7 +10,7 @@
 #include "wimlib/types.h"
 
 struct blob_descriptor;
-struct read_blob_callbacks;
+struct consume_chunk_callback;
 struct windows_file;
 
 extern struct windows_file *
@@ -25,7 +25,7 @@ cmp_windows_files(const struct windows_file *file1,
 
 extern int
 read_windows_file_prefix(const struct blob_descriptor *blob, u64 size,
-			 const struct read_blob_callbacks *cbs);
+			 const struct consume_chunk_callback *cb);
 
 extern int
 win32_global_init(int init_flags);

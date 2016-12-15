@@ -315,7 +315,7 @@ windows_file_to_string(const struct windows_file *file, u8 *buf, size_t bufsize)
 
 static int
 read_winnt_stream_prefix(const struct windows_file *file,
-			 u64 size, const struct read_blob_callbacks *cbs)
+			 u64 size, const struct consume_chunk_callback *cb)
 {
 	IO_STATUS_BLOCK iosb;
 	UNICODE_STRING name = {
@@ -401,7 +401,7 @@ read_winnt_stream_prefix(const struct windows_file *file,
 		bytes_read = iosb.Information;
 
 		bytes_remaining -= bytes_read;
-		ret = call_consume_chunk(buf, bytes_read, cbs);
+		ret = consume_chunk(cb, buf, bytes_read);
 		if (ret)
 			break;
 	}
@@ -410,7 +410,7 @@ read_winnt_stream_prefix(const struct windows_file *file,
 }
 
 struct win32_encrypted_read_ctx {
-	const struct read_blob_callbacks *cbs;
+	const struct consume_chunk_callback *cb;
 	int wimlib_err_code;
 	u64 bytes_remaining;
 };
@@ -425,7 +425,7 @@ win32_encrypted_export_cb(unsigned char *data, void *_ctx, unsigned long len)
 	if (bytes_to_consume == 0)
 		return ERROR_SUCCESS;
 
-	ret = call_consume_chunk(data, bytes_to_consume, ctx->cbs);
+	ret = consume_chunk(ctx->cb, data, bytes_to_consume);
 	if (ret) {
 		ctx->wimlib_err_code = ret;
 		/* It doesn't matter what error code is returned here, as long
@@ -438,7 +438,7 @@ win32_encrypted_export_cb(unsigned char *data, void *_ctx, unsigned long len)
 
 static int
 read_win32_encrypted_file_prefix(const wchar_t *path, bool is_dir, u64 size,
-				 const struct read_blob_callbacks *cbs)
+				 const struct consume_chunk_callback *cb)
 {
 	struct win32_encrypted_read_ctx export_ctx;
 	DWORD err;
@@ -449,7 +449,7 @@ read_win32_encrypted_file_prefix(const wchar_t *path, bool is_dir, u64 size,
 	if (is_dir)
 		flags |= CREATE_FOR_DIR;
 
-	export_ctx.cbs = cbs;
+	export_ctx.cb = cb;
 	export_ctx.wimlib_err_code = 0;
 	export_ctx.bytes_remaining = size;
 
@@ -487,16 +487,16 @@ read_win32_encrypted_file_prefix(const wchar_t *path, bool is_dir, u64 size,
  * described by @blob.  */
 int
 read_windows_file_prefix(const struct blob_descriptor *blob, u64 size,
-			 const struct read_blob_callbacks *cbs)
+			 const struct consume_chunk_callback *cb)
 {
 	const struct windows_file *file = blob->windows_file;
 
 	if (unlikely(file->is_encrypted)) {
 		bool is_dir = (blob->file_inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY);
-		return read_win32_encrypted_file_prefix(file->path, is_dir, size, cbs);
+		return read_win32_encrypted_file_prefix(file->path, is_dir, size, cb);
 	}
 
-	return read_winnt_stream_prefix(file, size, cbs);
+	return read_winnt_stream_prefix(file, size, cb);
 }
 
 /*

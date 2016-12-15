@@ -356,12 +356,9 @@ retry:
 }
 
 static int
-begin_extract_blob_wrapper(struct blob_descriptor *blob, void *_ctx)
+begin_extract_blob(struct blob_descriptor *blob, void *_ctx)
 {
 	struct apply_ctx *ctx = _ctx;
-
-	ctx->cur_blob = blob;
-	ctx->cur_blob_offset = 0;
 
 	if (unlikely(blob->out_refcnt > MAX_OPEN_FILES))
 		return create_temporary_file(&ctx->tmpfile_fd, &ctx->tmpfile_name);
@@ -370,29 +367,29 @@ begin_extract_blob_wrapper(struct blob_descriptor *blob, void *_ctx)
 }
 
 static int
-extract_chunk_wrapper(const void *chunk, size_t size, void *_ctx)
+extract_chunk(const struct blob_descriptor *blob, u64 offset,
+	      const void *chunk, size_t size, void *_ctx)
 {
 	struct apply_ctx *ctx = _ctx;
 	union wimlib_progress_info *progress = &ctx->progress;
+	bool last = (offset + size == blob->size);
 	int ret;
-
-	ctx->cur_blob_offset += size;
 
 	if (likely(ctx->supported_features.hard_links)) {
 		progress->extract.completed_bytes +=
-			(u64)size * ctx->cur_blob->out_refcnt;
-		if (ctx->cur_blob_offset == ctx->cur_blob->size)
-			progress->extract.completed_streams += ctx->cur_blob->out_refcnt;
+			(u64)size * blob->out_refcnt;
+		if (last)
+			progress->extract.completed_streams += blob->out_refcnt;
 	} else {
 		const struct blob_extraction_target *targets =
-			blob_extraction_targets(ctx->cur_blob);
-		for (u32 i = 0; i < ctx->cur_blob->out_refcnt; i++) {
+			blob_extraction_targets(blob);
+		for (u32 i = 0; i < blob->out_refcnt; i++) {
 			const struct wim_inode *inode = targets[i].inode;
 			const struct wim_dentry *dentry;
 
 			inode_for_each_extraction_alias(dentry, inode) {
 				progress->extract.completed_bytes += size;
-				if (ctx->cur_blob_offset == ctx->cur_blob->size)
+				if (last)
 					progress->extract.completed_streams++;
 			}
 		}
@@ -419,7 +416,7 @@ extract_chunk_wrapper(const void *chunk, size_t size, void *_ctx)
 		return ret;
 	}
 
-	return call_consume_chunk(chunk, size, ctx->saved_cbs);
+	return call_continue_blob(blob, offset, chunk, size, ctx->saved_cbs);
 }
 
 /* Copy the blob's data from the temporary file to each of its targets.
@@ -450,7 +447,7 @@ extract_from_tmpfile(const tchar *tmpfile_name,
 }
 
 static int
-end_extract_blob_wrapper(struct blob_descriptor *blob, int status, void *_ctx)
+end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
 {
 	struct apply_ctx *ctx = _ctx;
 
@@ -489,9 +486,9 @@ int
 extract_blob_list(struct apply_ctx *ctx, const struct read_blob_callbacks *cbs)
 {
 	struct read_blob_callbacks wrapper_cbs = {
-		.begin_blob	= begin_extract_blob_wrapper,
-		.consume_chunk	= extract_chunk_wrapper,
-		.end_blob	= end_extract_blob_wrapper,
+		.begin_blob	= begin_extract_blob,
+		.continue_blob	= extract_chunk,
+		.end_blob	= end_extract_blob,
 		.ctx		= ctx,
 	};
 	ctx->saved_cbs = cbs;

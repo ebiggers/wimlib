@@ -611,7 +611,8 @@ unix_begin_extract_blob(struct blob_descriptor *blob, void *_ctx)
 
 /* Called when the next chunk of a blob has been read for extraction  */
 static int
-unix_extract_chunk(const void *chunk, size_t size, void *_ctx)
+unix_extract_chunk(const struct blob_descriptor *blob, u64 offset,
+		   const void *chunk, size_t size, void *_ctx)
 {
 	struct unix_apply_ctx *ctx = _ctx;
 	int ret;
@@ -765,7 +766,7 @@ unix_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 
 	struct read_blob_callbacks cbs = {
 		.begin_blob	= unix_begin_extract_blob,
-		.consume_chunk	= unix_extract_chunk,
+		.continue_blob	= unix_extract_chunk,
 		.end_blob	= unix_end_extract_blob,
 		.ctx		= ctx,
 	};

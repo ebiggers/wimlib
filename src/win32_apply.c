@@ -2257,9 +2257,9 @@ retry:
 	return 0;
 }
 
-/* Called when starting to read a blob for extraction on Windows  */
+/* Called when starting to read a blob for extraction */
 static int
-begin_extract_blob(struct blob_descriptor *blob, void *_ctx)
+win32_begin_extract_blob(struct blob_descriptor *blob, void *_ctx)
 {
 	struct win32_apply_ctx *ctx = _ctx;
 	const struct blob_extraction_target *targets = blob_extraction_targets(blob);
@@ -2302,10 +2302,10 @@ fail:
 	return ret;
 }
 
-/* Called when the next chunk of a blob has been read for extraction on Windows
- */
+/* Called when the next chunk of a blob has been read for extraction */
 static int
-extract_chunk(const void *chunk, size_t size, void *_ctx)
+win32_extract_chunk(const struct blob_descriptor *blob, u64 offset,
+		    const void *chunk, size_t size, void *_ctx)
 {
 	struct win32_apply_ctx *ctx = _ctx;
 
@@ -2590,9 +2590,9 @@ handle_system_compression(struct blob_descriptor *blob, struct win32_apply_ctx *
 	}
 }
 
-/* Called when a blob has been fully read for extraction on Windows  */
+/* Called when a blob has been fully read for extraction */
 static int
-end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
+win32_end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
 {
 	struct win32_apply_ctx *ctx = _ctx;
 	int ret;
@@ -3071,9 +3071,9 @@ win32_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 		goto out;
 
 	struct read_blob_callbacks cbs = {
-		.begin_blob	= begin_extract_blob,
-		.consume_chunk	= extract_chunk,
-		.end_blob	= end_extract_blob,
+		.begin_blob	= win32_begin_extract_blob,
+		.continue_blob	= win32_extract_chunk,
+		.end_blob	= win32_end_extract_blob,
 		.ctx		= ctx,
 	};
 	ret = extract_blob_list(&ctx->common, &cbs);

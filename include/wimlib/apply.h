@@ -72,8 +72,6 @@ struct apply_ctx {
 	unsigned long num_blobs_remaining;
 	struct list_head blob_list;
 	const struct read_blob_callbacks *saved_cbs;
-	struct blob_descriptor *cur_blob;
-	u64 cur_blob_offset;
 	struct filedes tmpfile_fd;
 	tchar *tmpfile_name;
 	unsigned int count_until_file_progress;

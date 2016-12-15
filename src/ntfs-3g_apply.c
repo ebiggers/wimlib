@@ -87,9 +87,6 @@ struct ntfs_3g_apply_ctx {
 	struct reparse_buffer_disk rpbuf;
 	u8 *reparse_ptr;
 
-	/* Offset in the blob currently being read  */
-	u64 offset;
-
 	unsigned num_reparse_inodes;
 	ntfs_inode *ntfs_reparse_inodes[MAX_OPEN_FILES];
 	struct wim_inode *wim_reparse_inodes[MAX_OPEN_FILES];
@@ -756,7 +753,6 @@ ntfs_3g_cleanup_blob_extract(struct ntfs_3g_apply_ctx *ctx)
 	}
 	ctx->num_open_inodes = 0;
 
-	ctx->offset = 0;
 	ctx->reparse_ptr = NULL;
 	ctx->num_reparse_inodes = 0;
 	return ret;
@@ -842,13 +838,14 @@ ntfs_3g_full_pwrite(ntfs_attr *na, u64 offset, size_t size, const u8 *data)
 }
 
 static int
-ntfs_3g_extract_chunk(const void *chunk, size_t size, void *_ctx)
+ntfs_3g_extract_chunk(const struct blob_descriptor *blob, u64 offset,
+		      const void *chunk, size_t size, void *_ctx)
 {
 	struct ntfs_3g_apply_ctx *ctx = _ctx;
 
 	for (unsigned i = 0; i < ctx->num_open_attrs; i++) {
-		if (!ntfs_3g_full_pwrite(ctx->open_attrs[i],
-					 ctx->offset, size, chunk))
+		if (!ntfs_3g_full_pwrite(ctx->open_attrs[i], offset,
+					 size, chunk))
 		{
 			ERROR_WITH_ERRNO("Error writing data to NTFS volume");
 			return WIMLIB_ERR_NTFS_3G;
@@ -856,7 +853,6 @@ ntfs_3g_extract_chunk(const void *chunk, size_t size, void *_ctx)
 	}
 	if (ctx->reparse_ptr)
 		ctx->reparse_ptr = mempcpy(ctx->reparse_ptr, chunk, size);
-	ctx->offset += size;
 	return 0;
 }
 
@@ -960,7 +956,7 @@ ntfs_3g_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	/* Extract blobs.  */
 	struct read_blob_callbacks cbs = {
 		.begin_blob	= ntfs_3g_begin_extract_blob,
-		.consume_chunk	= ntfs_3g_extract_chunk,
+		.continue_blob	= ntfs_3g_extract_chunk,
 		.end_blob	= ntfs_3g_end_extract_blob,
 		.ctx		= ctx,
 	};

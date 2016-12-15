@@ -93,11 +93,11 @@ struct data_range {
  *	read, sorted by increasing offset.
  * @num_ranges
  *	Number of ranges in @ranges; must be at least 1.
- * @cbs
- *	Structure which provides the consume_chunk() callback to feed the data
- *	being read.  Each call provides the next chunk of the requested data,
- *	uncompressed.  Each chunk will be nonempty and will not cross range
- *	boundaries but otherwise will be of unspecified size.
+ * @cb
+ *	Structure which provides the consume_chunk callback into which to feed
+ *	the data being read.  Each call provides the next chunk of the requested
+ *	data, uncompressed.  Each chunk will be nonempty and will not cross
+ *	range boundaries but otherwise will be of unspecified size.
  *
  * Possible return values:
  *
@@ -108,13 +108,13 @@ struct data_range {
  *	WIMLIB_ERR_DECOMPRESSION	  (errno set to EINVAL)
  *	WIMLIB_ERR_INVALID_CHUNK_SIZE	  (errno set to EINVAL)
  *
- *	or other error code returned by the cbs->consume_chunk() function.
+ *	or other error code returned by the callback function.
  */
 static int
 read_compressed_wim_resource(const struct wim_resource_descriptor * const rdesc,
 			     const struct data_range * const ranges,
 			     const size_t num_ranges,
-			     const struct read_blob_callbacks *cbs)
+			     const struct consume_chunk_callback *cb)
 {
 	int ret;
 	u64 *chunk_offsets = NULL;
@@ -473,7 +473,7 @@ read_compressed_wim_resource(const struct wim_resource_descriptor * const rdesc,
 				end = min(cur_range_end, chunk_end_offset) - chunk_start_offset;
 				size = end - start;
 
-				ret = call_consume_chunk(&ubuf[start], size, cbs);
+				ret = consume_chunk(cb, &ubuf[start], size);
 				if (unlikely(ret))
 					goto out_cleanup;
 
@@ -533,10 +533,10 @@ read_error:
 }
 
 /* Read raw data from a file descriptor at the specified offset, feeding the
- * data in nonempty chunks into the cbs->consume_chunk() function.  */
+ * data in nonempty chunks into the specified callback function.  */
 static int
 read_raw_file_data(struct filedes *in_fd, u64 offset, u64 size,
-		   const struct read_blob_callbacks *cbs,
+		   const struct consume_chunk_callback *cb,
 		   const tchar *filename)
 {
 	u8 buf[BUFFER_SIZE];
@@ -548,7 +548,7 @@ read_raw_file_data(struct filedes *in_fd, u64 offset, u64 size,
 		ret = full_pread(in_fd, buf, bytes_to_read, offset);
 		if (unlikely(ret))
 			goto read_error;
-		ret = call_consume_chunk(buf, bytes_to_read, cbs);
+		ret = consume_chunk(cb, buf, bytes_to_read);
 		if (unlikely(ret))
 			return ret;
 		size -= bytes_to_read;
@@ -568,7 +568,7 @@ read_error:
 	return ret;
 }
 
-/* A consume_chunk() implementation that simply concatenates all chunks into an
+/* A consume_chunk implementation which simply concatenates all chunks into an
  * in-memory buffer.  */
 static int
 bufferer_cb(const void *chunk, size_t size, void *_ctx)
@@ -581,7 +581,7 @@ bufferer_cb(const void *chunk, size_t size, void *_ctx)
 
 /*
  * Read @size bytes at @offset in the WIM resource described by @rdesc and feed
- * the data into the @cbs->consume_chunk callback function.
+ * the data into the @cb callback function.
  *
  * @offset and @size are assumed to have already been validated against the
  * resource's uncompressed size.
@@ -592,7 +592,7 @@ bufferer_cb(const void *chunk, size_t size, void *_ctx)
 static int
 read_partial_wim_resource(const struct wim_resource_descriptor *rdesc,
 			  const u64 offset, const u64 size,
-			  const struct read_blob_callbacks *cbs)
+			  const struct consume_chunk_callback *cb)
 {
 	if (rdesc->flags & (WIM_RESHDR_FLAG_COMPRESSED |
 			    WIM_RESHDR_FLAG_SOLID))
@@ -604,13 +604,13 @@ read_partial_wim_resource(const struct wim_resource_descriptor *rdesc,
 			.offset = offset,
 			.size = size,
 		};
-		return read_compressed_wim_resource(rdesc, &range, 1, cbs);
+		return read_compressed_wim_resource(rdesc, &range, 1, cb);
 	}
 
 	/* Uncompressed resource  */
 	return read_raw_file_data(&rdesc->wim->in_fd,
 				  rdesc->offset_in_wim + offset,
-				  size, cbs, NULL);
+				  size, cb, NULL);
 }
 
 /* Read the specified range of uncompressed data from the specified blob, which
@@ -619,32 +619,39 @@ int
 read_partial_wim_blob_into_buf(const struct blob_descriptor *blob,
 			       u64 offset, size_t size, void *buf)
 {
-	struct read_blob_callbacks cbs = {
-		.consume_chunk	= bufferer_cb,
-		.ctx		= &buf,
+	struct consume_chunk_callback cb = {
+		.func	= bufferer_cb,
+		.ctx	= &buf,
 	};
 	return read_partial_wim_resource(blob->rdesc,
 					 blob->offset_in_res + offset,
 					 size,
-					 &cbs);
+					 &cb);
+}
+
+static int
+noop_cb(const void *chunk, size_t size, void *_ctx)
+{
+	return 0;
 }
 
 /* Skip over the data of the specified WIM resource.  */
 int
 skip_wim_resource(const struct wim_resource_descriptor *rdesc)
 {
-	struct read_blob_callbacks cbs = {
+	struct consume_chunk_callback cb = {
+		.func = noop_cb,
 	};
 	return read_partial_wim_resource(rdesc, 0,
-					 rdesc->uncompressed_size, &cbs);
+					 rdesc->uncompressed_size, &cb);
 }
 
 static int
 read_wim_blob_prefix(const struct blob_descriptor *blob, u64 size,
-		     const struct read_blob_callbacks *cbs)
+		     const struct consume_chunk_callback *cb)
 {
 	return read_partial_wim_resource(blob->rdesc, blob->offset_in_res,
-					 size, cbs);
+					 size, cb);
 }
 
 /* This function handles reading blob data that is located in an external file,
@@ -657,7 +664,7 @@ read_wim_blob_prefix(const struct blob_descriptor *blob, u64 size,
  * encrypted), so Windows uses its own code for its equivalent case.  */
 static int
 read_file_on_disk_prefix(const struct blob_descriptor *blob, u64 size,
-			 const struct read_blob_callbacks *cbs)
+			 const struct consume_chunk_callback *cb)
 {
 	int ret;
 	int raw_fd;
@@ -669,7 +676,7 @@ read_file_on_disk_prefix(const struct blob_descriptor *blob, u64 size,
 		return WIMLIB_ERR_OPEN;
 	}
 	filedes_init(&fd, raw_fd);
-	ret = read_raw_file_data(&fd, 0, size, cbs, blob->file_on_disk);
+	ret = read_raw_file_data(&fd, 0, size, cb, blob->file_on_disk);
 	filedes_close(&fd);
 	return ret;
 }
@@ -677,7 +684,7 @@ read_file_on_disk_prefix(const struct blob_descriptor *blob, u64 size,
 #ifdef WITH_FUSE
 static int
 read_staging_file_prefix(const struct blob_descriptor *blob, u64 size,
-			 const struct read_blob_callbacks *cbs)
+			 const struct consume_chunk_callback *cb)
 {
 	int raw_fd;
 	struct filedes fd;
@@ -691,7 +698,7 @@ read_staging_file_prefix(const struct blob_descriptor *blob, u64 size,
 		return WIMLIB_ERR_OPEN;
 	}
 	filedes_init(&fd, raw_fd);
-	ret = read_raw_file_data(&fd, 0, size, cbs, blob->staging_file_name);
+	ret = read_raw_file_data(&fd, 0, size, cb, blob->staging_file_name);
 	filedes_close(&fd);
 	return ret;
 }
@@ -701,32 +708,31 @@ read_staging_file_prefix(const struct blob_descriptor *blob, u64 size,
  * already located in an in-memory buffer.  */
 static int
 read_buffer_prefix(const struct blob_descriptor *blob,
-		   u64 size, const struct read_blob_callbacks *cbs)
+		   u64 size, const struct consume_chunk_callback *cb)
 {
 	if (unlikely(!size))
 		return 0;
-	return call_consume_chunk(blob->attached_buffer, size, cbs);
+	return consume_chunk(cb, blob->attached_buffer, size);
 }
 
 typedef int (*read_blob_prefix_handler_t)(const struct blob_descriptor *blob,
 					  u64 size,
-					  const struct read_blob_callbacks *cbs);
+					  const struct consume_chunk_callback *cb);
 
 /*
  * Read the first @size bytes from a generic "blob", which may be located in any
  * one of several locations, such as in a WIM resource (possibly compressed), in
  * an external file, or directly in an in-memory buffer.  The blob data will be
- * fed to the cbs->consume_chunk() callback function in chunks that are nonempty
- * but otherwise are of unspecified size.
+ * fed to @cb in chunks that are nonempty but otherwise are of unspecified size.
  *
  * Returns 0 on success; nonzero on error.  A nonzero value will be returned if
  * the blob data cannot be successfully read (for a number of different reasons,
- * depending on the blob location), or if cbs->consume_chunk() returned nonzero
- * in which case that error code will be returned.
+ * depending on the blob location), or if @cb returned nonzero in which case
+ * that error code will be returned.
  */
 static int
 read_blob_prefix(const struct blob_descriptor *blob, u64 size,
-		 const struct read_blob_callbacks *cbs)
+		 const struct consume_chunk_callback *cb)
 {
 	static const read_blob_prefix_handler_t handlers[] = {
 		[BLOB_IN_WIM] = read_wim_blob_prefix,
@@ -745,7 +751,24 @@ read_blob_prefix(const struct blob_descriptor *blob, u64 size,
 	wimlib_assert(blob->blob_location < ARRAY_LEN(handlers)
 		      && handlers[blob->blob_location] != NULL);
 	wimlib_assert(size <= blob->size);
-	return handlers[blob->blob_location](blob, size, cbs);
+	return handlers[blob->blob_location](blob, size, cb);
+}
+
+struct blob_chunk_ctx {
+	const struct blob_descriptor *blob;
+	const struct read_blob_callbacks *cbs;
+	u64 offset;
+};
+
+static int
+consume_blob_chunk(const void *chunk, size_t size, void *_ctx)
+{
+	struct blob_chunk_ctx *ctx = _ctx;
+	int ret;
+
+	ret = call_continue_blob(ctx->blob, ctx->offset, chunk, size, ctx->cbs);
+	ctx->offset += size;
+	return ret;
 }
 
 /* Read the full data of the specified blob, passing the data into the specified
@@ -755,12 +778,21 @@ read_blob_with_cbs(struct blob_descriptor *blob,
 		   const struct read_blob_callbacks *cbs)
 {
 	int ret;
+	struct blob_chunk_ctx ctx = {
+		.blob = blob,
+		.offset = 0,
+		.cbs = cbs,
+	};
+	struct consume_chunk_callback cb = {
+		.func = consume_blob_chunk,
+		.ctx = &ctx,
+	};
 
 	ret = call_begin_blob(blob, cbs);
 	if (unlikely(ret))
 		return ret;
 
-	ret = read_blob_prefix(blob, blob->size, cbs);
+	ret = read_blob_prefix(blob, blob->size, &cb);
 
 	return call_end_blob(blob, ret, cbs);
 }
@@ -771,11 +803,11 @@ read_blob_with_cbs(struct blob_descriptor *blob,
 int
 read_blob_into_buf(const struct blob_descriptor *blob, void *buf)
 {
-	struct read_blob_callbacks cbs = {
-		.consume_chunk	= bufferer_cb,
-		.ctx		= &buf,
+	struct consume_chunk_callback cb = {
+		.func	= bufferer_cb,
+		.ctx	= &buf,
 	};
-	return read_blob_prefix(blob, blob->size, &cbs);
+	return read_blob_prefix(blob, blob->size, &cb);
 }
 
 /* Retrieve the full uncompressed data of the specified blob.  A buffer large
@@ -861,9 +893,10 @@ next_blob(struct blob_descriptor *blob, size_t list_head_offset)
 	return (struct blob_descriptor*)((u8*)cur->next - list_head_offset);
 }
 
-/* A consume_chunk() implementation that translates raw resource data into
- * blobs, calling the begin_blob, consume_chunk, and end_blob callbacks as
- * appropriate.  */
+/*
+ * A consume_chunk implementation that translates raw resource data into blobs,
+ * calling the begin_blob, continue_blob, and end_blob callbacks as appropriate.
+ */
 static int
 blobifier_cb(const void *chunk, size_t size, void *_ctx)
 {
@@ -880,9 +913,9 @@ blobifier_cb(const void *chunk, size_t size, void *_ctx)
 			return ret;
 	}
 
+	ret = call_continue_blob(ctx->cur_blob, ctx->cur_blob_offset,
+				 chunk, size, &ctx->cbs);
 	ctx->cur_blob_offset += size;
-
-	ret = call_consume_chunk(chunk, size, &ctx->cbs);
 	if (ret)
 		return ret;
 
@@ -926,18 +959,21 @@ hasher_begin_blob(struct blob_descriptor *blob, void *_ctx)
 	return call_begin_blob(blob, &ctx->cbs);
 }
 
-/* A consume_chunk() implementation that continues calculating the SHA-1 message
+/*
+ * A continue_blob() implementation that continues calculating the SHA-1 message
  * digest of the blob being read, then optionally passes the data on to another
- * consume_chunk() implementation.  This allows checking the SHA-1 message
- * digest of a blob being extracted, for example.  */
+ * continue_blob() implementation.  This allows checking the SHA-1 message
+ * digest of a blob being extracted, for example.
+ */
 static int
-hasher_consume_chunk(const void *chunk, size_t size, void *_ctx)
+hasher_continue_blob(const struct blob_descriptor *blob, u64 offset,
+		     const void *chunk, size_t size, void *_ctx)
 {
 	struct hasher_context *ctx = _ctx;
 
 	sha1_update(&ctx->sha_ctx, chunk, size);
 
-	return call_consume_chunk(chunk, size, &ctx->cbs);
+	return call_continue_blob(blob, offset, chunk, size, &ctx->cbs);
 }
 
 static int
@@ -1043,7 +1079,7 @@ read_blob_with_sha1(struct blob_descriptor *blob,
 	};
 	struct read_blob_callbacks hasher_cbs = {
 		.begin_blob	= hasher_begin_blob,
-		.consume_chunk	= hasher_consume_chunk,
+		.continue_blob	= hasher_continue_blob,
 		.end_blob	= hasher_end_blob,
 		.ctx		= &hasher_ctx,
 	};
@@ -1099,13 +1135,13 @@ read_blobs_in_solid_resource(struct blob_descriptor *first_blob,
 		.final_blob		= last_blob,
 		.list_head_offset	= list_head_offset,
 	};
-	struct read_blob_callbacks cbs = {
-		.consume_chunk	= blobifier_cb,
-		.ctx		= &blobifier_ctx,
+	struct consume_chunk_callback cb = {
+		.func	= blobifier_cb,
+		.ctx	= &blobifier_ctx,
 	};
 
 	ret = read_compressed_wim_resource(first_blob->rdesc, ranges,
-					   blob_count, &cbs);
+					   blob_count, &cb);
 
 	if (ranges_malloced)
 		FREE(ranges);
@@ -1185,7 +1221,7 @@ read_blob_list(struct list_head *blob_list, size_t list_head_offset,
 		sink_cbs = alloca(sizeof(*sink_cbs));
 		*sink_cbs = (struct read_blob_callbacks) {
 			.begin_blob	= hasher_begin_blob,
-			.consume_chunk	= hasher_consume_chunk,
+			.continue_blob	= hasher_continue_blob,
 			.end_blob	= hasher_end_blob,
 			.ctx		= hasher_ctx,
 		};
@@ -1261,17 +1297,24 @@ extract_chunk_to_fd(const void *chunk, size_t size, void *_fd)
 	return ret;
 }
 
+static int
+extract_blob_chunk_to_fd(const struct blob_descriptor *blob, u64 offset,
+			 const void *chunk, size_t size, void *_fd)
+{
+	return extract_chunk_to_fd(chunk, size, _fd);
+}
+
 /* Extract the first @size bytes of the specified blob to the specified file
  * descriptor.  This does *not* check the SHA-1 message digest.  */
 int
 extract_blob_prefix_to_fd(struct blob_descriptor *blob, u64 size,
 			  struct filedes *fd)
 {
-	struct read_blob_callbacks cbs = {
-		.consume_chunk	= extract_chunk_to_fd,
-		.ctx		= fd,
+	struct consume_chunk_callback cb = {
+		.func	= extract_chunk_to_fd,
+		.ctx	= fd,
 	};
-	return read_blob_prefix(blob, size, &cbs);
+	return read_blob_prefix(blob, size, &cb);
 }
 
 /* Extract the full uncompressed contents of the specified blob to the specified
@@ -1280,7 +1323,7 @@ int
 extract_blob_to_fd(struct blob_descriptor *blob, struct filedes *fd)
 {
 	struct read_blob_callbacks cbs = {
-		.consume_chunk	= extract_chunk_to_fd,
+		.continue_blob	= extract_blob_chunk_to_fd,
 		.ctx		= fd,
 	};
 	return read_blob_with_sha1(blob, &cbs);

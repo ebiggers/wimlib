@@ -44,28 +44,16 @@ struct verify_blob_list_ctx {
 	void *progctx;
 	union wimlib_progress_info *progress;
 	u64 next_progress;
-	u64 cur_blob_offset;
-	u64 cur_blob_size;
 };
 
 static int
-verify_begin_blob(struct blob_descriptor *blob, void *_ctx)
-{
-	struct verify_blob_list_ctx *ctx = _ctx;
-
-	ctx->cur_blob_offset = 0;
-	ctx->cur_blob_size = blob->size;
-	return 0;
-}
-
-static int
-verify_consume_chunk(const void *chunk, size_t size, void *_ctx)
+verify_continue_blob(const struct blob_descriptor *blob, u64 offset,
+		     const void *chunk, size_t size, void *_ctx)
 {
 	struct verify_blob_list_ctx *ctx = _ctx;
 	union wimlib_progress_info *progress = ctx->progress;
 
-	ctx->cur_blob_offset += size;
-	if (ctx->cur_blob_offset == ctx->cur_blob_size)
+	if (offset + size == blob->size)
 		progress->verify_streams.completed_streams++;
 
 	progress->verify_streams.completed_bytes += size;
@@ -110,8 +98,7 @@ wimlib_verify_wim(WIMStruct *wim, int verify_flags)
 	struct verify_blob_list_ctx ctx;
 	struct blob_descriptor *blob;
 	struct read_blob_callbacks cbs = {
-		.begin_blob	= verify_begin_blob,
-		.consume_chunk	= verify_consume_chunk,
+		.continue_blob	= verify_continue_blob,
 		.ctx		= &ctx,
 	};
 

@@ -192,6 +192,25 @@ wim_reshdr_to_hash(const struct wim_reshdr *reshdr, WIMStruct *wim,
 extern int
 skip_wim_resource(const struct wim_resource_descriptor *rdesc);
 
+/*
+ * Callback function for reading chunks.  Called whenever the next chunk of
+ * uncompressed data is available, passing 'ctx' as the last argument. 'size' is
+ * guaranteed to be nonzero.  Must return 0 on success, or a positive wimlib
+ * error code on failure.
+ */
+struct consume_chunk_callback {
+	int (*func)(const void *chunk, size_t size, void *ctx);
+	void *ctx;
+};
+
+/* Pass a chunk of data to the specified consume_chunk callback */
+static inline int
+consume_chunk(const struct consume_chunk_callback *cb,
+	      const void *chunk, size_t size)
+{
+	return (*cb->func)(chunk, size, cb->ctx);
+}
+
 /* Callback functions for reading blobs  */
 struct read_blob_callbacks {
 
@@ -205,7 +224,8 @@ struct read_blob_callbacks {
 	/* Called when the next chunk of uncompressed data is available.  'size'
 	 * is guaranteed to be nonzero.  Must return 0 on success, or a positive
 	 * wimlib error code on failure.  */
-	int (*consume_chunk)(const void *chunk, size_t size, void *ctx);
+	int (*continue_blob)(const struct blob_descriptor *blob, u64 offset,
+			     const void *chunk, size_t size, void *ctx);
 
 	/* Called when a blob has been successfully read (status=0), or when
 	 * begin_blob() was successfully called but an error occurred before the
@@ -228,14 +248,15 @@ call_begin_blob(struct blob_descriptor *blob,
 	return (*cbs->begin_blob)(blob, cbs->ctx);
 }
 
-/* Call cbs->consume_chunk() if present.  */
+/* Call cbs->continue_blob() if present.  */
 static inline int
-call_consume_chunk(const void *chunk, size_t size,
+call_continue_blob(const struct blob_descriptor *blob, u64 offset,
+		   const void *chunk, size_t size,
 		   const struct read_blob_callbacks *cbs)
 {
-	if (!cbs->consume_chunk)
+	if (!cbs->continue_blob)
 		return 0;
-	return (*cbs->consume_chunk)(chunk, size, cbs->ctx);
+	return (*cbs->continue_blob)(blob, offset, chunk, size, cbs->ctx);
 }
 
 /* Call cbs->end_blob() if present.  */

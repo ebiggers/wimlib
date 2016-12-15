@@ -6,12 +6,12 @@
 #include "wimlib/types.h"
 
 struct blob_descriptor;
+struct consume_chunk_callback;
 struct ntfs_location;
-struct read_blob_callbacks;
 
 extern int
 read_ntfs_attribute_prefix(const struct blob_descriptor *blob, u64 size,
-			   const struct read_blob_callbacks *cbs);
+			   const struct consume_chunk_callback *cb);
 
 extern struct ntfs_location *
 clone_ntfs_location(const struct ntfs_location *loc);

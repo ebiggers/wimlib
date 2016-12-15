@@ -377,12 +377,6 @@ struct write_blobs_ctx {
 	 * @blobs_being_compressed only when writing a solid resource.  */
 	struct list_head blobs_in_solid_resource;
 
-	/* Current uncompressed offset in the blob being read.  */
-	u64 cur_read_blob_offset;
-
-	/* Uncompressed size of the blob currently being read.  */
-	u64 cur_read_blob_size;
-
 	/* Current uncompressed offset in the blob being written.  */
 	u64 cur_write_blob_offset;
 
@@ -688,9 +682,6 @@ write_blob_begin_read(struct blob_descriptor *blob, void *_ctx)
 	int ret;
 
 	wimlib_assert(blob->size > 0);
-
-	ctx->cur_read_blob_offset = 0;
-	ctx->cur_read_blob_size = blob->size;
 
 	/* As an optimization, we allow some blobs to be "unhashed", meaning
 	 * their SHA-1 message digests are unknown.  This is the case with blobs
@@ -1019,7 +1010,8 @@ prepare_chunk_buffer(struct write_blobs_ctx *ctx)
 
 /* Process the next chunk of data to be written to a WIM resource.  */
 static int
-write_blob_process_chunk(const void *chunk, size_t size, void *_ctx)
+write_blob_process_chunk(const struct blob_descriptor *blob, u64 offset,
+			 const void *chunk, size_t size, void *_ctx)
 {
 	struct write_blobs_ctx *ctx = _ctx;
 	int ret;
@@ -1032,7 +1024,6 @@ write_blob_process_chunk(const void *chunk, size_t size, void *_ctx)
 		 ret = write_chunk(ctx, chunk, size, size);
 		 if (ret)
 			 return ret;
-		 ctx->cur_read_blob_offset += size;
 		 return 0;
 	}
 
@@ -1056,8 +1047,7 @@ write_blob_process_chunk(const void *chunk, size_t size, void *_ctx)
 		} else {
 			needed_chunk_size = min(ctx->out_chunk_size,
 						ctx->cur_chunk_buf_filled +
-							(ctx->cur_read_blob_size -
-							 ctx->cur_read_blob_offset));
+							(blob->size - offset));
 		}
 
 		bytes_consumed = min(chunkend - chunkptr,
@@ -1067,7 +1057,7 @@ write_blob_process_chunk(const void *chunk, size_t size, void *_ctx)
 		       chunkptr, bytes_consumed);
 
 		chunkptr += bytes_consumed;
-		ctx->cur_read_blob_offset += bytes_consumed;
+		offset += bytes_consumed;
 		ctx->cur_chunk_buf_filled += bytes_consumed;
 
 		if (ctx->cur_chunk_buf_filled == needed_chunk_size) {
@@ -1087,8 +1077,6 @@ static int
 write_blob_end_read(struct blob_descriptor *blob, int status, void *_ctx)
 {
 	struct write_blobs_ctx *ctx = _ctx;
-
-	wimlib_assert(ctx->cur_read_blob_offset == ctx->cur_read_blob_size || status);
 
 	if (!blob->will_be_in_output_wim) {
 		/* The blob was a duplicate.  Now that its data has finished
@@ -1616,7 +1604,7 @@ write_blob_list(struct list_head *blob_list,
 
 	struct read_blob_callbacks cbs = {
 		.begin_blob	= write_blob_begin_read,
-		.consume_chunk	= write_blob_process_chunk,
+		.continue_blob	= write_blob_process_chunk,
 		.end_blob	= write_blob_end_read,
 		.ctx		= &ctx,
 	};
