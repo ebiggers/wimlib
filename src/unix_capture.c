@@ -100,13 +100,21 @@ my_fdopendir(int *dirfd_p)
 #endif
 
 static int
-unix_scan_regular_file(const char *path, u64 size, struct wim_inode *inode,
+unix_scan_regular_file(const char *path, u64 blocks, u64 size,
+		       struct wim_inode *inode,
 		       struct list_head *unhashed_blobs)
 {
 	struct blob_descriptor *blob = NULL;
 	struct wim_inode_stream *strm;
 
-	inode->i_attributes = FILE_ATTRIBUTE_NORMAL;
+	/*
+	 * Set FILE_ATTRIBUTE_SPARSE_FILE if the file uses less disk space than
+	 * expected given its size.
+	 */
+	if (blocks < DIV_ROUND_UP(size, 512))
+		inode->i_attributes = FILE_ATTRIBUTE_SPARSE_FILE;
+	else
+		inode->i_attributes = FILE_ATTRIBUTE_NORMAL;
 
 	if (size) {
 		blob = new_blob_descriptor();
@@ -437,8 +445,9 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 	}
 
 	if (S_ISREG(stbuf.st_mode)) {
-		ret = unix_scan_regular_file(full_path, stbuf.st_size,
-					     inode, params->unhashed_blobs);
+		ret = unix_scan_regular_file(full_path, stbuf.st_blocks,
+					     stbuf.st_size, inode,
+					     params->unhashed_blobs);
 	} else if (S_ISDIR(stbuf.st_mode)) {
 		ret = unix_scan_directory(tree, full_path, full_path_len,
 					  dirfd, relpath, params);
