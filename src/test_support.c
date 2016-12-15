@@ -633,29 +633,12 @@ is_name_valid_in_win32_namespace(const utf16lechar *name)
 {
 	const utf16lechar *p;
 
-	static const utf16lechar forbidden_names[][5] = {
-		{ cpu_to_le16('C'), cpu_to_le16('O'), cpu_to_le16('N'), },
-		{ cpu_to_le16('P'), cpu_to_le16('R'), cpu_to_le16('N'), },
-		{ cpu_to_le16('A'), cpu_to_le16('U'), cpu_to_le16('X'), },
-		{ cpu_to_le16('N'), cpu_to_le16('U'), cpu_to_le16('L'), },
-		{ cpu_to_le16('C'), cpu_to_le16('O'), cpu_to_le16('M'), cpu_to_le16('1'), },
-		{ cpu_to_le16('C'), cpu_to_le16('O'), cpu_to_le16('M'), cpu_to_le16('2'), },
-		{ cpu_to_le16('C'), cpu_to_le16('O'), cpu_to_le16('M'), cpu_to_le16('3'), },
-		{ cpu_to_le16('C'), cpu_to_le16('O'), cpu_to_le16('M'), cpu_to_le16('4'), },
-		{ cpu_to_le16('C'), cpu_to_le16('O'), cpu_to_le16('M'), cpu_to_le16('5'), },
-		{ cpu_to_le16('C'), cpu_to_le16('O'), cpu_to_le16('M'), cpu_to_le16('6'), },
-		{ cpu_to_le16('C'), cpu_to_le16('O'), cpu_to_le16('M'), cpu_to_le16('7'), },
-		{ cpu_to_le16('C'), cpu_to_le16('O'), cpu_to_le16('M'), cpu_to_le16('8'), },
-		{ cpu_to_le16('C'), cpu_to_le16('O'), cpu_to_le16('M'), cpu_to_le16('9'), },
-		{ cpu_to_le16('L'), cpu_to_le16('P'), cpu_to_le16('T'), cpu_to_le16('1'), },
-		{ cpu_to_le16('L'), cpu_to_le16('P'), cpu_to_le16('T'), cpu_to_le16('2'), },
-		{ cpu_to_le16('L'), cpu_to_le16('P'), cpu_to_le16('T'), cpu_to_le16('3'), },
-		{ cpu_to_le16('L'), cpu_to_le16('P'), cpu_to_le16('T'), cpu_to_le16('4'), },
-		{ cpu_to_le16('L'), cpu_to_le16('P'), cpu_to_le16('T'), cpu_to_le16('5'), },
-		{ cpu_to_le16('L'), cpu_to_le16('P'), cpu_to_le16('T'), cpu_to_le16('6'), },
-		{ cpu_to_le16('L'), cpu_to_le16('P'), cpu_to_le16('T'), cpu_to_le16('7'), },
-		{ cpu_to_le16('L'), cpu_to_le16('P'), cpu_to_le16('T'), cpu_to_le16('8'), },
-		{ cpu_to_le16('L'), cpu_to_le16('P'), cpu_to_le16('T'), cpu_to_le16('9'), },
+	static const char * const reserved_names[] = {
+		 "CON",  "PRN",  "AUX",  "NUL",
+		 "COM1", "COM2", "COM3", "COM4", "COM5",
+		 "COM6", "COM7", "COM8", "COM9",
+		 "LPT1", "LPT2", "LPT3", "LPT4", "LPT5",
+		 "LPT6", "LPT7", "LPT8", "LPT9",
 	};
 
 	/* The name must be nonempty. */
@@ -670,10 +653,21 @@ is_name_valid_in_win32_namespace(const utf16lechar *name)
 	/* Note: a trailing dot or space is permitted, even though on Windows
 	 * such a file can only be accessed using a WinNT-style path. */
 
-	/* The name can't be one of the reserved names (case insensitively). */
-	for (size_t i = 0; i < ARRAY_LEN(forbidden_names); i++)
-		if (!cmp_utf16le_strings_z(forbidden_names[i], name, true))
-			return false;
+	/* The name can't be one of the reserved names or be a reserved name
+	 * with an extension.  Case insensitive. */
+	for (size_t i = 0; i < ARRAY_LEN(reserved_names); i++) {
+		for (size_t j = 0; ; j++) {
+			u16 c1 = le16_to_cpu(name[j]);
+			u16 c2 = reserved_names[i][j];
+			if (c2 == '\0') {
+				if (c1 == '\0' || c1 == '.')
+					return false;
+				break;
+			}
+			if (upcase[c1] != upcase[c2])
+				break;
+		}
+	}
 
 	return true;
 }
