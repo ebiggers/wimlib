@@ -125,6 +125,13 @@ struct win32_apply_ctx {
 	 * beginning of the array)  */
 	unsigned num_open_handles;
 
+	/* For each currently open stream, whether we're writing to it in
+	 * "sparse" mode or not.  */
+	bool is_sparse_stream[MAX_OPEN_FILES];
+
+	/* Whether is_sparse_stream[] is true for any currently open stream  */
+	bool any_sparse_streams;
+
 	/* List of dentries, joined by @d_tmp_list, that need to have reparse
 	 * data extracted as soon as the whole blob has been read into
 	 * @data_buffer.  */
@@ -286,7 +293,8 @@ win32_get_supported_features(const wchar_t *target,
 
 	supported_features->not_context_indexed_files = 1;
 
-	/* Don't do anything with FILE_SUPPORTS_SPARSE_FILES.  */
+	if (vol_flags & FILE_SUPPORTS_SPARSE_FILES)
+		supported_features->sparse_files = 1;
 
 	if (vol_flags & FILE_NAMED_STREAMS)
 		supported_features->named_data_streams = 1;
@@ -1156,6 +1164,28 @@ adjust_compression_attribute(HANDLE h, const struct wim_dentry *dentry,
 	return WIMLIB_ERR_SET_ATTRIBUTES;
 }
 
+static bool
+need_sparse_flag(const struct wim_inode *inode,
+		 const struct win32_apply_ctx *ctx)
+{
+	return (inode->i_attributes & FILE_ATTRIBUTE_SPARSE_FILE) &&
+		ctx->common.supported_features.sparse_files;
+}
+
+static int
+set_sparse_flag(HANDLE h, struct win32_apply_ctx *ctx)
+{
+	NTSTATUS status;
+
+	status = winnt_fsctl(h, FSCTL_SET_SPARSE, NULL, 0, NULL, 0, NULL);
+	if (NT_SUCCESS(status))
+		return 0;
+
+	winnt_error(status, L"Can't set sparse flag on \"%ls\"",
+		    current_path(ctx));
+	return WIMLIB_ERR_SET_ATTRIBUTES;
+}
+
 /* Try to enable short name support on the target volume.  If successful, return
  * true.  If unsuccessful, issue a warning and return false.  */
 static bool
@@ -1777,6 +1807,12 @@ create_nondirectory_inode(HANDLE *h_ret, const struct wim_dentry *dentry,
 	if (ret)
 		goto out_close;
 
+	if (need_sparse_flag(dentry->d_inode, ctx)) {
+		ret = set_sparse_flag(h, ctx);
+		if (ret)
+			goto out_close;
+	}
+
 	ret = create_empty_streams(dentry, ctx);
 	if (ret)
 		goto out_close;
@@ -1957,7 +1993,6 @@ begin_extract_blob_instance(const struct blob_descriptor *blob,
 			    const struct wim_inode_stream *strm,
 			    struct win32_apply_ctx *ctx)
 {
-	FILE_ALLOCATION_INFORMATION alloc_info;
 	HANDLE h;
 	NTSTATUS status;
 
@@ -2023,12 +2058,28 @@ begin_extract_blob_instance(const struct blob_descriptor *blob,
 		return WIMLIB_ERR_OPEN;
 	}
 
+	ctx->is_sparse_stream[ctx->num_open_handles] = false;
+	if (need_sparse_flag(dentry->d_inode, ctx)) {
+		/* If the stream is unnamed, then the sparse flag was already
+		 * set when the file was created.  But if the stream is named,
+		 * then we need to set the sparse flag here. */
+		if (unlikely(stream_is_named(strm))) {
+			int ret = set_sparse_flag(h, ctx);
+			if (ret) {
+				NtClose(h);
+				return ret;
+			}
+		}
+		ctx->is_sparse_stream[ctx->num_open_handles] = true;
+		ctx->any_sparse_streams = true;
+	} else {
+		/* Allocate space for the data.  */
+		FILE_ALLOCATION_INFORMATION info =
+			{ .AllocationSize = { .QuadPart = blob->size }};
+		NtSetInformationFile(h, &ctx->iosb, &info, sizeof(info),
+				     FileAllocationInformation);
+	}
 	ctx->open_handles[ctx->num_open_handles++] = h;
-
-	/* Allocate space for the data.  */
-	alloc_info.AllocationSize.QuadPart = blob->size;
-	NtSetInformationFile(h, &ctx->iosb, &alloc_info, sizeof(alloc_info),
-			     FileAllocationInformation);
 	return 0;
 }
 
@@ -2267,6 +2318,7 @@ win32_begin_extract_blob(struct blob_descriptor *blob, void *_ctx)
 
 	ctx->num_open_handles = 0;
 	ctx->data_buffer_ptr = NULL;
+	ctx->any_sparse_streams = false;
 	INIT_LIST_HEAD(&ctx->reparse_dentries);
 	INIT_LIST_HEAD(&ctx->encrypted_dentries);
 
@@ -2302,31 +2354,58 @@ fail:
 	return ret;
 }
 
+static int
+pwrite_to_handle(HANDLE h, const void *data, size_t size, u64 offset)
+{
+	const void * const end = data + size;
+	const void *p;
+	IO_STATUS_BLOCK iosb;
+	NTSTATUS status;
+
+	for (p = data; p != end; p += iosb.Information,
+				 offset += iosb.Information)
+	{
+		LARGE_INTEGER offs = { .QuadPart = offset };
+
+		status = NtWriteFile(h, NULL, NULL, NULL, &iosb,
+				     (void *)p, min(INT32_MAX, end - p),
+				     &offs, NULL);
+		if (!NT_SUCCESS(status)) {
+			winnt_error(status,
+				    L"Error writing data to target volume");
+			return WIMLIB_ERR_WRITE;
+		}
+	}
+	return 0;
+}
+
 /* Called when the next chunk of a blob has been read for extraction */
 static int
 win32_extract_chunk(const struct blob_descriptor *blob, u64 offset,
 		    const void *chunk, size_t size, void *_ctx)
 {
 	struct win32_apply_ctx *ctx = _ctx;
+	const void * const end = chunk + size;
+	const void *p;
+	bool zeroes;
+	size_t len;
+	unsigned i;
+	int ret;
 
-	/* Write the data chunk to each open handle  */
-	for (unsigned i = 0; i < ctx->num_open_handles; i++) {
-		u8 *bufptr = (u8 *)chunk;
-		size_t bytes_remaining = size;
-		NTSTATUS status;
-		while (bytes_remaining) {
-			ULONG count = min(0xFFFFFFFF, bytes_remaining);
-
-			status = NtWriteFile(ctx->open_handles[i],
-					     NULL, NULL, NULL,
-					     &ctx->iosb, bufptr, count,
-					     NULL, NULL);
-			if (!NT_SUCCESS(status)) {
-				winnt_error(status, L"Error writing data to target volume");
-				return WIMLIB_ERR_WRITE;
+	/*
+	 * For sparse streams, only write nonzero regions.  This lets the
+	 * filesystem use holes to represent zero regions.
+	 */
+	for (p = chunk; p != end; p += len, offset += len) {
+		zeroes = maybe_detect_sparse_region(p, end - p, &len,
+						    ctx->any_sparse_streams);
+		for (i = 0; i < ctx->num_open_handles; i++) {
+			if (!zeroes || !ctx->is_sparse_stream[i]) {
+				ret = pwrite_to_handle(ctx->open_handles[i],
+						       p, len, offset);
+				if (ret)
+					return ret;
 			}
-			bufptr += ctx->iosb.Information;
-			bytes_remaining -= ctx->iosb.Information;
 		}
 	}
 
@@ -2597,6 +2676,29 @@ win32_end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
 	struct win32_apply_ctx *ctx = _ctx;
 	int ret;
 	const struct wim_dentry *dentry;
+
+	/* Extend sparse streams to their final size. */
+	if (ctx->any_sparse_streams && !status) {
+		for (unsigned i = 0; i < ctx->num_open_handles; i++) {
+			FILE_END_OF_FILE_INFORMATION info =
+				{ .EndOfFile = { .QuadPart = blob->size } };
+			NTSTATUS ntstatus;
+
+			if (!ctx->is_sparse_stream[i])
+				continue;
+
+			ntstatus = NtSetInformationFile(ctx->open_handles[i],
+							&ctx->iosb,
+							&info, sizeof(info),
+							FileEndOfFileInformation);
+			if (!NT_SUCCESS(ntstatus)) {
+				winnt_error(ntstatus, L"Error writing data to "
+					    "target volume (while extending)");
+				status = WIMLIB_ERR_WRITE;
+				break;
+			}
+		}
+	}
 
 	close_handles(ctx);
 

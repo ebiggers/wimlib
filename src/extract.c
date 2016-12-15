@@ -141,6 +141,70 @@ end_file_metadata_phase(struct apply_ctx *ctx)
 	return end_file_phase(ctx, WIMLIB_PROGRESS_MSG_EXTRACT_METADATA);
 }
 
+/* Are all bytes in the specified buffer zero? */
+static bool
+is_all_zeroes(const u8 *p, const size_t size)
+{
+	const u8 * const end = p + size;
+
+	for (; (uintptr_t)p % WORDBYTES && p != end; p++)
+		if (*p)
+			return false;
+
+	for (; end - p >= WORDBYTES; p += WORDBYTES)
+		if (*(const machine_word_t *)p)
+			return false;
+
+	for (; p != end; p++)
+		if (*p)
+			return false;
+
+	return true;
+}
+
+/*
+ * Sparse regions should be detected at the granularity of the filesystem block
+ * size.  For now just assume 4096 bytes, which is the default block size on
+ * NTFS and most Linux filesystems.
+ */
+#define SPARSE_UNIT 4096
+
+/*
+ * Detect whether the specified buffer begins with a region of all zero bytes.
+ * Return %true if a zero region was found or %false if a nonzero region was
+ * found, and sets *len_ret to the length of the region.  This operates at a
+ * granularity of SPARSE_UNIT bytes, meaning that to extend a zero region, there
+ * must be SPARSE_UNIT zero bytes with no interruption, but to extend a nonzero
+ * region, just one nonzero byte in the next SPARSE_UNIT bytes is sufficient.
+ *
+ * Note: besides compression, the WIM format doesn't yet have a way to
+ * efficiently represent zero regions, so that's why we need to detect them
+ * ourselves.  Things will still fall apart badly on extremely large sparse
+ * files, but this is a start...
+ */
+bool
+detect_sparse_region(const void *data, size_t size, size_t *len_ret)
+{
+	const void *p = data;
+	const void * const end = data + size;
+	size_t len = 0;
+	bool zeroes = false;
+
+	while (p != end) {
+		size_t n = min(end - p, SPARSE_UNIT);
+		bool z = is_all_zeroes(p, n);
+
+		if (len != 0 && z != zeroes)
+			break;
+		zeroes = z;
+		len += n;
+		p += n;
+	}
+
+	*len_ret = len;
+	return zeroes;
+}
+
 #define PWM_FOUND_WIM_HDR (-1)
 
 /* Read the header for a blob in a pipable WIM.  If @pwm_hdr_ret is not NULL,

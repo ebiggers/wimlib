@@ -61,6 +61,7 @@ ntfs_3g_get_supported_features(const char *target,
 	supported_features->archive_files             = 1;
 	supported_features->compressed_files          = 1;
 	supported_features->not_context_indexed_files = 1;
+	supported_features->sparse_files              = 1;
 	supported_features->named_data_streams        = 1;
 	supported_features->hard_links                = 1;
 	supported_features->reparse_points            = 1;
@@ -83,6 +84,13 @@ struct ntfs_3g_apply_ctx {
 	unsigned num_open_attrs;
 	ntfs_inode *open_inodes[MAX_OPEN_FILES];
 	unsigned num_open_inodes;
+
+	/* For each currently open attribute, whether we're writing to it in
+	 * "sparse" mode or not.  */
+	bool is_sparse_attr[MAX_OPEN_FILES];
+
+	/* Whether is_sparse_attr[] is true for any currently open attribute  */
+	bool any_sparse_attrs;
 
 	struct reparse_buffer_disk rpbuf;
 	u8 *reparse_ptr;
@@ -328,9 +336,6 @@ ntfs_3g_set_metadata(ntfs_inode *ni, const struct wim_inode *inode,
 	/* Attributes  */
 	if (!(extract_flags & WIMLIB_EXTRACT_FLAG_NO_ATTRIBUTES)) {
 		u32 attrib = inode->i_attributes;
-
-		attrib &= ~(FILE_ATTRIBUTE_SPARSE_FILE |
-			    FILE_ATTRIBUTE_ENCRYPTED);
 
 		if (ntfs_set_ntfs_attrib(ni, (const char *)&attrib,
 					 sizeof(attrib), 0))
@@ -680,7 +685,7 @@ ntfs_3g_begin_extract_blob_instance(struct blob_descriptor *blob,
 	struct wim_dentry *one_dentry = inode_first_extraction_dentry(inode);
 	ntfschar *stream_name;
 	size_t stream_name_nchars;
-	ntfs_attr *attr;
+	ntfs_attr *na;
 
 	if (unlikely(strm->stream_type == STREAM_TYPE_REPARSE_POINT)) {
 
@@ -723,14 +728,33 @@ ntfs_3g_begin_extract_blob_instance(struct blob_descriptor *blob,
 	/* This should be ensured by extract_blob_list()  */
 	wimlib_assert(ctx->num_open_attrs < MAX_OPEN_FILES);
 
-	attr = ntfs_attr_open(ni, AT_DATA, stream_name, stream_name_nchars);
-	if (!attr) {
+	na = ntfs_attr_open(ni, AT_DATA, stream_name, stream_name_nchars);
+	if (!na) {
 		ERROR_WITH_ERRNO("Failed to open data stream of \"%s\"",
 				 dentry_full_path(one_dentry));
 		return WIMLIB_ERR_NTFS_3G;
 	}
-	ctx->open_attrs[ctx->num_open_attrs++] = attr;
-	ntfs_attr_truncate_solid(attr, blob->size);
+
+	/*
+	 * Note: there are problems with trying to combine compression with
+	 * sparseness when extracting.  For example, doing ntfs_attr_truncate()
+	 * at the end to extend the attribute to its final size actually extends
+	 * to a compression block size boundary rather than to the requested
+	 * size.  Until these problems are solved, we always write the full data
+	 * to compressed attributes.  We also don't attempt to preallocate space
+	 * for compressed attributes, since we don't know how much space they
+	 * are going to actually need.
+	 */
+	ctx->is_sparse_attr[ctx->num_open_attrs] = false;
+	if (!(na->data_flags & ATTR_COMPRESSION_MASK)) {
+		if (inode->i_attributes & FILE_ATTRIBUTE_SPARSE_FILE) {
+			ctx->is_sparse_attr[ctx->num_open_attrs] = true;
+			ctx->any_sparse_attrs = true;
+		} else {
+			ntfs_attr_truncate_solid(na, blob->size);
+		}
+	}
+	ctx->open_attrs[ctx->num_open_attrs++] = na;
 	return 0;
 }
 
@@ -753,6 +777,7 @@ ntfs_3g_cleanup_blob_extract(struct ntfs_3g_apply_ctx *ctx)
 	}
 	ctx->num_open_inodes = 0;
 
+	ctx->any_sparse_attrs = false;
 	ctx->reparse_ptr = NULL;
 	ctx->num_reparse_inodes = 0;
 	return ret;
@@ -842,18 +867,35 @@ ntfs_3g_extract_chunk(const struct blob_descriptor *blob, u64 offset,
 		      const void *chunk, size_t size, void *_ctx)
 {
 	struct ntfs_3g_apply_ctx *ctx = _ctx;
+	const void * const end = chunk + size;
+	const void *p;
+	bool zeroes;
+	size_t len;
+	unsigned i;
 
-	for (unsigned i = 0; i < ctx->num_open_attrs; i++) {
-		if (!ntfs_3g_full_pwrite(ctx->open_attrs[i], offset,
-					 size, chunk))
-		{
-			ERROR_WITH_ERRNO("Error writing data to NTFS volume");
-			return WIMLIB_ERR_NTFS_3G;
+	/*
+	 * For sparse attributes, only write nonzero regions.  This lets the
+	 * filesystem use holes to represent zero regions.
+	 */
+	for (p = chunk; p != end; p += len, offset += len) {
+		zeroes = maybe_detect_sparse_region(p, end - p, &len,
+						    ctx->any_sparse_attrs);
+		for (i = 0; i < ctx->num_open_attrs; i++) {
+			if (!zeroes || !ctx->is_sparse_attr[i]) {
+				if (!ntfs_3g_full_pwrite(ctx->open_attrs[i],
+							 offset, len, p))
+					goto err;
+			}
 		}
 	}
+
 	if (ctx->reparse_ptr)
 		ctx->reparse_ptr = mempcpy(ctx->reparse_ptr, chunk, size);
 	return 0;
+
+err:
+	ERROR_WITH_ERRNO("Error writing data to NTFS volume");
+	return WIMLIB_ERR_NTFS_3G;
 }
 
 static int
@@ -865,6 +907,21 @@ ntfs_3g_end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
 	if (status) {
 		ret = status;
 		goto out;
+	}
+
+	/* Extend sparse attributes to their final size. */
+	if (ctx->any_sparse_attrs) {
+		for (unsigned i = 0; i < ctx->num_open_attrs; i++) {
+			if (!ctx->is_sparse_attr[i])
+				continue;
+			if (ntfs_attr_truncate(ctx->open_attrs[i], blob->size))
+			{
+				ERROR_WITH_ERRNO("Error extending attribute to "
+						 "final size");
+				ret = WIMLIB_ERR_WRITE;
+				goto out;
+			}
+		}
 	}
 
 	for (u32 i = 0; i < ctx->num_reparse_inodes; i++) {

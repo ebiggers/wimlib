@@ -2,6 +2,8 @@ Version 1.11.0-BETA1:
 	Updated 'mkwinpeimg' to work correctly on images that have a "windows"
 	(lower case) directory rather than a "Windows" (upper case) directory.
 
+	Sparse files are now extracted as sparse.
+
 	On Windows, improved the way in which files deduplicated with Windows'
 	Data Deduplication feature are captured.
 

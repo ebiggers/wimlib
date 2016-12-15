@@ -54,6 +54,7 @@ static int
 unix_get_supported_features(const char *target,
 			    struct wim_features *supported_features)
 {
+	supported_features->sparse_files = 1;
 	supported_features->hard_links = 1;
 	supported_features->symlink_reparse_points = 1;
 	supported_features->unix_data = 1;
@@ -80,6 +81,13 @@ struct unix_apply_ctx {
 	/* Number of currently open file descriptors in open_fds, starting from
 	 * the beginning of the array.  */
 	unsigned num_open_fds;
+
+	/* For each currently open file, whether we're writing to it in "sparse"
+	 * mode or not.  */
+	bool is_sparse_file[MAX_OPEN_FILES];
+
+	/* Whether is_sparse_file[] is true for any currently open file  */
+	bool any_sparse_files;
 
 	/* Buffer for reading reparse point data into memory  */
 	u8 reparse_data[REPARSE_DATA_MAX_SIZE];
@@ -541,6 +549,7 @@ unix_cleanup_open_fds(struct unix_apply_ctx *ctx, unsigned offset)
 	for (unsigned i = offset; i < ctx->num_open_fds; i++)
 		filedes_close(&ctx->open_fds[i]);
 	ctx->num_open_fds = 0;
+	ctx->any_sparse_files = false;
 }
 
 static int
@@ -584,10 +593,16 @@ retry_create:
 		ERROR_WITH_ERRNO("Can't create regular file \"%s\"", first_path);
 		return WIMLIB_ERR_OPEN;
 	}
-	filedes_init(&ctx->open_fds[ctx->num_open_fds++], fd);
+	if (inode->i_attributes & FILE_ATTRIBUTE_SPARSE_FILE) {
+		ctx->is_sparse_file[ctx->num_open_fds] = true;
+		ctx->any_sparse_files = true;
+	} else {
+		ctx->is_sparse_file[ctx->num_open_fds] = false;
 #ifdef HAVE_POSIX_FALLOCATE
-	posix_fallocate(fd, 0, blob->size);
+		posix_fallocate(fd, 0, blob->size);
 #endif
+	}
+	filedes_init(&ctx->open_fds[ctx->num_open_fds++], fd);
 	return unix_create_hardlinks(inode, first_dentry, first_path, ctx);
 }
 
@@ -618,18 +633,37 @@ unix_extract_chunk(const struct blob_descriptor *blob, u64 offset,
 		   const void *chunk, size_t size, void *_ctx)
 {
 	struct unix_apply_ctx *ctx = _ctx;
+	const void * const end = chunk + size;
+	const void *p;
+	bool zeroes;
+	size_t len;
+	unsigned i;
 	int ret;
 
-	for (unsigned i = 0; i < ctx->num_open_fds; i++) {
-		ret = full_write(&ctx->open_fds[i], chunk, size);
-		if (ret) {
-			ERROR_WITH_ERRNO("Error writing data to filesystem");
-			return ret;
+	/*
+	 * For sparse files, only write nonzero regions.  This lets the
+	 * filesystem use holes to represent zero regions.
+	 */
+	for (p = chunk; p != end; p += len, offset += len) {
+		zeroes = maybe_detect_sparse_region(p, end - p, &len,
+						    ctx->any_sparse_files);
+		for (i = 0; i < ctx->num_open_fds; i++) {
+			if (!zeroes || !ctx->is_sparse_file[i]) {
+				ret = full_pwrite(&ctx->open_fds[i],
+						  p, len, offset);
+				if (ret)
+					goto err;
+			}
 		}
 	}
+
 	if (ctx->reparse_ptr)
 		ctx->reparse_ptr = mempcpy(ctx->reparse_ptr, chunk, size);
 	return 0;
+
+err:
+	ERROR_WITH_ERRNO("Error writing data to filesystem");
+	return ret;
 }
 
 /* Called when a blob has been fully read for extraction  */
@@ -669,10 +703,17 @@ unix_end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
 			if (ret)
 				break;
 		} else {
-			/* Set metadata on regular file just before closing it.
-			 */
 			struct filedes *fd = &ctx->open_fds[j];
 
+			/* If the file is sparse, extend it to its final size. */
+			if (ctx->is_sparse_file[j] && ftruncate(fd->fd, blob->size)) {
+				ERROR_WITH_ERRNO("Error extending \"%s\" to final size",
+						 unix_build_inode_extraction_path(inode, ctx));
+				ret = WIMLIB_ERR_WRITE;
+				break;
+			}
+
+			/* Set metadata on regular file just before closing.  */
 			ret = unix_set_metadata(fd->fd, inode, NULL, ctx);
 			if (ret)
 				break;

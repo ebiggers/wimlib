@@ -63,7 +63,7 @@ Named data streams.
 .IP \[bu]
 Reparse points other than symbolic links and junction points.
 .IP \[bu]
-Certain file attributes such as compression, encryption, and sparseness.
+Certain file attributes such as compression and encryption.
 .IP \[bu]
 Short (DOS) names for files.
 .IP \[bu]
@@ -121,12 +121,8 @@ Win32+DOS namespace, and POSIX namespace.  This includes hard links.
 .IP \[bu]
 Object IDs.
 .PP
-However, there are also several known limitations of the NTFS volume extraction
-mode:
-.IP \[bu] 4
-Encrypted files will not be extracted.
-.IP \[bu]
-Sparse file attributes will not be extracted.
+However, a limitation of the NTFS volume extraction mode is that encrypted files
+will not be extracted.
 .PP
 Regardless, since almost all information from the WIM image is restored in this
 mode, it is possible (and fully supported) to restore an image of an actual
@@ -189,8 +185,6 @@ Additional notes about extracting files on Windows:
 \fBwimlib-imagex\fR will issue a warning when it is unable to extract the
 exact metadata and data of the WIM image, for example due to features mentioned
 above not being supported by the target filesystem.
-.IP \[bu]
-Sparse file attributes will not be extracted.
 .IP \[bu]
 Since encrypted files (with FILE_ATTRIBUTE_ENCRYPTED) are not stored in
 plaintext in the WIM image, \fBwimlib-imagex\fR cannot restore encrypted

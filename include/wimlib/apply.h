@@ -134,6 +134,21 @@ report_apply_error(struct apply_ctx *ctx, int error_code, const tchar *path)
 	return report_error(ctx->progfunc, ctx->progctx, error_code, path);
 }
 
+extern bool
+detect_sparse_region(const void *data, size_t size, size_t *len_ret);
+
+static inline bool
+maybe_detect_sparse_region(const void *data, size_t size, size_t *len_ret,
+			   bool enabled)
+{
+	if (!enabled) {
+		/* Force non-sparse without checking */
+		*len_ret = size;
+		return false;
+	}
+	return detect_sparse_region(data, size, len_ret);
+}
+
 #define inode_first_extraction_dentry(inode)				\
 	((inode)->i_first_extraction_alias)
 
