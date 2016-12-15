@@ -257,7 +257,8 @@ set_random_metadata(struct wim_inode *inode, struct generation_context *ctx)
 			   FILE_ATTRIBUTE_SYSTEM |
 			   FILE_ATTRIBUTE_ARCHIVE |
 			   FILE_ATTRIBUTE_NOT_CONTENT_INDEXED |
-			   FILE_ATTRIBUTE_COMPRESSED));
+			   FILE_ATTRIBUTE_COMPRESSED |
+			   FILE_ATTRIBUTE_SPARSE_FILE));
 
 	/* File attributes  */
 	inode->i_attributes |= attrib;
@@ -323,8 +324,10 @@ generate_data(u8 *buffer, size_t size, struct generation_context *ctx)
 	size_t mask = -1;
 	size_t num_byte_fills = rand32() % 256;
 
+	/* Start by initializing to a random byte */
 	memset(buffer, rand32() % 256, size);
 
+	/* Add some random bytes in some random places */
 	for (size_t i = 0; i < num_byte_fills; i++) {
 		u8 b = rand8();
 
@@ -342,12 +345,24 @@ generate_data(u8 *buffer, size_t size, struct generation_context *ctx)
 			mask = (size_t)-1 << rand32() % 4;
 	}
 
+	/* Sometimes add a wave pattern */
 	if (rand32() % 8 == 0) {
 		double magnitude = rand32() % 128;
 		double scale = 1.0 / (1 + (rand32() % 256));
 
 		for (size_t i = 0; i < size; i++)
 			buffer[i] += (int)(magnitude * cos(i * scale));
+	}
+
+	/* Sometimes add some zero regions (holes) */
+	if (rand32() % 4 == 0) {
+		size_t num_holes = 1 + (rand32() % 16);
+		for (size_t i = 0; i < num_holes; i++) {
+			size_t hole_offset = rand32() % size;
+			size_t hole_len = min(size - hole_offset,
+					      size / (1 + (rand32() % 16)));
+			memset(&buffer[hole_offset], 0, hole_len);
+		}
 	}
 }
 
@@ -902,7 +917,7 @@ calc_corresponding_files_recursive(struct wim_dentry *d1, struct wim_dentry *d2,
 
 	/* Compare short filenames, case insensitively.  */
 	if (!(d2->d_short_name_nbytes == 0 &&
-	      (cmp_flags & WIMLIB_CMP_FLAG_SHORT_NAMES_NOT_PRESERVED)) &&
+	      (cmp_flags & WIMLIB_CMP_FLAG_UNIX_MODE)) &&
 	    cmp_utf16le_strings(d1->d_short_name, d1->d_short_name_nbytes / 2,
 				d2->d_short_name, d2->d_short_name_nbytes / 2,
 				true))
@@ -980,59 +995,108 @@ check_hard_link(struct wim_dentry *dentry, void *_ignore)
 	return WIMLIB_ERR_IMAGES_ARE_DIFFERENT;
 }
 
+static const struct {
+	u32 flag;
+	const char *name;
+} file_attr_flags[] = {
+	{FILE_ATTRIBUTE_READONLY,	     "READONLY"},
+	{FILE_ATTRIBUTE_HIDDEN,		     "HIDDEN"},
+	{FILE_ATTRIBUTE_SYSTEM,		     "SYSTEM"},
+	{FILE_ATTRIBUTE_DIRECTORY,	     "DIRECTORY"},
+	{FILE_ATTRIBUTE_ARCHIVE,	     "ARCHIVE"},
+	{FILE_ATTRIBUTE_DEVICE,		     "DEVICE"},
+	{FILE_ATTRIBUTE_NORMAL,		     "NORMAL"},
+	{FILE_ATTRIBUTE_TEMPORARY,	     "TEMPORARY"},
+	{FILE_ATTRIBUTE_SPARSE_FILE,	     "SPARSE_FILE"},
+	{FILE_ATTRIBUTE_REPARSE_POINT,	     "REPARSE_POINT"},
+	{FILE_ATTRIBUTE_COMPRESSED,	     "COMPRESSED"},
+	{FILE_ATTRIBUTE_OFFLINE,	     "OFFLINE"},
+	{FILE_ATTRIBUTE_NOT_CONTENT_INDEXED, "NOT_CONTENT_INDEXED"},
+	{FILE_ATTRIBUTE_ENCRYPTED,	     "ENCRYPTED"},
+	{FILE_ATTRIBUTE_VIRTUAL,	     "VIRTUAL"},
+};
+
+static int
+cmp_attributes(const struct wim_inode *inode1,
+	       const struct wim_inode *inode2, int cmp_flags)
+{
+	const u32 changed = inode1->i_attributes ^ inode2->i_attributes;
+	const u32 set = inode2->i_attributes & ~inode1->i_attributes;
+	const u32 cleared = inode1->i_attributes & ~inode2->i_attributes;
+
+	/* NORMAL may change, but it must never be set along with other
+	 * attributes. */
+	if ((inode2->i_attributes & FILE_ATTRIBUTE_NORMAL) &&
+	    (inode2->i_attributes & ~FILE_ATTRIBUTE_NORMAL))
+		goto mismatch;
+
+	/* DIRECTORY must not change. */
+	if (changed & FILE_ATTRIBUTE_DIRECTORY)
+		goto mismatch;
+
+	/* REPARSE_POINT may be cleared in UNIX mode if the inode is not a
+	 * symlink. */
+	if ((changed & FILE_ATTRIBUTE_REPARSE_POINT) &&
+	    !((cleared & FILE_ATTRIBUTE_REPARSE_POINT) &&
+	      (cmp_flags & WIMLIB_CMP_FLAG_UNIX_MODE) &&
+	      !inode_is_symlink(inode1)))
+		goto mismatch;
+
+	/* SPARSE_FILE may be cleared in UNIX and NTFS-3G modes, or in Windows
+	 * mode if the inode is a directory. */
+	if ((changed & FILE_ATTRIBUTE_SPARSE_FILE) &&
+	    !((cleared & FILE_ATTRIBUTE_SPARSE_FILE) &&
+	      ((cmp_flags & (WIMLIB_CMP_FLAG_UNIX_MODE |
+			     WIMLIB_CMP_FLAG_NTFS_3G_MODE)) ||
+	       ((cmp_flags & WIMLIB_CMP_FLAG_WINDOWS_MODE) &&
+		(inode1->i_attributes & FILE_ATTRIBUTE_DIRECTORY)))))
+		goto mismatch;
+
+	/* COMPRESSED may change in UNIX and NTFS-3G modes.  (It *should* be
+	 * preserved in NTFS-3G mode, but it's not implemented yet.) */
+	if ((changed & FILE_ATTRIBUTE_COMPRESSED) &&
+	    !(cmp_flags & (WIMLIB_CMP_FLAG_UNIX_MODE |
+			   WIMLIB_CMP_FLAG_NTFS_3G_MODE)))
+		goto mismatch;
+
+	/* All other attributes can change in UNIX mode, but not in any other
+	 * mode. */
+	if ((changed & ~(FILE_ATTRIBUTE_NORMAL |
+			 FILE_ATTRIBUTE_DIRECTORY |
+			 FILE_ATTRIBUTE_REPARSE_POINT |
+			 FILE_ATTRIBUTE_SPARSE_FILE |
+			 FILE_ATTRIBUTE_COMPRESSED)) &&
+	    !(cmp_flags & WIMLIB_CMP_FLAG_UNIX_MODE))
+		goto mismatch;
+
+	return 0;
+
+mismatch:
+	ERROR("Attribute mismatch for %"TS": 0x%08"PRIx32" vs. 0x%08"PRIx32":",
+	      inode_any_full_path(inode1), inode1->i_attributes,
+	      inode2->i_attributes);
+	for (size_t i = 0; i < ARRAY_LEN(file_attr_flags); i++) {
+		u32 flag = file_attr_flags[i].flag;
+		if (changed & flag) {
+			fprintf(stderr, "\tFILE_ATTRIBUTE_%s was %s\n",
+				file_attr_flags[i].name,
+				(set & flag) ? "set" : "cleared");
+		}
+	}
+	return WIMLIB_ERR_IMAGES_ARE_DIFFERENT;
+}
+
 static int
 cmp_inodes(const struct wim_inode *inode1, const struct wim_inode *inode2,
 	   const struct wim_image_metadata *imd1,
 	   const struct wim_image_metadata *imd2, int cmp_flags)
 {
-	const u32 attrib_diff = inode1->i_attributes ^ inode2->i_attributes;
-	bool reparse_point_should_preserved = true;
+	int ret;
 
 	/* Compare attributes  */
-	if (cmp_flags & WIMLIB_CMP_FLAG_ATTRIBUTES_NOT_PRESERVED) {
-
-		/* In this mode, we expect that most attributes are not
-		 * preserved.  However, FILE_ATTRIBUTE_DIRECTORY should always
-		 * match.  */
-		if (attrib_diff & FILE_ATTRIBUTE_DIRECTORY)
-			goto attrib_mismatch;
-
-		/* We may also expect FILE_ATTRIBUTE_REPARSE_POINT to be
-		 * preserved for symlinks.  It also shouldn't be set if it
-		 * wasn't set before.  */
-
-		if ((cmp_flags & WIMLIB_CMP_FLAG_IMAGE2_SHOULD_HAVE_SYMLINKS) &&
-		    inode_is_symlink(inode1))
-			reparse_point_should_preserved = true;
-		else
-			reparse_point_should_preserved = false;
-
-		if ((attrib_diff & FILE_ATTRIBUTE_REPARSE_POINT) &&
-		    (reparse_point_should_preserved ||
-		     (inode2->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)))
-			goto attrib_mismatch;
-	} else {
-
-		/* Most attributes should be preserved.  */
-
-		/* Nothing other than COMPRESSED and NORMAL should have changed.
-		 */
-		if (attrib_diff & ~(FILE_ATTRIBUTE_COMPRESSED |
-				    FILE_ATTRIBUTE_NORMAL))
-			goto attrib_mismatch;
-
-		/* COMPRESSED shouldn't have changed unless specifically
-		 * excluded.  */
-		if ((attrib_diff & FILE_ATTRIBUTE_COMPRESSED) &&
-		    !(cmp_flags & WIMLIB_CMP_FLAG_COMPRESSION_NOT_PRESERVED))
-			goto attrib_mismatch;
-
-		/* We allow NORMAL to change, but not if the file ended up with
-		 * other attributes set as well.  */
-		if ((attrib_diff & FILE_ATTRIBUTE_NORMAL) &&
-		    (inode2->i_attributes & ~FILE_ATTRIBUTE_NORMAL))
-			goto attrib_mismatch;
-	}
+	ret = cmp_attributes(inode1, inode2, cmp_flags);
+	if (ret)
+		return ret;
 
 	/* Compare security descriptors  */
 	if (inode_has_security_descriptor(inode1)) {
@@ -1047,7 +1111,7 @@ cmp_inodes(const struct wim_inode *inode1, const struct wim_inode *inode2,
 				      inode_any_full_path(inode1));
 				return WIMLIB_ERR_IMAGES_ARE_DIFFERENT;
 			}
-		} else if (!(cmp_flags & WIMLIB_CMP_FLAG_SECURITY_NOT_PRESERVED)) {
+		} else if (!(cmp_flags & WIMLIB_CMP_FLAG_UNIX_MODE)) {
 			ERROR("%"TS" has a security descriptor in the first image but "
 			      "not in the second image!", inode_any_full_path(inode1));
 			return WIMLIB_ERR_IMAGES_ARE_DIFFERENT;
@@ -1066,7 +1130,8 @@ cmp_inodes(const struct wim_inode *inode1, const struct wim_inode *inode2,
 		const struct wim_inode_stream *strm2;
 
 		if (strm1->stream_type == STREAM_TYPE_REPARSE_POINT &&
-		    !reparse_point_should_preserved)
+		    (cmp_flags & WIMLIB_CMP_FLAG_UNIX_MODE &&
+		     !inode_is_symlink(inode1)))
 			continue;
 
 		if (strm1->stream_type == STREAM_TYPE_UNKNOWN)
@@ -1078,7 +1143,7 @@ cmp_inodes(const struct wim_inode *inode1, const struct wim_inode *inode2,
 		if (!strm2) {
 			/* Corresponding stream not found  */
 			if (stream_is_named(strm1) &&
-			    (cmp_flags & WIMLIB_CMP_FLAG_ADS_NOT_PRESERVED))
+			    (cmp_flags & WIMLIB_CMP_FLAG_UNIX_MODE))
 				continue;
 			ERROR("Stream of %"TS" is missing in second image; "
 			      "type %d, named=%d, empty=%d",
@@ -1097,13 +1162,6 @@ cmp_inodes(const struct wim_inode *inode1, const struct wim_inode *inode2,
 	}
 
 	return 0;
-
-attrib_mismatch:
-	ERROR("Attribute mismatch; %"TS" has attributes 0x%08"PRIx32" "
-	      "in first image but attributes 0x%08"PRIx32" in second image",
-	      inode_any_full_path(inode1), inode1->i_attributes,
-	      inode2->i_attributes);
-	return WIMLIB_ERR_IMAGES_ARE_DIFFERENT;
 }
 
 static int

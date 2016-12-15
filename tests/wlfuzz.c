@@ -739,20 +739,17 @@ op__apply_and_capture_test(void)
 		extract_flags |= WIMLIB_EXTRACT_FLAG_STRICT_SHORT_NAMES;
 		extract_flags |= WIMLIB_EXTRACT_FLAG_STRICT_TIMESTAMPS;
 		add_flags |= WIMLIB_ADD_FLAG_NTFS;
-		cmp_flags |= WIMLIB_CMP_FLAG_COMPRESSION_NOT_PRESERVED;
+		cmp_flags |= WIMLIB_CMP_FLAG_NTFS_3G_MODE;
 		create_ntfs_volume(TMP_TARGET_NAME);
 	} else
 #endif
 	{
 #ifdef __WIN32__
 		printf("applying in Windows mode\n");
+		cmp_flags |= WIMLIB_CMP_FLAG_WINDOWS_MODE;
 #else /* __WIN32__ */
 		printf("applying in UNIX mode\n");
-		cmp_flags |= WIMLIB_CMP_FLAG_SHORT_NAMES_NOT_PRESERVED;
-		cmp_flags |= WIMLIB_CMP_FLAG_ATTRIBUTES_NOT_PRESERVED;
-		cmp_flags |= WIMLIB_CMP_FLAG_SECURITY_NOT_PRESERVED;
-		cmp_flags |= WIMLIB_CMP_FLAG_ADS_NOT_PRESERVED;
-		cmp_flags |= WIMLIB_CMP_FLAG_IMAGE2_SHOULD_HAVE_SYMLINKS;
+		cmp_flags |= WIMLIB_CMP_FLAG_UNIX_MODE;
 #endif /* !__WIN32__ */
 	}
 	add_flags |= WIMLIB_ADD_FLAG_NORPFIX;
@@ -891,7 +888,8 @@ op__wimboot_test(void)
 	printf("comparing wimboot.wim:%d with wim%d:%d\n",
 	       image, index2, image_count + 1);
 
-	CHECK_RET(wimlib_compare_images(wim, image, wim2, image_count + 1, 0));
+	CHECK_RET(wimlib_compare_images(wim, image, wim2, image_count + 1,
+					WIMLIB_CMP_FLAG_WINDOWS_MODE));
 
 	wimlib_free(wim);
 	wimlib_free(wim2);
