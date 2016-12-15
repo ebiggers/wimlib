@@ -585,6 +585,9 @@ retry_create:
 		return WIMLIB_ERR_OPEN;
 	}
 	filedes_init(&ctx->open_fds[ctx->num_open_fds++], fd);
+#ifdef HAVE_POSIX_FALLOCATE
+	posix_fallocate(fd, 0, blob->size);
+#endif
 	return unix_create_hardlinks(inode, first_dentry, first_path, ctx);
 }
 
