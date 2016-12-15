@@ -441,6 +441,40 @@ md subdir
 fsutil objectid set f67394c12b17608e1d050d181ba8ffd2 7df80cbdf620f4c82c79b9e6799147b6 97621aff72915ade05abb96b15dea1a3 e0bda4caa9e33cfd461c92c16be9713d subdir
 call :do_test
 
+call :msg "sparse files"
+fsutil file createnew sparse 1000000 > nul
+fsutil sparse setflag sparse
+fsutil sparse setrange sparse 0 1000000
+
+fsutil file createnew mostly_sparse 1000000 > nul
+fsutil sparse setflag mostly_sparse
+fsutil sparse setrange mostly_sparse 0 1000000
+echo hello >> mostly_sparse
+type sparse >> mostly_sparse
+fsutil sparse setrange mostly_sparse 1000100 2000000
+call :do_test
+
+call :msg "sparse and compressed files"
+fsutil file createnew sparse 1000000 > nul
+fsutil sparse setflag sparse
+fsutil sparse setrange sparse 0 1000000
+compact /c sparse > nul
+
+fsutil file createnew mostly_sparse 1000000 > nul
+fsutil sparse setflag mostly_sparse
+fsutil sparse setrange mostly_sparse 0 1000000
+echo hello >> mostly_sparse
+type sparse >> mostly_sparse
+fsutil sparse setrange mostly_sparse 1000100 2000000
+compact /c mostly_sparse > nul
+
+type nul > compressed_first
+compact /c compressed_first > nul
+type sparse >> compressed_first
+fsutil sparse setflag compressed_first
+fsutil sparse setrange compressed_first 0 500000
+call :do_test
+
 :rpfix_tests
 
 echo Testing rpfix junction
