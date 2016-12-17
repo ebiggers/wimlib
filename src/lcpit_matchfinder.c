@@ -613,7 +613,7 @@ lcpit_matchfinder_init(struct lcpit_matchfinder *mf, size_t max_bufsize,
  * References:
  *
  *	Y. Mori.  libdivsufsort, a lightweight suffix-sorting library.
- *	https://code.google.com/p/libdivsufsort/.
+ *	https://github.com/y-256/libdivsufsort
  *
  *	G. Nong, S. Zhang, and W.H. Chan.  2009.  Linear Suffix Array
  *	Construction by Almost Pure Induced-Sorting.  Data Compression
