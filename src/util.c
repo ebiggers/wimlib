@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014 Eric Biggers
+ * Copyright (C) 2012-2016 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -23,6 +23,7 @@
 #  include "config.h"
 #endif
 
+#include <errno.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -82,7 +83,14 @@ void *
 wimlib_calloc(size_t nmemb, size_t size)
 {
 	size_t total_size = nmemb * size;
-	void *p = MALLOC(total_size);
+	void *p;
+
+	if (size != 0 && nmemb > SIZE_MAX / size) {
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	p = MALLOC(total_size);
 	if (p)
 		p = memset(p, 0, total_size);
 	return p;
