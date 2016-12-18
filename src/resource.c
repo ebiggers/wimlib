@@ -639,7 +639,7 @@ noop_cb(const void *chunk, size_t size, void *_ctx)
 int
 skip_wim_resource(const struct wim_resource_descriptor *rdesc)
 {
-	struct consume_chunk_callback cb = {
+	static const struct consume_chunk_callback cb = {
 		.func = noop_cb,
 	};
 	return read_partial_wim_resource(rdesc, 0,
@@ -1333,7 +1333,7 @@ extract_blob_to_fd(struct blob_descriptor *blob, struct filedes *fd)
 int
 sha1_blob(struct blob_descriptor *blob)
 {
-	struct read_blob_callbacks cbs = {
+	static const struct read_blob_callbacks cbs = {
 	};
 	return read_blob_with_sha1(blob, &cbs);
 }

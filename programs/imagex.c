@@ -490,7 +490,7 @@ verify_image_exists_and_is_single(int image, const tchar *image_name,
 static void
 print_available_compression_types(FILE *fp)
 {
-	static const tchar *s =
+	static const tchar * const s =
 	T(
 	"Available compression types:\n"
 	"\n"
@@ -4378,7 +4378,7 @@ static const struct imagex_command imagex_commands[] = {
 
 #endif
 
-static const tchar *usage_strings[] = {
+static const tchar * const usage_strings[] = {
 [CMD_APPEND] =
 T(
 "    %"TS" " SOURCE_STR " WIMFILE [IMAGE_NAME [IMAGE_DESC]]\n"
@@ -4511,7 +4511,7 @@ static const tchar *get_cmd_string(int cmd, bool nospace)
 static void
 version(void)
 {
-	static const tchar *s =
+	static const tchar * const s =
 	T(
 "wimlib-imagex (distributed with " PACKAGE " " PACKAGE_VERSION ")\n"
 "Copyright (C) 2012-2016 Eric Biggers\n"
@@ -4586,7 +4586,7 @@ usage_all(FILE *fp)
 		print_usage_string(cmd, fp);
 		tfprintf(fp, T("\n"));
 	}
-	static const tchar *extra =
+	static const tchar * const extra =
 	T(
 "    %"TS" --help\n"
 "    %"TS" --version\n"

@@ -2036,7 +2036,7 @@ wimfs_write(const char *path, const char *buf, size_t size,
 	return ret;
 }
 
-static struct fuse_operations wimfs_operations = {
+static const struct fuse_operations wimfs_operations = {
 	.chmod       = wimfs_chmod,
 	.chown       = wimfs_chown,
 	.fgetattr    = wimfs_fgetattr,

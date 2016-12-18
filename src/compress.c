@@ -38,7 +38,7 @@ struct wimlib_compressor {
 	size_t max_block_size;
 };
 
-static const struct compressor_ops *compressor_ops[] = {
+static const struct compressor_ops * const compressor_ops[] = {
 	[WIMLIB_COMPRESSION_TYPE_XPRESS] = &xpress_compressor_ops,
 	[WIMLIB_COMPRESSION_TYPE_LZX]    = &lzx_compressor_ops,
 	[WIMLIB_COMPRESSION_TYPE_LZMS]   = &lzms_compressor_ops,

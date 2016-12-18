@@ -2482,7 +2482,7 @@ set_system_compression(HANDLE h, int format)
 
 /* Hard-coded list of files which the Windows bootloader may need to access
  * before the WOF driver has been loaded.  */
-static wchar_t *bootloader_pattern_strings[] = {
+static const wchar_t * const bootloader_pattern_strings[] = {
 	L"*winload.*",
 	L"*winresume.*",
 	L"\\Windows\\AppPatch\\drvmain.sdb",
@@ -2514,7 +2514,7 @@ static wchar_t *bootloader_pattern_strings[] = {
 };
 
 static const struct string_list bootloader_patterns = {
-	.strings = bootloader_pattern_strings,
+	.strings = (wchar_t **)bootloader_pattern_strings,
 	.num_strings = ARRAY_LEN(bootloader_pattern_strings),
 };
 

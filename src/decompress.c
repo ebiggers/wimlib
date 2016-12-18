@@ -36,7 +36,7 @@ struct wimlib_decompressor {
 	void *private;
 };
 
-static const struct decompressor_ops *decompressor_ops[] = {
+static const struct decompressor_ops * const decompressor_ops[] = {
 	[WIMLIB_COMPRESSION_TYPE_XPRESS] = &xpress_decompressor_ops,
 	[WIMLIB_COMPRESSION_TYPE_LZX]    = &lzx_decompressor_ops,
 	[WIMLIB_COMPRESSION_TYPE_LZMS]   = &lzms_decompressor_ops,
