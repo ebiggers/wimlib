@@ -101,6 +101,134 @@ generate_random_timestamp(void)
 	return (1 + rand64()) & ~(1ULL << 63);
 }
 
+static inline bool
+is_valid_windows_filename_char(utf16lechar c)
+{
+	return le16_to_cpu(c) > 31 &&
+		c != cpu_to_le16('/') &&
+		c != cpu_to_le16('<') &&
+		c != cpu_to_le16('>') &&
+		c != cpu_to_le16(':') &&
+		c != cpu_to_le16('"') &&
+		c != cpu_to_le16('/' ) &&
+		c != cpu_to_le16('\\') &&
+		c != cpu_to_le16('|') &&
+		c != cpu_to_le16('?') &&
+		c != cpu_to_le16('*');
+}
+
+/* Is the character valid in a filename on the current platform? */
+static inline bool
+is_valid_filename_char(utf16lechar c)
+{
+#ifdef __WIN32__
+	return is_valid_windows_filename_char(c);
+#else
+	return c != cpu_to_le16('\0') && c != cpu_to_le16('/');
+#endif
+}
+
+/* Generate a random filename and return its length. */
+static int
+generate_random_filename(utf16lechar name[], int max_len,
+			 struct generation_context *ctx)
+{
+	int len;
+
+	/* Choose the length of the name. */
+	switch (rand32() % 8) {
+	default:
+		/* short name  */
+		len = 1 + (rand32() % 6);
+		break;
+	case 2:
+	case 3:
+	case 4:
+		/* medium-length name  */
+		len = 7 + (rand32() % 8);
+		break;
+	case 5:
+	case 6:
+		/* long name  */
+		len = 15 + (rand32() % 15);
+		break;
+	case 7:
+		/* very long name  */
+		len = 30 + (rand32() % 90);
+		break;
+	}
+	len = min(len, max_len);
+
+retry:
+	/* Generate the characters in the name. */
+	for (int i = 0; i < len; i++) {
+		do {
+			name[i] = rand16();
+		} while (!is_valid_filename_char(name[i]));
+	}
+
+	/* Add a null terminator. */
+	name[len] = cpu_to_le16('\0');
+
+	/* Don't generate . and .. */
+	if (name[0] == cpu_to_le16('.') &&
+	    (len == 1 || (len == 2 && name[1] == cpu_to_le16('.'))))
+		goto retry;
+
+	return len;
+}
+
+/* The set of characters which are valid in short filenames. */
+static const char valid_short_name_chars[] = {
+	'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N',
+	'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+	'!', '#', '$', '%', '&', '\'', '(', ')', '-', '@', '^', '_', '`', '{',
+	'}', '~',
+	/* Note: Windows does not allow space and 128-255 in short filenames
+	 * (tested on both NTFS and FAT). */
+};
+
+static int
+generate_short_name_component(utf16lechar p[], int len)
+{
+	for (int i = 0; i < len; i++) {
+		char c = valid_short_name_chars[rand32() %
+						ARRAY_LEN(valid_short_name_chars)];
+		p[i] = cpu_to_le16(c);
+	}
+	return len;
+}
+
+/* Generate a random short (8.3) filename and return its length.
+ * The @name array must have length >= 13 (8 + 1 + 3 + 1). */
+static int
+generate_random_short_name(utf16lechar name[], struct generation_context *ctx)
+{
+	/*
+	 * Legal short names on Windows consist of 1 to 8 characters, optionally
+	 * followed by a dot then 1 to 3 more characters.  Only certain
+	 * characters are allowed.
+	 */
+	int base_len = 1 + (rand32() % 8);
+	int ext_len = rand32() % 4;
+	int total_len;
+
+	base_len = generate_short_name_component(name, base_len);
+
+	if (ext_len) {
+		name[base_len] = cpu_to_le16('.');
+		ext_len = generate_short_name_component(&name[base_len + 1],
+							ext_len);
+		total_len = base_len + 1 + ext_len;
+	} else {
+		total_len = base_len;
+	}
+	name[total_len] = cpu_to_le16('\0');
+	return total_len;
+}
+
+
 static const struct {
 	u8 num_subauthorities;
 	u64 identifier_authority;
@@ -334,6 +462,9 @@ generate_data(u8 *buffer, size_t size, struct generation_context *ctx)
 	size_t mask = -1;
 	size_t num_byte_fills = rand32() % 256;
 
+	if (size == 0)
+		return;
+
 	/* Start by initializing to a random byte */
 	memset(buffer, rand32() % 256, size);
 
@@ -406,35 +537,59 @@ err_nomem:
 	return WIMLIB_ERR_NOMEM;
 }
 
-static int
+static noinline_for_stack int
 set_random_reparse_point(struct wim_inode *inode, struct generation_context *ctx)
 {
-	void *buffer = NULL;
-	size_t rpdatalen = select_stream_size(ctx) % (REPARSE_DATA_MAX_SIZE + 1);
-
-	if (rpdatalen) {
-		buffer = MALLOC(rpdatalen);
-		if (!buffer)
-			return WIMLIB_ERR_NOMEM;
-		generate_data(buffer, rpdatalen, ctx);
-	}
+	struct reparse_buffer_disk rpbuf;
+	size_t rpdatalen;
 
 	inode->i_attributes |= FILE_ATTRIBUTE_REPARSE_POINT;
-	inode->i_rp_reserved = rand16();
 
-	if (rpdatalen >= GUID_SIZE && randbool()) {
-		/* Non-Microsoft reparse tag (16-byte GUID required)  */
-		u8 *guid = buffer;
-		guid[6] = (guid[6] & 0x0F) | 0x40;
-		guid[8] = (guid[8] & 0x3F) | 0x80;
-		inode->i_reparse_tag = 0x00000100;
+	if (randbool()) {
+		/* Symlink */
+		int target_nchars;
+		utf16lechar *targets = (utf16lechar *)rpbuf.link.symlink.data;
+
+		inode->i_reparse_tag = WIM_IO_REPARSE_TAG_SYMLINK;
+
+		target_nchars = generate_random_filename(targets, 255, ctx);
+
+		rpbuf.link.substitute_name_offset = cpu_to_le16(0);
+		rpbuf.link.substitute_name_nbytes = cpu_to_le16(2*target_nchars);
+		rpbuf.link.print_name_offset = cpu_to_le16(2*(target_nchars + 1));
+		rpbuf.link.print_name_nbytes = cpu_to_le16(2*target_nchars);
+		targets[target_nchars] = cpu_to_le16(0);
+		memcpy(&targets[target_nchars + 1], targets, 2*target_nchars);
+		targets[target_nchars + 1 + target_nchars] = cpu_to_le16(0);
+
+		rpbuf.link.symlink.flags = cpu_to_le32(SYMBOLIC_LINK_RELATIVE);
+		rpdatalen = ((u8 *)targets - rpbuf.rpdata) +
+				2*(target_nchars + 1 + target_nchars + 1);
 	} else {
-		/* Microsoft reparse tag  */
-		inode->i_reparse_tag = 0x80000000;
+		rpdatalen = select_stream_size(ctx) % REPARSE_DATA_MAX_SIZE;
+		generate_data(rpbuf.rpdata, rpdatalen, ctx);
+
+		if (rpdatalen >= GUID_SIZE && randbool()) {
+			/* Non-Microsoft reparse tag (16-byte GUID required)  */
+			u8 *guid = rpbuf.rpdata;
+			guid[6] = (guid[6] & 0x0F) | 0x40;
+			guid[8] = (guid[8] & 0x3F) | 0x80;
+			inode->i_reparse_tag = 0x00000100;
+		} else {
+			/* Microsoft reparse tag  */
+			inode->i_reparse_tag = 0x80000000;
+		}
+		inode->i_rp_reserved = rand16();
 	}
 
-	return add_stream(inode, ctx, STREAM_TYPE_REPARSE_POINT, NO_STREAM_NAME,
-			  buffer, rpdatalen);
+	wimlib_assert(rpdatalen < REPARSE_DATA_MAX_SIZE);
+
+	if (!inode_add_stream_with_data(inode, STREAM_TYPE_REPARSE_POINT,
+					NO_STREAM_NAME, rpbuf.rpdata,
+					rpdatalen, ctx->params->blob_table))
+		return WIMLIB_ERR_NOMEM;
+
+	return 0;
 }
 
 static int
@@ -469,8 +624,9 @@ set_random_streams(struct wim_inode *inode, struct generation_context *ctx)
 			return ret;
 	}
 
-	/* Unnamed data stream (nondirectories only)  */
-	if (!(inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)) {
+	/* Unnamed data stream (nondirectories and non-symlinks only)  */
+	if (!(inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) &&
+	    !inode_is_symlink(inode)) {
 		ret = add_random_data_stream(inode, ctx, NO_STREAM_NAME);
 		if (ret)
 			return ret;
@@ -490,133 +646,6 @@ set_random_streams(struct wim_inode *inode, struct generation_context *ctx)
 	}
 
 	return 0;
-}
-
-static inline bool
-is_valid_windows_filename_char(utf16lechar c)
-{
-	return le16_to_cpu(c) > 31 &&
-		c != cpu_to_le16('/') &&
-		c != cpu_to_le16('<') &&
-		c != cpu_to_le16('>') &&
-		c != cpu_to_le16(':') &&
-		c != cpu_to_le16('"') &&
-		c != cpu_to_le16('/' ) &&
-		c != cpu_to_le16('\\') &&
-		c != cpu_to_le16('|') &&
-		c != cpu_to_le16('?') &&
-		c != cpu_to_le16('*');
-}
-
-/* Is the character valid in a filename on the current platform? */
-static inline bool
-is_valid_filename_char(utf16lechar c)
-{
-#ifdef __WIN32__
-	return is_valid_windows_filename_char(c);
-#else
-	return c != cpu_to_le16('\0') && c != cpu_to_le16('/');
-#endif
-}
-
-/* Generate a random filename and return its length. */
-static int
-generate_random_filename(utf16lechar name[], int max_len,
-			 struct generation_context *ctx)
-{
-	int len;
-
-	/* Choose the length of the name. */
-	switch (rand32() % 8) {
-	default:
-		/* short name  */
-		len = 1 + (rand32() % 6);
-		break;
-	case 2:
-	case 3:
-	case 4:
-		/* medium-length name  */
-		len = 7 + (rand32() % 8);
-		break;
-	case 5:
-	case 6:
-		/* long name  */
-		len = 15 + (rand32() % 15);
-		break;
-	case 7:
-		/* very long name  */
-		len = 30 + (rand32() % 90);
-		break;
-	}
-	len = min(len, max_len);
-
-retry:
-	/* Generate the characters in the name. */
-	for (int i = 0; i < len; i++) {
-		do {
-			name[i] = rand16();
-		} while (!is_valid_filename_char(name[i]));
-	}
-
-	/* Add a null terminator. */
-	name[len] = cpu_to_le16('\0');
-
-	/* Don't generate . and .. */
-	if (name[0] == cpu_to_le16('.') &&
-	    (len == 1 || (len == 2 && name[1] == cpu_to_le16('.'))))
-		goto retry;
-
-	return len;
-}
-
-/* The set of characters which are valid in short filenames. */
-static const char valid_short_name_chars[] = {
-	'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N',
-	'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
-	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-	'!', '#', '$', '%', '&', '\'', '(', ')', '-', '@', '^', '_', '`', '{',
-	'}', '~',
-	/* Note: Windows does not allow space and 128-255 in short filenames
-	 * (tested on both NTFS and FAT). */
-};
-
-static int
-generate_short_name_component(utf16lechar p[], int len)
-{
-	for (int i = 0; i < len; i++) {
-		char c = valid_short_name_chars[rand32() %
-						ARRAY_LEN(valid_short_name_chars)];
-		p[i] = cpu_to_le16(c);
-	}
-	return len;
-}
-
-/* Generate a random short (8.3) filename and return its length.
- * The @name array must have length >= 13 (8 + 1 + 3 + 1). */
-static int
-generate_random_short_name(utf16lechar name[], struct generation_context *ctx)
-{
-	/*
-	 * Legal short names on Windows consist of 1 to 8 characters, optionally
-	 * followed by a dot then 1 to 3 more characters.  Only certain
-	 * characters are allowed.
-	 */
-	int base_len = 1 + (rand32() % 8);
-	int ext_len = rand32() % 4;
-	int total_len;
-
-	base_len = generate_short_name_component(name, base_len);
-
-	if (ext_len) {
-		name[base_len] = cpu_to_le16('.');
-		ext_len = generate_short_name_component(&name[base_len + 1],
-							ext_len);
-		total_len = base_len + 1 + ext_len;
-	} else {
-		total_len = base_len;
-	}
-	name[total_len] = cpu_to_le16('\0');
-	return total_len;
 }
 
 static u64
@@ -1043,9 +1072,12 @@ cmp_attributes(const struct wim_inode *inode1,
 	    (inode2->i_attributes & ~FILE_ATTRIBUTE_NORMAL))
 		goto mismatch;
 
-	/* DIRECTORY must not change. */
-	if (changed & FILE_ATTRIBUTE_DIRECTORY)
-		goto mismatch;
+	/* DIRECTORY may change in UNIX mode for symlinks. */
+	if (changed & FILE_ATTRIBUTE_DIRECTORY) {
+		if (!(inode_is_symlink(inode1) &&
+		      (cmp_flags & WIMLIB_CMP_FLAG_UNIX_MODE)))
+			goto mismatch;
+	}
 
 	/* REPARSE_POINT may be cleared in UNIX mode if the inode is not a
 	 * symlink. */
