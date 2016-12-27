@@ -153,6 +153,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/wim.h		\
 	include/wimlib/write.h		\
 	include/wimlib/x86_cpu_features.h	\
+	include/wimlib/xattr.h		\
 	include/wimlib/xml.h		\
 	include/wimlib/xml_windows.h	\
 	include/wimlib/xpress_constants.h

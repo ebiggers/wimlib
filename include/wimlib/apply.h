@@ -31,6 +31,7 @@ struct wim_features {
 	unsigned long object_ids;
 	unsigned long timestamps;
 	unsigned long case_sensitive_filenames;
+	unsigned long linux_xattrs;
 };
 
 struct blob_descriptor;

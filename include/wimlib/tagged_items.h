@@ -11,6 +11,9 @@ struct wim_inode;
 /* [wimlib extension] Standard UNIX metadata: uid, gid, mode, and rdev */
 #define TAG_WIMLIB_UNIX_DATA		0x337DD873
 
+/* [wimlib extension] Linux-style xattrs */
+#define TAG_WIMLIB_LINUX_XATTRS		0x337DD874
+
 extern void *
 inode_get_tagged_item(const struct wim_inode *inode, u32 tag, u32 min_len,
 		      u32 *actual_len_ret);
