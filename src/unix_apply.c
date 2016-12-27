@@ -29,6 +29,9 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#ifdef HAVE_SYS_XATTR_H
+#  include <sys/xattr.h>
+#endif
 #include <unistd.h>
 
 #include "wimlib/apply.h"
@@ -40,6 +43,7 @@
 #include "wimlib/reparse.h"
 #include "wimlib/timestamp.h"
 #include "wimlib/unix_data.h"
+#include "wimlib/xattr.h"
 
 /* We don't require O_NOFOLLOW, but the advantage of having it is that if we
  * need to extract a file to a location at which there exists a symbolic link,
@@ -60,6 +64,9 @@ unix_get_supported_features(const char *target,
 	supported_features->unix_data = 1;
 	supported_features->timestamps = 1;
 	supported_features->case_sensitive_filenames = 1;
+#ifdef HAVE_XATTR_SUPPORT
+	supported_features->linux_xattrs = 1;
+#endif
 	return 0;
 }
 
@@ -261,6 +268,109 @@ unix_set_mode(int fd, const char *path, mode_t mode)
 	return WIMLIB_ERR_SET_SECURITY;
 }
 
+#ifdef HAVE_XATTR_SUPPORT
+/* Apply extended attributes to a file */
+static int
+apply_linux_xattrs(int fd, const struct wim_inode *inode,
+		   const char *path, struct unix_apply_ctx *ctx,
+		   const void *entries, size_t entries_size)
+{
+	const void * const entries_end = entries + entries_size;
+	char name[XATTR_NAME_MAX + 1];
+
+	for (const struct wimlib_xattr_entry *entry = entries;
+	     (void *)entry < entries_end; entry = xattr_entry_next(entry))
+	{
+		u16 name_len;
+		const void *value;
+		u32 value_len;
+		int res;
+
+		if (!valid_xattr_entry(entry, entries_end - (void *)entry)) {
+			if (!path) {
+				path = unix_build_inode_extraction_path(inode,
+									ctx);
+			}
+			ERROR("\"%s\": extended attribute is corrupt", path);
+			return WIMLIB_ERR_INVALID_XATTR;
+		}
+		name_len = le16_to_cpu(entry->name_len);
+		memcpy(name, entry->name, name_len);
+		name[name_len] = '\0';
+
+		value = entry->name + name_len;
+		value_len = le32_to_cpu(entry->value_len);
+
+		if (fd >= 0)
+			res = fsetxattr(fd, name, value, value_len, 0);
+		else
+			res = lsetxattr(path, name, value, value_len, 0);
+
+		if (unlikely(res != 0)) {
+			if (!path) {
+				path = unix_build_inode_extraction_path(inode,
+									ctx);
+			}
+			if (is_security_xattr(name) &&
+			    (ctx->common.extract_flags &
+			     WIMLIB_EXTRACT_FLAG_STRICT_ACLS))
+			{
+				ERROR_WITH_ERRNO("\"%s\": unable to set extended attribute \"%s\"",
+						 path, name);
+				return WIMLIB_ERR_SET_XATTR;
+			}
+			WARNING_WITH_ERRNO("\"%s\": unable to set extended attribute \"%s\"",
+					   path, name);
+		}
+	}
+	return 0;
+}
+#endif /* HAVE_XATTR_SUPPORT */
+
+/* Apply standard UNIX permissions (uid, gid, and mode) to a file */
+static int
+apply_unix_permissions(int fd, const struct wim_inode *inode,
+		       const char *path, struct unix_apply_ctx *ctx,
+		       const struct wimlib_unix_data *dat)
+{
+	int ret;
+
+	ret = unix_set_owner_and_group(fd, path, dat->uid, dat->gid);
+	if (ret) {
+		if (!path)
+			path = unix_build_inode_extraction_path(inode, ctx);
+		if (ctx->common.extract_flags &
+		    WIMLIB_EXTRACT_FLAG_STRICT_ACLS)
+		{
+			ERROR_WITH_ERRNO("\"%s\": unable to set uid=%"PRIu32" and gid=%"PRIu32,
+					 path, dat->uid, dat->gid);
+			return ret;
+		}
+		WARNING_WITH_ERRNO("\"%s\": unable to set uid=%"PRIu32" and gid=%"PRIu32,
+				   path, dat->uid, dat->gid);
+	}
+
+	if (!inode_is_symlink(inode)) {
+		ret = unix_set_mode(fd, path, dat->mode);
+		if (ret) {
+			if (!path)
+				path = unix_build_inode_extraction_path(inode,
+									ctx);
+			if (ctx->common.extract_flags &
+			    WIMLIB_EXTRACT_FLAG_STRICT_ACLS)
+			{
+				ERROR_WITH_ERRNO("\"%s\": unable to set mode=0%"PRIo32,
+						 path, dat->mode);
+				return ret;
+			}
+			WARNING_WITH_ERRNO("\"%s\": unable to set mode=0%"PRIo32,
+					   path, dat->mode);
+		}
+	}
+
+	return 0;
+}
+
 /*
  * Set metadata on an extracted file.
  *
@@ -274,57 +384,33 @@ unix_set_metadata(int fd, const struct wim_inode *inode,
 		  const char *path, struct unix_apply_ctx *ctx)
 {
 	int ret;
-	struct wimlib_unix_data unix_data;
 
 	if (fd < 0 && !path)
 		path = unix_build_inode_extraction_path(inode, ctx);
 
-	if ((ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA)
-	    && inode_get_unix_data(inode, &unix_data))
-	{
-		u32 uid = unix_data.uid;
-		u32 gid = unix_data.gid;
-		u32 mode = unix_data.mode;
+	if (ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) {
+		struct wimlib_unix_data dat;
+	#ifdef HAVE_XATTR_SUPPORT
+		const void *entries;
+		u32 entries_size;
 
-		ret = unix_set_owner_and_group(fd, path, uid, gid);
-		if (ret) {
-			if (!path)
-				path = unix_build_inode_extraction_path(inode, ctx);
-			if (ctx->common.extract_flags &
-			    WIMLIB_EXTRACT_FLAG_STRICT_ACLS)
-			{
-				ERROR_WITH_ERRNO("Can't set uid=%"PRIu32" and "
-						 "gid=%"PRIu32" on \"%s\"",
-						 uid, gid, path);
+		entries = inode_get_linux_xattrs(inode, &entries_size);
+		if (entries) {
+			ret = apply_linux_xattrs(fd, inode, path, ctx,
+						 entries, entries_size);
+			if (ret)
 				return ret;
-			} else {
-				WARNING_WITH_ERRNO("Can't set uid=%"PRIu32" and "
-						   "gid=%"PRIu32" on \"%s\"",
-						   uid, gid, path);
-			}
 		}
-
-		ret = 0;
-		if (!inode_is_symlink(inode))
-			ret = unix_set_mode(fd, path, mode);
-		if (ret) {
-			if (!path)
-				path = unix_build_inode_extraction_path(inode, ctx);
-			if (ctx->common.extract_flags &
-			    WIMLIB_EXTRACT_FLAG_STRICT_ACLS)
-			{
-				ERROR_WITH_ERRNO("Can't set mode=0%"PRIo32" "
-						 "on \"%s\"", mode, path);
+	#endif
+		if (inode_get_unix_data(inode, &dat)) {
+			ret = apply_unix_permissions(fd, inode, path, ctx,
+						     &dat);
+			if (ret)
 				return ret;
-			} else {
-				WARNING_WITH_ERRNO("Can't set mode=0%"PRIo32" "
-						   "on \"%s\"", mode, path);
-			}
 		}
 	}
 
-	ret = unix_set_timestamps(fd, path,
-				  inode->i_last_access_time,
+	ret = unix_set_timestamps(fd, path, inode->i_last_access_time,
 				  inode->i_last_write_time);
 	if (ret) {
 		if (!path)
@@ -332,12 +418,12 @@ unix_set_metadata(int fd, const struct wim_inode *inode,
 		if (ctx->common.extract_flags &
 		    WIMLIB_EXTRACT_FLAG_STRICT_TIMESTAMPS)
 		{
-			ERROR_WITH_ERRNO("Can't set timestamps on \"%s\"", path);
+			ERROR_WITH_ERRNO("\"%s\": unable to set timestamps", path);
 			return ret;
-		} else {
-			WARNING_WITH_ERRNO("Can't set timestamps on \"%s\"", path);
 		}
+		WARNING_WITH_ERRNO("\"%s\": unable to set timestamps", path);
 	}
+
 	return 0;
 }
 
