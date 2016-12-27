@@ -669,7 +669,7 @@ create_staging_file(const struct wimfs_context *ctx, char **name_ret)
 	name[STAGING_FILE_NAME_LEN] = '\0';
 
 retry:
-	randomize_char_array_with_alnum(name, STAGING_FILE_NAME_LEN);
+	get_random_alnum_chars(name, STAGING_FILE_NAME_LEN);
 	fd = openat(ctx->staging_dir_fd, name,
 		    O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
 	if (unlikely(fd < 0)) {
@@ -853,7 +853,7 @@ make_staging_dir_at(int parent_dir_fd, const char *wim_basename,
 	p = staging_dir_name;
 	p = mempcpy(p, wim_basename, wim_basename_len);
 	p = mempcpy(p, common_suffix, sizeof(common_suffix));
-	randomize_char_array_with_alnum(p, random_suffix_len);
+	get_random_alnum_chars(p, random_suffix_len);
 	p += random_suffix_len;
 	*p = '\0';
 
@@ -2305,7 +2305,7 @@ generate_message_queue_name(char name[WIMFS_MQUEUE_NAME_LEN + 1])
 {
 	name[0] = '/';
 	memcpy(name + 1, "wimfs-", 6);
-	randomize_char_array_with_alnum(name + 7, WIMFS_MQUEUE_NAME_LEN - 7);
+	get_random_alnum_chars(name + 7, WIMFS_MQUEUE_NAME_LEN - 7);
 	name[WIMFS_MQUEUE_NAME_LEN] = '\0';
 }
 

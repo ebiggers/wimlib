@@ -807,7 +807,7 @@ end_wimboot_extraction(struct win32_apply_ctx *ctx)
 
 	build_win32_extraction_path(dentry, ctx);
 
-	randomize_char_array_with_alnum(subkeyname, 20);
+	get_random_alnum_chars(subkeyname, 20);
 	subkeyname[20] = L'\0';
 
 	res = RegLoadKey(HKEY_LOCAL_MACHINE, subkeyname, ctx->pathbuf.Buffer);
@@ -1268,18 +1268,11 @@ retry:
 				      FileShortNameInformation);
 
 	if (status == STATUS_INVALID_PARAMETER && !retried) {
-
 		/* Microsoft forgot to make it possible to remove short names
 		 * until Windows 7.  Oops.  Use a random short name instead.  */
-
+		get_random_alnum_chars(info->FileName, 8);
+		wcscpy(&info->FileName[8], L".WLB");
 		info->FileNameLength = 12 * sizeof(wchar_t);
-		for (int i = 0; i < 8; i++)
-			info->FileName[i] = 'A' + (rand() % 26);
-		info->FileName[8] = L'.';
-		info->FileName[9] = L'W';
-		info->FileName[10] = L'L';
-		info->FileName[11] = L'B';
-		info->FileName[12] = L'\0';
 		retried = true;
 		goto retry;
 	}

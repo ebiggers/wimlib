@@ -3245,7 +3245,7 @@ overwrite_wim_via_tmpfile(WIMStruct *wim, int write_flags, unsigned num_threads)
 	wim_name_len = tstrlen(wim->filename);
 	tchar tmpfile[wim_name_len + 10];
 	tmemcpy(tmpfile, wim->filename, wim_name_len);
-	randomize_char_array_with_alnum(tmpfile + wim_name_len, 9);
+	get_random_alnum_chars(tmpfile + wim_name_len, 9);
 	tmpfile[wim_name_len + 9] = T('\0');
 
 	ret = wimlib_write(wim, tmpfile, WIMLIB_ALL_IMAGES,

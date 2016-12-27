@@ -88,11 +88,15 @@ extern void *
 mempcpy(void *dst, const void *src, size_t n);
 #endif
 
-extern void
-randomize_byte_array(u8 *p, size_t n);
+/**************************
+ * Random number generation
+ **************************/
 
 extern void
-randomize_char_array_with_alnum(tchar *p, size_t n);
+get_random_bytes(void *p, size_t n);
+
+extern void
+get_random_alnum_chars(tchar *p, size_t n);
 
 /************************
  * Hashing and comparison

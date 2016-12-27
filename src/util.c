@@ -24,6 +24,7 @@
 #endif
 
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,6 +32,9 @@
 #ifdef HAVE_SYS_SYSCTL_H
 #  include <sys/types.h>
 #  include <sys/sysctl.h>
+#endif
+#ifdef HAVE_SYS_SYSCALL_H
+#  include <sys/syscall.h>
 #endif
 #include <unistd.h>
 
@@ -166,41 +170,110 @@ void *mempcpy(void *dst, const void *src, size_t n)
 }
 #endif
 
-static bool seeded = false;
+/**************************
+ * Random number generation
+ **************************/
 
-static void
-seed_random(void)
-{
-	srand(now_as_wim_timestamp());
-	seeded = true;
-}
-
-/* Fills @n characters pointed to by @p with random alphanumeric characters. */
+#ifndef __WIN32__
+/*
+ * Generate @n cryptographically secure random bytes (thread-safe)
+ *
+ * This is the UNIX version.  It uses the Linux getrandom() system call if
+ * available; otherwise, it falls back to reading from /dev/urandom.
+ */
 void
-randomize_char_array_with_alnum(tchar *p, size_t n)
+get_random_bytes(void *p, size_t n)
 {
-	if (!seeded)
-		seed_random();
-	while (n--) {
-		int r = rand() % 62;
-		if (r < 26)
-			*p++ = r + 'a';
-		else if (r < 52)
-			*p++ = r - 26 + 'A';
+	if (n == 0)
+		return;
+#ifdef HAVE_NR_GETRANDOM
+	static bool getrandom_unavailable;
+
+	if (getrandom_unavailable)
+		goto try_dev_urandom;
+	do {
+		int res = syscall(__NR_getrandom, p, n, 0);
+		if (unlikely(res < 0)) {
+			if (errno == ENOSYS) {
+				getrandom_unavailable = true;
+				goto try_dev_urandom;
+			}
+			if (errno == EINTR)
+				continue;
+			ERROR_WITH_ERRNO("getrandom() failed");
+			wimlib_assert(0);
+			res = 0;
+		}
+		p += res;
+		n -= res;
+	} while (n != 0);
+	return;
+
+try_dev_urandom:
+	;
+#endif /* HAVE_NR_GETRANDOM */
+	int fd = open("/dev/urandom", O_RDONLY);
+	if (fd < 0) {
+		ERROR_WITH_ERRNO("Unable to open /dev/urandom");
+		wimlib_assert(0);
+	}
+	do {
+		int res = read(fd, p, min(n, INT_MAX));
+		if (unlikely(res < 0)) {
+			if (errno == EINTR)
+				continue;
+			ERROR_WITH_ERRNO("Error reading from /dev/urandom");
+			wimlib_assert(0);
+			res = 0;
+		}
+		p += res;
+		n -= res;
+	} while (n != 0);
+	close(fd);
+}
+#endif /* !__WIN32__ */
+
+/*
+ * Generate @n cryptographically secure random alphanumeric characters
+ * (thread-safe)
+ *
+ * This is implemented on top of get_random_bytes().  For efficiency the calls
+ * to get_random_bytes() are batched.
+ */
+void
+get_random_alnum_chars(tchar *p, size_t n)
+{
+	u32 r[64];
+	int r_idx = 0;
+	int r_end = 0;
+
+	for (; n != 0; p++, n--) {
+		tchar x;
+
+		if (r_idx >= r_end) {
+			r_idx = 0;
+			r_end = min(n, ARRAY_LEN(r));
+			get_random_bytes(r, r_end * sizeof(r[0]));
+		}
+
+		STATIC_ASSERT(sizeof(r[0]) == sizeof(u32));
+		while (unlikely(r[r_idx] >= UINT32_MAX - (UINT32_MAX % 62)))
+			get_random_bytes(&r[r_idx], sizeof(r[0]));
+
+		x = r[r_idx++] % 62;
+
+		if (x < 26)
+			*p = 'a' + x;
+		else if (x < 52)
+			*p = 'A' + x - 26;
 		else
-			*p++ = r - 52 + '0';
+			*p = '0' + x - 52;
 	}
 }
 
-/* Fills @n bytes pointer to by @p with random numbers. */
-void
-randomize_byte_array(u8 *p, size_t n)
-{
-	if (!seeded)
-		seed_random();
-	while (n--)
-		*p++ = rand();
-}
+/************************
+ * System information
+ ************************/
 
 #ifndef __WIN32__
 unsigned

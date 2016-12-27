@@ -439,7 +439,7 @@ win32_rename_replacement(const wchar_t *srcpath, const wchar_t *dstpath)
 		p = tmpname;
 		p = wmempcpy(p, dstpath, dstlen);
 		p = wmempcpy(p, orig_suffix, ARRAY_LEN(orig_suffix));
-		randomize_char_array_with_alnum(p, num_rand_chars);
+		get_random_alnum_chars(p, num_rand_chars);
 		p += num_rand_chars;
 		*p = L'\0';
 	}
@@ -746,6 +746,32 @@ win32_open_logfile(const wchar_t *path)
 	}
 
 	return fp;
+}
+
+#define RtlGenRandom SystemFunction036
+BOOLEAN WINAPI RtlGenRandom(PVOID RandomBuffer, ULONG RandomBufferLength);
+
+/*
+ * Generate @n cryptographically secure random bytes (thread-safe)
+ *
+ * This is the Windows version.  It uses RtlGenRandom() (actually called
+ * SystemFunction036) from advapi32.dll.
+ */
+void
+get_random_bytes(void *p, size_t n)
+{
+	while (n != 0) {
+		u32 count = min(n, UINT32_MAX);
+
+		if (!RtlGenRandom(p, count)) {
+			win32_error(GetLastError(),
+				    L"RtlGenRandom() failed (count=%u)", count);
+			wimlib_assert(0);
+			count = 0;
+		}
+		p += count;
+		n -= count;
+	}
 }
 
 #endif /* __WIN32__ */
