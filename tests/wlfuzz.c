@@ -764,6 +764,8 @@ op__apply_and_capture_test(void)
 		cmp_flags |= WIMLIB_CMP_FLAG_WINDOWS_MODE;
 #else /* __WIN32__ */
 		printf("applying in UNIX mode\n");
+		extract_flags |= WIMLIB_EXTRACT_FLAG_UNIX_DATA;
+		add_flags |= WIMLIB_ADD_FLAG_UNIX_DATA;
 		cmp_flags |= WIMLIB_CMP_FLAG_UNIX_MODE;
 #endif /* !__WIN32__ */
 	}

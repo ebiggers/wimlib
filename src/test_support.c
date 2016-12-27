@@ -51,6 +51,7 @@
 #include "wimlib/security_descriptor.h"
 #include "wimlib/test_support.h"
 #include "wimlib/unix_data.h"
+#include "wimlib/xattr.h"
 
 /*----------------------------------------------------------------------------*
  *                            File tree generation                            *
@@ -466,6 +467,65 @@ set_random_unix_metadata(struct wim_inode *inode)
 	return 0;
 }
 
+static noinline_for_stack int
+set_random_xattrs(struct wim_inode *inode)
+{
+	int num_xattrs = 1 + rand32() % 16;
+	char entries[8192] _aligned_attribute(4);
+	struct wimlib_xattr_entry *entry = (void *)entries;
+	size_t entries_size;
+	struct wimlib_unix_data unix_data;
+	const char *prefix = "user.";
+
+	/*
+	 * On Linux, xattrs in the "user" namespace are only permitted on
+	 * regular files and directories.  For other types of files we can use
+	 * the "trusted" namespace, but this requires root.
+	 */
+	if (inode_is_symlink(inode) ||
+	    (inode_get_unix_data(inode, &unix_data) &&
+	     !S_ISREG(unix_data.mode) && !S_ISDIR(unix_data.mode)))
+	{
+		if (!am_root())
+			return 0;
+		prefix = "trusted.";
+	}
+
+	for (int i = 0; i < num_xattrs; i++) {
+		int name_len = 1 + rand32() % 64;
+		int value_len = rand32() % 64;
+		u8 *p;
+
+		entry->name_len = cpu_to_le16(strlen(prefix) + name_len);
+		entry->reserved = 0;
+		entry->value_len = cpu_to_le32(value_len);
+		p = mempcpy(entry->name, prefix, strlen(prefix));
+		*p++ = 'a' + i;
+		for (int j = 1; j < name_len; j++) {
+			do {
+				*p = rand8();
+			} while (*p == '\0');
+			p++;
+		}
+		for (int j = 0; j < value_len; j++)
+			*p++ = rand8();
+
+		while ((uintptr_t)p % 4)
+			*p++ = 0;
+
+		entry = (void *)p;
+	}
+
+	entries_size = (char *)entry - entries;
+	wimlib_assert(entries_size > 0 && entries_size % 4 == 0 &&
+		      entries_size <= sizeof(entries));
+
+	if (!inode_set_linux_xattrs(inode, entries, entries_size))
+		return WIMLIB_ERR_NOMEM;
+
+	return 0;
+}
+
 static int
 set_random_metadata(struct wim_inode *inode, struct generation_context *ctx)
 {
@@ -513,6 +573,13 @@ set_random_metadata(struct wim_inode *inode, struct generation_context *ctx)
 	/* Standard UNIX permissions and special files */
 	if (rand32() % 16 == 0) {
 		int ret = set_random_unix_metadata(inode);
+		if (ret)
+			return ret;
+	}
+
+	/* Extended attributes */
+	if (rand32() % 32 == 0) {
+		int ret = set_random_xattrs(inode);
 		if (ret)
 			return ret;
 	}
@@ -1312,6 +1379,134 @@ cmp_unix_metadata(const struct wim_inode *inode1,
 }
 
 static int
+cmp_xattr_names(const void *p1, const void *p2)
+{
+	const struct wimlib_xattr_entry *entry1 = *(const struct wimlib_xattr_entry **)p1;
+	const struct wimlib_xattr_entry *entry2 = *(const struct wimlib_xattr_entry **)p2;
+	u16 name_len1 = le16_to_cpu(entry1->name_len);
+	u16 name_len2 = le16_to_cpu(entry2->name_len);
+	int res;
+
+	res = cmp_u32(name_len1, name_len2);
+	if (res)
+		return res;
+
+	return memcmp(entry1->name, entry2->name, name_len1);
+}
+
+/* Validate and sort by name a list of extended attributes */
+static int
+parse_xattrs(const void *xattrs, u32 len,
+	     const struct wimlib_xattr_entry *entries[],
+	     u32 *num_entries_p)
+{
+	u32 limit = *num_entries_p;
+	u32 num_entries = 0;
+	const struct wimlib_xattr_entry *entry = xattrs;
+
+	while ((void *)entry < xattrs + len) {
+		if (!valid_xattr_entry(entry, xattrs + len - (void *)entry)) {
+			ERROR("Invalid xattr entry");
+			return WIMLIB_ERR_INVALID_XATTR;
+		}
+		if (num_entries >= limit) {
+			ERROR("Too many xattr entries");
+			return WIMLIB_ERR_INVALID_XATTR;
+		}
+		entries[num_entries++] = entry;
+		entry = xattr_entry_next(entry);
+	}
+
+	if (num_entries == 0) {
+		ERROR("No xattr entries");
+		return WIMLIB_ERR_INVALID_XATTR;
+	}
+
+	qsort(entries, num_entries, sizeof(entries[0]), cmp_xattr_names);
+
+	for (u32 i = 1; i < num_entries; i++) {
+		if (cmp_xattr_names(&entries[i - 1], &entries[i]) == 0) {
+			ERROR("Duplicate xattr names");
+			return WIMLIB_ERR_INVALID_XATTR;
+		}
+	}
+
+	*num_entries_p = num_entries;
+	return 0;
+}
+
+static int
+cmp_linux_xattrs(const struct wim_inode *inode1,
+		 const struct wim_inode *inode2, int cmp_flags)
+{
+	const void *xattrs1, *xattrs2;
+	u32 len1, len2;
+
+	xattrs1 = inode_get_linux_xattrs(inode1, &len1);
+	xattrs2 = inode_get_linux_xattrs(inode2, &len2);
+
+	if (!xattrs1 && !xattrs2) {
+		return 0;
+	} else if (xattrs1 && !xattrs2) {
+		if (cmp_flags & (WIMLIB_CMP_FLAG_NTFS_3G_MODE |
+				 WIMLIB_CMP_FLAG_WINDOWS_MODE))
+			return 0;
+		ERROR("%"TS" unexpectedly lost its xattrs",
+		      inode_any_full_path(inode1));
+		return WIMLIB_ERR_IMAGES_ARE_DIFFERENT;
+	} else if (!xattrs1 && xattrs2) {
+		ERROR("%"TS" unexpectedly gained xattrs",
+		      inode_any_full_path(inode1));
+		return WIMLIB_ERR_IMAGES_ARE_DIFFERENT;
+	} else {
+		const int max_entries = 64;
+		const struct wimlib_xattr_entry *entries1[max_entries];
+		const struct wimlib_xattr_entry *entries2[max_entries];
+		u32 xattr_count1 = max_entries;
+		u32 xattr_count2 = max_entries;
+		int ret;
+
+		ret = parse_xattrs(xattrs1, len1, entries1, &xattr_count1);
+		if (ret) {
+			ERROR("%"TS": invalid xattrs",
+			      inode_any_full_path(inode1));
+			return ret;
+		}
+		ret = parse_xattrs(xattrs2, len2, entries2, &xattr_count2);
+		if (ret) {
+			ERROR("%"TS": invalid xattrs",
+			      inode_any_full_path(inode2));
+			return ret;
+		}
+		if (xattr_count1 != xattr_count2) {
+			ERROR("%"TS": number of xattrs changed.  had %u "
+			      "before, now has %u", inode_any_full_path(inode1),
+			      xattr_count1, xattr_count2);
+		}
+		for (u32 i = 0; i < xattr_count1; i++) {
+			const struct wimlib_xattr_entry *entry1 = entries1[i];
+			const struct wimlib_xattr_entry *entry2 = entries2[i];
+
+			if (entry1->name_len != entry2->name_len ||
+			    entry1->value_len != entry2->value_len ||
+			    entry1->reserved != entry2->reserved ||
+			    memcmp(entry1->name, entry2->name,
+				   le16_to_cpu(entry1->name_len)) ||
+			    memcmp(entry1->name + le16_to_cpu(entry1->name_len),
+				   entry2->name + le16_to_cpu(entry1->name_len),
+				   le32_to_cpu(entry1->value_len)))
+			{
+				ERROR("xattr %.*s of %"TS" differs",
+				      le16_to_cpu(entry1->name_len),
+				      entry1->name, inode_any_full_path(inode1));
+				return WIMLIB_ERR_IMAGES_ARE_DIFFERENT;
+			}
+		}
+		return 0;
+	}
+}
+
+static int
 cmp_inodes(const struct wim_inode *inode1, const struct wim_inode *inode2,
 	   const struct wim_image_metadata *imd1,
 	   const struct wim_image_metadata *imd2, int cmp_flags)
@@ -1393,6 +1588,11 @@ cmp_inodes(const struct wim_inode *inode1, const struct wim_inode *inode2,
 
 	/* Compare standard UNIX metadata  */
 	ret = cmp_unix_metadata(inode1, inode2, cmp_flags);
+	if (ret)
+		return ret;
+
+	/* Compare Linux-style xattrs  */
+	ret = cmp_linux_xattrs(inode1, inode2, cmp_flags);
 	if (ret)
 		return ret;
 
