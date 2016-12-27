@@ -251,14 +251,13 @@ generate_random_security_descriptor(void *_desc, struct generation_context *ctx)
 static int
 set_random_metadata(struct wim_inode *inode, struct generation_context *ctx)
 {
-	u32 v = rand32();
-	u32 attrib = (v & (FILE_ATTRIBUTE_READONLY |
-			   FILE_ATTRIBUTE_HIDDEN |
-			   FILE_ATTRIBUTE_SYSTEM |
-			   FILE_ATTRIBUTE_ARCHIVE |
-			   FILE_ATTRIBUTE_NOT_CONTENT_INDEXED |
-			   FILE_ATTRIBUTE_COMPRESSED |
-			   FILE_ATTRIBUTE_SPARSE_FILE));
+	u32 attrib = (rand32() & (FILE_ATTRIBUTE_READONLY |
+				  FILE_ATTRIBUTE_HIDDEN |
+				  FILE_ATTRIBUTE_SYSTEM |
+				  FILE_ATTRIBUTE_ARCHIVE |
+				  FILE_ATTRIBUTE_NOT_CONTENT_INDEXED |
+				  FILE_ATTRIBUTE_COMPRESSED |
+				  FILE_ATTRIBUTE_SPARSE_FILE));
 
 	/* File attributes  */
 	inode->i_attributes |= attrib;
@@ -447,14 +446,13 @@ add_random_data_stream(struct wim_inode *inode, struct generation_context *ctx,
 }
 
 static int
-set_random_streams(struct wim_inode *inode, struct generation_context *ctx,
-		   bool reparse_ok)
+set_random_streams(struct wim_inode *inode, struct generation_context *ctx)
 {
 	int ret;
 	u32 r;
 
 	/* Reparse point (sometimes)  */
-	if (reparse_ok && rand32() % 8 == 0) {
+	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		ret = set_random_reparse_point(inode, ctx);
 		if (ret)
 			return ret;
@@ -762,23 +760,27 @@ generate_dentry_tree_recursive(struct wim_dentry *dir, u32 depth,
 		/* Generate the next child dentry.  */
 		struct wim_inode *inode;
 		u64 ino;
-		bool is_directory;
+		bool is_directory = (rand32() % 16 <= 6);
+		bool is_reparse = (rand32() % 8 == 0);
 		utf16lechar name[63 + 1]; /* for UNIX extraction: 63 * 4 <= 255 */
 		int name_len;
 		struct wim_dentry *duplicate;
 
-		/* Decide whether to create a directory or not.  If not a
-		 * directory, also decide on the inode number (i.e. we may
-		 * generate a "hard link" to an existing file).  */
-		is_directory = ((rand32() % 16) <= 6);
-		if (is_directory)
+		/*
+		 * Select an inode number for the new file.  Sometimes choose an
+		 * existing inode number (i.e. create a hard link).  However,
+		 * wimlib intentionally doesn't honor directory hard links, and
+		 * reparse points cannot be represented in the WIM file format
+		 * at all; so don't create hard links for such files.
+		 */
+		if (is_directory || is_reparse)
 			ino = 0;
 		else
 			ino = select_inode_number(ctx);
 
 		/* Create the dentry. */
 		ret = inode_table_new_dentry(ctx->params->inode_table, NULL,
-					     ino, 0, is_directory, &child);
+					     ino, 0, ino == 0, &child);
 		if (ret)
 			return ret;
 
@@ -809,19 +811,19 @@ generate_dentry_tree_recursive(struct wim_dentry *dir, u32 depth,
 
 		if (is_directory)
 			inode->i_attributes |= FILE_ATTRIBUTE_DIRECTORY;
+		if (is_reparse)
+			inode->i_attributes |= FILE_ATTRIBUTE_REPARSE_POINT;
+
+		ret = set_random_streams(inode, ctx);
+		if (ret)
+			return ret;
 
 		ret = set_random_metadata(inode, ctx);
 		if (ret)
 			return ret;
 
-		ret = set_random_streams(inode, ctx, true);
-		if (ret)
-			return ret;
-
 		/* Recurse if it's a directory.  */
-		if (is_directory &&
-		    !(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT))
-		{
+		if (is_directory && !is_reparse) {
 			ret = generate_dentry_tree_recursive(child, depth + 1,
 							     ctx);
 			if (ret)
@@ -856,10 +858,10 @@ generate_dentry_tree(struct wim_dentry **root_ret, const tchar *_ignored,
 	ret = inode_table_new_dentry(params->inode_table, NULL, 0, 0, true, &root);
 	if (!ret) {
 		root->d_inode->i_attributes = FILE_ATTRIBUTE_DIRECTORY;
-		ret = set_random_metadata(root->d_inode, &ctx);
+		ret = set_random_streams(root->d_inode, &ctx);
 	}
 	if (!ret)
-		ret = set_random_streams(root->d_inode, &ctx, false);
+		ret = set_random_metadata(root->d_inode, &ctx);
 	if (!ret)
 		ret = generate_dentry_tree_recursive(root, 1, &ctx);
 	if (!ret)
