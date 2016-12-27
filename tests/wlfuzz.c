@@ -722,14 +722,29 @@ op__apply_and_capture_test(void)
 	CHECK_RET(wimlib_add_image(wim, (void *)rand32, NULL, NULL,
 				   WIMLIB_ADD_FLAG_GENERATE_TEST_DATA |
 				   WIMLIB_ADD_FLAG_NORPFIX));
+
+	image = get_image_count(wim);
+
+	printf("generated wim%d image %d\n", index, image);
+
+	{
+		/*
+		 * Compare the in-memory version of the generated image with a
+		 * version written to disk
+		 */
+		WIMStruct *tmp_wim;
+
+		CHECK_RET(wimlib_write(wim, T("tmp.wim"), image, 0, 0));
+		CHECK_RET(wimlib_open_wim(T("tmp.wim"), 0, &tmp_wim));
+		CHECK_RET(wimlib_compare_images(wim, image, tmp_wim, 1, 0));
+		wimlib_free(tmp_wim);
+	}
+
 	overwrite_wim(wim);
 	wimlib_free(wim);
 
 	/* Apply the generated image.  */
 	wim = open_wim(index);
-	image = get_image_count(wim);
-	printf("apply and capture wim%d; generated image is index %d\n",
-	       index, image);
 	delete_directory_tree(TMP_TARGET_NAME);
 #ifdef WITH_NTFS_3G
 	if (rand32() & 1) {
