@@ -35,6 +35,9 @@
 
 #include <ctype.h>
 #include <math.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "wimlib.h"
 #include "wimlib/endianness.h"
@@ -47,6 +50,7 @@
 #include "wimlib/scan.h"
 #include "wimlib/security_descriptor.h"
 #include "wimlib/test_support.h"
+#include "wimlib/unix_data.h"
 
 /*----------------------------------------------------------------------------*
  *                            File tree generation                            *
@@ -377,6 +381,91 @@ generate_random_security_descriptor(void *_desc, struct generation_context *ctx)
 	return p - (u8 *)desc;
 }
 
+static bool
+am_root(void)
+{
+#ifdef __WIN32__
+	return false;
+#else
+	return (getuid() == 0);
+#endif
+}
+
+static u32
+generate_uid(void)
+{
+#ifdef __WIN32__
+	return 0;
+#else
+	if (am_root())
+		return rand32();
+	return getuid();
+#endif
+}
+
+static u32
+generate_gid(void)
+{
+#ifdef __WIN32__
+	return 0;
+#else
+	if (am_root())
+		return rand32();
+	return getgid();
+#endif
+}
+
+#ifdef __WIN32__
+#  ifndef S_IFLNK
+#    define S_IFLNK  0120000
+#  endif
+#  ifndef S_IFSOCK
+#    define S_IFSOCK 0140000
+#  endif
+#endif
+
+static int
+set_random_unix_metadata(struct wim_inode *inode)
+{
+	struct wimlib_unix_data dat;
+
+	dat.uid = generate_uid();
+	dat.gid = generate_gid();
+	if (inode_is_symlink(inode))
+		dat.mode = S_IFLNK | 0777;
+	else if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
+		dat.mode = S_IFDIR | 0700 | (rand32() % 07777);
+	else if (is_zero_hash(inode_get_hash_of_unnamed_data_stream(inode)) &&
+		 randbool() && am_root())
+	{
+		dat.mode = rand32() % 07777;
+		switch (rand32() % 4) {
+		case 0:
+			dat.mode |= S_IFIFO;
+			break;
+		case 1:
+			dat.mode |= S_IFCHR;
+			dat.rdev = 261; /* /dev/zero */
+			break;
+		case 2:
+			dat.mode |= S_IFBLK;
+			dat.rdev = 261; /* /dev/zero */
+			break;
+		default:
+			dat.mode |= S_IFSOCK;
+			break;
+		}
+	} else {
+		dat.mode = S_IFREG | 0400 | (rand32() % 07777);
+	}
+	dat.rdev = 0;
+
+	if (!inode_set_unix_data(inode, &dat, UNIX_DATA_ALL))
+		return WIMLIB_ERR_NOMEM;
+
+	return 0;
+}
+
 static int
 set_random_metadata(struct wim_inode *inode, struct generation_context *ctx)
 {
@@ -419,6 +508,13 @@ set_random_metadata(struct wim_inode *inode, struct generation_context *ctx)
 			*((u8 *)&object_id + i) = rand8();
 		if (!inode_set_object_id(inode, &object_id, sizeof(object_id)))
 			return WIMLIB_ERR_NOMEM;
+	}
+
+	/* Standard UNIX permissions and special files */
+	if (rand32() % 16 == 0) {
+		int ret = set_random_unix_metadata(inode);
+		if (ret)
+			return ret;
 	}
 
 	return 0;
@@ -1173,6 +1269,49 @@ cmp_object_ids(const struct wim_inode *inode1,
 }
 
 static int
+cmp_unix_metadata(const struct wim_inode *inode1,
+		  const struct wim_inode *inode2, int cmp_flags)
+{
+	struct wimlib_unix_data dat1, dat2;
+	bool present1, present2;
+
+	present1 = inode_get_unix_data(inode1, &dat1);
+	present2 = inode_get_unix_data(inode2, &dat2);
+
+	if (!present1 && !present2)
+		return 0;
+
+	if (present1 && !present2) {
+		if (cmp_flags & (WIMLIB_CMP_FLAG_NTFS_3G_MODE |
+				 WIMLIB_CMP_FLAG_WINDOWS_MODE))
+			return 0;
+		ERROR("%"TS" unexpectedly lost its UNIX metadata",
+		      inode_any_full_path(inode1));
+		return WIMLIB_ERR_IMAGES_ARE_DIFFERENT;
+	}
+
+	if (!present1 && present2) {
+		if (cmp_flags & WIMLIB_CMP_FLAG_UNIX_MODE)
+			return 0;
+		ERROR("%"TS" unexpectedly gained UNIX metadata",
+		      inode_any_full_path(inode1));
+		return WIMLIB_ERR_IMAGES_ARE_DIFFERENT;
+	}
+
+	if (memcmp(&dat1, &dat2, sizeof(dat1)) != 0) {
+		ERROR("UNIX metadata of %"TS" differs: "
+		      "[uid=%u, gid=%u, mode=0%o, rdev=%u] vs. "
+		      "[uid=%u, gid=%u, mode=0%o, rdev=%u]",
+		      inode_any_full_path(inode1),
+		      dat1.uid, dat1.gid, dat1.mode, dat1.rdev,
+		      dat2.uid, dat2.gid, dat2.mode, dat2.rdev);
+		return WIMLIB_ERR_IMAGES_ARE_DIFFERENT;
+	}
+
+	return 0;
+}
+
+static int
 cmp_inodes(const struct wim_inode *inode1, const struct wim_inode *inode2,
 	   const struct wim_image_metadata *imd1,
 	   const struct wim_image_metadata *imd2, int cmp_flags)
@@ -1249,6 +1388,11 @@ cmp_inodes(const struct wim_inode *inode1, const struct wim_inode *inode2,
 
 	/* Compare object IDs  */
 	ret = cmp_object_ids(inode1, inode2, cmp_flags);
+	if (ret)
+		return ret;
+
+	/* Compare standard UNIX metadata  */
+	ret = cmp_unix_metadata(inode1, inode2, cmp_flags);
 	if (ret)
 		return ret;
 
