@@ -2567,6 +2567,8 @@ enum wimlib_error_code {
 	WIMLIB_ERR_DUPLICATE_EXPORTED_IMAGE           = 87,
 	WIMLIB_ERR_CONCURRENT_MODIFICATION_DETECTED   = 88,
 	WIMLIB_ERR_SNAPSHOT_FAILURE                   = 89,
+	WIMLIB_ERR_INVALID_XATTR                      = 90,
+	WIMLIB_ERR_SET_XATTR                          = 91,
 };
 
 

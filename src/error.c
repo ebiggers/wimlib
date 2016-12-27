@@ -342,6 +342,10 @@ static const tchar * const error_strings[] = {
 		= T("A file being added to a WIM image was concurrently modified"),
 	[WIMLIB_ERR_SNAPSHOT_FAILURE]
 		= T("Unable to create a filesystem snapshot"),
+	[WIMLIB_ERR_INVALID_XATTR]
+		= T("An extended attribute entry in the WIM image is invalid"),
+	[WIMLIB_ERR_SET_XATTR]
+		= T("Failed to set an extended attribute on an extracted file"),
 #ifdef ENABLE_TEST_SUPPORT
 	[WIMLIB_ERR_IMAGES_ARE_DIFFERENT]
 		= T("A difference was detected between the two images being compared"),
