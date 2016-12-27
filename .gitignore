@@ -38,8 +38,10 @@
 /programs/mkwinpeimg
 /stamp-h1
 /tags
+/test-suite.log
 /tests/*.log
 /tests/*.trs
+/tests/tree-cmp
 /tests/wlfuzz
 /tests/wlfuzz.exe
 /tools/windeps/*.tar.*
