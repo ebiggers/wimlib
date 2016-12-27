@@ -42,6 +42,7 @@
 #include "wimlib/metadata.h"
 #include "wimlib/dentry.h"
 #include "wimlib/inode.h"
+#include "wimlib/object_id.h"
 #include "wimlib/reparse.h"
 #include "wimlib/scan.h"
 #include "wimlib/security_descriptor.h"
@@ -279,6 +280,16 @@ set_random_metadata(struct wim_inode *inode, struct generation_context *ctx)
 		inode->i_security_id = sd_set_add_sd(ctx->params->sd_set,
 						     desc, size);
 		if (unlikely(inode->i_security_id < 0))
+			return WIMLIB_ERR_NOMEM;
+	}
+
+	/* Object ID  */
+	if (rand32() % 32 == 0) {
+		struct wimlib_object_id object_id;
+
+		for (int i = 0; i < sizeof(object_id); i++)
+			*((u8 *)&object_id + i) = rand8();
+		if (!inode_set_object_id(inode, &object_id, sizeof(object_id)))
 			return WIMLIB_ERR_NOMEM;
 	}
 
@@ -1089,6 +1100,47 @@ mismatch:
 }
 
 static int
+cmp_object_ids(const struct wim_inode *inode1,
+	       const struct wim_inode *inode2, int cmp_flags)
+{
+	const void *objid1, *objid2;
+	u32 len1, len2;
+
+	objid1 = inode_get_object_id(inode1, &len1);
+	objid2 = inode_get_object_id(inode2, &len2);
+
+	if (!objid1 && !objid2)
+		return 0;
+
+	if (objid1 && !objid2) {
+		if (cmp_flags & WIMLIB_CMP_FLAG_UNIX_MODE)
+			return 0;
+		ERROR("%"TS" unexpectedly lost its object ID",
+		      inode_any_full_path(inode1));
+		return WIMLIB_ERR_IMAGES_ARE_DIFFERENT;
+	}
+
+	if (!objid1 && objid2) {
+		ERROR("%"TS" unexpectedly gained an object ID",
+		      inode_any_full_path(inode1));
+		return WIMLIB_ERR_IMAGES_ARE_DIFFERENT;
+	}
+
+	if (len1 != len2 || memcmp(objid1, objid2, len1) != 0) {
+		ERROR("Object ID of %"TS" differs",
+		      inode_any_full_path(inode1));
+		fprintf(stderr, "objid1=");
+		print_byte_field(objid1, len1, stderr);
+		fprintf(stderr, "\nobjid2=");
+		print_byte_field(objid2, len2, stderr);
+		fprintf(stderr, "\n");
+		return WIMLIB_ERR_IMAGES_ARE_DIFFERENT;
+	}
+
+	return 0;
+}
+
+static int
 cmp_inodes(const struct wim_inode *inode1, const struct wim_inode *inode2,
 	   const struct wim_image_metadata *imd1,
 	   const struct wim_image_metadata *imd2, int cmp_flags)
@@ -1162,6 +1214,11 @@ cmp_inodes(const struct wim_inode *inode1, const struct wim_inode *inode2,
 			return WIMLIB_ERR_IMAGES_ARE_DIFFERENT;
 		}
 	}
+
+	/* Compare object IDs  */
+	ret = cmp_object_ids(inode1, inode2, cmp_flags);
+	if (ret)
+		return ret;
 
 	return 0;
 }
