@@ -143,6 +143,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/security_descriptor.h	\
 	include/wimlib/sha1.h		\
 	include/wimlib/solid.h		\
+	include/wimlib/tagged_items.h	\
 	include/wimlib/textfile.h	\
 	include/wimlib/timestamp.h	\
 	include/wimlib/types.h		\
