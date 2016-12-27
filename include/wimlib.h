@@ -1711,8 +1711,9 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 
 /** UNIX-like systems only: Store the UNIX owner, group, mode, and device ID
  * (major and minor number) of each file.  In addition, capture special files
- * such as device nodes and FIFOs.  See the documentation for the
- * <b>--unix-data</b> option to <b>wimcapture</b> for more information.  */
+ * such as device nodes and FIFOs.  Since wimlib v1.11.0, on Linux also capture
+ * extended attributes.  See the documentation for the <b>--unix-data</b> option
+ * to <b>wimcapture</b> for more information.  */
 #define WIMLIB_ADD_FLAG_UNIX_DATA		0x00000010
 
 /** Do not capture security descriptors.  Only has an effect in NTFS-3G capture
@@ -1904,9 +1905,8 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * wimlib_extract_paths() when passed multiple paths.  */
 #define WIMLIB_EXTRACT_FLAG_NTFS			0x00000001
 
-/** UNIX-like systems only:  Extract special UNIX data captured with
- * ::WIMLIB_ADD_FLAG_UNIX_DATA.  This flag cannot be combined with
- * ::WIMLIB_EXTRACT_FLAG_NTFS.  */
+/** UNIX-like systems only:  Extract UNIX-specific metadata captured with
+ * ::WIMLIB_ADD_FLAG_UNIX_DATA.  */
 #define WIMLIB_EXTRACT_FLAG_UNIX_DATA			0x00000020
 
 /** Do not extract security descriptors.  This flag cannot be combined with
@@ -2066,8 +2066,7 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * name, a colon, then the name of the data stream.  */
 #define WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_WINDOWS	0x00000010
 
-/** Use UNIX metadata if available in the WIM image.  See
- * ::WIMLIB_ADD_FLAG_UNIX_DATA.  */
+/** Support UNIX owners, groups, modes, and special files.  */
 #define WIMLIB_MOUNT_FLAG_UNIX_DATA			0x00000020
 
 /** Allow other users to see the mounted filesystem.  This passes the @c

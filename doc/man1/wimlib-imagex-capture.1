@@ -64,12 +64,13 @@ Symbolic links (translated losslessly to Windows reparse points)
 Last modification times (mtime) and last access times (atime) with 100
 nanosecond granularity
 .IP \[bu]
-With \fB--unix-data\fR: UNIX owners, groups, and modes
+With \fB--unix-data\fR: standard UNIX file permissions (owner, group, and mode)
 .IP \[bu]
-With \fB--unix-data\fR: device nodes, FIFOs, and UNIX domain sockets
+With \fB--unix-data\fR: device nodes, named pipes, and sockets
+.IP \[bu]
+With \fB--unix-data\fR: extended attributes (Linux only)
 .PP
-There is no support for storing extended attributes (e.g. SELinux security
-labels and POSIX ACLs), last status change times (ctimes), or hard link
+There is no support for storing last status change times (ctimes), or hard link
 information for symbolic link files (each symbolic link will be stored as an
 independent file).  In addition, filenames and symbolic link targets on UNIX
 filesystems which are not valid UTF-8 with the addition of surrogate codepoints
@@ -386,18 +387,14 @@ saved in the WIM image as Windows/System32/WimBootCompress.ini, overriding any
 that may be present on the filesystem.
 .TP
 \fB--unix-data\fR
-(UNIX-like systems only) Store the UNIX owner, group, mode, and device ID (major
-and minor number) of each captured file.  Since wimlib v1.7.0, you can backup
-and restore not only the standard UNIX file permission information, but also
-character device nodes, block device nodes, named pipes (FIFOs), and UNIX domain
-sockets.
+(UNIX-like systems only)  Store UNIX-specific metadata and special files.  This
+includes: standard UNIX file permissions (owner, group, and mode); device nodes,
+named pipes, and sockets; and extended attributes (Linux only).  This
+information can later be restored by \fBwimlib-imagex apply\fR with the
+\fB--unix-data\fR option.
 .IP
-wimlib stores UNIX data by adding a special tagged metadata item to each
-directory entry of each file that contains this information.  This extra
-information is ignored by the Microsoft implementation.  Note: UNIX data stored
-by wimlib before v1.7.0 used a different format that is no longer supported.  If
-you have old WIM files with UNIX data, apply them with v1.6.2 and recapture them
-with v1.7.0 or later.
+UNIX-specific information is ignored by Microsoft's WIM software and by the
+Windows version of wimlib.
 .TP
 \fB--no-acls\fR
 Do not capture files' security descriptors.

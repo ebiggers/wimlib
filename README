@@ -258,9 +258,9 @@ If you are looking for an archive format that provides features similar to WIM
 but was designed primarily for UNIX, you may want to consider SquashFS
 (http://squashfs.sourceforge.net/).  However, you may find that wimlib works
 surprisingly well on UNIX.  It will store hard links and symbolic links, and it
-has optional support for storing UNIX owners, groups, modes, and special files
-such as device nodes and FIFOs.  Actually, I use it to back up my own files on
-Linux!
+supports storing standard UNIX file permissions (owners, groups, and modes);
+special files such as device nodes and FIFOs; and extended attributes.
+Actually, I use it to back up my own files on Linux!
 
                                     HISTORY
 

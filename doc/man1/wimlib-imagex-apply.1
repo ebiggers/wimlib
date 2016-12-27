@@ -297,11 +297,10 @@ Reparse point fixups are never done in the NTFS volume extraction mode on
 UNIX-like systems.
 .TP
 \fB--unix-data\fR
-(UNIX-like systems only)  Restore UNIX owners, groups, modes, and device IDs
-(major and minor numbers) that were captured by \fBwimlib-imagex capture\fR with
-the \fB--unix-data\fR option.  Since wimlib v1.7.0, you can backup and restore
-not only the standard UNIX file permission information, but also character
-device nodes, block device nodes, named pipes (FIFOs), and UNIX domain sockets.
+(UNIX-like systems only)  Restore UNIX-specific metadata and special files that
+were captured by \fBwimlib-imagex capture\fR with the \fB--unix-data\fR option.
+This includes: standard UNIX file permissions (owner, group, and mode); device
+nodes, named pipes, and sockets; and extended attributes (Linux-only).
 .TP
 \fB--no-acls\fR
 Do not restore security descriptors on extracted files and directories.

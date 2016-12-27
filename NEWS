@@ -1,14 +1,16 @@
 Version 1.11.0-BETA1:
-	Updated 'mkwinpeimg' to work correctly on images that have a "windows"
-	(lower case) directory rather than a "Windows" (upper case) directory.
+	On all platforms, sparse files are now extracted as sparse.
 
-	Sparse files are now extracted as sparse.
+	Sparse files captured from UNIX-style filesystems are now marked as
+	sparse in the resulting WIM image.
+
+	Added support for storing Linux-style extended attributes in WIM images.
+	When the --unix-data option is used on Linux, wimlib-imagex now captures
+	and applies extended attributes, in addition to the already-supported
+	standard UNIX file permissions (owner/group/mode) and special files.
 
 	On Windows, improved the way in which files deduplicated with Windows'
 	Data Deduplication feature are captured.
-
-	Fixed configuring with --enable-ssse3-sha1 from release tarball
-	(the file nasm_lt.sh was missing).
 
 	The development files needed to link with wimlib using Visual Studio are
 	now included in the Windows release archives.
@@ -17,6 +19,12 @@ Version 1.11.0-BETA1:
 
 	The example programs can now be compiled in C++ mode, and they also now
 	work on Windows.
+
+	Updated 'mkwinpeimg' to work correctly on images that have a "windows"
+	(lower case) directory rather than a "Windows" (upper case) directory.
+
+	Fixed configuring with --enable-ssse3-sha1 from release tarball
+	(the file nasm_lt.sh was missing).
 
 Version 1.10.0:
 	The LZX compression ratio has been slightly improved.  The default mode,

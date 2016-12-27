@@ -25,11 +25,10 @@ The WIM image can be unmounted using the \fBwimlib-imagex unmount\fR
 command.  Changes made to a WIM mounted read-write will be discarded unless the
 \fB--commit\fR flag is provided to \fBwimlib-imagex unmount\fR.
 .SH DATA AND METADATA SUPPORT
-This section documents which WIM features are exposed via the mount support and
-which are not.
-.PP
-The following features are \fIsupported\fR (read/write unless otherwise
-specified):
+WIM images can contain a variety of types of files and file metadata, some of
+which is Windows-specific.  Currently, the mount feature can translate some, but
+not all, Windows concepts to Linux equivalents.  Briefly, the following features
+are \fIsupported\fR (read/write):
 .IP \[bu] 4
 Hard links
 .IP \[bu]
@@ -40,29 +39,30 @@ directory.  UNIX symbolic links created in a read-write mounted WIM image will
 automatically be translated into native Windows symbolic links.
 .IP \[bu]
 Named data streams (mostly).  See the \fB--streams-interface\fR option.
-.IP \[bu]
-Standard UNIX permission bits and UNIX special files are supported if the
-\fB--unix-data\fR option is used.
 .PP
-The following features are \fIunsupported\fR:
+In addition, standard UNIX file permissions (owner, group, and mode) and special
+files are supported if the \fB--unix-data\fR option is used.
+.PP
+However, the following features are \fIunsupported\fR and not exposed in mounted
+images:
 .IP \[bu] 4
-Windows security descriptors.  These are not exposed in the mounted filesystem,
-although existing values will be preserved on commit.  New files are not given
-security descriptors.
+Windows security descriptors.  New files are not given security descriptors.
 .IP \[bu]
-DOS names (8.3 names) (short names).  These are not exposed in the mounted
-filesystem, although existing values will be preserved on commit.  New files are
-not given DOS names.
+DOS names (8.3 names) (short names).  New files are not given DOS names.
 .IP \[bu]
-Windows file attributes.  These are not exposed in the mounted filesystem,
-although existing values will be preserved on commit.  New files are assigned
-default attributes based on the UNIX file mode bits.
+Windows file attributes.  New files are assigned default attributes based on the
+UNIX file mode bits.
 .IP \[bu]
-Object IDs.  These are not exposed in the mounted filesystem, although existing
-values will be preserved on commit.  New files are not given object IDs.
+Object IDs.  New files are not given object IDs.
 .IP \[bu]
 EFS-encrypted files.  The files themselves will be visible in mounted WIM images
 but their data will not be available.
+.IP \[bu]
+Extended attributes.  Although wimlib now supports creating a WIM image
+containing Linux-style extended attributes, these are not yet exposed in mounted
+WIM images.  (This may be implemented in the future, though it would conflict
+with the use of extended attributes to expose Windows concepts like named data
+streams.)
 .SH SPLIT WIMS
 You may use \fBwimlib-imagex mount\fR to mount an image from a split WIM
 read-only.  However, you may not mount an image from a split WIM read-write.
