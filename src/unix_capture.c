@@ -30,6 +30,10 @@
 #include <fcntl.h>
 #include <limits.h> /* for PATH_MAX */
 #include <sys/stat.h>
+#include <sys/types.h>
+#ifdef HAVE_SYS_XATTR_H
+#  include <sys/xattr.h>
+#endif
 #include <unistd.h>
 
 #include "wimlib/blob_table.h"
@@ -39,6 +43,7 @@
 #include "wimlib/scan.h"
 #include "wimlib/timestamp.h"
 #include "wimlib/unix_data.h"
+#include "wimlib/xattr.h"
 
 #ifdef HAVE_FDOPENDIR
 #  define my_fdopendir(dirfd_p) fdopendir(*(dirfd_p))
@@ -98,6 +103,189 @@ my_fdopendir(int *dirfd_p)
 #ifndef AT_SYMLINK_NOFOLLOW
 #  define AT_SYMLINK_NOFOLLOW	0x100
 #endif
+
+#ifdef HAVE_XATTR_SUPPORT
+/*
+ * Retrieves the values of the xattrs named by the null-terminated @names of the
+ * file at @path and serializes the xattr names and values into @entries.  If
+ * successful, returns the number of bytes used in @entries.  If unsuccessful,
+ * returns -1 and sets errno (ERANGE if @entries was too small).
+ */
+static ssize_t
+gather_xattr_entries(const char *path, const char *names, size_t names_size,
+		     void *entries, size_t entries_size)
+{
+	const char * const names_end = names + names_size;
+	void * const entries_end = entries + entries_size;
+	const char *name = names;
+	struct wimlib_xattr_entry *entry = entries;
+
+	wimlib_assert((uintptr_t)entries % 4 == 0 &&
+		      entries_size % 4 == 0 && names_size != 0);
+	do {
+		size_t name_len = strnlen(name, names_end - name);
+		void *value;
+		ssize_t value_len;
+
+		if (name_len == 0 || name_len >= names_end - name ||
+		    (u16)name_len != name_len) {
+			ERROR("\"%s\": malformed extended attribute names list",
+			      path);
+			errno = EINVAL;
+			return -1;
+		}
+
+		/*
+		 * Note: we take care to always call lgetxattr() with a nonzero
+		 * size, since zero size means to return the value length only.
+		 */
+		if (entries_end - (void *)entry <= sizeof(*entry) + name_len) {
+			errno = ERANGE;
+			return -1;
+		}
+
+		entry->name_len = cpu_to_le16(name_len);
+		entry->reserved = 0;
+		value = mempcpy(entry->name, name, name_len);
+
+		value_len = lgetxattr(path, name, value, entries_end - value);
+		if (value_len < 0) {
+			if (errno != ERANGE) {
+				ERROR_WITH_ERRNO("\"%s\": unable to read extended attribute \"%s\"",
+						 path, name);
+			}
+			return -1;
+		}
+		if ((u32)value_len != value_len) {
+			ERROR("\"%s\": value of extended attribute \"%s\" is too large",
+			      path, name);
+			errno = EINVAL;
+			return -1;
+		}
+		entry->value_len = cpu_to_le32(value_len);
+
+		/*
+		 * Zero-pad the entry to the next 4-byte boundary.
+		 * Note: because we've guaranteed that @entries_size is a
+		 * multiple of 4, this cannot overflow the @entries buffer.
+		 */
+		value += value_len;
+		while ((uintptr_t)value & 3) {
+			*(u8 *)value = 0;
+			value++;
+		}
+
+		entry = value;
+		name += name_len + 1;
+	} while (name < names_end);
+
+	return (void *)entry - entries;
+}
+
+static int
+create_xattr_item(const char *path, struct wim_inode *inode,
+		  const char *names, size_t names_size)
+{
+	char _entries[1024] _aligned_attribute(4);
+	char *entries = _entries;
+	size_t entries_avail = ARRAY_LEN(_entries);
+	ssize_t entries_size;
+	int ret;
+
+retry:
+	/* Serialize the xattrs into @entries */
+	entries_size = gather_xattr_entries(path, names, names_size,
+					    entries, entries_avail);
+	if (entries_size < 0) {
+		ret = WIMLIB_ERR_STAT;
+		if (errno != ERANGE)
+			goto out;
+		/* Not enough space in @entries.  Reallocate it. */
+		if (entries != _entries)
+			FREE(entries);
+		ret = WIMLIB_ERR_NOMEM;
+		entries_avail *= 2;
+		entries = MALLOC(entries_avail);
+		if (!entries)
+			goto out;
+		goto retry;
+	}
+
+	/* Copy @entries into an xattr item associated with @inode */
+	if ((u32)entries_size != entries_size) {
+		ERROR("\"%s\": too much xattr data!", path);
+		ret = WIMLIB_ERR_STAT;
+		goto out;
+	}
+	ret = WIMLIB_ERR_NOMEM;
+	if (!inode_set_linux_xattrs(inode, entries, entries_size))
+		goto out;
+
+	ret = 0;
+out:
+	if (entries != _entries)
+		FREE(entries);
+	return ret;
+}
+
+/*
+ * If the file at @path has Linux-style extended attributes, read them into
+ * memory and add them to @inode as a tagged item.
+ */
+static noinline_for_stack int
+scan_linux_xattrs(const char *path, struct wim_inode *inode)
+{
+	char _names[256];
+	char *names = _names;
+	ssize_t names_size = ARRAY_LEN(_names);
+	int ret = 0;
+
+retry:
+	/* Gather the names of the xattrs of the file at @path */
+	names_size = llistxattr(path, names, names_size);
+	if (names_size == 0) /* No xattrs? */
+		goto out;
+	if (names_size < 0) {
+		/* xattrs unsupported or disabled? */
+		if (errno == ENOTSUP || errno == ENOSYS)
+			goto out;
+		if (errno == ERANGE) {
+			/*
+			 * Not enough space in @names.  Ask for how much space
+			 * we need, then try again.
+			 */
+			names_size = llistxattr(path, NULL, 0);
+			if (names_size == 0)
+				goto out;
+			if (names_size > 0) {
+				if (names != _names)
+					FREE(names);
+				names = MALLOC(names_size);
+				if (!names) {
+					ret = WIMLIB_ERR_NOMEM;
+					goto out;
+				}
+				goto retry;
+			}
+		}
+		/* Some other error occurred. */
+		ERROR_WITH_ERRNO("\"%s\": unable to list extended attributes",
+				 path);
+		ret = WIMLIB_ERR_STAT;
+		goto out;
+	}
+
+	/*
+	 * We have a nonempty list of xattr names.  Gather the xattr values and
+	 * add them as a tagged item.
+	 */
+	ret = create_xattr_item(path, inode, names, names_size);
+out:
+	if (names != _names)
+		FREE(names);
+	return ret;
+}
+#endif /* HAVE_XATTR_SUPPORT */
 
 static int
 unix_scan_regular_file(const char *path, u64 blocks, u64 size,
@@ -436,6 +624,11 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 			ret = WIMLIB_ERR_NOMEM;
 			goto out;
 		}
+#ifdef HAVE_XATTR_SUPPORT
+		ret = scan_linux_xattrs(full_path, inode);
+		if (ret)
+			goto out;
+#endif
 	}
 
 	if (params->add_flags & WIMLIB_ADD_FLAG_ROOT) {
