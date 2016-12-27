@@ -541,6 +541,7 @@ generate_random_filename(utf16lechar name[], int max_len,
 	}
 	len = min(len, max_len);
 
+retry:
 	/* Generate the characters in the name. */
 	for (int i = 0; i < len; i++) {
 		do {
@@ -550,6 +551,11 @@ generate_random_filename(utf16lechar name[], int max_len,
 
 	/* Add a null terminator. */
 	name[len] = cpu_to_le16('\0');
+
+	/* Don't generate . and .. */
+	if (name[0] == cpu_to_le16('.') &&
+	    (len == 1 || (len == 2 && name[1] == cpu_to_le16('.'))))
+		goto retry;
 
 	return len;
 }
