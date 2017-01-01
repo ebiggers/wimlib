@@ -476,6 +476,8 @@ set_random_xattrs(struct wim_inode *inode)
 	size_t entries_size;
 	struct wimlib_unix_data unix_data;
 	const char *prefix = "user.";
+	static const char capability_name[] = "security.capability";
+	bool generated_capability_xattr = false;
 
 	/*
 	 * On Linux, xattrs in the "user" namespace are only permitted on
@@ -492,20 +494,30 @@ set_random_xattrs(struct wim_inode *inode)
 	}
 
 	for (int i = 0; i < num_xattrs; i++) {
-		int name_len = 1 + rand32() % 64;
 		int value_len = rand32() % 64;
 		u8 *p;
 
-		entry->name_len = cpu_to_le16(strlen(prefix) + name_len);
 		entry->reserved = 0;
 		entry->value_len = cpu_to_le32(value_len);
-		p = mempcpy(entry->name, prefix, strlen(prefix));
-		*p++ = 'a' + i;
-		for (int j = 1; j < name_len; j++) {
-			do {
-				*p = rand8();
-			} while (*p == '\0');
-			p++;
+
+		if (rand32() % 16 == 0 && am_root() &&
+		    !generated_capability_xattr) {
+			int name_len = sizeof(capability_name) - 1;
+			entry->name_len = cpu_to_le16(name_len);
+			p = mempcpy(entry->name, capability_name, name_len);
+			generated_capability_xattr = true;
+		} else {
+			int name_len = 1 + rand32() % 64;
+
+			entry->name_len = cpu_to_le16(strlen(prefix) + name_len);
+			p = mempcpy(entry->name, prefix, strlen(prefix));
+			*p++ = 'a' + i;
+			for (int j = 1; j < name_len; j++) {
+				do {
+					*p = rand8();
+				} while (*p == '\0');
+				p++;
+			}
 		}
 		for (int j = 0; j < value_len; j++)
 			*p++ = rand8();
