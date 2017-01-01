@@ -327,44 +327,76 @@ apply_linux_xattrs(int fd, const struct wim_inode *inode,
 }
 #endif /* HAVE_XATTR_SUPPORT */
 
-/* Apply standard UNIX permissions (uid, gid, and mode) to a file */
+/*
+ * Apply UNIX-specific metadata to a file if available.  This includes standard
+ * UNIX permissions (uid, gid, and mode) and possibly extended attributes too.
+ *
+ * Note that some xattrs which grant privileges, e.g. security.capability, are
+ * cleared by Linux on chown(), even when running as root.  Also, when running
+ * as non-root, if we need to chmod() the file to readonly, we can't do that
+ * before setting xattrs because setxattr() requires write permission.  These
+ * restrictions result in the following ordering which we follow: chown(),
+ * setxattr(), then chmod().
+ *
+ * N.B. the file may be specified by either 'fd' (for regular files) or 'path',
+ * and it may be a symlink.  For symlinks we need lchown() and lsetxattr() but
+ * need to skip the chmod(), since mode bits are not meaningful for symlinks.
+ */
 static int
-apply_unix_permissions(int fd, const struct wim_inode *inode,
-		       const char *path, struct unix_apply_ctx *ctx,
-		       const struct wimlib_unix_data *dat)
+apply_unix_metadata(int fd, const struct wim_inode *inode,
+		    const char *path, struct unix_apply_ctx *ctx)
 {
+	bool have_dat;
+	struct wimlib_unix_data dat;
+#ifdef HAVE_XATTR_SUPPORT
+	const void *entries;
+	u32 entries_size;
+#endif
 	int ret;
 
-	ret = unix_set_owner_and_group(fd, path, dat->uid, dat->gid);
-	if (ret) {
-		if (!path)
-			path = unix_build_inode_extraction_path(inode, ctx);
-		if (ctx->common.extract_flags &
-		    WIMLIB_EXTRACT_FLAG_STRICT_ACLS)
-		{
-			ERROR_WITH_ERRNO("\"%s\": unable to set uid=%"PRIu32" and gid=%"PRIu32,
-					 path, dat->uid, dat->gid);
-			return ret;
-		}
-		WARNING_WITH_ERRNO("\"%s\": unable to set uid=%"PRIu32" and gid=%"PRIu32,
-				   path, dat->uid, dat->gid);
-	}
+	have_dat = inode_get_unix_data(inode, &dat);
 
-	if (!inode_is_symlink(inode)) {
-		ret = unix_set_mode(fd, path, dat->mode);
+	if (have_dat) {
+		ret = unix_set_owner_and_group(fd, path, dat.uid, dat.gid);
 		if (ret) {
 			if (!path)
-				path = unix_build_inode_extraction_path(inode,
-									ctx);
+				path = unix_build_inode_extraction_path(inode, ctx);
+			if (ctx->common.extract_flags &
+			    WIMLIB_EXTRACT_FLAG_STRICT_ACLS)
+			{
+				ERROR_WITH_ERRNO("\"%s\": unable to set uid=%"PRIu32" and gid=%"PRIu32,
+						 path, dat.uid, dat.gid);
+				return ret;
+			}
+			WARNING_WITH_ERRNO("\"%s\": unable to set uid=%"PRIu32" and gid=%"PRIu32,
+					   path, dat.uid, dat.gid);
+		}
+	}
+
+#if HAVE_XATTR_SUPPORT
+	entries = inode_get_linux_xattrs(inode, &entries_size);
+	if (entries) {
+		ret = apply_linux_xattrs(fd, inode, path, ctx,
+					 entries, entries_size);
+		if (ret)
+			return ret;
+	}
+#endif
+
+	if (have_dat && !inode_is_symlink(inode)) {
+		ret = unix_set_mode(fd, path, dat.mode);
+		if (ret) {
+			if (!path)
+				path = unix_build_inode_extraction_path(inode, ctx);
 			if (ctx->common.extract_flags &
 			    WIMLIB_EXTRACT_FLAG_STRICT_ACLS)
 			{
 				ERROR_WITH_ERRNO("\"%s\": unable to set mode=0%"PRIo32,
-						 path, dat->mode);
+						 path, dat.mode);
 				return ret;
 			}
 			WARNING_WITH_ERRNO("\"%s\": unable to set mode=0%"PRIo32,
-					   path, dat->mode);
+					   path, dat.mode);
 		}
 	}
 
@@ -389,25 +421,9 @@ unix_set_metadata(int fd, const struct wim_inode *inode,
 		path = unix_build_inode_extraction_path(inode, ctx);
 
 	if (ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) {
-		struct wimlib_unix_data dat;
-	#ifdef HAVE_XATTR_SUPPORT
-		const void *entries;
-		u32 entries_size;
-
-		entries = inode_get_linux_xattrs(inode, &entries_size);
-		if (entries) {
-			ret = apply_linux_xattrs(fd, inode, path, ctx,
-						 entries, entries_size);
-			if (ret)
-				return ret;
-		}
-	#endif
-		if (inode_get_unix_data(inode, &dat)) {
-			ret = apply_unix_permissions(fd, inode, path, ctx,
-						     &dat);
-			if (ret)
-				return ret;
-		}
+		ret = apply_unix_metadata(fd, inode, path, ctx);
+		if (ret)
+			return ret;
 	}
 
 	ret = unix_set_timestamps(fd, path, inode->i_last_access_time,
