@@ -280,7 +280,7 @@ install-exec-hook:
 install-data-hook:
 	for cmd in $(wimlib_imagex_cmds); do				\
 		cd $(DESTDIR)$(mandir)/man1 &&				\
-			ln -sf wimlib-imagex-$${cmd}.1 wim$${cmd}.1;	\
+			ln -sf wim$${cmd}.1 wimlib-imagex-$${cmd}.1;	\
 	done
 
 uninstall-hook:
@@ -293,24 +293,24 @@ uninstall-hook:
 #				Documentation				     #
 ##############################################################################
 
-man1_MANS =					\
-	doc/man1/wimlib-imagex.1		\
-	doc/man1/wimlib-imagex-append.1		\
-	doc/man1/wimlib-imagex-apply.1		\
-	doc/man1/wimlib-imagex-capture.1	\
-	doc/man1/wimlib-imagex-delete.1		\
-	doc/man1/wimlib-imagex-dir.1		\
-	doc/man1/wimlib-imagex-export.1		\
-	doc/man1/wimlib-imagex-extract.1	\
-	doc/man1/wimlib-imagex-info.1		\
-	doc/man1/wimlib-imagex-join.1		\
-	doc/man1/wimlib-imagex-mount.1		\
-	doc/man1/wimlib-imagex-mountrw.1	\
-	doc/man1/wimlib-imagex-optimize.1	\
-	doc/man1/wimlib-imagex-split.1		\
-	doc/man1/wimlib-imagex-unmount.1	\
-	doc/man1/wimlib-imagex-update.1		\
-	doc/man1/wimlib-imagex-verify.1		\
+man1_MANS =				\
+	doc/man1/wimlib-imagex.1	\
+	doc/man1/wimappend.1		\
+	doc/man1/wimapply.1		\
+	doc/man1/wimcapture.1		\
+	doc/man1/wimdelete.1		\
+	doc/man1/wimdir.1		\
+	doc/man1/wimexport.1		\
+	doc/man1/wimextract.1		\
+	doc/man1/wiminfo.1		\
+	doc/man1/wimjoin.1		\
+	doc/man1/wimmount.1		\
+	doc/man1/wimmountrw.1		\
+	doc/man1/wimoptimize.1		\
+	doc/man1/wimsplit.1		\
+	doc/man1/wimunmount.1		\
+	doc/man1/wimupdate.1		\
+	doc/man1/wimverify.1		\
 	doc/man1/mkwinpeimg.1
 
 EXTRA_DIST += $(man1_MANS)

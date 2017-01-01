@@ -1,42 +1,42 @@
 .TH WIMLIB-IMAGEX 1 "August 2016" "wimlib 1.10.0" "User Commands"
 .SH NAME
-wimlib-imagex \- Extract, create, modify, or mount a WIM (Windows Imaging Format) archive
+wimlib-imagex \- Extract, create, modify, or mount a WIM archive
 .SH SYNOPSIS
-\fBwimlib-imagex append\fR \fIarguments...\fR
+\fBwimlib-imagex append\fR \fIarguments...\fR (or \fBwimappend\fR \fIarguments...\fR)
 .br
-\fBwimlib-imagex apply\fR \fIarguments...\fR
+\fBwimlib-imagex apply\fR \fIarguments...\fR (or \fBwimapply\fR \fIarguments...\fR)
 .br
-\fBwimlib-imagex capture\fR \fIarguments...\fR
+\fBwimlib-imagex capture\fR \fIarguments...\fR (or \fBwimcapture\fR \fIarguments...\fR)
 .br
-\fBwimlib-imagex delete\fR \fIarguments...\fR
+\fBwimlib-imagex delete\fR \fIarguments...\fR (or \fBwimdelete\fR \fIarguments...\fR)
 .br
-\fBwimlib-imagex dir\fR \fIarguments...\fR
+\fBwimlib-imagex dir\fR \fIarguments...\fR (or \fBwimdir\fR \fIarguments...\fR)
 .br
-\fBwimlib-imagex export\fR \fIarguments...\fR
+\fBwimlib-imagex export\fR \fIarguments...\fR (or \fBwimexport\fR \fIarguments...\fR)
 .br
-\fBwimlib-imagex extract\fR \fIarguments...\fR
+\fBwimlib-imagex extract\fR \fIarguments...\fR (or \fBwimextract\fR \fIarguments...\fR)
 .br
-\fBwimlib-imagex info\fR \fIarguments...\fR
+\fBwimlib-imagex info\fR \fIarguments...\fR (or \fBwiminfo\fR \fIarguments...\fR)
 .br
-\fBwimlib-imagex join\fR \fIarguments...\fR
+\fBwimlib-imagex join\fR \fIarguments...\fR (or \fBwimjoin\fR \fIarguments...\fR)
 .br
-\fBwimlib-imagex mount\fR \fIarguments...\fR
+\fBwimlib-imagex mount\fR \fIarguments...\fR (or \fBwimmount\fR \fIarguments...\fR)
 .br
-\fBwimlib-imagex mountrw\fR \fIarguments...\fR
+\fBwimlib-imagex mountrw\fR \fIarguments...\fR (or \fBwimmountrw\fR \fIarguments...\fR)
 .br
-\fBwimlib-imagex optimize\fR \fIarguments...\fR
+\fBwimlib-imagex optimize\fR \fIarguments...\fR (or \fBwimoptimize\fR \fIarguments...\fR)
 .br
-\fBwimlib-imagex split\fR \fIarguments...\fR
+\fBwimlib-imagex split\fR \fIarguments...\fR (or \fBwimsplit\fR \fIarguments...\fR)
 .br
-\fBwimlib-imagex unmount\fR \fIarguments...\fR
+\fBwimlib-imagex unmount\fR \fIarguments...\fR (or \fBwimunmount\fR \fIarguments...\fR)
 .br
-\fBwimlib-imagex update\fR \fIarguments...\fR
+\fBwimlib-imagex update\fR \fIarguments...\fR (or \fBwimupdate\fR \fIarguments...\fR)
 .br
-\fBwimlib-imagex verify\fR \fIarguments...\fR
+\fBwimlib-imagex verify\fR \fIarguments...\fR (or \fBwimverify\fR \fIarguments...\fR)
 .SH DESCRIPTION
-\fBwimlib-imagex\fR deals with archives in the Windows Imaging Format (WIM).
-Its interface is similar to Microsoft's ImageX, but \fBwimlib-imagex\fR is
-cross-platform and has useful improvements and extensions.
+\fBwimlib-imagex\fR deals with archive files in the Windows Imaging (WIM)
+format.  Its interface is similar to Microsoft's ImageX, but \fBwimlib-imagex\fR
+is cross-platform and has useful improvements and extensions.
 .PP
 To do its work, \fBwimlib-imagex\fR uses \fBwimlib\fR, an open source C
 library that provides interfaces for manipulating WIM archives.  wimlib is
@@ -45,7 +45,7 @@ wimgapi.dll).  You can use wimlib in your own programs, although for
 command-line use \fBwimlib-imagex\fR already provides access to most of
 wimlib's functionality.
 .SH BACKGROUND INFORMATION
-The Windows Imaging Format (WIM) was designed by Microsoft primarily for
+The Windows Imaging (WIM) format was designed by Microsoft primarily for
 archiving Windows filesystems, such as NTFS.  However, it can be used on other
 platforms as well, with some limitations.  A WIM archive contains one or more
 images, each of which is a logically independent directory tree.  Images are
@@ -53,10 +53,10 @@ indexed starting from 1, and each may also have a name.  File data is stored as
 content-addressable "blobs" that are deduplicated across the entire archive.
 Data may be compressed using one of several compression algorithms.
 .PP
-An update of the WIM format released with Windows 8 features solid compression
-using the LZMS compression algorithm.  Such files are also called "ESD files"
-and may carry the extension \.esd instead of .wim.  \fBwimlib-imagex\fR
-v1.6.0 and later supports these new files, unless they are encrypted.
+An update of the WIM format which Microsoft released with Windows 8 uses
+solid-mode LZMS compression to achieve a better compression ratio.  Such files
+are also called "ESD files" and may have the \.esd extension instead of .wim.
+wimlib fully supports these files except when they are encrypted.
 .SH COMMANDS
 \fBwimlib-imagex\fR accepts one of a number of commands (listed above in
 \fBSYNOPSYS\fR), and additional arguments depending on the specific command.
@@ -64,114 +64,80 @@ Although \fBwimlib-imagex\fR will print usage information with \fB--help\fR
 or if you invoke it incorrectly, the full documentation for each
 \fBwimlib-imagex\fR command can be found in the appropriate manual page.
 .PP
-Note: to save typing, if appropriate hard links or batch files have been
-installed, a command \fBwimlib-imagex \fICOMMAND\fR can also be accessed as
-simply \fBwim\fICOMMAND\fR; for example, \fBwimapply\fR for \fBwimlib-imagex
-apply\fR.
+Note: if appropriate hard links or batch files have been installed, a command
+\fBwimlib-imagex \fICOMMAND\fR can also be accessed as simply
+\fBwim\fICOMMAND\fR; for example, \fBwimapply\fR for \fBwimlib-imagex apply\fR.
+For brevity the documentation uses the shorter names.
 .SH GENERAL FEATURES
 The following are some of the general features, or use cases, currently
 supported by \fBwimlib-imagex\fR, and pointers to the relevant commands:
 .IP \[bu] 4
-Display information about a WIM file
- (\fBwimlib-imagex info\fR)
+Display information about a WIM file (\fBwiminfo\fR)
 .IP \[bu]
-List the files in a WIM image
- (\fBwimlib-imagex dir\fR)
+List the files in a WIM image (\fBwimdir\fR)
 .IP \[bu]
-Extract, or "apply", a full WIM image
- (\fBwimlib-imagex apply\fR)
+Extract, or "apply", a full WIM image (\fBwimapply\fR)
 .IP \[bu]
-Extract files or directories from a WIM image
- (\fBwimlib-imagex extract\fR)
+Extract files or directories from a WIM image (\fBwimextract\fR)
 .IP \[bu] 4
-Capture a WIM image and save it to a new WIM file
- (\fBwimlib-imagex capture\fR)
+Capture a WIM image and save it to a new WIM file (\fBwimcapture\fR)
 .IP \[bu]
-Capture a WIM image and append it to an existing WIM file
- (\fBwimlib-imagex append\fR)
+Capture a WIM image and append it to an existing WIM file (\fBwimappend\fR)
 .IP \[bu]
-Modify a WIM image by adding, deleting, or renaming files
- (\fBwimlib-imagex update\fR)
+Modify a WIM image by adding, deleting, or renaming files (\fBwimupdate\fR)
 .IP \[bu]
-(Linux only) Mount a WIM image read-only
- (\fBwimlib-imagex mount\fR)
+(Linux only) Mount a WIM image read-only (\fBwimmount\fR)
 .IP \[bu]
-(Linux only) Mount a WIM image read-write
- (\fBwimlib-imagex mountrw\fR)
+(Linux only) Mount a WIM image read-write (\fBwimmountrw\fR)
 .IP \[bu]
-Delete an image from a WIM file
- (\fBwimlib-imagex delete\fR)
+Delete an image from a WIM file (\fBwimdelete\fR)
 .IP \[bu]
-Export image(s) from a WIM file
- (\fBwimlib-imagex export\fR)
+Export image(s) from a WIM file (\fBwimexport\fR)
 .IP \[bu]
-Change the name or description of a WIM image
- (\fBwimlib-imagex info\fR)
+Change the name or description of a WIM image (\fBwiminfo\fR)
 .IP \[bu]
-Change the bootable image index of a WIM file
- (\fBwimlib-imagex info\fR)
+Change the bootable image index of a WIM file (\fBwiminfo\fR)
 .IP \[bu]
-Rebuild, and optionally recompress, a WIM file
- (\fBwimlib-imagex optimize\fR)
+Rebuild, and optionally recompress, a WIM file (\fBwimoptimize\fR)
 .IP \[bu]
-Split a WIM file into multiple parts
- (\fBwimlib-imagex split\fR)
+Split a WIM file into multiple parts (\fBwimsplit\fR)
 .IP \[bu]
-Join a split WIM
- (\fBwimlib-imagex join\fR)
+Join a split WIM (\fBwimjoin\fR)
 .IP \[bu]
-Verify a WIM file
- (\fBwimlib-imagex verify\fR)
+Verify the validity and integrity of a WIM file (\fBwimverify\fR)
 .SH DETAILED FEATURES
 This section presents some of the interesting features of
 \fBwimlib-imagex\fR in more detail.
 .IP \[bu] 4
 Multi-platform support.  \fBwimlib-imagex\fR is supported on both UNIX-like
-systems (mainly Linux, but also FreeBSD, Mac OS X, etc.) and Windows, and most
-code is shared among all platforms.  However, platform-specific features are
+systems (mainly Linux, but also FreeBSD, Mac OS X, etc.) and Windows.  Most code
+is shared among all platforms, but platform-specific features are still
 supported when possible.
 .IP \[bu]
+XPRESS, LZX, and LZMS compression and decompression.  wimlib contains advanced
+implementations of all these compression algorithms.  These have been improved
+over time and now usually outperform and outcompress their Microsoft
+equivalents, while remaining fully compatible.
+.IP \[bu]
+Solid-mode compression, or "ESD file", support. "ESD files" are an updated WIM
+format that uses solid LZMS compression to achieve a better compression ratio.
+.IP \[bu]
+Multithreaded compression.  By default, wimlib's data compression is
+multithreaded and will use all available processors.
+.IP \[bu]
 On UNIX-like systems, integration with libntfs-3g allows capturing a WIM image
-directly from a block device containing an NTFS volume, or applying a WIM image
-directly to a block device containing an NTFS volume.  This allows saving and
-restoring NTFS-specific data, such as security descriptors and named data
-streams, which would otherwise only be supported on Windows.
+directly from an NTFS volume, or applying a WIM image directly to an NTFS
+volume.  This allows saving and restoring NTFS-specific data and metadata, such
+as security descriptors and named data streams, which would otherwise only be
+supported on Windows.
 .IP \[bu]
-Long path support on Windows.  \fBwimlib-imagex\fR can capture and apply files
-with paths exceeding the MAX_PATH (260 character) limitation of the Win32
-subsystem.
+On UNIX-like systems, optional support for saving and restoring standard UNIX
+file permissions (owner/group/mode), UNIX special files, and extended
+attributes.  (This is a wimlib extension; Microsoft's WIM software ignores this
+extra information.)
 .IP \[bu]
-Non-Administrator support on Windows.  You can run \fBwimlib-imagex\fR without
-Administrator rights, subject to some limitations.
-.IP \[bu]
-Support for WIM integrity tables.  An integrity table is a list of SHA-1 message
-digests appended to the end of a WIM file which gives checksums over the WIM
-file itself.  The \fB--check\fR option to several \fBwimlib-imagex\fR commands
-can be used to verify or add integrity tables.
-.IP \[bu]
-On UNIX-like systems, support for saving and restoring UNIX uids (user IDs),
-gids (group IDs), and modes to/from WIM images.  This is a wimlib extension, but
-the Microsoft implementation ignores this extra metadata.
-.IP \[bu]
-Multithreaded compression.  By default, data compression is multithreaded and
-will use all available processors.
-.IP \[bu]
-XPRESS, LZX, and LZMS decompression and compression.  wimlib contains
-independent implementations of all these compression algorithms.  Sometimes they
-can do better than the equivalent Microsoft implementations.
-.IP \[bu]
-"ESD file" support.  As mentioned in \fBBACKGROUND INFORMATION\fR, "ESD files"
-use a new WIM format that features solid resources and LZMS compression.  This
-support was first present in wimlib v1.6.0, but v1.7.0 and later have improved
-compatibility.
-.IP \[bu]
-On Linux, support for mounting WIM images with FUSE (Filesystem in UserSpacE).
-.IP \[bu]
-"Pipable" WIMs.  This is a wimlib extension and is not compatible with the
-Microsoft implementation.  A pipable WIM, created with \fBwimcapture\fR with the
-\fB--pipable\fR option, can be written to standard output or read from standard
-input.  This can be used to pipe images to or from a server over the network to
-implement fast filesystem imaging and restore.
+On Linux, support for mounting WIM images with FUSE (Filesystem in UserSpacE),
+both readonly and read-write.
 .IP \[bu]
 Split WIMs.  A split WIM is a WIM archive split into multiple parts.
 \fBwimsplit\fR can create a split WIM from a standalone WIM, and \fBwimjoin\fR
@@ -181,35 +147,53 @@ Delta WIMs.  A delta WIM contains image metadata but excludes file data already
 present in another WIM file.  A delta WIM can be created using \fBwimcapture\fR
 with the \fB--delta-from\fR option.
 .IP \[bu]
-Fast incremental backups.  Using the \fB--update-of\fR option of
-\fBwimcapture\fR or \fBwimappend\fR, you can optimize an image capture so that
-files that are unmodified based on timestamps are not be read from disk.  But
-even without this option, since the WIM format features single-instance files, a
-file identical to any already present in the WIM archive (in any image) will not
-be written, but rather a reference to the stored file will be used.
+"Pipable" WIMs.  As a wimlib extension (not compatible with the Microsoft
+implementation), \fBwimcapture\fR supports capturing a WIM file to standard
+output in a special "pipable" format which can later be applied by sending it to
+\fBwimapply\fR on standard input.  Among other things, this can be used to pipe
+images to or from a server over the network to implement fast filesystem imaging
+and restore.
+.IP \[bu]
+Support for WIM integrity tables.  Although file data in WIM archives is always
+checksummed, there can also be an extra set of checksums (an "integrity table")
+associated with the WIM file itself to provide extra integrity assurance.  The
+\fB--check\fR option to several \fBwimlib-imagex\fR commands can be used to
+verify or add these extra checksums.
+.IP \[bu]
+Fast incremental backups.  Because WIM archives use content-addressible file
+data, the contents of files are automatically deduplicated.  In addition, using
+the \fB--update-of\fR option of \fBwimcapture\fR or \fBwimappend\fR, you can
+optimize an image capture so that files that are unmodified based on timestamps
+are not even read from disk.
 .IP \[bu]
 Windows-specific image metadata support.  When capturing an image of a Windows
 operating system, wimlib will automatically populate XML metadata fields such as
 the Windows OS version details by scanning well-known system files.
 .IP \[bu]
 WIMBoot support.  On Windows 8.1 and later, files can be "externally backed" by
-a WIM archive with the help of Microsoft's Windows Overlay Filesystem filter
-driver (WOF).  With the \fB--wimboot\fR option, \fBwimapply\fR will extract
+a WIM archive with the help of Microsoft's Windows Overlay Filesystem (WOF)
+filter driver.  With the \fB--wimboot\fR option, \fBwimapply\fR will extract
 "pointer files" to the WIM archive rather than the files themselves.
 .IP \[bu]
 VSS snapshot support.  On Windows, \fBwimcapture\fR or \fBwimappend\fR with the
 \fB--snapshot\fR option will automatically create a temporary VSS snapshot and
 capture the image from it.  This can be used to image a "live" Windows system.
+.IP \[bu]
+Long path support on Windows.  \fBwimlib-imagex\fR can capture and apply files
+with paths exceeding the MAX_PATH (260 character) limitation of the Win32
+subsystem.
+.IP \[bu]
+Non-Administrator support on Windows.  You can run \fBwimlib-imagex\fR without
+Administrator rights, subject to some limitations.
 .SH CASE SENSITIVITY
-By default, the case sensitivity of \fBwimlib-imagex\fR differs somewhat
-between UNIX-like systems and Windows.  WIM images may (but usually do not) have
-multiple files with the same case-insensitive name.  Internally, wimlib
-stores filenames as case-sensitive, but on Windows paths
-actually provided by the user for use in a WIM image (e.g. for extracting,
-adding, renaming, or deleting files) will by default be treated as
-case-insensitive in order to get the "expected" behavior. This differs from the
-default behavior on UNIX-like systems, where such paths will be treated as
-case-sensitive.
+By default, the case sensitivity of \fBwimlib-imagex\fR differs somewhat between
+UNIX-like systems and Windows.  WIM images may (but usually do not) have
+multiple files with the same case-insensitive name.  Internally, wimlib stores
+filenames as case-sensitive, but on Windows paths actually provided by the user
+for use in a WIM image (e.g. for extracting, adding, renaming, or deleting
+files) will by default be treated as case-insensitive in order to get the
+"expected" behavior. This differs from the default behavior on UNIX-like
+systems, where such paths will be treated as case-sensitive.
 .PP
 Note that with case insensitivity, a path component may in general be ambiguous
 due to multiple files or directories having the same case-insensitive name.  In
@@ -229,21 +213,22 @@ wimlib-imagex may be redistributed and/or modified under the terms of the GNU
 General Public License; either version 3 of the License, or (at your option) any
 later version.  There is NO WARRANTY, to the extent permitted by law.
 .SH REPORTING BUGS
-Report bugs to ebiggers3@gmail.com.  Feedback and suggestions are also welcome.
+Report bugs to ebiggers3@gmail.com or to \fIhttps://wimlib.net/forums/\fR.
+Feedback and suggestions are also welcome.
 .SH SEE ALSO
-.BR wimlib-imagex-append (1),
-.BR wimlib-imagex-apply (1),
-.BR wimlib-imagex-capture (1),
-.BR wimlib-imagex-delete (1),
-.BR wimlib-imagex-dir (1),
-.BR wimlib-imagex-export (1),
-.BR wimlib-imagex-extract (1),
-.BR wimlib-imagex-info (1),
-.BR wimlib-imagex-join (1),
-.BR wimlib-imagex-mount (1),
-.BR wimlib-imagex-mountrw (1),
-.BR wimlib-imagex-optimize (1),
-.BR wimlib-imagex-split (1),
-.BR wimlib-imagex-unmount (1),
-.BR wimlib-imagex-update (1),
-.BR wimlib-imagex-verify (1),
+.BR wimappend (1),
+.BR wimapply (1),
+.BR wimcapture (1),
+.BR wimdelete (1),
+.BR wimdir (1),
+.BR wimexport (1),
+.BR wimextract (1),
+.BR wiminfo (1),
+.BR wimjoin (1),
+.BR wimmount (1),
+.BR wimmountrw (1),
+.BR wimoptimize (1),
+.BR wimsplit (1),
+.BR wimunmount (1),
+.BR wimupdate (1),
+.BR wimverify (1),

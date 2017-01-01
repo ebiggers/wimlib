@@ -26,6 +26,8 @@ Version 1.11.0-BETA4:
 	Fixed configuring with --enable-ssse3-sha1 from release tarball
 	(the file nasm_lt.sh was missing).
 
+	Made some documentation improvements.
+
 Version 1.10.0:
 	The LZX compression ratio has been slightly improved.  The default mode,
 	LZX level 50, is now almost as good as the old LZX level 100, while

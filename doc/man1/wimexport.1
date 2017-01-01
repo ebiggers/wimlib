@@ -1,0 +1,193 @@
+.TH WIMEXPORT "1" "August 2016" "wimlib 1.10.0" "User Commands"
+.SH NAME
+wimexport \- Export image(s) from a WIM archive
+.SH SYNOPSIS
+\fBwimexport\fR \fISRC_WIMFILE\fR \fISRC_IMAGE\fR \fIDEST_WIMFILE\fR
+ [\fIDEST_IMAGE_NAME\fR [\fIDEST_IMAGE_DESC\fR]] [\fIOPTION\fR...]
+.SH DESCRIPTION
+\fBwimexport\fR, or equivalently \fBwimlib-imagex export\fR, exports the
+specified image from \fISRC_WIMFILE\fR into \fIDEST_WIMFILE\fR, optionally
+changing the image's name and/or description.  If \fIDEST_WIMFILE\fR already
+exists, the image will be appended to it; otherwise, a new WIM archive will be
+created to contain the exported image.
+.PP
+\fISRC_IMAGE\fR specifies the image in \fISRC_WIMFILE\fR to export.  It may be
+the 1-based index of an image, the name of an image, or the keyword "all" to
+specify all images.  You can use \fBwiminfo\fR(1) to list the images contained
+in \fISRC_WIMFILE\fR.
+.PP
+If specified, \fIDEST_IMAGE_NAME\fR is the name to give the image being
+exported.  The default is its name in \fISRC_WIMFILE\fR.  If specified,
+\fIDEST_IMAGE_NAME\fR must be either a name not already used in
+\fIDEST_WIMFILE\fR, or the empty string to leave the image unnamed.
+\fIDEST_IMAGE_NAME\fR cannot be specified if "all" images are being exported.
+.PP
+If specified, \fIDEST_IMAGE_DESC\fR is the description to give the image being
+exported.  The default is its description in \fISRC_WIMFILE\fR.
+.PP
+\fBwimexport\fR supports exporting images from stand-alone WIMs as well as from
+split WIMs and delta WIMs.  See \fBSPLIT WIMS\fR.
+.PP
+\fBwimexport\fR also supports exporting images from a non-pipable WIM into a
+pipable WIM or vice versa, or from a non-solid WIM into a solid WIM or vice
+versa.  It can also export a pipable WIM directly to standard output if
+\fIDEST_WIMFILE\fR is specified as "-"; see \fB--pipable\fR.
+.PP
+.SH OPTIONS
+.TP 6
+\fB--boot\fR
+Mark the exported image as the "bootable" image of the WIM; or, if multiple
+images are being exported, make the image that was the bootable image of the
+source WIM also the bootable image of the destination WIM.
+.TP
+\fB--check\fR
+Before exporting the image(s), verify the integrity of the source and
+destination WIMs if extra integrity information is present.  Also include extra
+integrity information in the destination WIM, even if it was not present before.
+.TP
+\fB--nocheck\fR
+Do not include extra integrity information in the destination WIM, even if it
+was present before.
+.TP
+\fB--compress\fR=\fITYPE\fR[:\fILEVEL\fR]
+Specify the compression type, and optionally the compression level for that
+compression type, for \fIDEST_WIMFILE\fR.  Note that if \fIDEST_WIMFILE\fR
+already exists, then its compression type cannot be changed by this option.  See
+the documentation for this option to \fBwimcapture\fR(1) for more details.
+.TP
+\fB--chunk-size\fR=\fISIZE\fR
+Set the WIM compression chunk size to \fISIZE\fR.  See the documentation for
+this option to \fBwimcapture\fR(1) for more details.
+.TP
+\fB--recompress\fR
+Force all exported data to be recompressed, even if the destination WIM will use
+the same compression type as the source WIM.
+.TP
+\fB--solid\fR
+Create a "solid" archive that compresses multiple files together.  This usually
+results in a significantly better compression ratio but has disadvantages such
+as reduced compatibility.  See the documentation for this option to
+\fBwimcapture\fR(1) for more details.
+.TP
+\fB--solid-compress\fR=\fITYPE\fR[:\fILEVEL\fR]
+Like \fB--compress\fR, but set the compression type used in solid resources.
+See the documentation for this option to \fBwimcapture\fR(1) for more details.
+.TP
+\fB--solid-chunk-size\fR=\fISIZE\fR
+Like \fB--chunk-size\fR, but set the chunk size used in solid resources.  See
+the documentation for this option to \fBwimcapture\fR(1) for more details.
+.TP
+\fB--threads\fR=\fINUM_THREADS\fR
+Number of threads to use for compressing data.  Default: autodetect (number of
+processors).
+.TP
+\fB--rebuild\fR
+If exporting to an existing WIM, rebuild it rather than appending to it.
+Rebuilding is slower but will save some space that would otherwise be left as a
+hole in the WIM.  Also see \fBwimoptimize\fR(1).
+.TP
+\fB--ref\fR="\fIGLOB\fR"
+File glob of additional WIMs or split WIM parts to reference resources from.
+See \fBSPLIT_WIMS\fR.  This option can be specified multiple times.  Note:
+\fIGLOB\fR is listed in quotes because it is interpreted by \fBwimexport\fR and
+may need to be quoted to protect against shell expansion.
+.TP
+\fB--pipable\fR
+Build or rebuild \fIDEST_WIMFILE\fR as a "pipable WIM" that can be applied fully
+sequentially, including from a pipe.  See \fBwimcapture\fR(1) for more details
+about creating pipable WIMs.  The default without this option is to make
+\fIDEST_WIMFILE\fR pipable only if it was "-" (standard output) or was an
+existing pipable WIM.
+.TP
+\fB--not-pipable\fR
+Rebuild \fIDEST_WIMFILE\fR as a normal, non-pipable WIM.  This only useful if
+you are exporting image(s) to a pipable WIM but you want it rebuilt as
+non-pipable.
+.TP
+\fB--wimboot\fR
+Mark the destination image as WIMBoot-compatible.  Also, if exporting to a new
+archive, set the compression type to that recommended for WIMBoot (currently,
+XPRESS with 4096 byte chunks).
+.TP
+\fB--unsafe-compact\fR
+Compact the existing destination WIM in-place and append any new data,
+eliminating "holes".  This is efficient, but in general this option should
+\fInot\fR be used because a failed or interrupted compaction will corrupt the
+WIM archive.  For more information, see the documentation for this option to
+\fBwimoptimize\fR(1).
+.SH SPLIT WIMS
+You may use \fBwimexport\fR to export images from (but not to) a split WIM.  The
+\fISRC_WIMFILE\fR argument must specify the first part of the split WIM, while
+the additional parts of the split WIM must be specified in one or more
+\fB--ref\fR="\fIGLOB\fR" options.  Since globbing is built into the \fB--ref\fR
+option, typically only one \fB--ref\fR option is necessary.  For example, the
+names for the split WIM parts usually go something like:
+.PP
+.RS
+.nf
+mywim.swm
+mywim2.swm
+mywim3.swm
+mywim4.swm
+mywim5.swm
+.RE
+.PP
+To export the first image of this split WIM to a new or existing WIM file
+"other.wim", run:
+.PP
+.RS
+wimexport mywim.swm 1 other.wim --ref="mywim*.swm"
+.RE
+.SH NOTES
+\fIData consistency\fR: Except when using \fB--unsafe-compact\fR, it is safe to
+abort a \fBwimexport\fR command partway through.  However, after doing this, it
+is recommended to run \fBwimoptimize\fR on the destination WIM to remove any
+data that was appended to the physical WIM file but not yet incorporated into
+the structure of the WIM, unless the WIM was being rebuilt (e.g. with
+\fB--rebuild\fR), in which case you should delete the temporary file left over.
+.PP
+\fIData deduplication\fR: The WIM format has built-in deduplication (also called
+"single instancing") of file contents.  Therefore, when an image is exported,
+only the file contents not already present in the destination WIM will be
+physically copied.  However, a new copy of the image's metadata resource, which
+describes the image's directory structure, will always be created.
+.PP
+\fIESD files\fR: \fBwimexport\fR supports solid-compressed WIMs, or "ESD" (.esd)
+files, except for encrypted ESDs, which must be decrypted first.  The source and
+destination files of \fBwimexport\fR can be solid WIMs, non-solid WIMs, or a
+combination thereof.  If the destination file does not exist, then by default it
+will be created as solid if the source was solid, or as non-solid if the source
+was non-solid.  To override this, either specify \fB--solid\fR to create a solid
+WIM (.esd file), or specify \fB--compress\fR=\fILZX\fR to create a standard
+non-solid WIM (.wim file).
+.SH EXAMPLES
+Export the second image of 'boot.wim' to the new WIM file 'new.wim':
+.RS
+.PP
+wimexport boot.wim 2 new.wim
+.RE
+.PP
+The above example creates "new.wim" with the same compression type as
+"boot.wim".  If you wish to change the compression type, specify
+\fB--compress\fR=\fITYPE\fR; for example:
+.RS
+.PP
+wimexport boot.wim 2 new.wim --compress=LZX
+.RE
+.PP
+Export "ESD to WIM" --- that is, solid WIM to non-solid WIM:
+.RS
+.PP
+wimexport install.esd all install.wim --compress=LZX
+.RE
+.PP
+Export "WIM to ESD" --- that is, non-solid WIM to solid WIM:
+.RS
+.PP
+wimexport install.wim all install.esd --solid
+.RE
+.PP
+.SH SEE ALSO
+.BR wimlib-imagex (1)
+.BR wiminfo (1)
+.BR wimoptimize (1)

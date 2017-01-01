@@ -1,19 +1,17 @@
-.TH WIMLIB-IMAGEX "1" "August 2016" "wimlib 1.10.0" "User Commands"
+.TH WIMUPDATE "1" "August 2016" "wimlib 1.10.0" "User Commands"
 .SH NAME
-wimlib-imagex-update \- Update a WIM image
+wimupdate \- Update a WIM image
 .SH SYNOPSIS
-\fBwimlib-imagex update\fR \fIWIMFILE\fR [\fIIMAGE\fR] [\fIOPTION\fR...] [< \fICMDFILE\fR]
+\fBwimupdate\fR \fIWIMFILE\fR [\fIIMAGE\fR] [\fIOPTION\fR...] [< \fICMDFILE\fR]
 .SH DESCRIPTION
-\fBwimlib-imagex update\fR modifies the specified \fIIMAGE\fR in the Windows
-Imaging (WIM) file \fIWIMFILE\fR by adding, deleting, or renaming files or
-directories in it.
-This command is also available as simply \fBwimupdate\fR if the appropriate
-hard link or batch file has been installed.
+\fBwimupdate\fR, or equivalently \fBwimlib-imagex update\fR, modifies the
+specified \fIIMAGE\fR in the Windows Imaging (WIM) archive \fIWIMFILE\fR by
+adding, deleting, or renaming files or directories in it.
 .PP
-\fIIMAGE\fR specifies the image in \fIWIMFILE\fR to update.  It may be a 1-based
-index of an image in the WIM or the name of an image in the WIM.  Use the
-\fBwimlib-imagex info\fR (1) command to list the images a WIM file contains.
-\fIIMAGE\fR may be omitted if \fIWIMFILE\fR contains only one image.
+\fIIMAGE\fR specifies the image in \fIWIMFILE\fR to update.  It may be the 1-based
+index of an image or the name of an image.  It may be omitted if \fIWIMFILE\fR
+contains only one image.  You can use \fBwiminfo\fR(1) to list the images
+contained in \fIWIMFILE\fR.
 .PP
 The modifications to perform on the WIM image are specified as a sequence of
 commands, one per line, read in a text file from standard input.  It is
@@ -41,9 +39,9 @@ If \fIDESTINATION\fR does not exist in the WIM image, then any prerequisite
 directories are created as needed to add the \fISOURCE\fR at that location.
 .PP
 The \fBadd\fR command supports a subset of the options accepted by
-\fBwimlib-imagex capture\fR; namely, \fB--dereference\fR,
-\fB--unix-data\fR, \fB--no-acls\fR, and \fB--strict-acls\fR.  See
-\fBwimlib-imagex-capture\fR (1) for explanations of these options.
+\fBwimcapture\fR; namely, \fB--dereference\fR, \fB--unix-data\fR,
+\fB--no-acls\fR, and \fB--strict-acls\fR.  See \fBwimcapture\fR(1) for
+explanations of these options.
 .PP
 In addition, the \fBadd\fR command supports the \fB--no-replace\fR option, which
 causes the \fBadd\fR command to refuse to overwrite existing nondirectory files
@@ -71,8 +69,8 @@ non-directory, which is not allowed.
 .PP
 There are no options available for the \fBrename\fR command.
 .SH OPTIONS
-The following options are accepted on the command line by \fBwimlib-imagex
-update\fR itself:
+The following options are accepted on the command line by \fBwimupdate\fR
+itself:
 .TP 6
 \fB--dereference\fR
 Use \fB--dereference\fR for all \fBadd\fR commands.
@@ -91,7 +89,7 @@ Use \fB--no-replace\fR for all \fBadd\fR commands.
 .TP
 \fB--config\fR=\fIFILE\fR
 Set the capture configuration file for all \fBadd\fR commands.  See the
-description of this option in \fBwimlib-imagex-capture\fR (1).
+description of this option to \fBwimcapture\fR(1).
 .TP
 \fB--force\fR
 Use \fB--force\fR for all \fBdelete\fR commands.
@@ -100,10 +98,9 @@ Use \fB--force\fR for all \fBdelete\fR commands.
 Use \fB--recursive\fR for all \fBdelete\fR commands.
 .TP
 \fB--check\fR
-When reading \fIWIMFILE\fR, verify its integrity if the integrity table is
-present; in addition, include an integrity table in the updated WIM.  If this
-option is not specified, an integrity table will be included in the updated WIM
-if and only if one was present before.
+Before updating the WIM, verify its integrity if it contains extra integrity
+information.  Also include extra integrity information in the updated WIM even
+if it was not present before.
 .TP
 \fB--threads\fR=\fINUM_THREADS\fR
 Number of threads to use for compressing newly added files.  Default: autodetect
@@ -114,10 +111,9 @@ Rebuild the entire WIM rather than appending the updated data to the end of it.
 Rebuilding the WIM is slower, but will save a little bit of space that would
 otherwise be left as a hole in the WIM file.
 .IP
-See \fBwimlib-imagex-optimize\fR (1) for a more customizable way of
-rebuilding (and optionally recompressing) a WIM file.  If running
-\fBwimlib-imagex optimize\fR after \fBwimlib-imagex update\fR, there is
-no need to specify \fB--rebuild\fR to \fBwimlib-imagex update\fR.
+See \fBwimoptimize\fR(1) for a more customizable way of rebuilding (and
+optionally recompressing) a WIM file.  If running \fBwimoptimize\fR after
+\fBwimupdate\fR, there is no need to specify \fB--rebuild\fR to \fBwimupdate\fR.
 .TP
 \fB--command\fR=\fISTRING\fR
 Instead of reading update commands from standard input, read a single update
@@ -127,24 +123,18 @@ more than one update command.  Note that the \fISTRING\fR, as well as any
 paths containing spaces within the \fISTRING\fR must be appropriately quoted.
 If running from cmd.exe on Windows, you should use double quotes for the outer
 quotes and single quotes for the inner quotes.  Example:
-.RS
-.RS
-.PP
-.nf
-wimlib-imagex update boot.wim 1 \\
-.br
-.RS
---command="add 'C:\\My Dir' '\\My Dir'"
-.RE
-.RE
-.RE
-.fi
 .IP
-This option is provided for convenience only.  Do not execute
-\fBwimlib-imagex update\fR multiple consecutive times, each time passing the
-\fB--command\fR option!  This is inefficient.  Instead, generate an update
-command file and provide it (on standard input) to a single invocation of
-\fBwimlib-imagex update\fR, as explained in this document.
+.RS
+.RS
+wimupdate boot.wim 1 --command="add 'C:\\My Dir' '\\My Dir'"
+.RE
+.RE
+.IP
+This option is provided for convenience only.  Do not execute \fBwimupdate\fR
+multiple consecutive times, each time passing the \fB--command\fR option!  This
+is inefficient.  Instead, generate an update command file and provide it (on
+standard input) to a single invocation of \fBwimupdate\fR, as explained in this
+document.
 .TP
 \fB--wimboot-config\fR=\fIFILE\fR
 If this option is specified, no commands shall be read from standard input, and
@@ -162,21 +152,18 @@ This sets \fIFILE\fR as the WIMBoot configuration file for the image.  The
 [PrepopulateList] section of this file specifies path globs that shall not be
 extracted as WIMBoot pointer files (perhaps due to being needed early in the
 boot process).  See the documentation for the \fB--wimboot\fR option of
-\fBwimlib-imagex apply\fR (1) for more information.
+\fBwimapply\fR(1) for more information.
 .TP
 \fB--unsafe-compact\fR
 Compact the WIM archive in-place and append any new data, eliminating "holes".
-In general, this option should \fInot\fR be used because a failed or interrupted
-compaction will corrupt the WIM archive.  For more information, see the
-documentation for this option in \fBwimlib-imagex-optimize\fR (1).
+This is efficient, but in general this option should \fInot\fR be used because a
+failed or interrupted compaction will corrupt the WIM archive.  For more
+information, see the documentation for this option in \fBwimoptimize\fR(1).
 .SH NOTES
-\fBwimlib-imagex update\fR is partly redundant with \fBwimlib-imagex
-mountrw\fR, since if a WIM image can be mounted read-write, then there
-theoretically is no need for \fBwimlib-imagex update\fR.  The main advantage
-of \fBwimlib-imagex update\fR is that it works on both UNIX-like systems and
-Windows, whereas \fBwimlib-imagex mountrw\fR is only available on UNIX-like
-systems, and even then it only works on those with a compatible FUSE
-implementation.
+\fBwimupdate\fR can be viewed as redundant with \fBwimmountrw\fR, since a WIM
+image can also be updated by mounting it read-write.  However, \fBwimupdate\fR
+works on all platforms including Windows, whereas \fBwimmountrw\fR only works on
+Linux.
 .PP
 Symbolic links inside a WIM image are not dereferenced when being interpreted.
 So, for example, if you have a WIM image that contains a symbolic link
@@ -192,24 +179,23 @@ paths are by default treated case-sensitively.  The default case sensitivity may
 be changed by setting the \fBWIMLIB_IMAGEX_IGNORE_CASE\fR environmental
 variable to 0 or 1.
 .PP
-The command file (\fICMDFILE\fR) is parsed by \fBwimlib-imagex update\fR
-itself and not by the system shell.  Therefore, its syntax is limited.  However,
-comment lines beginning with '#' are allowed, and it is also possible to quote
-arguments with whitespace inside them.
+The command file (\fICMDFILE\fR) is parsed by \fBwimupdate\fR itself and not by
+the system shell.  Therefore, its syntax is limited.  However, comment lines
+beginning with '#' are allowed, and it is also possible to quote arguments with
+whitespace inside them.
 .PP
-On UNIX-like systems, you cannot use \fBwimlib-imagex update\fR to add files
-to an image directly from an NTFS volume using libntfs-3g, even though
-\fBwimlib-imagex capture\fR supports capturing a full image this way.
+On UNIX-like systems, you cannot use \fBwimupdate\fR to add files to an image
+directly from an NTFS volume using libntfs-3g, even though \fBwimcapture\fR
+supports capturing a full image this way.
 .PP
-Except when using \fB--unsafe-compact\fR, it is safe to abort a \fBwimlib-imagex
-update\fR command partway through; however, after doing this, it is recommended
-to run \fBwimlib-imagex optimize\fR to remove any data that was appended to the
-physical WIM file but not yet incorporated into the structure of the WIM, unless
-\fB--rebuild\fR was specified, in which case you should delete the temporary
-file left over.
+Except when using \fB--unsafe-compact\fR, it is safe to abort a \fBwimupdate\fR
+command partway through; however, after doing this, it is recommended to run
+\fBwimoptimize\fR to remove any data that was appended to the physical WIM file
+but not yet incorporated into the structure of the WIM, unless \fB--rebuild\fR
+was specified, in which case you should delete the temporary file left over.
 .SH EXAMPLES
 All the examples below show the update command file to be created as well as the
-\fBwimlib-imagex update\fR command to run to perform the updates.
+\fBwimupdate\fR command to run to perform the updates.
 .PP
 Delete two files from a WIM image:
 .PP
@@ -225,7 +211,7 @@ delete /sources/setup.exe
 .RE
 .PP
 .RS
-$ wimlib-imagex update boot.wim 2 < update_commands.txt
+$ wimupdate boot.wim 2 < update_commands.txt
 .RE
 .PP
 Add some files and directories to a WIM image.  Note that the first path of each
@@ -245,7 +231,7 @@ add somefile    /dir/file
 .RE
 .PP
 .RS
-$ wimlib-imagex update boot.wim 2 < update_commands.txt
+$ wimupdate boot.wim 2 < update_commands.txt
 .RE
 .PP
 Rename a file inside a WIM image.
@@ -261,11 +247,11 @@ rename /dir_in_wim/oldfile.txt /dir_in_wim/newfile.txt
 .RE
 .PP
 .RS
-$ wimlib-imagex update boot.wim 2 < update_commands.txt
+$ wimupdate boot.wim 2 < update_commands.txt
 .RE
 .PP
 Using additional features, such as comments, options, and overlays, and
-including an integrity table in the updated WIM:
+including extra integrity information in the updated WIM:
 .PP
 .RS
 \fIupdate_commands.txt\fR:
@@ -297,12 +283,12 @@ delete --recursive /Users/Me/Documents/Junk
 .RE
 .PP
 .RS
-$ wimlib-imagex update boot.wim 2 --check < update_commands.txt
+$ wimupdate boot.wim 2 --check < update_commands.txt
 .RE
 .PP
 .SH SEE ALSO
 .BR wimlib-imagex (1)
-.BR wimlib-imagex-capture (1)
-.BR wimlib-imagex-info (1)
-.BR wimlib-imagex-mountrw (1)
-.BR wimlib-imagex-optimize (1)
+.BR wimcapture (1)
+.BR wiminfo (1)
+.BR wimmountrw (1)
+.BR wimoptimize (1)

@@ -1,0 +1,59 @@
+.TH WIMVERIFY "1" "August 2016" "wimlib 1.10.0" "User Commands"
+.SH NAME
+wimverify \- Verify a WIM archive
+.SH SYNOPSIS
+\fBwimverify\fR \fIWIMFILE\fR [\fIOPTION\fR...]
+.SH DESCRIPTION
+\fBwimverify\fR (or equivalently \fBwimlib-imagex verify\fR) checks the validity
+and integrity of the specified WIM archive.
+.PP
+Specifically, this command performs the following verifications on the WIM:
+.IP \[bu] 4
+Verify that the WIM can be successfully opened, which involves parsing the
+header, blob table, and XML data.
+.IP \[bu]
+If the WIM contains extra integrity information, verify the integrity of the
+entire WIM.
+.IP \[bu]
+Verify that the metadata for each image in the WIM can be successfully parsed.
+.IP \[bu]
+Verify that all files needed by each image are actually contained in the WIM or
+in one of the WIMs referenced by the \fB--ref\fR option.
+.IP \[bu]
+Verify that all files contained in the WIM can be successfully decompressed,
+with matching checksums.
+.SH OPTIONS
+.TP 6
+\fB--ref\fR="\fIGLOB\fR"
+File glob of additional WIMs or split WIM parts to reference resources from.
+This option can be specified multiple times.  Note: \fIGLOB\fR is listed in
+quotes because it is interpreted by \fBwimverify\fR and may need to be quoted to
+protect against shell expansion.
+.TP
+\fB--nocheck\fR
+Do not verify the WIM's integrity using the extra integrity information (the
+integrity table).
+.SH NOTES
+\fBwimverify\fR is a read-only operation; it does not modify the WIM file.
+.PP
+Even if the WIM does not contain extra integrity information (e.g. generated
+with the \fB--check\fR option to \fBwimcapture\fR), \fBwimverify\fR may still be
+quite useful because all file data is still checksummed.
+.PP
+In the future, \fBwimverify\fR might do more thorough verifications than it does
+now.
+.SH EXAMPLES
+Verify the WIM file 'boot.wim':
+.RS
+.PP
+wimverify boot.wim
+.RE
+.PP
+Verify the split WIM file consisting of 'boot.swm', 'boot2.swm', 'boot3.swm', ...:
+.RS
+.PP
+wimverify boot.swm --ref="boot*.swm"
+.RE
+.PP
+.SH SEE ALSO
+.BR wimlib-imagex (1)

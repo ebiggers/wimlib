@@ -1,0 +1,126 @@
+.TH WIMOPTIMIZE "1" "August 2016" "wimlib 1.10.0" "User Commands"
+.SH NAME
+wimoptimize \- Optimize a WIM archive
+.SH SYNOPSIS
+\fBwimoptimize\fR \fIWIMFILE\fR [\fIOPTION\fR...]
+.SH DESCRIPTION
+\fBwimoptimize\fR, or equivalently \fBwimlib-imagex optimize\fR, rebuilds the
+standalone WIM archive \fIWIMFILE\fR.  The new WIM is written to a temporary
+file, and it is renamed to the original file when it's ready.  This will remove
+any holes that have been left in the WIM as a result of appending or deleting
+files or images, so the new WIM may be smaller than the old WIM.
+.PP
+By default, \fBwimoptimize\fR will reuse (not recompress) compressed data and
+will not change the solid or pipable status of the WIM.  However, it can also
+perform recompression and/or convert between solid, non-solid, pipable, and
+non-pipable WIMs; see the options and examples below.
+.SH OPTIONS
+.TP 6
+\fB--check\fR
+Before optimizing the WIM, verify its integrity if it contains extra integrity
+information.  Also include extra integrity information in the optimized WIM,
+even if it was not present before.
+.TP
+\fB--nocheck\fR
+Do not include extra integrity information in the optimized WIM, even if it was
+present before.
+.TP
+\fB--recompress\fR
+Recompress all data in the WIM while optimizing it.  This will significantly
+increase the time needed to optimize the WIM, but it may result in a better
+compression ratio if wimlib can do a better job than the program that created
+the WIM --- which is likely the case if the WIM was Microsoft-created, as
+wimlib's compressors are slightly stronger.
+.TP
+\fB--compress\fR=\fITYPE\fR[:\fILEVEL\fR]
+Recompress the WIM using the specified compression type, and optionally the
+specified compression level for that compression type.  This implies
+\fB--recompress\fR.  See the documentation for this option to
+\fBwimcapture\fR(1) for more details.
+.TP
+\fB--chunk-size\fR=\fISIZE\fR
+Set the WIM compression chunk size to \fISIZE\fR.  See the documentation for
+this option to \fBwimcapture\fR(1) for more details.
+.TP
+\fB--solid\fR
+Create a "solid" archive that compresses multiple files together.  This usually
+results in a significantly better compression ratio but has disadvantages such
+as reduced compatibility.  See the documentation for this option to
+\fBwimcapture\fR(1) for more details.
+.TP
+\fB--solid-compress\fR=\fITYPE\fR[:\fILEVEL\fR]
+Like \fB--compress\fR, but set the compression type used in solid resources.
+See the documentation for this option to \fBwimcapture\fR(1) for more details.
+.TP
+\fB--solid-chunk-size\fR=\fISIZE\fR
+Like \fB--chunk-size\fR, but set the chunk size used in solid resources.  See
+the documentation for this option to \fBwimcapture\fR(1) for more details.
+.TP
+\fB--threads\fR=\fINUM_THREADS\fR
+Number of threads to use for compressing data.  Default: autodetect (number of
+processors).
+.TP
+\fB--pipable\fR
+Rebuild the WIM so that it can be applied fully sequentially, including from a
+pipe.  See \fBwimcapture\fR(1) for more details about creating pipable WIMs.  By
+default, when neither \fB--pipable\fR or \fB--not-pipable\fR is specified, the
+optimized WIM will be pipable if and only if it was pipable before.
+.TP
+\fB--not-pipable\fR
+Rebuild the WIM in the non-pipable format.
+.TP
+\fB--unsafe-compact\fR
+Compact the WIM in-place, without using a temporary file.  Existing resources
+are shifted down to fill holes and new resources are appended as needed.  The
+WIM is truncated to its final size, which may shrink the on-disk file.  This is
+more efficient than a full rebuild, but it is only supported when no
+recompression is being done.  More importantly, AN UNSAFE COMPACTION OPERATION
+CANNOT BE SAFELY INTERRUPTED!  If the operation is interrupted, then the WIM
+will be corrupted, and it may be impossible (or at least very difficult) to
+recover any data from it.  Users of this option are expected to know what they
+are doing and assume responsibility for any data corruption that may result.
+.SH NOTES
+\fBwimoptimize\fR does not support split WIMs or delta WIMs.  For such files,
+consider using \fBwimexport\fR(1) instead.  Note that \fBwimoptimize\fR is
+roughly equivalent to:
+.RS
+.PP
+\fBwimexport\fR \fIWIMFILE\fR all tmp.wim && mv tmp.wim \fIWIMFILE\fR
+.RE
+.PP
+.SH EXAMPLES
+Rebuild 'install.wim':
+.RS
+.PP
+wimoptimize install.wim
+.RE
+.PP
+Rebuild and recompress 'install.wim':
+.RS
+.PP
+wimoptimize install.wim --recompress
+.RE
+.PP
+Rebuild and recompress 'install.wim' using LZX ("maximum") compression at a
+higher-than-default compression level.  The compression chunk size remains
+unchanged.  This command will be slow, but it might be useful for optimizing
+files for distribution.  See \fIhttps://wimlib.net/compression.html\fR for some
+benchmark results.
+.RS
+.PP
+wimoptimize install.wim --compress=LZX:100
+.RE
+.PP
+Recompress 'install.wim' using solid-mode compression, then rename it to
+\'install.esd\'.  This will decrease the archive size significantly.  (Also
+consider using 'wimexport install.wim all install.esd --solid'.):
+.RS
+.PP
+wimoptimize install.wim --solid
+.br
+mv install.wim install.esd
+.RE
+.SH SEE ALSO
+.BR wimlib-imagex (1)
+.BR wimexport (1)
+.BR wimverify (1)

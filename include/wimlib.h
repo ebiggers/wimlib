@@ -13,9 +13,9 @@
  *
  * This is the documentation for the library interface of wimlib 1.10.0, a C
  * library for creating, modifying, extracting, and mounting files in the
- * Windows Imaging Format.  This documentation is intended for developers only.
- * If you have installed wimlib and want to know how to use the @b wimlib-imagex
- * program, please see the manual pages and also the <a
+ * Windows Imaging (WIM) format.  This documentation is intended for developers
+ * only.  If you have installed wimlib and want to know how to use the @b
+ * wimlib-imagex program, please see the manual pages and also the <a
  * href="https://wimlib.net/git/?p=wimlib;a=blob;f=README">README file</a>.
  *
  * @section sec_installing Installing

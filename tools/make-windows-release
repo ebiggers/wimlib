@@ -107,21 +107,22 @@ function gen_pdf_from_man_page() {
 	MANPATH="./doc" man -t $manbase | ps2pdf - $pdf
 }
 
-for fil in ./doc/man1/wimlib-imagex-*.1; do
+for fil in ./doc/man1/wim*.1; do
 	manbase=`basename $fil`
-	manbase=${manbase%%.1}
-	cmd=$(echo $manbase | sed s/wimlib-imagex-//)
-	if [ $cmd == mount -o $cmd == mountrw -o $cmd == unmount ]; then
+	cmd=${manbase%.1}
+	case $cmd in
+	wimlib-imagex|wimmount|wimmountrw|wimunmount)
 		continue
-	fi
+		;;
+	esac
 
-	gen_pdf_from_man_page $manbase
+	gen_pdf_from_man_page $cmd
 
-	sed 's/$/\r/g' > ${DESTDIR}/wim${cmd}.cmd <<- EOF
+	sed 's/$/\r/g' > ${DESTDIR}/${cmd}.cmd <<- EOF
 		@echo off
-		"%~dp0\\wimlib-imagex" $cmd %*
+		"%~dp0\\wimlib-imagex" ${cmd#wim} %*
 	EOF
-	chmod +x ${DESTDIR}/wim${cmd}.cmd
+	chmod +x ${DESTDIR}/${cmd}.cmd
 done
 
 gen_pdf_from_man_page wimlib-imagex

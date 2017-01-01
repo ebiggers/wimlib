@@ -1,23 +1,21 @@
-.TH WIMLIB-IMAGEX "1" "August 2016" "wimlib 1.10.0" "User Commands"
+.TH WIMEXTRACT "1" "August 2016" "wimlib 1.10.0" "User Commands"
 .SH NAME
-wimlib-imagex-extract \- Extract files or directories from a WIM image
+wimextract \- Extract files from a WIM image
 .SH SYNOPSIS
-\fBwimlib-imagex extract\fR \fIWIMFILE\fR \fIIMAGE\fR [(\fIPATH\fR | @\fILISTFILE\fR)...]  [\fIOPTION\fR...]
+\fBwimextract\fR \fIWIMFILE\fR \fIIMAGE\fR [(\fIPATH\fR | @\fILISTFILE\fR)...]  [\fIOPTION\fR...]
 .SH DESCRIPTION
-\fBwimlib-imagex extract\fR extracts one or more files or directory trees
-from the specified \fIIMAGE\fR contained in the Windows Imaging (WIM) file
-\fIWIMFILE\fR.
-This command is also available as simply \fBwimextract\fR if the appropriate hard
-link or batch file has been installed.
+\fBwimextract\fR, or equivalently \fBwimlib-imagex extract\fR, extracts one or
+more files or directory trees from the specified \fIIMAGE\fR contained in the
+Windows Imaging (WIM) archive \fIWIMFILE\fR.
 .PP
-\fBwimlib-imagex extract\fR is intended for extracting only a subset of a
-WIM image.  If you want to extract or "apply" a full WIM image to a directory or
-NTFS volume, use \fBwimlib-imagex apply\fR (1) instead.
+\fBwimextract\fR is intended for extracting only a subset of a WIM image.  If
+you want to extract or "apply" a full WIM image to a directory or NTFS volume,
+use \fBwimapply\fR(1) instead.
 .PP
-\fIIMAGE\fR specifies the image in \fIWIMFILE\fR that contains the files or
-directory trees to extract.  It may be a 1-based index of an image in the WIM or
-the name of an image in the WIM.  Use the \fBwimlib-imagex info\fR (1)
-command to show what images a WIM file contains.
+\fIIMAGE\fR specifies the image in \fIWIMFILE\fR from which to extract the files
+or directory trees.  It may be the 1-based index of an image or the name of an
+image.  It may be omitted if \fIWIMFILE\fR contains only one image.  You can use
+\fBwiminfo\fR(1) to list the images contained in \fIWIMFILE\fR.
 .PP
 If no additional arguments are given, the entire WIM image is extracted.
 Otherwise, each additional argument is interpreted as a \fIPATH\fR if it does
@@ -38,20 +36,19 @@ directory in such a way that the archive's directory structure is
 preserved.  Use \fB--preserve-dir-structure\fR to always get the latter
 behavior.
 .PP
-\fBwimlib-imagex extract\fR supports extracting files and directory trees
-from stand-alone WIMs as well as split WIMs.  See \fBSPLIT WIMS\fR.
+\fBwimextract\fR supports extracting files and directory trees from stand-alone
+WIMs as well as split WIMs.  See \fBSPLIT WIMS\fR.
 .SH PATHS AND LISTFILES
 Each path, including those on the command line and those in listfiles, must be
 specified as an absolute path starting from the root of the WIM image, like
-those output by the \fBwimlib-imagex dir\fR (1) command.  However, path
-separators may be either forward or backward slashes, and the leading slash is
-optional.
+those output by \fBwimdir\fR(1).  However, path separators may be either forward
+or backward slashes, and the leading slash is optional.
 .PP
 On Windows, by default paths are treated case-insensitively, whereas on
 UNIX-like systems, by default paths are treated case-sensitively.  In either
 case, the default behavior may be overridden through the
 \fBWIMLIB_IMAGEX_IGNORE_CASE\fR environmental variable, as documented in
-\fBwimlib-imagex\fR (1).
+\fBwimlib-imagex\fR(1).
 .PP
 By default, each path may contain the wildcard characters '?' and '*'.  The '?'
 character matches any non-path-separator character, whereas the '*' character
@@ -82,21 +79,20 @@ allowed by default.  The following demonstrates an example listfile:
     \\Windows\\notepad*
 
 .SH SPLIT WIMS
-You may use \fBwimlib-imagex extract\fR to extract files or directory trees
-from a split WIM.  This uses the \fB--refs\fR="\fIGLOB\fR" option in the same
-way as in other commands such as \fBwimlib-imagex apply\fR.  See
-\fBwimlib-imagex apply\fR (1) for more details.
+You may use \fBwimextract\fR to extract files or directory trees from a split
+WIM.  This uses the \fB--refs\fR="\fIGLOB\fR" option in the same way as in other
+commands such as \fBwimapply\fR.  See \fBwimapply\fR(1) for more details.
 .SH OPTIONS
 .TP 6
 \fB--check\fR
-When reading \fIWIMFILE\fR, verify its integrity if an integrity table is
-present.
+Before extracting the files, verify the integrity of \fIWIMFILE\fR if it
+contains extra integrity information.
 .TP
 \fB--ref\fR="\fIGLOB\fR"
 File glob of additional WIMs or split WIM parts to reference resources from.
 See \fBSPLIT_WIMS\fR.  Note: \fIGLOB\fR is listed in quotes because it is
-interpreted by \fBwimlib-imagex\fR and may need to be quoted to protect
-against shell expansion.
+interpreted by \fBwimextract\fR and may need to be quoted to protect against
+shell expansion.
 .TP
 \fB--dest-dir\fR=\fIDIR\fR
 Extract the files and directories to the directory \fIDIR\fR instead of to the
@@ -105,23 +101,23 @@ current working directory.
 \fB--to-stdout\fR
 Extract the files to standard output instead of to the filesystem.  This can
 only be provided if all the specified paths are to regular files (not
-directories or reparse points).  If present, alternate data streams are not
+directories or reparse points).  If present, named data streams are not
 extracted.
 .TP
 \fB--unix-data\fR
-See the documentation for this option in \fBwimlib-imagex-apply\fR (1).
+See the documentation for this option to \fBwimapply\fR(1).
 .TP
 \fB--no-acls\fR
-See the documentation for this option in \fBwimlib-imagex-apply\fR (1).
+See the documentation for this option to \fBwimapply\fR(1).
 .TP
 \fB--strict-acls\fR
-See the documentation for this option in \fBwimlib-imagex-apply\fR (1).
+See the documentation for this option to \fBwimapply\fR(1).
 .TP
 \fB--no-attributes\fR
-See the documentation for this option in \fBwimlib-imagex-apply\fR (1).
+See the documentation for this option to \fBwimapply\fR(1).
 .TP
 \fB--include-invalid-names\fR
-See the documentation for this option in \fBwimlib-imagex-apply\fR (1).
+See the documentation for this option to \fBwimapply\fR(1).
 .TP
 \fB--no-globs\fR
 Do not recognize wildcard characters in paths.  Each path will be searched for
@@ -150,53 +146,37 @@ default behavior for paths in listfiles, but not paths directly specified on the
 command line.
 .TP
 \fB--wimboot\fR
-See the documentation for this option in \fBwimlib-imagex-apply\fR (1).
+See the documentation for this option to \fBwimapply\fR(1).
 .TP
 \fB--compact\fR=\fIFORMAT\fR
-See the documentation for this option in \fBwimlib-imagex-apply\fR (1).
+See the documentation for this option to \fBwimapply\fR(1).
 .SH NOTES
-See the documentation \fBwimlib-imagex apply\fR (1) for documentation about
-what data and metadata are extracted on UNIX-like systems versus on Windows.
-.PP
-On UNIX-like systems that support userspace filesystems with FUSE (e.g. Linux),
-one can alternatively mount the WIM image with \fBwimlib-imagex mount\fR (1)
-and then extract the desired files or directories using any standard
-command-line or graphical program.
+See \fBwimapply\fR(1) for information about what data and metadata are extracted
+on UNIX-like systems versus on Windows.
 .PP
 Reparse-point fixups (a.k.a. changing absolute symbolic links and junctions to
-point within the extraction location) are never done by \fBwimlib-imagex
-extract\fR.  Use \fBwimlib-imagex apply\fR if you want this behavior.
+point within the extraction location) are never done by \fBwimextract\fR.
+Use \fBwimapply\fR if you want this behavior.
 .PP
-Unlike \fBwimlib-imagex apply\fR, \fBwimlib-imagex extract\fR does not
-support extracting files directly to an NTFS volume using libntfs-3g.
-.PP
-wimlib v1.6.0 and later can extract files from version 3584 WIMs, which usually
-contain LZMS-compressed solid resources and may carry the \fI.esd\fR file extension
-rather than \fI.wim\fR.  However, \fI.esd\fR files downloaded directly by the
-Windows 8 web downloader have encrypted segments, and wimlib cannot extract such
-files until they are first decrypted.  Furthermore, such files are not designed
-for random access, so extracting individual files from them may be slow.
+Unlike \fBwimapply\fR, \fBwimextract\fR does not support extracting files
+directly to an NTFS volume using libntfs-3g.
 .SH EXAMPLES
 Extract a file from the first image in "boot.wim" to the current directory:
 .RS
 .PP
-wimlib-imagex extract boot.wim 1 /Windows/System32/notepad.exe
+wimextract boot.wim 1 /Windows/System32/notepad.exe
 .RE
 .PP
 Extract a file from the first image in "boot.wim" to standard output:
 .RS
 .PP
-wimlib-imagex extract boot.wim 1 /Windows/System32/notepad.exe \\
-.br
-.RS
---to-stdout
-.RE
+wimextract boot.wim 1 /Windows/System32/notepad.exe --to-stdout
 .RE
 .PP
 Extract a file from the first image in "boot.wim" to the specified directory:
 .RS
 .PP
-wimlib-imagex extract boot.wim 1 /Windows/System32/notepad.exe \\
+wimextract boot.wim 1 /Windows/System32/notepad.exe \\
 .br
 .RS
 --dest-dir=somedir
@@ -207,13 +187,13 @@ Extract the "sources" directory from the first image in "boot.wim" to the
 current directory:
 .RS
 .PP
-wimlib-imagex extract boot.wim 1 /sources
+wimextract boot.wim 1 /sources
 .RE
 .PP
 Extract multiple files and directories in one command:
 .RS
 .PP
-wimlib-imagex extract boot.wim 1 /Windows/Fonts \\
+wimextract boot.wim 1 /Windows/Fonts \\
 .br
 .RS
 /sources /Windows/System32/cmd.exe
@@ -223,13 +203,13 @@ wimlib-imagex extract boot.wim 1 /Windows/Fonts \\
 Extract many files to the current directory using a wildcard pattern:
 .RS
 .PP
-wimlib-imagex extract install.wim 1 "/Windows/Fonts/*.ttf"
+wimextract install.wim 1 "/Windows/Fonts/*.ttf"
 .RE
 .PP
 Extract files using a list file:
 .RS
 .PP
-wimlib-imagex extract install.wim 1 @files.txt
+wimextract install.wim 1 @files.txt
 .RE
 .PP
  ...  where files.txt could be something like:
@@ -245,7 +225,6 @@ Windows\\System32\\en-US\\*.*
 .fi
 .SH SEE ALSO
 .BR wimlib-imagex (1)
-.BR wimlib-imagex-apply (1)
-.BR wimlib-imagex-dir (1)
-.BR wimlib-imagex-info (1)
-.BR wimlib-imagex-mount (1)
+.BR wimapply (1)
+.BR wimdir (1)
+.BR wiminfo (1)

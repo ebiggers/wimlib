@@ -1,0 +1,37 @@
+.TH WIMJOIN "1" "August 2016" "wimlib 1.10.0" "User Commands"
+.SH NAME
+wimjoin\- Join a split WIM into a standalone WIM
+.SH SYNOPSIS
+\fBwimjoin\fR [\fIOPTION\fR...] \fIOUT_WIMFILE\fR \fISPLIT_WIM_PART\fR...
+.SH DESCRIPTION
+\fBwimjoin\fR, or equivalently \fBwimlib-imagex join\fR, joins the
+\fISPLIT_WIM_PARTs\fR into a standalone (one-part) WIM \fIOUT_WIMFILE\fR.  All
+parts of the split WIM must be specified; you probably want to do so using a
+shell wildcard.
+.SH OPTIONS
+.TP 6
+\fB--check\fR
+When reading each \fISPLIT_WIM_PART\fR, verify its integrity if it contains
+extra integrity information.  In addition, include extra integrity information
+in \fIOUT_WIMFILE\fR, even if the split WIM parts did not contain this
+information.
+.SH EXAMPLES
+Join a split WIM, with the parts named `windows*.swm' where the * is anything
+(usually the number of the part, except for the first part which may have no
+number), and write the joined WIM to the file `windows.wim'.
+.RS
+.PP
+wimjoin windows.wim windows*.swm
+.RE
+.SH NOTES
+Both non-pipable and pipable split WIMs may be joined.
+.PP
+\fBwimjoin\fR is roughly equivalent to:
+.RS
+.PP
+\fBwimexport\fR \fISWM_PART_1\fR --ref="\fISWM_GLOB\fR" all \fIOUT_WIMFILE\fR
+.RE
+.SH SEE ALSO
+.BR wimlib-imagex (1)
+.BR wimexport (1)
+.BR wimsplit (1)

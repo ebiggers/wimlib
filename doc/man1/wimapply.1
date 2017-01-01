@@ -1,0 +1,415 @@
+.TH WIMAPPLY "1" "August 2016" "wimlib 1.10.0" "User Commands"
+.SH NAME
+wimapply \- Apply a WIM image
+.SH SYNOPSIS
+\fBwimapply\fR \fIWIMFILE\fR [\fIIMAGE\fR] \fITARGET\fR [\fIOPTION\fR...]
+.SH DESCRIPTION
+\fBwimapply\fR, or equivalently \fBwimlib-imagex apply\fR, extracts ("applies")
+an image, or all images, from the Windows Imaging (WIM) archive \fIWIMFILE\fR.
+.PP
+\fIIMAGE\fR specifies the image in \fIWIMFILE\fR to extract.  It may be the
+1-based index of an image, the name of an image, or the keyword "all" to specify
+all images.  It may be omitted if \fIWIMFILE\fR contains only one image.  You
+can use \fBwiminfo\fR(1) to list the images contained in \fIWIMFILE\fR.
+.PP
+\fITARGET\fR specifies where to extract the image(s) to.  If \fITARGET\fR is a
+directory, then the image(s) will be extracted to that directory as per
+\fBDIRECTORY EXTRACTION (UNIX)\fR or \fBDIRECTORY EXTRACTION (WINDOWS)\fR.  If
+\fITARGET\fR does not exist, then a directory will be created there first.
+Alternatively, if \fITARGET\fR specifies a UNIX block device, then the image
+will be extracted to it as described in \fBNTFS VOLUME EXTRACTION (UNIX)\fR.
+.PP
+Note that \fBwimapply\fR is designed to extract, or "apply", full WIM images.
+If you instead want to extract only certain files or directories from a WIM
+image, use \fBwimextract\fR(1) instead.
+.PP
+If \fIIMAGE\fR is "all", then all images in \fIWIMFILE\fR will be extracted into
+subdirectories of \fITARGET\fR named after the images, falling back to the image
+index when an image has no name or an unusual name.  This is not yet supported
+in \fBNTFS VOLUME EXTRACTION (UNIX)\fR mode.
+.PP
+If \fIWIMFILE\fR is "-", then the WIM is read from standard input rather than
+from disk.  See \fBPIPABLE WIMS\fR for more information.
+.SH DIRECTORY EXTRACTION (UNIX)
+On UNIX-like systems, a WIM image may be extracted to a directory.  This mode
+has the limitation that NTFS or Windows-specific metadata will not be extracted.
+Although some concepts such as hard links, symbolic links, last access
+timestamps, and last modification timestamps will be translated to their UNIX
+equivalents, other metadata will be lost (with warnings given).  Notably, the
+following types of metadata will \fInot\fR be extracted in this mode:
+.IP \[bu] 4
+Windows file attribute flags
+.IP \[bu]
+Windows security descriptors (e.g. file owners and DACLs)
+.IP \[bu]
+File creation timestamps
+.IP \[bu]
+Reparse points other than symbolic links and junction points
+.IP \[bu]
+Named data streams
+.IP \[bu]
+Short filenames (also known as 8.3 names or DOS names).
+.IP \[bu]
+Object IDs
+.PP
+These same limitations apply to \fBwimextract\fR.  As such, this mode is most
+useful in situations where NTFS or Windows-specific metadata is unimportant,
+e.g. when wanting to extract specific files, or when doing file archiving only
+on UNIX-like systems, possibly in combination with \fB--unix-data\fR.  When
+Windows-specific metadata is important, then either the \fBNTFS VOLUME
+EXTRACTION (UNIX)\fR mode should be used, or the Windows version of wimlib
+should be used (see \fBDIRECTORY EXTRACTION (WINDOWS)\fR).
+.SH NTFS VOLUME EXTRACTION (UNIX)
+On UNIX-like systems, \fITARGET\fR may also be specified as a block device (e.g.
+/dev/sda3) containing an unmounted NTFS volume.  In this mode, \fBwimapply\fR
+uses libntfs-3g to apply the specified WIM image to the root directory of the
+NTFS volume.  The target volume should be empty, e.g. newly created by
+\fBmkntfs\fR(8).  In this mode, NTFS-specific and Windows-specific data and
+metadata will be extracted, including the following:
+.IP \[bu] 4
+All data streams of all files except encrypted files, including the unnamed data
+stream as well as all named data streams.
+.IP \[bu]
+Reparse points, including symbolic links, junction points, and other reparse
+points.
+.IP \[bu]
+File and directory creation, access, and modification timestamps, using the
+native NTFS resolution of 100 nanoseconds.
+.IP \[bu]
+Windows security descriptors, including all components (owner, group, DACL, and
+SACL).
+.IP \[bu]
+Windows file attribute flags
+.IP \[bu]
+All names of all files, including names in the Win32 namespace, DOS namespace,
+Win32+DOS namespace, and POSIX namespace.  This includes hard links.
+.IP \[bu]
+Object IDs.
+.PP
+However, encrypted files will not be extracted.
+.PP
+Regardless, since almost all information from the WIM image is restored in this
+mode, it is possible (and fully supported) to restore an image of an actual
+Windows installation using \fBwimapply\fR on a UNIX-like system as an
+alternative to using \fBwimapply\fR or DISM on Windows.  In the \fBEXAMPLES\fR
+section below, there is an example of applying an image from an "install.wim"
+file as may be found in the Windows installation media.
+.PP
+Note that to actually boot Windows (Vista or later) from an applied
+"install.wim" image, you also need to mark the partition as "bootable" and set
+up various boot files, such as \\BOOTMGR and \\BOOT\\BCD.  The latter task is
+most easily accomplished by running bcdboot.exe from a live Windows system such
+as Windows PE, but there are other options as well.
+.PP
+Finally, note that this mode uses libntfs-3g directly, without going through the
+\fBntfs-3g\fR(8) driver.  Hence, there is no special support for applying a WIM
+image to a directory on which an NTFS filesystem has been mounted using
+\fBntfs-3g\fR(8); you have to unmount it first.  There is also no support for
+applying a WIM image to some subdirectory of the NTFS volume; you can only apply
+to the root directory.
+.SH DIRECTORY EXTRACTION (WINDOWS)
+On Windows, \fBwimapply\fR (and \fBwimextract\fR) natively support NTFS and
+Windows-specific metadata.  For best results, the target directory should be
+located on an NTFS volume and the program should be run with Administrator
+privileges; however, non-NTFS filesystems and running without Administrator
+privileges are also supported, subject to limitations.
+.PP
+On Windows, \fBwimapply\fR tries to extract as much data and metadata as
+possible, including:
+.IP \[bu] 4
+All data streams of all files.  This includes the default file contents, as well
+as named data streams if supported by the target volume.
+.IP \[bu]
+Reparse points, including symbolic links, junction points, and other reparse
+points, if supported by the target volume.  Restoring symlinks requires
+Administrator privileges.  Also see \fB--rpfix\fR and \fB--norpfix\fR for
+details on how absolute symbolic links and junctions are extracted.
+.IP \[bu]
+File and directory creation, access, and modification timestamps, to the highest
+resolution supported by the target volume.
+.IP \[bu]
+Security descriptors, if supported by the filesystem and \fB--no-acls\fR is not
+specified.  Note that this, in general, requires Administrator privileges, and
+may be only partially successful if the program is run without Administrator
+privileges (see \fB--strict-acls\fR).
+.IP \[bu]
+File attribute flags, including hidden, compressed, encrypted, sparse, etc, when
+supported by the filesystem.
+.IP \[bu]
+Short filenames (also known as 8.3 names or DOS names).
+.IP \[bu]
+Hard links, if supported by the target filesystem.
+.IP \[bu]
+Object IDs, if supported by the target filesystem.
+.PP
+Additional notes about extracting files on Windows:
+.IP \[bu] 4
+\fBwimapply\fR will issue warnings if unable to extract the exact metadata and
+data of the WIM image due to limitations of the target filesystem.
+.IP \[bu]
+Since encrypted files (with FILE_ATTRIBUTE_ENCRYPTED) are not stored in
+plaintext in the WIM image, \fBwimapply\fR cannot restore encrypted files to
+filesystems not supporting encryption.  Therefore, on such filesystems,
+encrypted files will not be extracted.  Furthermore, even if encrypted files are
+restored to a filesystem that supports encryption, they will only be decryptable
+if the decryption key is available.
+.IP \[bu]
+Files with names that cannot be represented on Windows will not
+be extracted by default; see \fB--include-invalid-names\fR.
+.IP \[bu]
+Files with full paths over 260 characters (the so-called MAX_PATH) will be
+extracted, but beware that such files will be inaccessible to most Windows
+software and may not be able to be deleted easily.
+.IP \[bu]
+On Windows, unless the \fB--no-acls\fR option is specified, wimlib will attempt
+to restore files' security descriptors exactly as they are provided in the WIM
+image.  Beware that typical Windows installations contain files whose security
+descriptors do not allow the Administrator to delete them.  Therefore, such
+files will not be able to be deleted, or in some cases even read, after
+extracting, unless processed with a specialized program that knows to acquire
+the SE_RESTORE_NAME and/or SE_BACKUP_NAME privileges which allow overriding
+access control lists.  This is not a bug in wimlib, which works as designed to
+correctly restore the data that was archived, but rather a problem with the
+access rights Windows uses on certain files.  But if you just want the file data
+and don't care about security descriptors, use \fB--no-acls\fR to skip restoring
+all security descriptors.
+.IP \[bu]
+A similar caveat to the above applies to file attributes such as Readonly,
+Hidden, and System.  By design, on Windows wimlib will restore such file
+attributes; therefore, extracted files may have those attributes.  If this is
+not what you want, use the \fB--no-attributes\fR option.
+.SH SPLIT WIMS
+You may use \fBwimapply\fR to apply images from a split WIM, or \fBwimextract\fR
+to extract files from a split WIM.  The \fIWIMFILE\fR argument must specify the
+first part of the split WIM, while the additional parts of the split WIM must be
+specified in one or more \fB--ref\fR="\fIGLOB\fR" options.  Since globbing is
+built into the \fB--ref\fR option, typically only one \fB--ref\fR option is
+necessary.  For example, the names for the split WIM parts usually go something
+like:
+.RS
+.PP
+.nf
+mywim.swm
+mywim2.swm
+mywim3.swm
+mywim4.swm
+mywim5.swm
+.RE
+.fi
+.PP
+To apply the first image of this split WIM to the directory "dir", run:
+.PP
+.RS
+wimapply mywim.swm 1 dir --ref="mywim*.swm"
+.RE
+.PP
+.SH PIPABLE WIMS
+\fBwimapply\fR also supports applying a WIM from a nonseekable file, such as a
+pipe, provided that the WIM was captured in the wimlib-specific pipable format
+using \fB--pipable\fR (see \fBwimcapture\fR(1)).  To use standard input as the
+WIM, specify "-" as \fIWIMFILE\fR.  A possible use of this feature is to apply a
+WIM image being streamed from the network.  For example, to apply the first
+image from a WIM file available on a HTTP server to an NTFS volume on /dev/sda1,
+run something like:
+.PP
+.RS
+wget -O - http://myserver/mywim.wim | wimapply - 1 /dev/sda1
+.RE
+.PP
+Pipable WIMs may also be split into multiple parts, just like normal WIMs.  To
+apply a split pipable WIM from a pipe, the parts must be concatenated and all
+written to the pipe.  The first part must be sent first, but the remaining parts
+may be sent in any order.
+.SH OPTIONS
+.TP 6
+\fB--check\fR
+Before applying the image, verify the integrity of \fIWIMFILE\fR if it has extra
+integrity information.
+.TP
+\fB--ref\fR="\fIGLOB\fR"
+File glob of additional WIMs or split WIM parts to reference resources from.
+See \fBSPLIT_WIMS\fR.  This option can be specified multiple times.  Note:
+\fIGLOB\fR is listed in quotes because it is interpreted by \fBwimapply\fR and
+may need to be quoted to protect against shell expansion.
+.TP
+\fB--rpfix\fR, \fB--norpfix\fR
+Set whether to fix targets of absolute symbolic links (reparse points in Windows
+terminology) or not.  When enabled (\fB--rpfix\fR), extracted absolute symbolic
+links that are marked in the WIM image as being fixed are assumed to have
+absolute targets relative to the image root, and therefore \fBwimapply\fR
+prepends the absolute path to the extraction target directory to their targets.
+The intention is that you can apply an image containing absolute symbolic links
+and still have them be valid after it has been applied to any location.
+.IP ""
+The default behavior is \fB--rpfix\fR if any images in \fIWIMFILE\fR have been
+captured with reparse-point fixups done.  Otherwise, it is \fB--norpfix\fR.
+.IP ""
+Reparse point fixups are never done in the NTFS volume extraction mode on
+UNIX-like systems.
+.TP
+\fB--unix-data\fR
+(UNIX-like systems only)  Restore UNIX-specific metadata and special files that
+were captured by \fBwimcapture\fR with the \fB--unix-data\fR option.  This
+includes: standard UNIX file permissions (owner, group, and mode); device nodes,
+named pipes, and sockets; and extended attributes (Linux-only).
+.TP
+\fB--no-acls\fR
+Do not restore security descriptors on extracted files and directories.
+.TP
+\fB--strict-acls\fR
+Fail immediately if the full security descriptor of any file or directory cannot
+be set exactly as specified in the WIM file.  If this option is not specified,
+when \fBwimapply\fR on Windows does not have permission to set a security
+descriptor on an extracted file, it falls back to setting it only partially
+(e.g. with SACL omitted), and in the worst case omits it entirely.  However,
+this should only be a problem when running \fBwimapply\fR without Administrator
+rights.  Also, on UNIX-like systems, this flag can also be combined with
+\fB--unix-data\fR to cause \fBwimapply\fR to issue an error if UNIX permissions
+are unable to be applied to an extracted file.
+.TP
+\fB--no-attributes\fR
+Do not restore Windows file attributes such as readonly, hidden, etc.
+.TP
+\fB--include-invalid-names\fR
+Extract files and directories with invalid names by replacing characters and
+appending a suffix rather than ignoring them.  Exactly what is considered an
+"invalid" name is platform-dependent.
+.IP ""
+On POSIX-compliant systems, filenames are case-sensitive and may contain any
+byte except '\\0' and \'/', so on a POSIX-compliant system this option will only
+have an effect in the unlikely case that the WIM image for some reason has a
+filename containing one of these characters.
+.IP ""
+On Windows, filenames are case-insensitive(*), cannot include control
+characters, and cannot include the characters '/', \'\\0', '\\', ':', '*', '?',
+\'"', '<', '>', or '|'.  Ordinarily, files in WIM images should meet these
+conditions as well. However, it is not guaranteed, and in particular a WIM image
+captured with \fBwimcapture\fR on a POSIX-compliant system could contain such
+files.  By default, invalid names will be ignored, and if there are multiple
+names differing only in case, one will be chosen to extract arbitrarily;
+however, with \fB--include-invalid-names\fR, all names will be sanitized and
+extracted in some form.
+.IP ""
+(*) Unless the ObCaseInsensitive setting has been set to 0 in the Windows
+registry, in which case certain software, including the Windows version of
+\fBwimapply\fR, will honor case-sensitive filenames on NTFS and other compatible
+filesystems.
+.TP
+\fB--wimboot\fR
+Windows only: Instead of extracting the files themselves, extract "pointer
+files" back to the WIM archive(s).  This can result in significant space savings.
+However, it comes at several potential costs, such as not being able to delete
+the WIM archive(s) and possibly having slower access to files.  See Microsoft's
+documentation for "WIMBoot" for more information.
+.IP ""
+If it exists, the [PrepopulateList] section of the file
+\\Windows\\System32\\WimBootCompress.ini in the WIM image will be read.  Files
+matching any of these patterns will be extracted normally, not as WIMBoot
+"pointer files".  This is helpful for certain files that Windows needs to read
+early in the boot process.
+.IP ""
+This option only works when the program is run as an Administrator and the
+target volume is NTFS or another filesystem that supports reparse points.
+.IP ""
+In addition, this option works best when running on Windows 8.1 Update 1 or
+later, since that is the first version of Windows that contains the Windows
+Overlay Filesystem filter driver ("WOF").  If the WOF driver is detected, wimlib
+will create the WIMBoot "pointer files" using documented ioctls provided by WOF.
+.IP ""
+Otherwise, if the WOF driver is not detected, wimlib will create the reparse
+points and edit the file "\\System Volume Information\\WimOverlay.dat" on the
+target volume manually.  This is potentially subject to problems, since although
+the code works in certain tested cases, neither of these data formats is
+actually documented by Microsoft.  Before overwriting this file, wimlib will
+save the previous version in "\\System Volume
+Information\\WimOverlay.wimlib_backup", which you potentially could restore if
+you needed to.
+.IP ""
+You actually can still do a \fB--wimboot\fR extraction even if the WIM image is
+not marked as "WIMBoot-compatible".  This option causes the extracted files to
+be set as "externally backed" by the WIM file.  Microsoft's driver which
+implements this "external backing" functionality seemingly does not care whether
+the image(s) in the WIM are really marked as WIMBoot-compatible.  Therefore, the
+"WIMBoot-compatible" tag (<WIMBOOT> in the XML data) seems to be a marker for
+intent only.  In addition, the Microsoft driver can externally back files from
+WIM files that use XPRESS chunks of size 8192, 16384, and 32768, or LZX chunks
+of size 32768, in addition to the default XPRESS chunks of size 4096 that are
+created when \fBwimcapture\fR is run with the \fB--wimboot\fR option.
+.TP
+\fB--compact\fR=\fIFORMAT\fR
+Windows-only: compress the extracted files using System Compression, when
+possible.  This only works on either Windows 10 or later, or on an older Windows
+to which Microsoft's wofadk.sys driver has been added.  Several different
+compression formats may be used with System Compression, and one must be
+specified as \fIFORMAT\fR.  The choices are: xpress4k, xpress8k, xpress16k, and
+lzx.
+.IP ""
+Exclusions are handled in the same way as with the \fB--wimboot\fR option.
+That is: if it exists, the [PrepopulateList] section of the file
+\\Windows\\System32\\WimBootCompress.ini in the WIM image will be read, and
+files matching any of the patterns in this section will not be compressed.
+In addition, wimlib has a hardcoded list of files for which it knows, for
+compatibility with the Windows bootloader, to override the requested compression
+format.
+.SH NOTES
+\fIData integrity\fR: WIM files include checksums of file data.  To detect
+accidental (non-malicious) data corruption, wimlib calculates the checksum of
+every file it extracts and issues an error if it does not have the expected
+value.  (This default behavior seems equivalent to the \fB/verify\fR option of
+ImageX.)  In addition, a WIM file can include an integrity table (extra
+checksums) over the raw data of the entire WIM file.  For performance reasons
+wimlib does not check the integrity table by default, but the \fB--check\fR
+option can be passed to make it do so.
+.PP
+\fIESD files\fR: wimlib can extract files from solid-compressed WIMs, or "ESD"
+(.esd) files, just like from normal WIM (.wim) files.  However, Microsoft
+sometimes distributes ESD files with encrypted segments; wimlib cannot extract
+such files until they are first decrypted.
+.PP
+\fISecurity\fR: wimlib has been carefully written to validate all input and is
+believed to be secure against some types of attacks which often plague other
+file archiving programs, e.g. directory traversal attacks (which, as it happens,
+Microsoft's WIM software is vulnerable to).  Important parts of wimlib, e.g. the
+decompressors, have also been fuzz tested.  However, wimlib is not currently
+designed to protect against some types of denial-of-service (DOS) attacks, e.g.
+memory exhaustion or "zip bombs".
+.SH EXAMPLES
+Extract the first image from the Windows PE WIM on the Windows installation
+media to the directory "boot":
+.RS
+.PP
+wimapply /mnt/windows/sources/boot.wim 1 boot
+.RE
+.PP
+On Windows, apply an image of an entire volume, for example from "install.wim"
+which can be found on the Windows installation media:
+.RS
+.PP
+wimapply install.wim 1 E:\\
+.RE
+.PP
+Same as above, but running on a UNIX-like system where the corresponding
+partition is /dev/sda2:
+.RS
+.PP
+wimapply install.wim 1 /dev/sda2
+.RE
+.PP
+Note that before running either of the above commands, an NTFS filesystem may
+need to be created on the partition, for example with format.exe on Windows or
+\fBmkntfs\fR(8) on UNIX-like systems.  For example, on UNIX you might run:
+.RS
+.PP
+mkntfs /dev/sda2 && wimapply install.wim 1 /dev/sda2
+.RE
+.PP
+(Of course don't do that if you don't want to destroy all existing data on the
+partition!)
+.PP
+See \fBSPLIT WIMS\fR and \fBPIPABLE WIMS\fR for examples of applying split and
+pipable WIMs, respectively.
+.SH SEE ALSO
+.BR wimlib-imagex (1)
+.BR wimcapture (1)
+.BR wimextract (1)
+.BR wiminfo (1)

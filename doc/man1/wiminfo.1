@@ -1,0 +1,61 @@
+.TH WIMINFO "1" "August 2016" "wimlib 1.10.0" "User Commands"
+.SH NAME
+wiminfo \- Display or change information about a WIM file or image
+.SH SYNOPSIS
+\fBwiminfo\fR \fIWIMFILE\fR [\fIIMAGE\fR [\fINEW_NAME\fR [\fINEW_DESC\fR]]] [\fIOPTION\fR...]
+.SH DESCRIPTION
+\fBwiminfo\fR, or equivalently \fBwimlib-imagex info\fR, displays information
+about \fIWIMFILE\fR or the specified \fIIMAGE\fR in it, and optionally changes
+properties of \fIIMAGE\fR such as its name and description, or changes the
+bootable image of the WIM.
+.PP
+If neither an image nor any flags other than \fB--check\fR are specified, then
+basic information about the WIM and the images contained in it is shown.  If an
+image is specified by \fIIMAGE\fR (as a 1-based image index or an image name),
+then the information is restricted to that concerning the specified image.
+.PP
+Changes to the WIM are made if \fINEW_NAME\fR and/or \fB--boot\fR and/or
+\fB--image-property\fR are specified.  \fINEW_NAME\fR is taken to be the new
+name of the image specified by \fIIMAGE\fR while \fINEW_DESC\fR is taken to be
+its new description.  If \fINEW_DESC\fR is not specified, then the image's
+description is not changed.
+.PP
+\fBwiminfo\fR does not support modifying a split WIM, although you may display
+information about one, including any of its parts.
+.SH OPTIONS
+.TP 6
+\fB--boot\fR
+Mark the specified \fIIMAGE\fR as the "bootable" image of the WIM.  The
+"bootable" image is the image which the Windows bootloader will use when loading
+Windows PE from the WIM.
+.TP
+\fB--check\fR
+Verify the integrity of WIM if it contains extra integrity information.  In
+addition, if modifying the WIM, include extra integrity information in the
+modified WIM, even if it was not present before.
+.TP
+\fB--nocheck\fR
+If modifying the WIM, remove its extra integrity information, if it had any.
+.TP
+\fB--image-property\fR \fINAME\fR=\fIVALUE\fR
+Assign an arbitrary property to the specified \fIIMAGE\fR in the XML document of
+the WIM.  \fINAME\fR is an element path such as "WINDOWS/VERSION/MAJOR", and
+\fIVALUE\fR is the string to place in the element, such as "10".  See the
+documentation for this option to \fBwimcapture\fR(1) for more details.  This
+option may be specified multiple times.
+.TP
+\fB--header\fR
+Show detailed information from the WIM header.
+.TP
+\fB--blobs\fR
+List all the "blobs" (unique file data) in the WIM.
+.TP
+\fB--extract-xml\fR=\fIFILE\fR
+Extract the WIM's raw XML document to \fIFILE\fR.
+.TP
+\fB--xml\fR
+.br
+Extract the WIM's raw XML document to standard output.
+.SH SEE ALSO
+.BR wimlib-imagex (1)
+.BR wimdir (1)

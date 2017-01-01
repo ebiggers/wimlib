@@ -37,9 +37,8 @@ as soon as it starts up.  Use the \fB--start-script\fR \fIFILE\fR option to
 specify such a file.  You may also add arbitrary files to \fIboot.wim\fR by
 putting them in a directory, then specifying the \fB--overlay\fR \fIDIR\fR
 option.  However, for more extensive modifications, consider modifying the
-\fIboot.wim\fR file separately using \fBwimlib-imagex mountrw\fR or
-\fBwimlib-imagex update\fR, then providing it to \fBmkwinpeimg\fR using the
-\fB--wim\fR option.
+\fIboot.wim\fR file separately using \fBwimmountrw\fR(1) or \fBwimupdate\fR(1),
+then providing it to \fBmkwinpeimg\fR using the \fB--wim\fR option.
 .PP
 \fBmkwinpeimg\fR can also make only a modified \fIboot.wim\fR, rather than a
 bootable ISO or disk image, if the \fB--only-wim\fR option is given.

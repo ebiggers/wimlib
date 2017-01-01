@@ -1,0 +1,46 @@
+.TH WIMDIR "1" "August 2016" "wimlib 1.10.0" "User Commands"
+.SH NAME
+wimdir \- List the files contained in a WIM image
+.SH SYNOPSIS
+\fBwimdir\fR \fIWIMFILE\fR \fIIMAGE\fR [\fIOPTIONS\fR]
+.SH DESCRIPTION
+\fBwimdir\fR, or equivalently \fBwimlib-imagex dir\fR, lists the files and
+directories contained in the specified image of the Windows Imaging (WIM)
+archive \fIWIMFILE\fR.
+.PP
+\fIIMAGE\fR specifies the image in \fIWIMFILE\fR to list.  It may be the 1-based
+index of an image, the name of an image, or the keyword "all" to specify all
+images.  It may be omitted if \fBWIMFILE\fR contains only one image.  You can
+use \fBwiminfo\fR(1) to list the images contained in \fIWIMFILE\fR.
+.SH OPTIONS
+.TP 6
+\fB--path\fR=\fIPATH\fR
+List the files under \fIPATH\fR instead of under the root directory.
+.TP
+\fB--detailed\fR
+List detailed information about each file.
+.TP
+\fB--one-file-only\fR
+List information about the specified file only.  Intended for use with both
+\fB--path\fR and \fB--detailed\fR.
+.TP
+\fB--ref\fR="\fIGLOB\fR"
+File glob of additional WIMs or split WIM parts to reference resources from.
+This option can be specified multiple times.  This option is only useful when
+\fB--detailed\fR is also specified.
+.SH NOTES
+\fBwimdir\fR supports split WIMs, but it only works on the first part of the
+split WIM.
+.PP
+Detailed metadata such as timestamps and data streams is not shown unless the
+\fB--detailed\fR option is used.
+.SH EXAMPLES
+List all files and directories in the first image of 'boot.wim':
+.RS
+.PP
+wimdir boot.wim 1
+.RE
+.PP
+.SH SEE ALSO
+.BR wimlib-imagex (1)
+.BR wiminfo (1)

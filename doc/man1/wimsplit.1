@@ -1,0 +1,34 @@
+.TH WIMSPLIT "1" "August 2016" "wimlib 1.10.0" "User Commands"
+.SH NAME
+wimsplit \- Split a WIM archive into multiple parts
+.SH SYNOPSIS
+\fBwimsplit\fR \fIWIMFILE\fR \fISPLIT_WIM_PART_1\fR \fIPART_SIZE\fR [\fIOPTION...\fR]
+.SH DESCRIPTION
+\fBwimsplit\fR, or equivalently \fBwimlib-imagex split\fR, splits \fIWIMFILE\fR
+into parts with size at most \fIPART_SIZE\fR mebibytes (power-of-2 megabytes),
+with the first part having the name \fISPLIT_WIM_PART_1\fR and the other parts
+having names numbered in order of the parts.
+.PP
+\fBwimsplit\fR can split both non-pipable and pipable WIMs.
+.SH OPTIONS
+.TP 6
+\fB--check\fR
+Before splitting the WIM, verify its integrity if it contains extra integrity
+information.  Also include extra integrity information in each split WIM part,
+even if \fIWIMFILE\fR did not contain it.
+.SH EXAMPLES
+Splits the WIM 'windows.wim' into 'windows.swm', 'windows2.swm', 'windows3.swm',
+etc. where each part is at most 100 MiB:
+.RS
+.PP
+wimsplit windows.wim windows.swm 100
+.RE
+.SH LIMITATIONS
+It is possible for the size of the parts to exceed the \fIPART_SIZE\fR given.
+This is impossible to avoid because the WIM file format provides no way to
+divide a single file resource among multiple split WIM parts.  So if you, for
+example, have a file inside the WIM that is 100 MiB compressed, then the split
+WIM will have at least one part that is 100 MiB in size to contain that file.
+.SH SEE ALSO
+.BR wimlib-imagex (1)
+.BR wimjoin (1)

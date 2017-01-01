@@ -1,0 +1,55 @@
+.TH WIMDELETE "1" "August 2016" "wimlib 1.10.0" "User Commands"
+.SH NAME
+wimdelete \- Delete an image from a WIM archive
+.SH SYNOPSIS
+\fBwimdelete\fR \fIWIMFILE\fR \fIIMAGE\fR [\fIOPTION\fR...]
+.SH DESCRIPTION
+\fBwimdelete\fR, or equivalently \fBwimlib-imagex delete\fR, deletes the
+specified image from the Windows Imaging (WIM) archive \fIWIMFILE\fR.
+.PP
+\fIIMAGE\fR specifies the WIM image in \fIWIMFILE\fR to delete.  It may be the
+1-based index of an image, the name of an image, or the keyword "all" to specify
+all images.  You can use \fBwiminfo\fR(1) to list the images contained in
+\fIWIMFILE\fR.
+.SH NOTES
+By default, \fBwimdelete\fR rebuilds the WIM with all unnecessary file data
+removed.  This is different from Microsoft's ImageX and DISM, which only will
+delete the directory tree metadata and XML data for this operation.  Use
+\fB--soft\fR if you want the other kind of delete.
+.PP
+wimlib allows you to delete all the images from a WIM and have a WIM with 0
+images, although such a file may not be very useful.
+.PP
+\fBwimdelete\fR does not support split WIMs.
+.SH OPTIONS
+.TP 6
+\fB--check\fR
+Before deleting the image, verify the WIM's integrity if extra integrity
+information is present.  In addition, include extra integrity information in the
+modified WIM, even if it was not present before.
+.TP 6
+\fB--soft\fR
+Perform a "soft delete".  Specifying this flag overrides the default behavior of
+rebuilding the entire WIM after deleting an image.  Instead, only minimal
+changes to correctly remove the image from the WIM will be taken.  In
+particular, all file resources will be left alone, even if they are no longer
+referenced.  This may not be what you want, because no space will be saved by
+deleting an image in this way.  However, \fBwimoptimize\fR can later be used to
+rebuild a WIM file that has had images soft-deleted from it.
+.TP
+\fB--unsafe-compact\fR
+Compact the WIM archive in-place, eliminating "holes".  This is efficient, but
+in general this option should \fInot\fR be used because a failed or interrupted
+compaction will corrupt the WIM archive.  For more information, see the
+documentation for this option to \fBwimoptimize\fR(1).
+.SH EXAMPLES
+Delete the first image from 'boot.wim':
+.RS
+.PP
+wimdelete boot.wim 1
+.RE
+.PP
+.SH SEE ALSO
+.BR wimlib-imagex (1)
+.BR wiminfo (1)
+.BR wimoptimize (1)
