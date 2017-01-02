@@ -1,4 +1,4 @@
-Version 1.11.0-BETA4:
+Version 1.11.0-BETA5:
 	On all platforms, sparse files are now extracted as sparse.
 
 	Sparse files captured from UNIX-style filesystems are now marked as
