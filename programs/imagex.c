@@ -4411,7 +4411,7 @@ T(
 ),
 [CMD_DIR] =
 T(
-"    %"TS" WIMFILE IMAGE [--path=PATH] [--detailed]\n"
+"    %"TS" WIMFILE [IMAGE] [--path=PATH] [--detailed]\n"
 ),
 [CMD_EXPORT] =
 T(
