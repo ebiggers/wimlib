@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2012-2016 Eric Biggers
+ * Copyright (C) 2012-2017 Eric Biggers
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -131,7 +131,7 @@ enum {
 static void usage(int cmd, FILE *fp);
 static void usage_all(FILE *fp);
 static void recommend_man_page(int cmd, FILE *fp);
-static const tchar *get_cmd_string(int cmd, bool nospace);
+static const tchar *get_cmd_string(int cmd, bool only_short_form);
 
 static bool imagex_be_quiet = false;
 static FILE *imagex_info_file;
@@ -4489,21 +4489,18 @@ T(
 static const tchar *invocation_name;
 static int invocation_cmd = CMD_NONE;
 
-static const tchar *get_cmd_string(int cmd, bool nospace)
+static const tchar *get_cmd_string(int cmd, bool only_short_form)
 {
 	static tchar buf[50];
-	if (cmd == CMD_NONE) {
+
+	if (cmd == CMD_NONE)
 		return T("wimlib-imagex");
-	} else if (invocation_cmd != CMD_NONE) {
+
+	if (only_short_form || invocation_cmd != CMD_NONE) {
 		tsprintf(buf, T("wim%"TS), imagex_commands[cmd].name);
 	} else {
-		const tchar *format;
-
-		if (nospace)
-			format = T("%"TS"-%"TS"");
-		else
-			format = T("%"TS" %"TS"");
-		tsprintf(buf, format, invocation_name, imagex_commands[cmd].name);
+		tsprintf(buf, T("%"TS" %"TS), invocation_name,
+			 imagex_commands[cmd].name);
 	}
 	return buf;
 }
@@ -4514,7 +4511,7 @@ version(void)
 	static const tchar * const s =
 	T(
 "wimlib-imagex (distributed with " PACKAGE " " PACKAGE_VERSION ")\n"
-"Copyright (C) 2012-2016 Eric Biggers\n"
+"Copyright (C) 2012-2017 Eric Biggers\n"
 "License GPLv3+; GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>.\n"
 "This is free software: you are free to change and redistribute it.\n"
 "There is NO WARRANTY, to the extent permitted by law.\n"
@@ -4563,8 +4560,7 @@ recommend_man_page(int cmd, FILE *fp)
 	format_str = T("Some uncommon options are not listed;\n"
 		       "See %"TS".pdf in the doc directory for more details.\n");
 #else
-	format_str = T("Some uncommon options are not listed;\n"
-		       "Try `man %"TS"' for more details.\n");
+	format_str = T("Some uncommon options are not listed; see `man %"TS"' for more details.\n");
 #endif
 	tfprintf(fp, format_str, get_cmd_string(cmd, true));
 }
