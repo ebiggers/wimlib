@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2012-2016 Eric Biggers
+ * Copyright (C) 2012-2017 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -1365,18 +1365,19 @@ do_feature_check(const struct wim_features *required_features,
 			required_features->security_descriptors);
 
 	/* Standard UNIX metadata */
-	if ((extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) &&
-	    required_features->unix_data && !supported_features->unix_data)
-	{
-		ERROR("Requested UNIX metadata extraction, but extraction "
-		      "backend does not support it!");
-		return WIMLIB_ERR_UNSUPPORTED;
-	}
 	if (required_features->unix_data &&
-	    !(extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA))
+	    (!supported_features->unix_data ||
+	     !(extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA)))
 	{
-		WARNING("Ignoring UNIX metadata (uid/gid/mode/rdev) of %lu files",
-			required_features->unix_data);
+		if (extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA) {
+			ERROR("Requested UNIX metadata extraction, but "
+			      "extraction backend does not support it!");
+			return WIMLIB_ERR_UNSUPPORTED;
+		}
+		WARNING("Ignoring UNIX metadata (uid/gid/mode/rdev) of %lu files%"TS,
+			required_features->unix_data,
+			(supported_features->unix_data ?
+			 T("\n          (use --unix-data mode to extract these)") : T("")));
 	}
 
 	/* Linux-style extended attributes */
@@ -1384,8 +1385,10 @@ do_feature_check(const struct wim_features *required_features,
 	    (!supported_features->linux_xattrs ||
 	     !(extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA)))
 	{
-		WARNING("Ignoring Linux-style extended attributes of %lu files",
-			required_features->linux_xattrs);
+		WARNING("Ignoring Linux-style extended attributes of %lu files%"TS,
+			required_features->linux_xattrs,
+			(supported_features->linux_xattrs ?
+			 T("\n          (use --unix-data mode to extract these)") : T("")));
 	}
 
 	/* Object IDs.  */
