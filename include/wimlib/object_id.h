@@ -23,7 +23,7 @@ inode_has_object_id(const struct wim_inode *inode)
 static inline bool
 inode_set_object_id(struct wim_inode *inode, const void *object_id, u32 len)
 {
-	return inode_set_tagged_data(inode, TAG_OBJECT_ID, object_id, len);
+	return inode_set_tagged_item(inode, TAG_OBJECT_ID, object_id, len);
 }
 
 #endif /* _WIMLIB_OBJECT_ID_H  */

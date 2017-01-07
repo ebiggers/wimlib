@@ -117,7 +117,7 @@ inode_has_linux_xattrs(const struct wim_inode *inode)
 static inline bool
 inode_set_linux_xattrs(struct wim_inode *inode, const void *entries, u32 len)
 {
-	return inode_set_tagged_data(inode, TAG_WIMLIB_LINUX_XATTRS,
+	return inode_set_tagged_item(inode, TAG_WIMLIB_LINUX_XATTRS,
 				     entries, len);
 }
 

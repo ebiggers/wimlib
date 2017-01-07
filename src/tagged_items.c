@@ -124,7 +124,7 @@ inode_add_tagged_item(struct wim_inode *inode, u32 tag, u32 len)
  * %false if failed (out of memory).
  */
 bool
-inode_set_tagged_data(struct wim_inode *inode, u32 tag,
+inode_set_tagged_item(struct wim_inode *inode, u32 tag,
 		      const void *data, u32 len)
 {
 	u8 *p;
