@@ -8,20 +8,21 @@ wimmount, wimmountrw, wimunmount \- Mount or unmount a WIM image
 .br
 \fBwimunmount\fR \fIDIRECTORY\fR [\fIOPTION\fR...]
 .SH DESCRIPTION
-On Linux-based systems, the \fBwimmount\fR and \fBwimmountrw\fR commands will
-mount the specified \fIIMAGE\fR in the Windows Imaging (WIM) archive
-\fIWIMFILE\fR on the directory \fIDIRECTORY\fR using FUSE (Filesystem in
-Userspace).  \fBwimmount\fR will mount the image read-only, while
-\fBwimmountrw\fR will mount the image read-write.
+On Linux, the \fBwimmount\fR (equivalently: \fBwimlib-imagex mount\fR) and
+\fBwimmountrw\fR (equivalently: \fBwimlib-imagex mountrw\fR) commands mount the
+specified \fIIMAGE\fR in the Windows Imaging (WIM) archive \fIWIMFILE\fR on the
+directory \fIDIRECTORY\fR using FUSE (Filesystem in Userspace).  \fBwimmount\fR
+will mount the image read-only, while \fBwimmountrw\fR will mount the image
+read-write.
 .PP
 \fIIMAGE\fR specifies the image in \fIWIMFILE\fR to mount.  It may be the
 1-based index of an image or the name of an image.  It may be omitted if
 \fIWIMFILE\fR contains only one image.  You can use \fBwiminfo\fR(1) to list the
 images contained in \fIWIMFILE\fR.
 .PP
-The WIM image can be unmounted using the \fBwimunmount\fR command.  Changes made
-to an image mounted read-write will be discarded unless the \fB--commit\fR flag
-is provided to \fBwimunmount\fR.
+The WIM image can be unmounted using \fBwimunmount\fR (equivalently:
+\fBwimlib-imagex unmount\fR).  Changes made to an image mounted read-write will
+be discarded unless the \fB--commit\fR flag is provided to \fBwimunmount\fR.
 .SH DATA AND METADATA SUPPORT
 WIM images can contain a variety of types of files and file metadata, some of
 which is Windows-specific.  Currently, the mount feature can translate some, but
