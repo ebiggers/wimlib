@@ -197,7 +197,7 @@ TEMPLATED(hc_matchfinder_longest_match)(struct TEMPLATED(hc_matchfinder) * const
 {
 	const u8 *in_next = in_begin + cur_pos;
 	u32 depth_remaining = max_search_depth;
-	const u8 *best_matchptr = best_matchptr; /* uninitialized */
+	const u8 *best_matchptr = in_next;
 	mf_pos_t cur_node3, cur_node4;
 	u32 hash3, hash4;
 	u32 next_seq3, next_seq4;
