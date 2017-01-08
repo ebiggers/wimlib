@@ -373,7 +373,7 @@ apply_unix_metadata(int fd, const struct wim_inode *inode,
 		}
 	}
 
-#if HAVE_XATTR_SUPPORT
+#ifdef HAVE_XATTR_SUPPORT
 	entries = inode_get_linux_xattrs(inode, &entries_size);
 	if (entries) {
 		ret = apply_linux_xattrs(fd, inode, path, ctx,
