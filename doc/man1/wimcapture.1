@@ -473,10 +473,10 @@ performance and does not change the resulting WIM image (but see note below).
 .IP ""
 As shown, the full syntax for the argument to this option is to specify the WIM
 file, a colon, and the image; for example, "--update-of mywim.wim:1".  However,
-the WIM file and colon may be omitted, in which case the WIM file will default
-to the WIM file being appended to for append operations, or the WIM file from
-which a delta is being taken (only if \fB--delta-from\fR is specified exactly
-once) for capture operations.
+the WIM file and colon may be omitted if \fB--delta-from\fR is specified exactly
+once, in which case the WIM defaults to that specified in \fB--delta-from\fR, or
+if the operation is \fBwimappend\fR rather \fBwimcapture\fR, in which case the
+WIM defaults to the one being appended to.
 .IP ""
 Note: in the Windows version of wimlib, it has been observed that
 \fB--update-of\fR mode is not completely reliable at detecting changes in file
@@ -494,11 +494,11 @@ other operating systems such as Linux which maintain files' last modification
 timestamps correctly.
 .TP
 \fB--delta-from\fR=\fIWIMFILE\fR
-With \fBwimcapture\fR, capture the new WIM as a "delta" from \fIWIMFILE\fR.  Any
-file data that would ordinarily need to be archived in the new WIM is omitted if
-it is already present in the \fIWIMFILE\fR on which the delta is being based.
-The new WIM will still contain a full copy of the image metadata, but this is
-typically only a small fraction of a WIM's total size.
+Capture or append the new image as a "delta" from \fIWIMFILE\fR.  Any file data
+that would ordinarily need to be archived in the new or updated WIM is omitted
+if it is already present in the \fIWIMFILE\fR on which the delta is being based.
+The resulting WIM will still contain a full copy of the image metadata, but this
+is typically only a small fraction of a WIM's total size.
 .IP ""
 This option can be specified multiple times, in which case the resulting delta
 WIM will only contain file data not present in any of the specified base WIMs.
@@ -536,6 +536,8 @@ However, note that as an alternative to the above sequence that used a delta
 WIM, the second backup could have simply been appended to the WIM as new image
 using \fBwimappend\fR.  Delta WIMs should be used only if it's desired to base
 the backups or images on a separate, large file that is rarely modified.
+.IP ""
+\fB--delta-from\fR is supported by both \fBwimcapture\fR and \fBwimappend\fR.
 .IP ""
 Delta WIMs are compatible with Microsoft's WIM software.  For example, you can
 use the /ref option of ImageX to reference the base WIM(s), similar to above.

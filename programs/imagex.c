@@ -1986,11 +1986,6 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			}
 			break;
 		case IMAGEX_DELTA_FROM_OPTION:
-			if (cmd != CMD_CAPTURE) {
-				imagex_error(T("'--delta-from' is only "
-					       "valid for capture!"));
-				goto out_usage;
-			}
 			ret = string_list_append(&base_wimfiles, optarg);
 			if (ret)
 				goto out;
@@ -4385,7 +4380,8 @@ T(
 "                    [--boot] [--check] [--nocheck] [--config=FILE]\n"
 "                    [--threads=NUM_THREADS] [--no-acls] [--strict-acls]\n"
 "                    [--rpfix] [--norpfix] [--update-of=[WIMFILE:]IMAGE]\n"
-"                    [--wimboot] [--unix-data] [--dereference] [--snapshot]\n"
+"                    [--delta-from=WIMFILE] [--wimboot] [--unix-data]\n"
+"                    [--dereference] [--snapshot]\n"
 ),
 [CMD_APPLY] =
 T(

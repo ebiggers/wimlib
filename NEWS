@@ -9,6 +9,9 @@ Version 1.11.0-BETA5:
 	and applies extended attributes, in addition to the already-supported
 	standard UNIX file permissions (owner/group/mode) and special files.
 
+	--delta-from is now supported by wimappend.  (Previously it was only
+	supported by wimcapture.)
+
 	On Windows, improved the way in which files deduplicated with Windows'
 	Data Deduplication feature are captured.
 
