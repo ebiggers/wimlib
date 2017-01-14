@@ -266,11 +266,11 @@ struct lzx_sequence {
 	/* The number of literals in the run.  This may be 0.  The literals are
 	 * not stored explicitly in this structure; instead, they are read
 	 * directly from the uncompressed data.  */
-	u16 litrunlen;
+	u32 litrunlen : 24;
 
 	/* If the next field doesn't indicate end-of-block, then this is the
 	 * match length minus LZX_MIN_MATCH_LEN.  */
-	u16 adjusted_length;
+	u32 adjusted_length : 8;
 
 	/* If bit 31 is clear, then this field contains the match header in bits
 	 * 0-8, and either the match offset plus LZX_OFFSET_ADJUSTMENT or a
