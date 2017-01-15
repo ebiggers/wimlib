@@ -21,6 +21,9 @@
 #define LZX_NUM_PRIMARY_LENS	7
 #define LZX_NUM_LEN_HEADERS	(LZX_NUM_PRIMARY_LENS + 1)
 
+/* The first length which requires a length symbol.  */
+#define LZX_MIN_SECONDARY_LEN	(LZX_MIN_MATCH_LEN + LZX_NUM_PRIMARY_LENS)
+
 /* Valid values of the 3-bit block type field.  */
 #define LZX_BLOCKTYPE_VERBATIM       1
 #define LZX_BLOCKTYPE_ALIGNED        2
