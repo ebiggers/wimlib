@@ -172,30 +172,24 @@ wimlib_create_new_wim(enum wimlib_compression_type ctype, WIMStruct **wim_ret)
 	if (!wim)
 		return WIMLIB_ERR_NOMEM;
 
+	/* Fill in wim->hdr with default values */
+	wim->hdr.magic = WIM_MAGIC;
+	wim->hdr.wim_version = WIM_VERSION_DEFAULT;
+	wim->hdr.part_number = 1;
+	wim->hdr.total_parts = 1;
+	wim->compression_type = WIMLIB_COMPRESSION_TYPE_NONE;
+
+	/* Set the output compression type */
+	wim->out_compression_type = ctype;
+	wim->out_chunk_size = wim_default_nonsolid_chunk_size(ctype);
+
+	/* Allocate an empty XML info and blob table */
 	wim->xml_info = xml_new_info_struct();
 	wim->blob_table = new_blob_table(64);
 	if (!wim->xml_info || !wim->blob_table) {
 		wimlib_free(wim);
 		return WIMLIB_ERR_NOMEM;
 	}
-
-	/* Fill in wim->hdr with default values  */
-	wim->hdr.magic = WIM_MAGIC;
-	wim->hdr.wim_version = WIM_VERSION_DEFAULT;
-	wim->hdr.flags = 0;
-	wim->hdr.chunk_size = 0;
-	generate_guid(wim->hdr.guid);
-	wim->hdr.part_number = 1;
-	wim->hdr.total_parts = 1;
-	wim->hdr.image_count = 0;
-	wim->hdr.boot_idx = 0;
-
-	wim->compression_type = WIMLIB_COMPRESSION_TYPE_NONE;
-	wim->chunk_size = wim->hdr.chunk_size;
-
-	/* Set the output compression type  */
-	wim->out_compression_type = ctype;
-	wim->out_chunk_size = wim_default_nonsolid_chunk_size(ctype);
 
 	*wim_ret = wim;
 	return 0;
