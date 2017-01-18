@@ -149,7 +149,7 @@ do_compress(int in_fd, const tchar *in_filename,
 			out_size = usize;
 		}
 
-		printf("Chunk %" PRIu64" %" PRIu32" => %" PRIu32" bytes\n",
+		printf("Chunk %" PRIu64": %" PRIu32" => %" PRIu32" bytes\n",
 		       chunk_num, usize, out_size);
 
 		/* Output the uncompressed chunk size, the compressed chunk
