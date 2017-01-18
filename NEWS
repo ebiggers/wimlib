@@ -1,4 +1,4 @@
-Version 1.11.0-BETA5:
+Version 1.11.0:
 	Fixed a data corruption bug (incorrect compression) when storing an
 	already highly-compressed file in an LZX-compressed WIM with a chunk
 	size greater than or equal to 64K.  Note that this is not the default
