@@ -63,6 +63,8 @@ inode_get_tagged_item(const struct wim_inode *inode, u32 tag, u32 min_len,
 	struct tagged_item_header *hdr;
 	size_t len_remaining;
 
+	STATIC_ASSERT(sizeof(*hdr) == 8);
+
 	if (!inode->i_extra)
 		return NULL;
 
