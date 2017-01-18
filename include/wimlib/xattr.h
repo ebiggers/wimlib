@@ -45,6 +45,8 @@ struct wimlib_xattr_entry {
 static inline size_t
 xattr_entry_size(const struct wimlib_xattr_entry *entry)
 {
+	STATIC_ASSERT(sizeof(*entry) == 8);
+
 	return ALIGN(sizeof(*entry) + le16_to_cpu(entry->name_len) +
 		     le32_to_cpu(entry->value_len), 4);
 }
