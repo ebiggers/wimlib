@@ -1,0 +1,15 @@
+#!/bin/sh
+
+set -evu
+
+./configure CC=clang --enable-test-support
+
+ARGS=(-fsanitize=cfi -fsanitize=safe-stack
+	-flto -fvisibility=hidden
+	-O3 -std=c99 -Wall -Wno-pointer-sign
+	-D_GNU_SOURCE -DHAVE_CONFIG_H -D_FILE_OFFSET_BITS=64
+	-Iinclude -I. -I/usr/include/libxml2
+	-lntfs-3g -lxml2 -lfuse -lpthread -lrt -lcrypto)
+
+clang src/*.c programs/imagex.c -o wimlib-imagex "${ARGS[@]}"
+clang src/*.c tests/wlfuzz.c -o wlfuzz "${ARGS[@]}"
