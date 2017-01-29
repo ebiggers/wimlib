@@ -145,10 +145,18 @@ avl_tree_lookup_node(const struct avl_tree_node *root,
 		     int (*cmp)(const struct avl_tree_node *,
 				const struct avl_tree_node *))
 {
-	return avl_tree_lookup(root,
-			       (const void *)node,
-			       (int (*) (const void *,
-					 const struct avl_tree_node *))cmp);
+	const struct avl_tree_node *cur = root;
+
+	while (cur) {
+		int res = (*cmp)(node, cur);
+		if (res < 0)
+			cur = cur->left;
+		else if (res > 0)
+			cur = cur->right;
+		else
+			break;
+	}
+	return (struct avl_tree_node*)cur;
 }
 
 /*
