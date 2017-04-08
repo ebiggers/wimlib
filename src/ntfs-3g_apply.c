@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright (C) 2012-2016 Eric Biggers
+ * Copyright (C) 2012-2017 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -181,8 +181,7 @@ ntfs_3g_restore_dos_name(ntfs_inode *ni, ntfs_inode *dir_ni,
 			      "bug in libntfs-3g where it is unable to set "
 			      "DOS names on files whose long names contain "
 			      "unpaired surrogate characters.  This bug "
-			      "was fixed in the development version of "
-			      "NTFS-3G in June 2016.");
+			      "was fixed in NTFS-3G version 2017.3.23.");
 		}
 		if (err == EINVAL) {
 			utf16lechar c =
@@ -192,9 +191,8 @@ ntfs_3g_restore_dos_name(ntfs_inode *ni, ntfs_inode *dir_ni,
 				      "known bug in libntfs-3g where it is "
 				      "unable to set DOS names on files whose "
 				      "long names end with a dot or space "
-				      "character.  See "
-				      "https://wimlib.net/forums/viewtopic.php?f=1&t=294 "
-				      "for more information.");
+				      "character.  This bug was fixed in "
+				      "NTFS-3G version 2017.3.23.");
 			}
 		}
 		ret = WIMLIB_ERR_SET_SHORT_NAME;
