@@ -116,7 +116,8 @@ wimupdate test.wim << EOF
 rename file newname
 EOF
 do_apply
-../tree-cmp file out.dir/newname && [ ! -e out.dir/file ]
+../tree-cmp file out.dir/newname
+[ ! -e out.dir/file ]
 
 prepare_empty_wim
 msg "Testing adding, then renaming file in WIM image in one command"
@@ -125,7 +126,8 @@ add file /file
 rename /file /newname
 EOF
 do_apply
-../tree-cmp file out.dir/newname && [ ! -e out.dir/file ]
+../tree-cmp file out.dir/newname
+[ ! -e out.dir/file ]
 
 msg "Testing adding additional file to WIM image"
 prepare_empty_wim
@@ -136,21 +138,28 @@ wimupdate test.wim << EOF
 add file /file
 EOF
 do_apply
-[ -e out.dir/1 ] && [ -e out.dir/file ]
+[ -e out.dir/1 ]
+[ -e out.dir/file ]
 
 msg "Testing extracting file from WIM image"
-rm -rf out.dir && mkdir out.dir
+rm -rf out.dir
+mkdir out.dir
 wimextract test.wim 1 /file --dest-dir=out.dir
-../tree-cmp file out.dir/file && [ ! -e out.dir/1 ]
+../tree-cmp file out.dir/file
+[ ! -e out.dir/1 ]
 
 msg "Testing extracting file from WIM image to stdout"
-rm -rf out.dir && mkdir out.dir
+rm -rf out.dir
+mkdir out.dir
 wimlib_imagex extract test.wim 1 /file --to-stdout > out.dir/file
-../tree-cmp file out.dir/file && [ ! -e out.dir/1 ]
+cmp file out.dir/file
+[ ! -e out.dir/1 ]
 
 msg "Testing adding directories and files to WIM image"
-rm -rf dir1 && mkdir dir1
-rm -rf dir2 && mkdir dir2
+rm -rf dir1
+mkdir dir1
+rm -rf dir2
+mkdir dir2
 echo 5 > dir1/5
 echo 6 > dir2/6.1
 echo 6 > dir2/6
@@ -164,23 +173,26 @@ wimupdate test.wim 1 << EOF
 add dir1 /dir1
 add dir2 /prefix/dir2
 EOF
-rm -rf out.dir && mkdir out.dir
+rm -rf out.dir
+mkdir out.dir
 wimextract test.wim 1 dir1 --dest-dir=out.dir
 wimextract test.wim 1 prefix/dir2 --dest-dir=out.dir
 ../tree-cmp dir1 out.dir/dir1
 ../tree-cmp dir2 out.dir/dir2
 
 msg "Testing adding files to WIM image"
-rm -rf in.dir && mkdir in.dir
+rm -rf in.dir
+mkdir in.dir
 wimappend in.dir test.wim "2"
 cp $srcdir/src/*.c in.dir
 wimupdate test.wim 2 << EOF
 add in.dir /
 add file /file
 EOF
-cp file in.dir/file
+cp -a file in.dir/file
 rm -rf out.dir
 wimapply test.wim 2 out.dir
+touch -r in.dir out.dir
 ../tree-cmp in.dir out.dir
 
 msg "Testing adding file with space in it"

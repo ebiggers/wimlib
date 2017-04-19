@@ -69,3 +69,6 @@ do_test 'echo -n 8 > file;
 	 ln file dir/subdir/file;
 	 echo -n 8 > dir/subdir/file2;
 	 ln dir/subdir/file dir/subdir/link;'
+
+ msg "timestamp before 1970 (before start of UNIX epoch)"
+ do_test 'touch -t 196901231234.56 file'

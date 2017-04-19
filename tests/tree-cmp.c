@@ -323,16 +323,14 @@ static void tree_cmp(char file1[], int file1_len, char file2[], int file2_len)
 			   file1, file2);
 #if 0
 	if (ntfs_mode && st1.st_atime != st2.st_atime)
-		difference("Access times of `%s' and `%s' are not the same",
-			   file1, file2);
+		difference("Access times of `%s' (%x) and `%s' (%x) are "
+			   "not the same",
+			   file1, st1.st_atime, file2, st2.st_atime);
+#endif
 	if (st1.st_mtime != st2.st_mtime)
 		difference("Modification times of `%s' (%x) and `%s' (%x) are "
 		           "not the same",
 			   file1, st1.st_mtime, file2, st2.st_mtime);
-	if (st1.st_ctime != st2.st_ctime)
-		difference("Status change times of `%s' and `%s' are not the same",
-			   file1, file2);
-#endif
 	if ((ntfs_mode || S_ISREG(st1.st_mode)) && st1.st_nlink != st2.st_nlink)
 		difference("Link count of `%s' (%u) and `%s' (%u) "
 			   "are not the same",
