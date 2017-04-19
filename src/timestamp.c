@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014 Eric Biggers
+ * Copyright (C) 2012-2017 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -30,6 +30,11 @@
 /*
  * Timestamps in WIM files are Windows NT timestamps, or FILETIMEs: 64-bit
  * values storing the number of 100-nanosecond ticks since January 1, 1601.
+ *
+ * Note: UNIX timestamps are signed; Windows timestamps are not.  Negative UNIX
+ * timestamps represent times before 1970-01-01.  When such a timestamp is
+ * converted to a Windows timestamp, we can preserve the correct date provided
+ * that it is not also before 1601-01-01.
  */
 
 #define NANOSECONDS_PER_TICK	100
@@ -37,32 +42,25 @@
 #define TICKS_PER_MICROSECOND	(TICKS_PER_SECOND / 1000000)
 
 /*
- * EPOCH_DISTANCE is the number of 100-nanosecond ticks separating the
- * Windows NT and UNIX epochs.  This is equal to ((1970-1601)*365+89)*
- * 24*60*60*10000000.  89 is the number of leap years between 1970 and 1601.
+ * EPOCH_DISTANCE is the number of seconds separating the Windows NT and UNIX
+ * epochs.  This is equal to ((1970-1601)*365+89)*24*60*60.  89 is the number
+ * of leap years between 1970 and 1601.
  */
-#define EPOCH_DISTANCE		116444736000000000
-
-#define TO_WINNT_EPOCH(timestamp)	((timestamp) + EPOCH_DISTANCE)
-#define TO_UNIX_EPOCH(timestamp)	((timestamp) - EPOCH_DISTANCE)
+#define EPOCH_DISTANCE		11644473600
 
 /* Windows NT timestamps to UNIX timestamps  */
 
 time_t
 wim_timestamp_to_time_t(u64 timestamp)
 {
-	timestamp = TO_UNIX_EPOCH(timestamp);
-
-	return timestamp / TICKS_PER_SECOND;
+	return (timestamp / TICKS_PER_SECOND) - EPOCH_DISTANCE;
 }
 
 struct timeval
 wim_timestamp_to_timeval(u64 timestamp)
 {
-	timestamp = TO_UNIX_EPOCH(timestamp);
-
 	return (struct timeval) {
-		.tv_sec = timestamp / TICKS_PER_SECOND,
+		.tv_sec = wim_timestamp_to_time_t(timestamp),
 		.tv_usec = (timestamp % TICKS_PER_SECOND) / TICKS_PER_MICROSECOND,
 	};
 }
@@ -70,10 +68,8 @@ wim_timestamp_to_timeval(u64 timestamp)
 struct timespec
 wim_timestamp_to_timespec(u64 timestamp)
 {
-	timestamp = TO_UNIX_EPOCH(timestamp);
-
 	return (struct timespec) {
-		.tv_sec = timestamp / TICKS_PER_SECOND,
+		.tv_sec = wim_timestamp_to_time_t(timestamp),
 		.tv_nsec = (timestamp % TICKS_PER_SECOND) * NANOSECONDS_PER_TICK,
 	};
 }
@@ -83,27 +79,21 @@ wim_timestamp_to_timespec(u64 timestamp)
 u64
 time_t_to_wim_timestamp(time_t t)
 {
-	u64 timestamp = (u64)t * TICKS_PER_SECOND;
-
-	return TO_WINNT_EPOCH(timestamp);
+	return ((u64)t + EPOCH_DISTANCE) * TICKS_PER_SECOND;
 }
 
 u64
 timeval_to_wim_timestamp(const struct timeval *tv)
 {
-	u64 timestamp = (u64)tv->tv_sec * TICKS_PER_SECOND +
-			(u64)tv->tv_usec * TICKS_PER_MICROSECOND;
-
-	return TO_WINNT_EPOCH(timestamp);
+	return time_t_to_wim_timestamp(tv->tv_sec) +
+		(u32)tv->tv_usec * TICKS_PER_MICROSECOND;
 }
 
 u64
 timespec_to_wim_timestamp(const struct timespec *ts)
 {
-	u64 timestamp = (u64)ts->tv_sec * TICKS_PER_SECOND +
-			(u64)ts->tv_nsec / NANOSECONDS_PER_TICK;
-
-	return TO_WINNT_EPOCH(timestamp);
+	return time_t_to_wim_timestamp(ts->tv_sec) +
+		(u32)ts->tv_nsec / NANOSECONDS_PER_TICK;
 }
 
 /* Retrieve the current time as a WIM timestamp.  */
