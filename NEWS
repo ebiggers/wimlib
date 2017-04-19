@@ -1,3 +1,11 @@
+Version 1.12.0-BETA1:
+	Files with timestamps before the year 1970 are now extracted correctly
+	to UNIX-style filesystems, are displayed correctly by
+	'wimdir --detailed', and show up correctly in mounted WIM images.
+
+	Files with timestamps after the year 2038 are now displayed correctly by
+	the 32-bit Windows build of wimlib.
+
 Version 1.11.0:
 	Fixed a data corruption bug (incorrect compression) when storing an
 	already highly-compressed file in an LZX-compressed WIM with a chunk
