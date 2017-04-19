@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2015-2016 Eric Biggers
+ * Copyright (C) 2015-2017 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -1519,6 +1519,32 @@ cmp_linux_xattrs(const struct wim_inode *inode1,
 }
 
 static int
+cmp_timestamps(const struct wim_inode *inode1, const struct wim_inode *inode2,
+	       int cmp_flags)
+{
+	if (inode1->i_creation_time != inode2->i_creation_time &&
+	    !(cmp_flags & WIMLIB_CMP_FLAG_UNIX_MODE)) {
+		ERROR("Creation time of %"TS" differs",
+		      inode_any_full_path(inode1));
+		return WIMLIB_ERR_IMAGES_ARE_DIFFERENT;
+	}
+
+	if (inode1->i_last_write_time != inode2->i_last_write_time) {
+		ERROR("Last write time of %"TS" differs",
+		      inode_any_full_path(inode1));
+		return WIMLIB_ERR_IMAGES_ARE_DIFFERENT;
+	}
+
+	if (inode1->i_last_access_time != inode2->i_last_access_time) {
+		ERROR("Last access time of %"TS" differs",
+		      inode_any_full_path(inode1));
+		return WIMLIB_ERR_IMAGES_ARE_DIFFERENT;
+	}
+
+	return 0;
+}
+
+static int
 cmp_inodes(const struct wim_inode *inode1, const struct wim_inode *inode2,
 	   const struct wim_image_metadata *imd1,
 	   const struct wim_image_metadata *imd2, int cmp_flags)
@@ -1595,6 +1621,11 @@ cmp_inodes(const struct wim_inode *inode1, const struct wim_inode *inode2,
 
 	/* Compare object IDs  */
 	ret = cmp_object_ids(inode1, inode2, cmp_flags);
+	if (ret)
+		return ret;
+
+	/* Compare timestamps  */
+	ret = cmp_timestamps(inode1, inode2, cmp_flags);
 	if (ret)
 		return ret;
 
