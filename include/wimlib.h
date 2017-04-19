@@ -418,15 +418,18 @@ extern "C" {
 #endif
 
 /*
- * To represent file timestamps, wimlib's API uses the POSIX 'struct timespec'.
- * This was probably a mistake because it doesn't play well with Visual Studio.
- * In old VS versions it isn't present at all; in newer VS versions it is
- * supposedly present, but I wouldn't trust it to be the same size as the one
- * MinGW uses.  The solution is to define a compatible structure ourselves when
- * this header is included on Windows and the compiler is not MinGW.
+ * To represent file timestamps, wimlib's API originally used the POSIX 'struct
+ * timespec'.  This was a mistake because when building wimlib for 32-bit
+ * Windows with MinGW we ended up originally using 32-bit time_t which isn't
+ * year 2038-safe, and therefore we had to later add fields like
+ * 'creation_time_high' to hold the high 32 bits of each timestamp.  Moreover,
+ * old Visual Studio versions did not define struct timespec, while newer ones
+ * define it but with 64-bit tv_sec.  So to at least avoid a missing or
+ * incompatible 'struct timespec' definition, define the correct struct
+ * ourselves when this header is included on Windows.
  */
-#if defined(_WIN32) && !defined(__GNUC__)
-typedef struct {
+#ifdef _WIN32
+struct wimlib_timespec {
 	/* Seconds since start of UNIX epoch (January 1, 1970) */
 #ifdef _WIN64
 	int64_t tv_sec;
@@ -435,9 +438,9 @@ typedef struct {
 #endif
 	/* Nanoseconds (0-999999999) */
 	int32_t tv_nsec;
-} wimlib_timespec;
+};
 #else
-#  define wimlib_timespec  struct timespec  /* standard definition */
+#  define wimlib_timespec  timespec  /* standard definition */
 #endif
 
 /**
@@ -1591,13 +1594,13 @@ struct wimlib_dir_entry {
 	uint64_t hard_link_group_id;
 
 	/** Time this file was created.  */
-	wimlib_timespec creation_time;
+	struct wimlib_timespec creation_time;
 
 	/** Time this file was last written to.  */
-	wimlib_timespec last_write_time;
+	struct wimlib_timespec last_write_time;
 
 	/** Time this file was last accessed.  */
-	wimlib_timespec last_access_time;
+	struct wimlib_timespec last_access_time;
 
 	/** The UNIX user ID of this file.  This is a wimlib extension.
 	 *
@@ -1626,7 +1629,21 @@ struct wimlib_dir_entry {
 	 * object_id.object_id is not all zeroes.  */
 	struct wimlib_object_id object_id;
 
-	uint64_t reserved[6];
+	/** High 32 bits of the seconds portion of the creation timestamp,
+	 * filled in if @p wimlib_timespec.tv_sec is only 32-bit. */
+	int32_t creation_time_high;
+
+	/** High 32 bits of the seconds portion of the last write timestamp,
+	 * filled in if @p wimlib_timespec.tv_sec is only 32-bit. */
+	int32_t last_write_time_high;
+
+	/** High 32 bits of the seconds portion of the last access timestamp,
+	 * filled in if @p wimlib_timespec.tv_sec is only 32-bit. */
+	int32_t last_access_time_high;
+
+	int32_t reserved2;
+
+	uint64_t reserved[4];
 
 	/**
 	 * Variable-length array of streams that make up this file.

@@ -25,6 +25,7 @@
 #  include "config.h"
 #endif
 
+#include "wimlib.h" /* for struct wimlib_timespec */
 #include "wimlib/timestamp.h"
 
 /*
@@ -56,6 +57,27 @@ wim_timestamp_to_time_t(u64 timestamp)
 	return (timestamp / TICKS_PER_SECOND) - EPOCH_DISTANCE;
 }
 
+void
+wim_timestamp_to_wimlib_timespec(u64 timestamp, struct wimlib_timespec *wts,
+				 s32 *high_part_ret)
+{
+	s64 sec = (timestamp / TICKS_PER_SECOND) - EPOCH_DISTANCE;
+
+	wts->tv_sec = sec;
+	wts->tv_nsec = (timestamp % TICKS_PER_SECOND) * NANOSECONDS_PER_TICK;
+
+	if (sizeof(wts->tv_sec) == 4)
+		*high_part_ret = sec >> 32;
+}
+
+#ifdef __WIN32__
+static _unused_attribute void
+check_sizeof_time_t(void)
+{
+	/* Windows builds should always be using 64-bit time_t now. */
+	STATIC_ASSERT(sizeof(time_t) == 8);
+}
+#else
 struct timeval
 wim_timestamp_to_timeval(u64 timestamp)
 {
@@ -102,13 +124,10 @@ now_as_wim_timestamp(void)
 {
 	struct timeval tv;
 
-	/* On Windows we rely on MinGW providing gettimeofday() for us.  This
-	 * could be changed to calling GetSystemTimeAsFileTime() directly, but
-	 * now_as_wim_timestamp() isn't called much and it's simpler to keep the
-	 * code for all platforms the same.  */
 	gettimeofday(&tv, NULL);
 	return timeval_to_wim_timestamp(&tv);
 }
+#endif /* !__WIN32__ */
 
 /* Translate a WIM timestamp into a human-readable string.  */
 void
@@ -116,6 +135,7 @@ wim_timestamp_to_str(u64 timestamp, tchar *buf, size_t len)
 {
 	struct tm tm;
 	time_t t = wim_timestamp_to_time_t(timestamp);
+
 	gmtime_r(&t, &tm);
 	tstrftime(buf, len, T("%a %b %d %H:%M:%S %Y UTC"), &tm);
 }

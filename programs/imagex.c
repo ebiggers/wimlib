@@ -2499,21 +2499,21 @@ static const struct {
 #define TIMESTR_MAX 100
 
 static void
-timespec_to_string(const struct timespec *spec, tchar *buf)
-{
-	time_t t = spec->tv_sec;
-	struct tm tm;
-	gmtime_r(&t, &tm);
-	tstrftime(buf, TIMESTR_MAX, T("%a %b %d %H:%M:%S %Y UTC"), &tm);
-	buf[TIMESTR_MAX - 1] = '\0';
-}
-
-static void
-print_time(const tchar *type, const struct timespec *spec)
+print_time(const tchar *type, const struct wimlib_timespec *wts,
+	   int32_t high_part)
 {
 	tchar timestr[TIMESTR_MAX];
+	time_t t;
+	struct tm tm;
 
-	timespec_to_string(spec, timestr);
+	if (sizeof(wts->tv_sec) == 4 && sizeof(t) > sizeof(wts->tv_sec))
+		t = (uint32_t)wts->tv_sec | ((uint64_t)high_part << 32);
+	else
+		t = wts->tv_sec;
+
+	gmtime_r(&t, &tm);
+	tstrftime(timestr, TIMESTR_MAX, T("%a %b %d %H:%M:%S %Y UTC"), &tm);
+	timestr[TIMESTR_MAX - 1] = '\0';
 
 	tprintf(T("%-20"TS"= %"TS"\n"), type, timestr);
 }
@@ -2674,9 +2674,12 @@ print_dentry_detailed(const struct wimlib_dir_entry *dentry)
 					  dentry->security_descriptor_size);
 	}
 
-	print_time(T("Creation Time"), &dentry->creation_time);
-	print_time(T("Last Write Time"), &dentry->last_write_time);
-	print_time(T("Last Access Time"), &dentry->last_access_time);
+	print_time(T("Creation Time"),
+		   &dentry->creation_time, dentry->creation_time_high);
+	print_time(T("Last Write Time"),
+		   &dentry->last_write_time, dentry->last_write_time_high);
+	print_time(T("Last Access Time"),
+		   &dentry->last_access_time, dentry->last_access_time_high);
 
 
 	if (dentry->attributes & WIMLIB_FILE_ATTRIBUTE_REPARSE_POINT)

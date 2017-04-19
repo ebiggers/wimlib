@@ -12,8 +12,14 @@
 
 #include "wimlib/types.h"
 
+struct wimlib_timespec;
+
 extern time_t
 wim_timestamp_to_time_t(u64 timestamp);
+
+extern void
+wim_timestamp_to_wimlib_timespec(u64 timestamp, struct wimlib_timespec *wts,
+				 s32 *high_part_ret);
 
 extern struct timeval
 wim_timestamp_to_timeval(u64 timestamp);

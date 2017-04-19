@@ -36,6 +36,7 @@
 #include "wimlib/assert.h"
 #include "wimlib/glob.h"
 #include "wimlib/error.h"
+#include "wimlib/timestamp.h"
 #include "wimlib/util.h"
 
 static int
@@ -772,6 +773,17 @@ get_random_bytes(void *p, size_t n)
 		p += count;
 		n -= count;
 	}
+}
+
+/* Retrieve the current time as a WIM timestamp.  */
+u64
+now_as_wim_timestamp(void)
+{
+	FILETIME ft;
+
+	GetSystemTimeAsFileTime(&ft);
+
+	return ((u64)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
 }
 
 #endif /* __WIN32__ */
