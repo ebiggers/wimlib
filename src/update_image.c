@@ -716,6 +716,8 @@ static const char wincfg[] =
 "/swapfile.sys\n"
 "/System Volume Information\n"
 "/RECYCLER\n"
+"/$RECYCLE.BIN\n"
+"/$Recycle.Bin\n"
 "/Windows/CSC\n";
 
 static const tchar *wimboot_cfgfile =
