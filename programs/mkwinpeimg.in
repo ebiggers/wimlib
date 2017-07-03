@@ -485,13 +485,15 @@ make_disk_img() {
 
 	syslinux --install "$image"
 
-	syslinuxdir="/usr/lib/syslinux"
-
-	if [ -d "$syslinuxdir/bios" ]; then
-		biosdir="$syslinuxdir/bios"
-	else
-		biosdir="$syslinuxdir"
-	fi
+	for biosdir in				\
+		/usr/lib/syslinux/modules/bios	\
+		/usr/lib/syslinux/bios		\
+		/usr/lib/syslinux
+	do
+		if [ -e "$biosdir/chain.c32" ]; then
+			break
+		fi
+	done
 
 	mcopy "$biosdir/chain.c32" s: || stat_fail
 	if [ -e "$biosdir/libcom32.c32" ]; then
