@@ -133,11 +133,28 @@ static void usage_all(FILE *fp);
 static void recommend_man_page(int cmd, FILE *fp);
 static const tchar *get_cmd_string(int cmd, bool only_short_form);
 
-static bool imagex_be_quiet = false;
 static FILE *imagex_info_file;
 
-#define imagex_printf(format, ...) \
+#define imagex_printf(format, ...)	\
+	if (imagex_info_file)		\
 		tfprintf(imagex_info_file, format, ##__VA_ARGS__)
+
+static void imagex_suppress_output(void)
+{
+	imagex_info_file = NULL;
+}
+
+static void imagex_output_to_stderr(void)
+{
+	if (imagex_info_file)
+		imagex_info_file = stderr;
+}
+
+static void imagex_flush_output(void)
+{
+	if (imagex_info_file)
+		fflush(imagex_info_file);
+}
 
 enum {
 	IMAGEX_ALLOW_OTHER_OPTION,
@@ -1141,8 +1158,6 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 	unsigned unit_shift;
 	const tchar *unit_name;
 
-	if (imagex_be_quiet)
-		return WIMLIB_PROGRESS_STATUS_CONTINUE;
 	switch (msg) {
 	case WIMLIB_PROGRESS_MSG_WRITE_STREAMS:
 		{
@@ -1381,7 +1396,7 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 	default:
 		break;
 	}
-	fflush(imagex_info_file);
+	imagex_flush_output();
 	return WIMLIB_PROGRESS_STATUS_CONTINUE;
 }
 
@@ -2057,7 +2072,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		}
 		wim_fd = STDOUT_FILENO;
 		wimfile = NULL;
-		imagex_info_file = stderr;
+		imagex_output_to_stderr();
 		set_fd_to_binary_mode(wim_fd);
 	}
 
@@ -2966,7 +2981,7 @@ imagex_export(int argc, tchar **argv, int cmd)
 	#endif
 		dest_wimfile = NULL;
 		dest_wim_fd = STDOUT_FILENO;
-		imagex_info_file = stderr;
+		imagex_output_to_stderr();
 		set_fd_to_binary_mode(dest_wim_fd);
 	}
 	errno = ENOENT;
@@ -3180,8 +3195,7 @@ imagex_extract(int argc, tchar **argv, int cmd)
 			break;
 		case IMAGEX_TO_STDOUT_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_TO_STDOUT;
-			imagex_info_file = stderr;
-			imagex_be_quiet = true;
+			imagex_suppress_output();
 			set_fd_to_binary_mode(STDOUT_FILENO);
 			break;
 		case IMAGEX_INCLUDE_INVALID_NAMES_OPTION:
@@ -3277,8 +3291,7 @@ imagex_extract(int argc, tchar **argv, int cmd)
 	}
 
 	if (ret == 0) {
-		if (!imagex_be_quiet)
-			imagex_printf(T("Done extracting files.\n"));
+		imagex_printf(T("Done extracting files.\n"));
 	} else if (ret == WIMLIB_ERR_PATH_DOES_NOT_EXIST) {
 		if ((extract_flags & (WIMLIB_EXTRACT_FLAG_STRICT_GLOB |
 				      WIMLIB_EXTRACT_FLAG_GLOB_PATHS))
@@ -4522,8 +4535,9 @@ version(void)
 
 
 static void
-help_or_version(int argc, tchar **argv, int cmd)
+do_common_options(int *argc_p, tchar **argv, int cmd)
 {
+	int argc = *argc_p;
 	int i;
 	const tchar *p;
 
@@ -4540,9 +4554,18 @@ help_or_version(int argc, tchar **argv, int cmd)
 			} else if (!tstrcmp(p, T("version"))) {
 				version();
 				exit(0);
-			}
+			} else if (!tstrcmp(p, T("quiet"))) {
+				imagex_suppress_output();
+				memmove(&argv[i], &argv[i + 1],
+					(argc - i) * sizeof(argv[i]));
+				argc--;
+				i--;
+			} else if (!*p) /* reached "--", no more options */
+				break;
 		}
 	}
+
+	*argc_p = argc;
 }
 
 static void
@@ -4667,11 +4690,8 @@ main(int argc, tchar **argv)
 		}
 	}
 
-	/* Handle --help and --version.  --help can be either for the program as
-	 * a whole (cmd == CMD_NONE) or just for a specific command (cmd !=
-	 * CMD_NONE).  Note: help_or_version() will not return if a --help or
-	 * --version argument was found.  */
-	help_or_version(argc, argv, cmd);
+	/* Handle common options.  May exit early (for --help or --version).  */
+	do_common_options(&argc, argv, cmd);
 
 	/* Bail if a valid command was not specified.  */
 	if (cmd == CMD_NONE) {
