@@ -332,10 +332,19 @@ lzx_read_block_header(struct lzx_decompressor *d, struct input_bitstream *is,
 
 /* Decompress a block of LZX-compressed data. */
 static int
-lzx_decompress_block(struct lzx_decompressor *d, struct input_bitstream *is,
+lzx_decompress_block(struct lzx_decompressor *d, struct input_bitstream *_is,
 		     int block_type, u32 block_size,
 		     u8 * const out_begin, u8 *out_next, u32 recent_offsets[])
 {
+	/*
+	 * Redeclare the input bitstream on the stack.  This shouldn't be
+	 * needed, but it can improve the main loop's performance significantly
+	 * with both gcc and clang, apparently because the compiler otherwise
+	 * gets confused and doesn't properly allocate registers for
+	 * 'is->bitbuf' et al. and/or thinks 'is->next' may point into 'is'.
+	 */
+	struct input_bitstream is_onstack = *_is;
+	struct input_bitstream *is = &is_onstack;
 	u8 * const block_end = out_next + block_size;
 	unsigned min_aligned_offset_slot;
 
@@ -435,6 +444,7 @@ lzx_decompress_block(struct lzx_decompressor *d, struct input_bitstream *is,
 		out_next += length;
 	} while (out_next != block_end);
 
+	*_is = is_onstack;
 	return 0;
 }
 
