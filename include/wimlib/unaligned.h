@@ -28,7 +28,7 @@
 #define DEFINE_UNALIGNED_TYPE(type)				\
 struct type##_unaligned {					\
 	type v;							\
-} _packed_attribute;						\
+} _packed_attribute _may_alias_attribute;			\
 								\
 static forceinline type						\
 load_##type##_unaligned(const void *p)				\
