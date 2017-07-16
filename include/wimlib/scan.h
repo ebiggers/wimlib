@@ -57,10 +57,14 @@ struct scan_params {
 	/* Progress data.  */
 	union wimlib_progress_info progress;
 
-	/* Before calling try_exclude(), the scan implementation must set this
-	 * to the number of characters that try_exclude() will strip from the
-	 * path when testing exclusion patterns.  */
-	size_t capture_root_nchars;
+	/* Path to the file or directory currently being scanned */
+	tchar *cur_path;
+	size_t cur_path_nchars;
+	size_t cur_path_alloc_nchars;
+
+	/* Length of the prefix of 'cur_path' which names the root of the
+	 * directory tree currently being scanned */
+	size_t root_path_nchars;
 
 	/* Can be used by the scan implementation.  */
 	u64 capture_root_ino;
@@ -87,7 +91,7 @@ extern bool
 match_pattern_list(const tchar *path, const struct string_list *list);
 
 extern int
-try_exclude(const tchar *full_path, const struct scan_params *params);
+try_exclude(const struct scan_params *params);
 
 typedef int (*scan_tree_t)(struct wim_dentry **, const tchar *,
 			   struct scan_params *);
@@ -123,9 +127,10 @@ generate_dentry_tree(struct wim_dentry **root_ret,
 #define WIMLIB_ADD_FLAG_ROOT	0x80000000
 
 static inline int
-report_scan_error(struct scan_params *params, int error_code, const tchar *path)
+report_scan_error(struct scan_params *params, int error_code)
 {
-	return report_error(params->progfunc, params->progctx, error_code, path);
+	return report_error(params->progfunc, params->progctx, error_code,
+			    params->cur_path);
 }
 
 extern bool
@@ -134,5 +139,15 @@ should_ignore_filename(const tchar *name, int name_nchars);
 extern void
 attach_scanned_tree(struct wim_dentry *parent, struct wim_dentry *child,
 		    struct blob_table *blob_table);
+
+extern int
+pathbuf_init(struct scan_params *params, const tchar *root_path);
+
+extern const tchar *
+pathbuf_append_name(struct scan_params *params, const tchar *name,
+		    size_t name_nchars, size_t *orig_path_nchars_ret);
+
+extern void
+pathbuf_truncate(struct scan_params *params, size_t nchars);
 
 #endif /* _WIMLIB_SCAN_H */

@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2013-2016 Eric Biggers
+ * Copyright (C) 2013-2017 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -39,8 +39,8 @@
  * and possibly call the progress function provided by the library user.
  *
  * @params
- *	Flags, optional progress function, and progress data for the scan
- *	operation.
+ *	Current path, flags, optional progress function, and progress data for
+ *	the scan operation.
  * @status
  *	Status of the scanned file.
  * @inode
@@ -69,6 +69,7 @@ do_scan_progress(struct scan_params *params, int status,
 			return 0;
 		break;
 	}
+	params->progress.scan.cur_path = params->cur_path;
 	params->progress.scan.status = status;
 	if (status == WIMLIB_SCAN_DENTRY_OK) {
 
@@ -273,12 +274,11 @@ match_pattern_list(const tchar *path, const struct string_list *list)
  *	(1) The capture configuration file
  *	(2) The user-provided progress function
  *
- * The capture implementation must have set params->capture_root_nchars to an
- * appropriate value.  Example for UNIX:  if the capture root directory is
- * "foobar/subdir", then all paths will be provided starting with
- * "foobar/subdir", so params->capture_root_nchars must be set to
- * strlen("foobar/subdir") so that the appropriate path can be matched against
- * the patterns in the exclusion list.
+ * params->root_path_nchars must have been set beforehand.  Example for UNIX: if
+ * the capture root directory is "foobar/subdir", then all paths will be
+ * provided starting with "foobar/subdir", so params->root_path_nchars must have
+ * been set to strlen("foobar/subdir") so that the appropriate path suffix can
+ * be matched against the patterns in the exclusion list.
  *
  * Returns:
  *	< 0 if excluded
@@ -286,12 +286,12 @@ match_pattern_list(const tchar *path, const struct string_list *list)
  *	> 0 (wimlib error code) if error
  */
 int
-try_exclude(const tchar *full_path, const struct scan_params *params)
+try_exclude(const struct scan_params *params)
 {
 	int ret;
 
 	if (params->config) {
-		const tchar *path = full_path + params->capture_root_nchars;
+		const tchar *path = params->cur_path + params->root_path_nchars;
 		if (match_pattern_list(path, &params->config->exclusion_pats) &&
 		    !match_pattern_list(path, &params->config->exclusion_exception_pats))
 			return -1;
@@ -302,10 +302,10 @@ try_exclude(const tchar *full_path, const struct scan_params *params)
 		union wimlib_progress_info info;
 		tchar *cookie;
 
-		info.test_file_exclusion.path = full_path;
+		info.test_file_exclusion.path = params->cur_path;
 		info.test_file_exclusion.will_exclude = false;
 
-		cookie = progress_get_win32_path(full_path);
+		cookie = progress_get_win32_path(info.test_file_exclusion.path);
 
 		ret = call_progress(params->progfunc, WIMLIB_PROGRESS_MSG_TEST_FILE_EXCLUSION,
 				    &info, params->progctx);
@@ -367,4 +367,70 @@ attach_scanned_tree(struct wim_dentry *parent, struct wim_dentry *child,
 			"the first version.", dentry_full_path(duplicate));
 		free_dentry_tree(child, blob_table);
 	}
+}
+
+/* Set the path at which the directory tree scan is beginning. */
+int
+pathbuf_init(struct scan_params *params, const tchar *root_path)
+{
+	size_t nchars = tstrlen(root_path);
+	size_t alloc_nchars = nchars + 1 + 1024;
+
+	params->cur_path = MALLOC(alloc_nchars * sizeof(tchar));
+	if (!params->cur_path)
+		return WIMLIB_ERR_NOMEM;
+	tmemcpy(params->cur_path, root_path, nchars + 1);
+	params->cur_path_nchars = nchars;
+	params->cur_path_alloc_nchars = alloc_nchars;
+	params->root_path_nchars = nchars;
+	return 0;
+}
+
+/*
+ * Append a filename to the current path.
+ *
+ * If successful, returns a pointer to the filename component and sets
+ * *orig_path_nchars_ret to the old path length, which can be restored later
+ * using pathbuf_truncate().  Otherwise returns NULL (out of memory).
+ */
+const tchar *
+pathbuf_append_name(struct scan_params *params, const tchar *name,
+		    size_t name_nchars, size_t *orig_path_nchars_ret)
+{
+	size_t path_nchars = params->cur_path_nchars;
+	size_t required_nchars = path_nchars + 1 + name_nchars + 1;
+	tchar *buf = params->cur_path;
+
+	if (unlikely(required_nchars > params->cur_path_alloc_nchars)) {
+		required_nchars += 1024;
+		buf = REALLOC(buf, required_nchars * sizeof(tchar));
+		if (!buf)
+			return NULL;
+		params->cur_path = buf;
+		params->cur_path_alloc_nchars = required_nchars;
+	}
+	*orig_path_nchars_ret = path_nchars;
+
+	/*
+	 * Add the slash, but not if it will be a duplicate (which can happen if
+	 * the path to the capture root directory ends in a slash), because
+	 * on Windows duplicate slashes sometimes don't work as expected.
+	 */
+	if (path_nchars && buf[path_nchars - 1] != OS_PREFERRED_PATH_SEPARATOR)
+		buf[path_nchars++] = OS_PREFERRED_PATH_SEPARATOR;
+
+	tmemcpy(&buf[path_nchars], name, name_nchars);
+	path_nchars += name_nchars;
+	buf[path_nchars] = T('\0');
+	params->cur_path_nchars = path_nchars;
+	return &buf[path_nchars - name_nchars];
+}
+
+/* Truncate the current path to the specified number of characters. */
+void
+pathbuf_truncate(struct scan_params *params, size_t nchars)
+{
+	wimlib_assert(nchars <= params->cur_path_nchars);
+	params->cur_path[nchars] = T('\0');
+	params->cur_path_nchars = nchars;
 }

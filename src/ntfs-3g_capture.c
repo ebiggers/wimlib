@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2012-2016 Eric Biggers
+ * Copyright (C) 2012-2017 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -630,8 +630,6 @@ destroy_dos_name_map(struct dos_name_map *map)
 
 struct readdir_ctx {
 	struct wim_dentry *parent;
-	char *path;
-	size_t path_len;
 	struct dos_name_map dos_name_map;
 	struct ntfs_volume_wrapper *volume;
 	struct scan_params *params;
@@ -641,8 +639,7 @@ struct readdir_ctx {
 static int
 ntfs_3g_build_dentry_tree_recursive(struct wim_dentry **root_p,
 				    const MFT_REF mref,
-				    char *path,
-				    size_t path_len,
+				    const char *filename,
 				    int name_type,
 				    struct ntfs_volume_wrapper *volume,
 				    struct scan_params *params);
@@ -653,10 +650,11 @@ filldir(void *_ctx, const ntfschar *name, const int name_nchars,
 	const unsigned dt_type)
 {
 	struct readdir_ctx *ctx = _ctx;
+	struct scan_params *params = ctx->params;
 	const size_t name_nbytes = name_nchars * sizeof(ntfschar);
 	char *mbs_name;
 	size_t mbs_name_nbytes;
-	size_t path_len;
+	size_t orig_path_nchars;
 	struct wim_dentry *child;
 	int ret;
 
@@ -678,16 +676,17 @@ filldir(void *_ctx, const ntfschar *name, const int name_nchars,
 	if (should_ignore_filename(mbs_name, mbs_name_nbytes))
 		goto out_free_mbs_name;
 
-	path_len = ctx->path_len;
-	if (path_len != 1)
-		ctx->path[path_len++] = '/';
-	memcpy(ctx->path + path_len, mbs_name, mbs_name_nbytes + 1);
-	path_len += mbs_name_nbytes;
+	ret = WIMLIB_ERR_NOMEM;
+	if (!pathbuf_append_name(params, mbs_name, mbs_name_nbytes,
+				 &orig_path_nchars))
+		goto out_free_mbs_name;
+
 	child = NULL;
-	ret = ntfs_3g_build_dentry_tree_recursive(&child, mref, ctx->path,
-						  path_len, name_type,
-						  ctx->volume, ctx->params);
-	attach_scanned_tree(ctx->parent, child, ctx->params->blob_table);
+	ret = ntfs_3g_build_dentry_tree_recursive(&child, mref, mbs_name,
+						  name_type, ctx->volume,
+						  params);
+	pathbuf_truncate(params, orig_path_nchars);
+	attach_scanned_tree(ctx->parent, child, params->blob_table);
 out_free_mbs_name:
 	FREE(mbs_name);
 out:
@@ -696,8 +695,7 @@ out:
 }
 
 static int
-ntfs_3g_recurse_directory(ntfs_inode *ni, char *path, size_t path_len,
-			  struct wim_dentry *parent,
+ntfs_3g_recurse_directory(ntfs_inode *ni, struct wim_dentry *parent,
 			  struct ntfs_volume_wrapper *volume,
 			  struct scan_params *params)
 {
@@ -705,22 +703,20 @@ ntfs_3g_recurse_directory(ntfs_inode *ni, char *path, size_t path_len,
 	s64 pos = 0;
 	struct readdir_ctx ctx = {
 		.parent          = parent,
-		.path            = path,
-		.path_len        = path_len,
 		.dos_name_map    = { .root = NULL },
 		.volume          = volume,
 		.params          = params,
 		.ret		 = 0,
 	};
 	ret = ntfs_readdir(ni, &pos, &ctx, filldir);
-	path[path_len] = '\0';
 	if (unlikely(ret)) {
 		if (ctx.ret) {
 			/* wimlib error  */
 			ret = ctx.ret;
 		} else {
 			/* error from ntfs_readdir() itself  */
-			ERROR_WITH_ERRNO("Error reading directory \"%s\"", path);
+			ERROR_WITH_ERRNO("Error reading directory \"%s\"",
+					 params->cur_path);
 			ret = WIMLIB_ERR_NTFS_3G;
 		}
 	} else {
@@ -740,19 +736,19 @@ ntfs_3g_recurse_directory(ntfs_inode *ni, char *path, size_t path_len,
 static int
 ntfs_3g_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				    const MFT_REF mref,
-				    char *path,
-				    size_t path_len,
+				    const char *filename,
 				    int name_type,
 				    struct ntfs_volume_wrapper *volume,
 				    struct scan_params *params)
 {
+	const char *path = params->cur_path;
 	u32 attributes;
 	int ret;
 	struct wim_dentry *root = NULL;
 	struct wim_inode *inode = NULL;
 	ntfs_inode *ni = NULL;
 
-	ret = try_exclude(path, params);
+	ret = try_exclude(params);
 	if (unlikely(ret < 0)) /* Excluded? */
 		goto out_progress;
 	if (unlikely(ret > 0)) /* Error? */
@@ -781,14 +777,12 @@ ntfs_3g_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 			ret = WIMLIB_ERR_UNSUPPORTED_FILE;
 			goto out;
 		}
-		params->progress.scan.cur_path = path;
 		ret = do_scan_progress(params, WIMLIB_SCAN_DENTRY_UNSUPPORTED, NULL);
 		goto out;
 	}
 
 	/* Create a WIM dentry with an associated inode, which may be shared */
-	ret = inode_table_new_dentry(params->inode_table,
-				     path_basename_with_len(path, path_len),
+	ret = inode_table_new_dentry(params->inode_table, filename,
 				     ni->mft_no, 0, false, &root);
 	if (ret)
 		goto out;
@@ -854,14 +848,12 @@ ntfs_3g_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	}
 
 	if (inode_is_directory(inode)) {
-		ret = ntfs_3g_recurse_directory(ni, path, path_len, root,
-						volume, params);
+		ret = ntfs_3g_recurse_directory(ni, root, volume, params);
 		if (ret)
 			goto out;
 	}
 
 out_progress:
-	params->progress.scan.cur_path = path;
 	if (root == NULL)
 		ret = do_scan_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
 	else
@@ -872,7 +864,7 @@ out:
 	if (unlikely(ret)) {
 		free_dentry_tree(root, params->blob_table);
 		root = NULL;
-		ret = report_scan_error(params, ret, path);
+		ret = report_scan_error(params, ret);
 	}
 	*root_ret = root;
 	return ret;
@@ -884,7 +876,6 @@ ntfs_3g_build_dentry_tree(struct wim_dentry **root_ret,
 {
 	struct ntfs_volume_wrapper *volume;
 	ntfs_volume *vol;
-	char *path;
 	int ret;
 
 	volume = CALLOC(1, sizeof(struct ntfs_volume_wrapper));
@@ -918,20 +909,13 @@ ntfs_3g_build_dentry_tree(struct wim_dentry **root_ret,
 	 * that we do need to capture.  */
 	NVolClearShowSysFiles(vol);
 
-	/* Currently we assume that all the paths fit into this length and there
-	 * is no check for overflow.  */
-	path = MALLOC(32768);
-	if (!path) {
-		ret = WIMLIB_ERR_NOMEM;
+	ret = pathbuf_init(params, "/");
+	if (ret)
 		goto out_close_secure;
-	}
 
-	path[0] = '/';
-	path[1] = '\0';
-	ret = ntfs_3g_build_dentry_tree_recursive(root_ret, FILE_root, path, 1,
+	ret = ntfs_3g_build_dentry_tree_recursive(root_ret, FILE_root, "",
 						  FILE_NAME_POSIX, volume,
 						  params);
-	FREE(path);
 out_close_secure:
 	/* Undo the effects of ntfs_open_secure().  This is not yet done
 	 * automatically by ntfs_umount().  But NULL out the inode to

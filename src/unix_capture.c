@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2012-2016 Eric Biggers
+ * Copyright (C) 2012-2017 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -28,7 +28,6 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <limits.h> /* for PATH_MAX */
 #include <sys/stat.h>
 #include <sys/types.h>
 #ifdef HAVE_SYS_XATTR_H
@@ -330,13 +329,11 @@ err_nomem:
 
 static int
 unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
-				 char *path, size_t path_len,
 				 int dirfd, const char *relpath,
 				 struct scan_params *params);
 
 static int
 unix_scan_directory(struct wim_dentry *dir_dentry,
-		    char *full_path, size_t full_path_len,
 		    int parent_dirfd, const char *dir_relpath,
 		    struct scan_params *params)
 {
@@ -345,16 +342,18 @@ unix_scan_directory(struct wim_dentry *dir_dentry,
 	DIR *dir;
 	int ret;
 
-	dirfd = my_openat(full_path, parent_dirfd, dir_relpath, O_RDONLY);
+	dirfd = my_openat(params->cur_path, parent_dirfd, dir_relpath, O_RDONLY);
 	if (dirfd < 0) {
-		ERROR_WITH_ERRNO("\"%s\": Can't open directory", full_path);
+		ERROR_WITH_ERRNO("\"%s\": Can't open directory",
+				 params->cur_path);
 		return WIMLIB_ERR_OPENDIR;
 	}
 
 	dir_dentry->d_inode->i_attributes = FILE_ATTRIBUTE_DIRECTORY;
 	dir = my_fdopendir(&dirfd);
 	if (!dir) {
-		ERROR_WITH_ERRNO("\"%s\": Can't open directory", full_path);
+		ERROR_WITH_ERRNO("\"%s\": Can't open directory",
+				 params->cur_path);
 		close(dirfd);
 		return WIMLIB_ERR_OPENDIR;
 	}
@@ -364,6 +363,7 @@ unix_scan_directory(struct wim_dentry *dir_dentry,
 		struct dirent *entry;
 		struct wim_dentry *child;
 		size_t name_len;
+		size_t orig_path_len;
 
 		errno = 0;
 		entry = readdir(dir);
@@ -371,7 +371,7 @@ unix_scan_directory(struct wim_dentry *dir_dentry,
 			if (errno) {
 				ret = WIMLIB_ERR_READ;
 				ERROR_WITH_ERRNO("\"%s\": Error reading directory",
-						 full_path);
+						 params->cur_path);
 			}
 			break;
 		}
@@ -381,15 +381,13 @@ unix_scan_directory(struct wim_dentry *dir_dentry,
 		if (should_ignore_filename(entry->d_name, name_len))
 			continue;
 
-		full_path[full_path_len] = '/';
-		memcpy(&full_path[full_path_len + 1], entry->d_name, name_len + 1);
-		ret = unix_build_dentry_tree_recursive(&child,
-						       full_path,
-						       full_path_len + 1 + name_len,
-						       dirfd,
-						       &full_path[full_path_len + 1],
-						       params);
-		full_path[full_path_len] = '\0';
+		ret = WIMLIB_ERR_NOMEM;
+		if (!pathbuf_append_name(params, entry->d_name, name_len,
+					 &orig_path_len))
+			break;
+		ret = unix_build_dentry_tree_recursive(&child, dirfd,
+						       entry->d_name, params);
+		pathbuf_truncate(params, orig_path_len);
 		if (ret)
 			break;
 		attach_scanned_tree(dir_dentry, child, params->blob_table);
@@ -472,7 +470,7 @@ unix_relativize_link_target(char *target, u64 ino, u64 dev)
 }
 
 static noinline_for_stack int
-unix_scan_symlink(const char *full_path, int dirfd, const char *relpath,
+unix_scan_symlink(int dirfd, const char *relpath,
 		  struct wim_inode *inode, struct scan_params *params)
 {
 	char orig_target[REPARSE_POINT_MAX_SIZE];
@@ -480,15 +478,16 @@ unix_scan_symlink(const char *full_path, int dirfd, const char *relpath,
 	int ret;
 
 	/* Read the UNIX symbolic link target.  */
-	ret = my_readlinkat(full_path, dirfd, relpath, target,
+	ret = my_readlinkat(params->cur_path, dirfd, relpath, target,
 			    sizeof(orig_target));
 	if (unlikely(ret < 0)) {
 		ERROR_WITH_ERRNO("\"%s\": Can't read target of symbolic link",
-				 full_path);
+				 params->cur_path);
 		return WIMLIB_ERR_READLINK;
 	}
 	if (unlikely(ret >= sizeof(orig_target))) {
-		ERROR("\"%s\": target of symbolic link is too long", full_path);
+		ERROR("\"%s\": target of symbolic link is too long",
+		      params->cur_path);
 		return WIMLIB_ERR_READLINK;
 	}
 	target[ret] = '\0';
@@ -498,7 +497,6 @@ unix_scan_symlink(const char *full_path, int dirfd, const char *relpath,
 	if (target[0] == '/' && (params->add_flags & WIMLIB_ADD_FLAG_RPFIX)) {
 		int status = WIMLIB_SCAN_DENTRY_NOT_FIXED_SYMLINK;
 
-		params->progress.scan.cur_path = full_path;
 		params->progress.scan.symlink_target = target;
 
 		target = unix_relativize_link_target(target,
@@ -519,7 +517,8 @@ unix_scan_symlink(const char *full_path, int dirfd, const char *relpath,
 	if (unlikely(ret)) {
 		if (ret == WIMLIB_ERR_INVALID_UTF8_STRING) {
 			ERROR("\"%s\": target of symbolic link is not valid "
-			      "UTF-8.  This is not supported.", full_path);
+			      "UTF-8.  This is not supported.",
+			      params->cur_path);
 		}
 		return ret;
 	}
@@ -529,7 +528,7 @@ unix_scan_symlink(const char *full_path, int dirfd, const char *relpath,
 	 * (non-)directory is stored as a reparse point on a (non-)directory
 	 * file.  Replicate this behavior by examining the target file.  */
 	struct stat stbuf;
-	if (my_fstatat(full_path, dirfd, relpath, &stbuf, 0) == 0 &&
+	if (my_fstatat(params->cur_path, dirfd, relpath, &stbuf, 0) == 0 &&
 	    S_ISDIR(stbuf.st_mode))
 		inode->i_attributes |= FILE_ATTRIBUTE_DIRECTORY;
 	return 0;
@@ -537,7 +536,6 @@ unix_scan_symlink(const char *full_path, int dirfd, const char *relpath,
 
 static int
 unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
-				 char *full_path, size_t full_path_len,
 				 int dirfd, const char *relpath,
 				 struct scan_params *params)
 {
@@ -547,7 +545,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 	struct stat stbuf;
 	int stat_flags;
 
-	ret = try_exclude(full_path, params);
+	ret = try_exclude(params);
 	if (unlikely(ret < 0)) /* Excluded? */
 		goto out_progress;
 	if (unlikely(ret > 0)) /* Error? */
@@ -559,10 +557,11 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 	else
 		stat_flags = AT_SYMLINK_NOFOLLOW;
 
-	ret = my_fstatat(full_path, dirfd, relpath, &stbuf, stat_flags);
+	ret = my_fstatat(params->cur_path, dirfd, relpath, &stbuf, stat_flags);
 
 	if (ret) {
-		ERROR_WITH_ERRNO("\"%s\": Can't read metadata", full_path);
+		ERROR_WITH_ERRNO("\"%s\": Can't read metadata",
+				 params->cur_path);
 		ret = WIMLIB_ERR_STAT;
 		goto out;
 	}
@@ -576,11 +575,10 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 			    WIMLIB_ADD_FLAG_NO_UNSUPPORTED_EXCLUDE)
 			{
 				ERROR("\"%s\": File type is unsupported",
-				      full_path);
+				      params->cur_path);
 				ret = WIMLIB_ERR_UNSUPPORTED_FILE;
 				goto out;
 			}
-			params->progress.scan.cur_path = full_path;
 			ret = do_scan_progress(params,
 					       WIMLIB_SCAN_DENTRY_UNSUPPORTED,
 					       NULL);
@@ -593,7 +591,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 	if (unlikely(ret)) {
 		if (ret == WIMLIB_ERR_INVALID_UTF8_STRING) {
 			ERROR("\"%s\": filename is not valid UTF-8.  "
-			      "This is not supported.", full_path);
+			      "This is not supported.", params->cur_path);
 		}
 		goto out;
 	}
@@ -625,7 +623,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 			goto out;
 		}
 #ifdef HAVE_XATTR_SUPPORT
-		ret = scan_linux_xattrs(full_path, inode);
+		ret = scan_linux_xattrs(params->cur_path, inode);
 		if (ret)
 			goto out;
 #endif
@@ -638,22 +636,19 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 	}
 
 	if (S_ISREG(stbuf.st_mode)) {
-		ret = unix_scan_regular_file(full_path, stbuf.st_blocks,
+		ret = unix_scan_regular_file(params->cur_path, stbuf.st_blocks,
 					     stbuf.st_size, inode,
 					     params->unhashed_blobs);
 	} else if (S_ISDIR(stbuf.st_mode)) {
-		ret = unix_scan_directory(tree, full_path, full_path_len,
-					  dirfd, relpath, params);
+		ret = unix_scan_directory(tree, dirfd, relpath, params);
 	} else if (S_ISLNK(stbuf.st_mode)) {
-		ret = unix_scan_symlink(full_path, dirfd, relpath,
-					inode, params);
+		ret = unix_scan_symlink(dirfd, relpath, inode, params);
 	}
 
 	if (ret)
 		goto out;
 
 out_progress:
-	params->progress.scan.cur_path = full_path;
 	if (likely(tree))
 		ret = do_scan_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
 	else
@@ -662,7 +657,7 @@ out:
 	if (unlikely(ret)) {
 		free_dentry_tree(tree, params->blob_table);
 		tree = NULL;
-		ret = report_scan_error(params, ret, full_path);
+		ret = report_scan_error(params, ret);
 	}
 	*tree_ret = tree;
 	return ret;
@@ -691,28 +686,14 @@ int
 unix_build_dentry_tree(struct wim_dentry **root_ret,
 		       const char *root_disk_path, struct scan_params *params)
 {
-	size_t path_len;
-	size_t path_bufsz;
-	char *path_buf;
 	int ret;
 
-	path_len = strlen(root_disk_path);
-	path_bufsz = min(32790, PATH_MAX + 1);
+	ret = pathbuf_init(params, root_disk_path);
+	if (ret)
+		return ret;
 
-	if (path_len >= path_bufsz)
-		return WIMLIB_ERR_INVALID_PARAM;
-
-	path_buf = MALLOC(path_bufsz);
-	if (!path_buf)
-		return WIMLIB_ERR_NOMEM;
-	memcpy(path_buf, root_disk_path, path_len + 1);
-
-	params->capture_root_nchars = path_len;
-
-	ret = unix_build_dentry_tree_recursive(root_ret, path_buf, path_len,
-					       AT_FDCWD, path_buf, params);
-	FREE(path_buf);
-	return ret;
+	return unix_build_dentry_tree_recursive(root_ret, AT_FDCWD,
+						root_disk_path, params);
 }
 
 #endif /* !__WIN32__ */

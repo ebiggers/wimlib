@@ -888,6 +888,7 @@ execute_add_command(struct update_command_journal *j,
 out_destroy_config:
 	destroy_capture_config(&config);
 out:
+	FREE(params.cur_path);
 	return ret;
 }
 
