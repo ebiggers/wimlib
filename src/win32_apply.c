@@ -1087,6 +1087,12 @@ prepare_target(struct list_head *dentry_list, struct win32_apply_ctx *ctx)
 			8 + 1 + 3);
 
 	ctx->pathbuf.MaximumLength = path_max * sizeof(wchar_t);
+	if (ctx->pathbuf.MaximumLength != path_max * sizeof(wchar_t)) {
+		/* Paths are too long for a UNICODE_STRING! */
+		ERROR("Some paths are too long to extract (> 32768 characters)!");
+		return WIMLIB_ERR_UNSUPPORTED;
+	}
+
 	ctx->pathbuf.Buffer = MALLOC(ctx->pathbuf.MaximumLength);
 	if (!ctx->pathbuf.Buffer)
 		return WIMLIB_ERR_NOMEM;
