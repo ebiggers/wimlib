@@ -274,9 +274,12 @@ windows_msg(u32 code, const wchar_t *format, va_list va,
 	size_t buflen = ARRAY_LEN(_buf);
 	size_t ret;
 	size_t n;
+	va_list va2;
 
 retry:
-	n = vsnwprintf(buf, buflen, format, va);
+	va_copy(va2, va);
+	n = vsnwprintf(buf, buflen, format, va2);
+	va_end(va2);
 
 	if (n >= buflen)
 		goto realloc;
