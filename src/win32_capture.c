@@ -674,7 +674,8 @@ winnt_load_object_id(HANDLE h, struct wim_inode *inode,
 	if (status == STATUS_OBJECTID_NOT_FOUND) /* No object ID  */
 		return 0;
 
-	if (status == STATUS_INVALID_DEVICE_REQUEST) {
+	if (status == STATUS_INVALID_DEVICE_REQUEST ||
+	    status == STATUS_NOT_SUPPORTED /* Samba volume, WinXP */) {
 		/* The filesystem claimed to support object IDs, but we can't
 		 * actually read them.  This happens with Samba.  */
 		ctx->vol_flags &= ~FILE_SUPPORTS_OBJECT_IDS;
@@ -2568,7 +2569,9 @@ load_files_from_mft(const wchar_t *path, struct ntfs_inode_map *inode_map)
 	 * all files have been enumerated.  */
 	if (status != STATUS_END_OF_FILE) {
 		if (status == STATUS_INVALID_DEVICE_REQUEST /* old OS */ ||
-		    status == STATUS_INVALID_PARAMETER /* not root directory */ ) {
+		    status == STATUS_NOT_SUPPORTED /* Samba volume, WinXP */ ||
+		    status == STATUS_INVALID_PARAMETER /* not root directory */ )
+		{
 			/* Silently try standard recursive scan instead  */
 			ret = -1;
 		} else {
