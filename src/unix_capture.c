@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2012-2017 Eric Biggers
+ * Copyright (C) 2012-2018 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -103,7 +103,7 @@ my_fdopendir(int *dirfd_p)
 #  define AT_SYMLINK_NOFOLLOW	0x100
 #endif
 
-#ifdef HAVE_XATTR_SUPPORT
+#ifdef HAVE_LINUX_XATTR_SUPPORT
 /*
  * Retrieves the values of the xattrs named by the null-terminated @names of the
  * file at @path and serializes the xattr names and values into @entries.  If
@@ -117,35 +117,39 @@ gather_xattr_entries(const char *path, const char *names, size_t names_size,
 	const char * const names_end = names + names_size;
 	void * const entries_end = entries + entries_size;
 	const char *name = names;
-	struct wimlib_xattr_entry *entry = entries;
+	struct wim_xattr_entry *entry = entries;
 
-	wimlib_assert((uintptr_t)entries % 4 == 0 &&
-		      entries_size % 4 == 0 && names_size != 0);
 	do {
 		size_t name_len = strnlen(name, names_end - name);
 		void *value;
 		ssize_t value_len;
 
-		if (name_len == 0 || name_len >= names_end - name ||
-		    (u16)name_len != name_len) {
+		if (name_len == 0 || name_len >= names_end - name) {
 			ERROR("\"%s\": malformed extended attribute names list",
 			      path);
 			errno = EINVAL;
 			return -1;
 		}
 
+		if (name_len > WIM_XATTR_NAME_MAX) {
+			WARNING("\"%s\": name of extended attribute \"%s\" is too long to store",
+				path, name);
+			goto next_name;
+		}
+
 		/*
-		 * Note: we take care to always call lgetxattr() with a nonzero
-		 * size, since zero size means to return the value length only.
+		 * Take care to always call lgetxattr() with a nonzero size,
+		 * since zero size means to return the value length only.
 		 */
-		if (entries_end - (void *)entry <= sizeof(*entry) + name_len) {
+		if (entries_end - (void *)entry <=
+		    sizeof(*entry) + name_len + 1) {
 			errno = ERANGE;
 			return -1;
 		}
 
-		entry->name_len = cpu_to_le16(name_len);
-		entry->reserved = 0;
-		value = mempcpy(entry->name, name, name_len);
+		entry->name_len = name_len;
+		entry->flags = 0;
+		value = mempcpy(entry->name, name, name_len + 1);
 
 		value_len = lgetxattr(path, name, value, entries_end - value);
 		if (value_len < 0) {
@@ -155,26 +159,14 @@ gather_xattr_entries(const char *path, const char *names, size_t names_size,
 			}
 			return -1;
 		}
-		if ((u32)value_len != value_len) {
-			ERROR("\"%s\": value of extended attribute \"%s\" is too large",
-			      path, name);
-			errno = EINVAL;
-			return -1;
+		if (value_len > WIM_XATTR_SIZE_MAX) {
+			WARNING("\"%s\": value of extended attribute \"%s\" is too large to store",
+				path, name);
+			goto next_name;
 		}
-		entry->value_len = cpu_to_le32(value_len);
-
-		/*
-		 * Zero-pad the entry to the next 4-byte boundary.
-		 * Note: because we've guaranteed that @entries_size is a
-		 * multiple of 4, this cannot overflow the @entries buffer.
-		 */
-		value += value_len;
-		while ((uintptr_t)value & 3) {
-			*(u8 *)value = 0;
-			value++;
-		}
-
-		entry = value;
+		entry->value_len = cpu_to_le16(value_len);
+		entry = value + value_len;
+	next_name:
 		name += name_len + 1;
 	} while (name < names_end);
 
@@ -185,7 +177,7 @@ static int
 create_xattr_item(const char *path, struct wim_inode *inode,
 		  const char *names, size_t names_size)
 {
-	char _entries[1024] _aligned_attribute(4);
+	char _entries[1024];
 	char *entries = _entries;
 	size_t entries_avail = ARRAY_LEN(_entries);
 	ssize_t entries_size;
@@ -217,7 +209,7 @@ retry:
 		goto out;
 	}
 	ret = WIMLIB_ERR_NOMEM;
-	if (!inode_set_linux_xattrs(inode, entries, entries_size))
+	if (!inode_set_xattrs(inode, entries, entries_size))
 		goto out;
 
 	ret = 0;
@@ -284,7 +276,7 @@ out:
 		FREE(names);
 	return ret;
 }
-#endif /* HAVE_XATTR_SUPPORT */
+#endif /* HAVE_LINUX_XATTR_SUPPORT */
 
 static int
 unix_scan_regular_file(const char *path, u64 blocks, u64 size,
@@ -622,7 +614,7 @@ unix_build_dentry_tree_recursive(struct wim_dentry **tree_ret,
 			ret = WIMLIB_ERR_NOMEM;
 			goto out;
 		}
-#ifdef HAVE_XATTR_SUPPORT
+#ifdef HAVE_LINUX_XATTR_SUPPORT
 		ret = scan_linux_xattrs(params->cur_path, inode);
 		if (ret)
 			goto out;

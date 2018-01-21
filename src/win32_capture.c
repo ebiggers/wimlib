@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2013-2017 Eric Biggers
+ * Copyright (C) 2013-2018 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -41,6 +41,7 @@
 #include "wimlib/scan.h"
 #include "wimlib/win32_vss.h"
 #include "wimlib/wof.h"
+#include "wimlib/xattr.h"
 
 struct winnt_scan_ctx {
 	struct scan_params *params;
@@ -693,6 +694,111 @@ winnt_load_object_id(HANDLE h, struct wim_inode *inode,
 		return WIMLIB_ERR_NOMEM;
 
 	return 0;
+}
+
+/* Load a file's extended attributes into the corresponding WIM inode.  */
+static noinline_for_stack int
+winnt_load_xattrs(HANDLE h, struct wim_inode *inode,
+		  struct winnt_scan_ctx *ctx, u32 ea_size)
+{
+	IO_STATUS_BLOCK iosb;
+	NTSTATUS status;
+	u8 _buf[1024] _aligned_attribute(4);
+	u8 *buf = _buf;
+	const FILE_FULL_EA_INFORMATION *ea;
+	struct wim_xattr_entry *entry;
+	int ret;
+
+
+	/*
+	 * EaSize from FILE_EA_INFORMATION is apparently supposed to give the
+	 * size of the buffer required for NtQueryEaFile(), but it doesn't
+	 * actually work correctly; it can be off by about 4 bytes per xattr.
+	 *
+	 * So just start out by doubling the advertised size, and also handle
+	 * STATUS_BUFFER_OVERFLOW just in case.
+	 */
+retry:
+	if (unlikely(ea_size * 2 < ea_size))
+		ea_size = UINT32_MAX;
+	else
+		ea_size *= 2;
+	if (unlikely(ea_size > sizeof(_buf))) {
+		buf = MALLOC(ea_size);
+		if (!buf) {
+			if (ea_size >= (1 << 20)) {
+				WARNING("\"%ls\": EaSize was extremely large (%u)",
+					printable_path(ctx), ea_size);
+			}
+			return WIMLIB_ERR_NOMEM;
+		}
+	}
+
+	status = NtQueryEaFile(h, &iosb, buf, ea_size,
+			       FALSE, NULL, 0, NULL, TRUE);
+
+	if (unlikely(!NT_SUCCESS(status))) {
+		if (status == STATUS_BUFFER_OVERFLOW) {
+			if (buf != _buf) {
+				FREE(buf);
+				buf = NULL;
+			}
+			goto retry;
+		}
+		if (status == STATUS_NO_EAS_ON_FILE) {
+			/*
+			 * FILE_EA_INFORMATION.EaSize was nonzero so this
+			 * shouldn't happen, but just in case...
+			 */
+			ret = 0;
+			goto out;
+		}
+		winnt_error(status, L"\"%ls\": Can't read extended attributes",
+			    printable_path(ctx));
+		ret = WIMLIB_ERR_STAT;
+		goto out;
+	}
+
+	ea = (const FILE_FULL_EA_INFORMATION *)buf;
+	entry = (struct wim_xattr_entry *)buf;
+	for (;;) {
+		/*
+		 * wim_xattr_entry is not larger than FILE_FULL_EA_INFORMATION,
+		 * so we can reuse the same buffer by overwriting the
+		 * FILE_FULL_EA_INFORMATION with the wim_xattr_entry in-place.
+		 */
+		FILE_FULL_EA_INFORMATION _ea;
+
+		STATIC_ASSERT(offsetof(struct wim_xattr_entry, name) <=
+			      offsetof(FILE_FULL_EA_INFORMATION, EaName));
+		wimlib_assert((u8 *)entry <= (const u8 *)ea);
+
+		memcpy(&_ea, ea, sizeof(_ea));
+
+		entry->value_len = cpu_to_le16(_ea.EaValueLength);
+		entry->name_len = _ea.EaNameLength;
+		entry->flags = _ea.Flags;
+		memmove(entry->name, ea->EaName, _ea.EaNameLength);
+		entry->name[_ea.EaNameLength] = '\0';
+		memmove(&entry->name[_ea.EaNameLength + 1],
+			&ea->EaName[_ea.EaNameLength + 1], _ea.EaValueLength);
+		entry = (struct wim_xattr_entry *)
+			 &entry->name[_ea.EaNameLength + 1 + _ea.EaValueLength];
+		if (_ea.NextEntryOffset == 0)
+			break;
+		ea = (const FILE_FULL_EA_INFORMATION *)
+			((const u8 *)ea + _ea.NextEntryOffset);
+	}
+	wimlib_assert((u8 *)entry - buf <= ea_size);
+
+	ret = WIMLIB_ERR_NOMEM;
+	if (!inode_set_xattrs(inode, buf, (u8 *)entry - buf))
+		goto out;
+	ret = 0;
+out:
+	if (unlikely(buf != _buf))
+		FREE(buf);
+	return ret;
 }
 
 static int
@@ -1518,6 +1624,7 @@ struct file_info {
 	u64 last_access_time;
 	u64 ino;
 	u64 end_of_file;
+	u32 ea_size;
 };
 
 static noinline_for_stack NTSTATUS
@@ -1540,6 +1647,7 @@ get_file_info(HANDLE h, struct file_info *info)
 	info->last_access_time = all_info.BasicInformation.LastAccessTime.QuadPart;
 	info->ino = all_info.InternalInformation.IndexNumber.QuadPart;
 	info->end_of_file = all_info.StandardInformation.EndOfFile.QuadPart;
+	info->ea_size = all_info.EaInformation.EaSize;
 	return STATUS_SUCCESS;
 }
 
@@ -1620,8 +1728,8 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	 * this permission on all nondirectories.  Perhaps it causes Windows to
 	 * start prefetching the file contents...  */
 	status = winnt_openat(cur_dir, relative_path, relative_path_nchars,
-			      FILE_READ_ATTRIBUTES | READ_CONTROL |
-					ACCESS_SYSTEM_SECURITY,
+			      FILE_READ_ATTRIBUTES | FILE_READ_EA |
+				READ_CONTROL | ACCESS_SYSTEM_SECURITY,
 			      &h);
 	if (unlikely(!NT_SUCCESS(status))) {
 		if (status == STATUS_DELETE_PENDING) {
@@ -1716,6 +1824,13 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	ret = winnt_load_object_id(h, inode, ctx);
 	if (ret)
 		goto out;
+
+	/* Get the file's extended attributes.  */
+	if (unlikely(file_info.ea_size != 0)) {
+		ret = winnt_load_xattrs(h, inode, ctx, file_info.ea_size);
+		if (ret)
+			goto out;
+	}
 
 	/* If this is a reparse point, load the reparse data.  */
 	if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
@@ -1961,6 +2076,10 @@ typedef struct {
 #define NTFS_IS_SPECIAL_FILE(ino)			\
 	(NTFS_MFT_NO(ino) <= 15 && !NTFS_IS_ROOT_FILE(ino))
 
+#define NTFS_SPECIAL_STREAM_OBJECT_ID		0x00000001
+#define NTFS_SPECIAL_STREAM_EA			0x00000002
+#define NTFS_SPECIAL_STREAM_EA_INFORMATION	0x00000004
+
 /* Intermediate inode structure.  This is used to temporarily save information
  * from FSCTL_QUERY_FILE_LAYOUT before creating the full 'struct wim_inode'.  */
 struct ntfs_inode {
@@ -1973,8 +2092,8 @@ struct ntfs_inode {
 	u32 attributes;
 	u32 security_id;
 	u32 num_aliases;
-	u32 num_streams : 31;
-	u32 have_object_id : 1;
+	u32 num_streams;
+	u32 special_streams;
 	u32 first_stream_offset;
 	struct ntfs_dentry *first_child;
 	wchar_t short_name[13];
@@ -2145,13 +2264,10 @@ is_valid_stream_entry(const STREAM_LAYOUT_ENTRY *stream)
 			 stream->StreamIdentifierLength / 2);
 }
 
-static bool
-is_object_id_stream(const STREAM_LAYOUT_ENTRY *stream)
-{
-	return stream->StreamIdentifierLength == 24 &&
-		!wmemcmp(stream->StreamIdentifier, L"::$OBJECT_ID", 12);
-}
-
+/* assumes that 'id' is a wide string literal */
+#define stream_has_identifier(stream, id)				\
+	((stream)->StreamIdentifierLength == sizeof(id) - 2 &&		\
+	 !memcmp((stream)->StreamIdentifier, id, sizeof(id) - 2))
 /*
  * If the specified STREAM_LAYOUT_ENTRY represents a DATA stream as opposed to
  * some other type of NTFS stream such as a STANDARD_INFORMATION stream, return
@@ -2188,16 +2304,18 @@ use_stream(const FILE_LAYOUT_ENTRY *file, const STREAM_LAYOUT_ENTRY *stream,
 
 /* Validate the STREAM_LAYOUT_ENTRYs of the specified file and compute the total
  * length in bytes of the ntfs_stream structures needed to hold the stream
- * information.  In addition, set *have_object_id_ret=true if the file has an
- * object ID stream.  */
+ * information.  In addition, set *special_streams_ret to a bitmask of special
+ * stream types that were found.  */
 static int
 validate_streams_and_compute_total_length(const FILE_LAYOUT_ENTRY *file,
 					  size_t *total_length_ret,
-					  bool *have_object_id_ret)
+					  u32 *special_streams_ret)
 {
 	const STREAM_LAYOUT_ENTRY *stream =
 		(const void *)file + file->FirstStreamOffset;
 	size_t total = 0;
+	u32 special_streams = 0;
+
 	for (;;) {
 		const wchar_t *name;
 		size_t name_nchars;
@@ -2217,8 +2335,12 @@ validate_streams_and_compute_total_length(const FILE_LAYOUT_ENTRY *file,
 		if (use_stream(file, stream, &name, &name_nchars)) {
 			total += ALIGN(sizeof(struct ntfs_stream) +
 				       (name_nchars + 1) * sizeof(wchar_t), 8);
-		} else if (is_object_id_stream(stream)) {
-			*have_object_id_ret = true;
+		} else if (stream_has_identifier(stream, L"::$OBJECT_ID")) {
+			special_streams |= NTFS_SPECIAL_STREAM_OBJECT_ID;
+		} else if (stream_has_identifier(stream, L"::$EA")) {
+			special_streams |= NTFS_SPECIAL_STREAM_EA;
+		} else if (stream_has_identifier(stream, L"::$EA_INFORMATION")) {
+			special_streams |= NTFS_SPECIAL_STREAM_EA_INFORMATION;
 		}
 		if (stream->NextStreamOffset == 0)
 			break;
@@ -2226,6 +2348,7 @@ validate_streams_and_compute_total_length(const FILE_LAYOUT_ENTRY *file,
 	}
 
 	*total_length_ret = total;
+	*special_streams_ret = special_streams;
 	return 0;
 }
 
@@ -2322,7 +2445,7 @@ load_one_file(const FILE_LAYOUT_ENTRY *file, struct ntfs_inode_map *inode_map)
 	size_t n;
 	int ret;
 	void *p;
-	bool have_object_id = false;
+	u32 special_streams = 0;
 
 	inode_size = ALIGN(sizeof(struct ntfs_inode), 8);
 
@@ -2340,7 +2463,7 @@ load_one_file(const FILE_LAYOUT_ENTRY *file, struct ntfs_inode_map *inode_map)
 
 	if (file_has_streams(file)) {
 		ret = validate_streams_and_compute_total_length(file, &n,
-								&have_object_id);
+								&special_streams);
 		if (ret)
 			return ret;
 		inode_size += n;
@@ -2358,7 +2481,7 @@ load_one_file(const FILE_LAYOUT_ENTRY *file, struct ntfs_inode_map *inode_map)
 	ni->last_write_time = info->BasicInformation.LastWriteTime;
 	ni->last_access_time = info->BasicInformation.LastAccessTime;
 	ni->security_id = info->SecurityId;
-	ni->have_object_id = have_object_id;
+	ni->special_streams = special_streams;
 
 	p = FIRST_DENTRY(ni);
 
@@ -2612,7 +2735,7 @@ generate_wim_structures_recursive(struct wim_dentry **root_ret,
 	 * but not from FSCTL_QUERY_FILE_LAYOUT.  */
 	if (ni->attributes & (FILE_ATTRIBUTE_REPARSE_POINT |
 			      FILE_ATTRIBUTE_ENCRYPTED) ||
-	    ni->have_object_id)
+	    ni->special_streams != 0)
 	{
 		ret = winnt_build_dentry_tree_recursive(&root,
 							NULL,

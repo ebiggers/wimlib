@@ -101,6 +101,24 @@ NtOpenSymbolicLinkObject(PHANDLE LinkHandle,
 			 ACCESS_MASK DesiredAccess,
 			 POBJECT_ATTRIBUTES ObjectAttributes);
 
+NTSTATUS
+NTAPI
+NtQueryEaFile(IN HANDLE FileHandle,
+	      OUT PIO_STATUS_BLOCK IoStatusBlock,
+	      OUT PVOID Buffer,
+	      IN ULONG Length,
+	      IN BOOLEAN ReturnSingleEntry,
+	      IN PVOID EaList OPTIONAL,
+	      IN ULONG EaListLength,
+	      IN PULONG EaIndex OPTIONAL,
+	      IN BOOLEAN RestartScan);
+
+NTSTATUS
+NTAPI
+NtSetEaFile(IN HANDLE FileHandle,
+	    OUT PIO_STATUS_BLOCK IoStatusBlock,
+	    OUT PVOID Buffer,
+	    IN ULONG Length);
 
 /* Dynamically loaded ntdll functions */
 

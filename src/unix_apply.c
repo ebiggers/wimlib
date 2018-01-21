@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2012-2016 Eric Biggers
+ * Copyright (C) 2012-2018 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -64,8 +64,8 @@ unix_get_supported_features(const char *target,
 	supported_features->unix_data = 1;
 	supported_features->timestamps = 1;
 	supported_features->case_sensitive_filenames = 1;
-#ifdef HAVE_XATTR_SUPPORT
-	supported_features->linux_xattrs = 1;
+#ifdef HAVE_LINUX_XATTR_SUPPORT
+	supported_features->xattrs = 1;
 #endif
 	return 0;
 }
@@ -268,38 +268,58 @@ unix_set_mode(int fd, const char *path, mode_t mode)
 	return WIMLIB_ERR_SET_SECURITY;
 }
 
-#ifdef HAVE_XATTR_SUPPORT
+#ifdef HAVE_LINUX_XATTR_SUPPORT
 /* Apply extended attributes to a file */
 static int
 apply_linux_xattrs(int fd, const struct wim_inode *inode,
 		   const char *path, struct unix_apply_ctx *ctx,
-		   const void *entries, size_t entries_size)
+		   const void *entries, size_t entries_size, bool is_old_format)
 {
 	const void * const entries_end = entries + entries_size;
-	char name[XATTR_NAME_MAX + 1];
+	char name[WIM_XATTR_NAME_MAX + 1];
 
-	for (const struct wimlib_xattr_entry *entry = entries;
-	     (void *)entry < entries_end; entry = xattr_entry_next(entry))
+	for (const void *entry = entries;
+	     entry < entries_end;
+	     entry = is_old_format ? (const void *)old_xattr_entry_next(entry) :
+				     (const void *)xattr_entry_next(entry))
 	{
+		bool valid;
 		u16 name_len;
 		const void *value;
 		u32 value_len;
 		int res;
 
-		if (!valid_xattr_entry(entry, entries_end - (void *)entry)) {
+		if (is_old_format) {
+			valid = old_valid_xattr_entry(entry,
+						      entries_end - entry);
+		} else {
+			valid = valid_xattr_entry(entry, entries_end - entry);
+		}
+		if (!valid) {
 			if (!path) {
 				path = unix_build_inode_extraction_path(inode,
 									ctx);
 			}
-			ERROR("\"%s\": extended attribute is corrupt", path);
+			ERROR("\"%s\": extended attribute is corrupt or unsupported",
+			      path);
 			return WIMLIB_ERR_INVALID_XATTR;
 		}
-		name_len = le16_to_cpu(entry->name_len);
-		memcpy(name, entry->name, name_len);
-		name[name_len] = '\0';
+		if (is_old_format) {
+			const struct wimlib_xattr_entry_old *e = entry;
 
-		value = entry->name + name_len;
-		value_len = le32_to_cpu(entry->value_len);
+			name_len = le16_to_cpu(e->name_len);
+			memcpy(name, e->name, name_len);
+			value = e->name + name_len;
+			value_len = le32_to_cpu(e->value_len);
+		} else {
+			const struct wim_xattr_entry *e = entry;
+
+			name_len = e->name_len;
+			memcpy(name, e->name, name_len);
+			value = e->name + name_len + 1;
+			value_len = le16_to_cpu(e->value_len);
+		}
+		name[name_len] = '\0';
 
 		if (fd >= 0)
 			res = fsetxattr(fd, name, value, value_len, 0);
@@ -311,7 +331,7 @@ apply_linux_xattrs(int fd, const struct wim_inode *inode,
 				path = unix_build_inode_extraction_path(inode,
 									ctx);
 			}
-			if (is_security_xattr(name) &&
+			if (is_linux_security_xattr(name) &&
 			    (ctx->common.extract_flags &
 			     WIMLIB_EXTRACT_FLAG_STRICT_ACLS))
 			{
@@ -325,7 +345,7 @@ apply_linux_xattrs(int fd, const struct wim_inode *inode,
 	}
 	return 0;
 }
-#endif /* HAVE_XATTR_SUPPORT */
+#endif /* HAVE_LINUX_XATTR_SUPPORT */
 
 /*
  * Apply UNIX-specific metadata to a file if available.  This includes standard
@@ -348,9 +368,10 @@ apply_unix_metadata(int fd, const struct wim_inode *inode,
 {
 	bool have_dat;
 	struct wimlib_unix_data dat;
-#ifdef HAVE_XATTR_SUPPORT
+#ifdef HAVE_LINUX_XATTR_SUPPORT
 	const void *entries;
 	u32 entries_size;
+	bool is_old_format;
 #endif
 	int ret;
 
@@ -373,11 +394,11 @@ apply_unix_metadata(int fd, const struct wim_inode *inode,
 		}
 	}
 
-#ifdef HAVE_XATTR_SUPPORT
-	entries = inode_get_linux_xattrs(inode, &entries_size);
+#ifdef HAVE_LINUX_XATTR_SUPPORT
+	entries = inode_get_linux_xattrs(inode, &entries_size, &is_old_format);
 	if (entries) {
 		ret = apply_linux_xattrs(fd, inode, path, ctx,
-					 entries, entries_size);
+					 entries, entries_size, is_old_format);
 		if (ret)
 			return ret;
 	}

@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2012-2017 Eric Biggers
+ * Copyright (C) 2012-2018 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -1225,8 +1225,8 @@ inode_tally_features(const struct wim_inode *inode,
 		features->unix_data++;
 	if (inode_has_object_id(inode))
 		features->object_ids++;
-	if (inode_has_linux_xattrs(inode))
-		features->linux_xattrs++;
+	if (inode_has_xattrs(inode))
+		features->xattrs++;
 }
 
 /* Tally features necessary to extract a dentry and the corresponding inode.  */
@@ -1380,14 +1380,15 @@ do_feature_check(const struct wim_features *required_features,
 			 T("\n          (use --unix-data mode to extract these)") : T("")));
 	}
 
-	/* Linux-style extended attributes */
-	if (required_features->linux_xattrs &&
-	    (!supported_features->linux_xattrs ||
-	     !(extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA)))
+	/* Extended attributes */
+	if (required_features->xattrs &&
+	    (!supported_features->xattrs ||
+	     (supported_features->unix_data &&
+	      !(extract_flags & WIMLIB_EXTRACT_FLAG_UNIX_DATA))))
 	{
-		WARNING("Ignoring Linux-style extended attributes of %lu files%"TS,
-			required_features->linux_xattrs,
-			(supported_features->linux_xattrs ?
+		WARNING("Ignoring extended attributes of %lu files%"TS,
+			required_features->xattrs,
+			(supported_features->xattrs ?
 			 T("\n          (use --unix-data mode to extract these)") : T("")));
 	}
 

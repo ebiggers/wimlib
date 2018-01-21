@@ -57,11 +57,10 @@ Object IDs.  New files are not given object IDs.
 EFS-encrypted files.  The files themselves will be visible in mounted WIM images
 but their data will not be available.
 .IP \[bu]
-Extended attributes.  Although wimlib now supports creating a WIM image
-containing Linux-style extended attributes, these are not yet exposed in mounted
-WIM images.  (This may be implemented in the future, though it would conflict
-with the use of extended attributes to expose Windows concepts like named data
-streams.)
+Extended attributes.  Although wimlib supports WIM images containing extended
+attributes, these are not yet exposed in mounted WIM images.  (This may be
+implemented in the future, though it would conflict with the use of extended
+attributes to expose Windows concepts like named data streams.)
 .SH SPLIT WIMS
 You may use \fBwimmount\fR to mount an image from a split WIM read-only.
 However, you may not mount an image from a split WIM read-write.

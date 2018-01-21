@@ -88,6 +88,8 @@ Object IDs.
 .PP
 However, encrypted files will not be extracted.
 .PP
+Restoring extended attributes (EAs) is also not yet supported in this mode.
+.PP
 Regardless, since almost all information from the WIM image is restored in this
 mode, it is possible (and fully supported) to restore an image of an actual
 Windows installation using \fBwimapply\fR on a UNIX-like system as an
@@ -141,6 +143,8 @@ Short filenames (also known as 8.3 names or DOS names).
 Hard links, if supported by the target filesystem.
 .IP \[bu]
 Object IDs, if supported by the target filesystem.
+.IP \[bu]
+Extended attributes (EAs), if supported by the target filesystem.
 .PP
 Additional notes about extracting files on Windows:
 .IP \[bu] 4

@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2015-2017 Eric Biggers
+ * Copyright (C) 2015-2018 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -471,8 +471,8 @@ static noinline_for_stack int
 set_random_xattrs(struct wim_inode *inode)
 {
 	int num_xattrs = 1 + rand32() % 16;
-	char entries[8192] _aligned_attribute(4);
-	struct wimlib_xattr_entry *entry = (void *)entries;
+	char entries[8192];
+	struct wim_xattr_entry *entry = (void *)entries;
 	size_t entries_size;
 	struct wimlib_unix_data unix_data;
 	const char *prefix = "user.";
@@ -497,19 +497,19 @@ set_random_xattrs(struct wim_inode *inode)
 		int value_len = rand32() % 64;
 		u8 *p;
 
-		entry->reserved = 0;
-		entry->value_len = cpu_to_le32(value_len);
+		entry->value_len = cpu_to_le16(value_len);
+		entry->flags = 0;
 
 		if (rand32() % 16 == 0 && am_root() &&
 		    !generated_capability_xattr) {
 			int name_len = sizeof(capability_name) - 1;
-			entry->name_len = cpu_to_le16(name_len);
-			p = mempcpy(entry->name, capability_name, name_len);
+			entry->name_len = name_len;
+			p = mempcpy(entry->name, capability_name, name_len + 1);
 			generated_capability_xattr = true;
 		} else {
 			int name_len = 1 + rand32() % 64;
 
-			entry->name_len = cpu_to_le16(strlen(prefix) + name_len);
+			entry->name_len = strlen(prefix) + name_len;
 			p = mempcpy(entry->name, prefix, strlen(prefix));
 			*p++ = 'a' + i;
 			for (int j = 1; j < name_len; j++) {
@@ -518,21 +518,18 @@ set_random_xattrs(struct wim_inode *inode)
 				} while (*p == '\0');
 				p++;
 			}
+			*p++ = '\0';
 		}
 		for (int j = 0; j < value_len; j++)
 			*p++ = rand8();
-
-		while ((uintptr_t)p % 4)
-			*p++ = 0;
 
 		entry = (void *)p;
 	}
 
 	entries_size = (char *)entry - entries;
-	wimlib_assert(entries_size > 0 && entries_size % 4 == 0 &&
-		      entries_size <= sizeof(entries));
+	wimlib_assert(entries_size > 0 && entries_size <= sizeof(entries));
 
-	if (!inode_set_linux_xattrs(inode, entries, entries_size))
+	if (!inode_set_xattrs(inode, entries, entries_size))
 		return WIMLIB_ERR_NOMEM;
 
 	return 0;
@@ -1393,28 +1390,26 @@ cmp_unix_metadata(const struct wim_inode *inode1,
 static int
 cmp_xattr_names(const void *p1, const void *p2)
 {
-	const struct wimlib_xattr_entry *entry1 = *(const struct wimlib_xattr_entry **)p1;
-	const struct wimlib_xattr_entry *entry2 = *(const struct wimlib_xattr_entry **)p2;
-	u16 name_len1 = le16_to_cpu(entry1->name_len);
-	u16 name_len2 = le16_to_cpu(entry2->name_len);
+	const struct wim_xattr_entry *entry1 = *(const struct wim_xattr_entry **)p1;
+	const struct wim_xattr_entry *entry2 = *(const struct wim_xattr_entry **)p2;
 	int res;
 
-	res = cmp_u32(name_len1, name_len2);
+	res = entry1->name_len - entry2->name_len;
 	if (res)
 		return res;
 
-	return memcmp(entry1->name, entry2->name, name_len1);
+	return memcmp(entry1->name, entry2->name, entry1->name_len);
 }
 
 /* Validate and sort by name a list of extended attributes */
 static int
 parse_xattrs(const void *xattrs, u32 len,
-	     const struct wimlib_xattr_entry *entries[],
+	     const struct wim_xattr_entry *entries[],
 	     u32 *num_entries_p)
 {
 	u32 limit = *num_entries_p;
 	u32 num_entries = 0;
-	const struct wimlib_xattr_entry *entry = xattrs;
+	const struct wim_xattr_entry *entry = xattrs;
 
 	while ((void *)entry < xattrs + len) {
 		if (!valid_xattr_entry(entry, xattrs + len - (void *)entry)) {
@@ -1448,14 +1443,14 @@ parse_xattrs(const void *xattrs, u32 len,
 }
 
 static int
-cmp_linux_xattrs(const struct wim_inode *inode1,
-		 const struct wim_inode *inode2, int cmp_flags)
+cmp_xattrs(const struct wim_inode *inode1, const struct wim_inode *inode2,
+	   int cmp_flags)
 {
 	const void *xattrs1, *xattrs2;
 	u32 len1, len2;
 
-	xattrs1 = inode_get_linux_xattrs(inode1, &len1);
-	xattrs2 = inode_get_linux_xattrs(inode2, &len2);
+	xattrs1 = inode_get_xattrs(inode1, &len1);
+	xattrs2 = inode_get_xattrs(inode2, &len2);
 
 	if (!xattrs1 && !xattrs2) {
 		return 0;
@@ -1472,8 +1467,8 @@ cmp_linux_xattrs(const struct wim_inode *inode1,
 		return WIMLIB_ERR_IMAGES_ARE_DIFFERENT;
 	} else {
 		const int max_entries = 64;
-		const struct wimlib_xattr_entry *entries1[max_entries];
-		const struct wimlib_xattr_entry *entries2[max_entries];
+		const struct wim_xattr_entry *entries1[max_entries];
+		const struct wim_xattr_entry *entries2[max_entries];
 		u32 xattr_count1 = max_entries;
 		u32 xattr_count2 = max_entries;
 		int ret;
@@ -1496,21 +1491,21 @@ cmp_linux_xattrs(const struct wim_inode *inode1,
 			      xattr_count1, xattr_count2);
 		}
 		for (u32 i = 0; i < xattr_count1; i++) {
-			const struct wimlib_xattr_entry *entry1 = entries1[i];
-			const struct wimlib_xattr_entry *entry2 = entries2[i];
+			const struct wim_xattr_entry *entry1 = entries1[i];
+			const struct wim_xattr_entry *entry2 = entries2[i];
 
-			if (entry1->name_len != entry2->name_len ||
-			    entry1->value_len != entry2->value_len ||
-			    entry1->reserved != entry2->reserved ||
+			if (entry1->value_len != entry2->value_len ||
+			    entry1->name_len != entry2->name_len ||
+			    entry1->flags != entry2->flags ||
 			    memcmp(entry1->name, entry2->name,
-				   le16_to_cpu(entry1->name_len)) ||
-			    memcmp(entry1->name + le16_to_cpu(entry1->name_len),
-				   entry2->name + le16_to_cpu(entry1->name_len),
-				   le32_to_cpu(entry1->value_len)))
+				   entry1->name_len) ||
+			    memcmp(entry1->name + entry1->name_len + 1,
+				   entry2->name + entry2->name_len + 1,
+				   le16_to_cpu(entry1->value_len)))
 			{
 				ERROR("xattr %.*s of %"TS" differs",
-				      le16_to_cpu(entry1->name_len),
-				      entry1->name, inode_any_full_path(inode1));
+				      entry1->name_len, entry1->name,
+				      inode_any_full_path(inode1));
 				return WIMLIB_ERR_IMAGES_ARE_DIFFERENT;
 			}
 		}
@@ -1634,8 +1629,8 @@ cmp_inodes(const struct wim_inode *inode1, const struct wim_inode *inode2,
 	if (ret)
 		return ret;
 
-	/* Compare Linux-style xattrs  */
-	ret = cmp_linux_xattrs(inode1, inode2, cmp_flags);
+	/* Compare extended attributes  */
+	ret = cmp_xattrs(inode1, inode2, cmp_flags);
 	if (ret)
 		return ret;
 

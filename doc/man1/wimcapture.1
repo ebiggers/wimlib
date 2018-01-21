@@ -90,6 +90,8 @@ However, the main limitations of this mode are:
 .IP \[bu] 4
 Encrypted files are excluded.
 .IP \[bu]
+Extended attributes (EAs) are not stored yet.
+.IP \[bu]
 Sparse files will be flagged as such, but their full data will still be stored,
 subject to the usual compression.
 .IP \[bu]
@@ -137,8 +139,8 @@ considered an error condition.
 Hard links, if supported by the source filesystem.
 .IP \[bu]
 Object IDs, if supported by the source filesystem.
-.PP
-There is no support yet for capturing NTFS extended attributes.
+.IP \[bu]
+Extended attributes (EAs), if supported by the source filesystem.
 .SH REPARSE POINTS AND SYMLINKS
 A "symbolic link" (or "symlink") is a special file which "points to" some other
 file or directory.  On Windows, a "reparse point" is a generalization of a

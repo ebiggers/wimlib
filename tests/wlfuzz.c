@@ -826,6 +826,7 @@ unregister_all_backing_wims(const tchar drive_letter)
 			     overlay_list, 32768, &bytes_returned, NULL))
 	{
 		ASSERT(GetLastError() == ERROR_INVALID_FUNCTION ||
+		       GetLastError() == ERROR_INVALID_PARAMETER ||
 		       GetLastError() == ERROR_FILE_NOT_FOUND,
 		       "FSCTL_ENUM_OVERLAY failed; error=%u", GetLastError());
 		return;

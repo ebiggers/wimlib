@@ -18,3 +18,6 @@ This should still be extracted successfully.
 empty_dacl.wim:  This WIM has an image containing file with a security
 descriptor having an empty DACL.  This is valid and should be extracted
 successfully.
+
+linux_xattrs_old.wim: Includes Linux xattrs in old format
+(TAG_WIMLIB_LINUX_XATTRS)

@@ -8,10 +8,16 @@ struct wim_inode;
 /* Windows-style object ID */
 #define TAG_OBJECT_ID			0x00000001
 
+/* Extended attributes */
+#define TAG_XATTRS			0x00000002
+
 /* [wimlib extension] Standard UNIX metadata: uid, gid, mode, and rdev */
 #define TAG_WIMLIB_UNIX_DATA		0x337DD873
 
-/* [wimlib extension] Linux-style xattrs */
+/*
+ * [wimlib extension] Linux-style extended attributes
+ * (deprecated in favor of TAG_XATTRS)
+ */
 #define TAG_WIMLIB_LINUX_XATTRS		0x337DD874
 
 extern void *

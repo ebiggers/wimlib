@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2013-2016 Eric Biggers
+ * Copyright (C) 2013-2018 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -40,9 +40,10 @@
 #include "wimlib/reparse.h"
 #include "wimlib/scan.h" /* for mangle_pat() and match_pattern_list()  */
 #include "wimlib/textfile.h"
-#include "wimlib/xml.h"
 #include "wimlib/wimboot.h"
 #include "wimlib/wof.h"
+#include "wimlib/xattr.h"
+#include "wimlib/xml.h"
 
 struct win32_apply_ctx {
 
@@ -169,6 +170,9 @@ struct win32_apply_ctx {
 	/* Number of files for which we couldn't set the object ID.  */
 	unsigned long num_object_id_failures;
 
+	/* Number of files for which we couldn't set extended attributes.  */
+	unsigned long num_xattr_failures;
+
 	/* The Windows build number of the image being applied, or 0 if unknown.
 	 */
 	u64 windows_build_number;
@@ -225,9 +229,14 @@ get_vol_flags(const wchar_t *target, DWORD *vol_flags_ret,
 	}
 
 	if (wcsstr(filesystem_name, L"NTFS")) {
-		/* FILE_SUPPORTS_HARD_LINKS is only supported on Windows 7 and
-		 * later.  Force it on anyway if filesystem is NTFS.  */
+		/*
+		 * FILE_SUPPORTS_HARD_LINKS and
+		 * FILE_SUPPORTS_EXTENDED_ATTRIBUTES are only supported on
+		 * Windows 7 and later.  Force them on anyway if the filesystem
+		 * is NTFS.
+		 */
 		*vol_flags_ret |= FILE_SUPPORTS_HARD_LINKS;
+		*vol_flags_ret |= FILE_SUPPORTS_EXTENDED_ATTRIBUTES;
 
 		/* There's no volume flag for short names, but according to the
 		 * MS documentation they are only user-settable on NTFS.  */
@@ -338,6 +347,9 @@ win32_get_supported_features(const wchar_t *target,
 		if (status == STATUS_OBJECT_NAME_NOT_FOUND)
 			supported_features->case_sensitive_filenames = 1;
 	}
+
+	if (vol_flags & FILE_SUPPORTS_EXTENDED_ATTRIBUTES)
+		supported_features->xattrs = 1;
 
 	return 0;
 }
@@ -2805,6 +2817,105 @@ set_object_id(HANDLE h, const struct wim_inode *inode,
 	}
 }
 
+static int
+set_xattrs(HANDLE h, const struct wim_inode *inode, struct win32_apply_ctx *ctx)
+{
+	const void *entries, *entries_end;
+	u32 len;
+	const struct wim_xattr_entry *entry;
+	size_t bufsize = 0;
+	u8 _buf[1024] _aligned_attribute(4);
+	u8 *buf = _buf;
+	FILE_FULL_EA_INFORMATION *ea, *ea_prev;
+	NTSTATUS status;
+	int ret;
+
+	if (!ctx->common.supported_features.xattrs)
+		return 0;
+
+	entries = inode_get_xattrs(inode, &len);
+	if (likely(entries == NULL || len == 0))  /* No extended attributes? */
+		return 0;
+	entries_end = entries + len;
+
+	entry = entries;
+	for (entry = entries; (void *)entry < entries_end;
+	     entry = xattr_entry_next(entry)) {
+		if (!valid_xattr_entry(entry, entries_end - (void *)entry)) {
+			ERROR("\"%"TS"\": extended attribute is corrupt or unsupported",
+			      inode_any_full_path(inode));
+			return WIMLIB_ERR_INVALID_XATTR;
+		}
+
+		bufsize += ALIGN(offsetof(FILE_FULL_EA_INFORMATION, EaName) +
+				 entry->name_len + 1 +
+				 le16_to_cpu(entry->value_len), 4);
+	}
+
+	if (unlikely(bufsize != (u32)bufsize)) {
+		ERROR("\"%"TS"\": too many extended attributes to extract!",
+		      inode_any_full_path(inode));
+		return WIMLIB_ERR_INVALID_XATTR;
+	}
+
+	if (unlikely(bufsize > sizeof(_buf))) {
+		buf = MALLOC(bufsize);
+		if (!buf)
+			return WIMLIB_ERR_NOMEM;
+	}
+
+	ea_prev = NULL;
+	ea = (FILE_FULL_EA_INFORMATION *)buf;
+	for (entry = entries; (void *)entry < entries_end;
+	     entry = xattr_entry_next(entry)) {
+		u8 *p;
+
+		if (ea_prev)
+			ea_prev->NextEntryOffset = (u8 *)ea - (u8 *)ea_prev;
+		ea->Flags = entry->flags;
+		ea->EaNameLength = entry->name_len;
+		ea->EaValueLength = le16_to_cpu(entry->value_len);
+		p = mempcpy(ea->EaName, entry->name,
+			    ea->EaNameLength + 1 + ea->EaValueLength);
+		while ((uintptr_t)p & 3)
+			*p++ = 0;
+		ea_prev = ea;
+		ea = (FILE_FULL_EA_INFORMATION *)p;
+	}
+	ea_prev->NextEntryOffset = 0;
+	wimlib_assert((u8 *)ea - buf == bufsize);
+
+	status = NtSetEaFile(h, &ctx->iosb, buf, bufsize);
+	if (unlikely(!NT_SUCCESS(status))) {
+		if (status == STATUS_EAS_NOT_SUPPORTED) {
+			/* This happens with Samba. */
+			WARNING("Filesystem advertised extended attribute (EA) support, but it doesn't\n"
+				"          work.  EAs will not be extracted.");
+			ctx->common.supported_features.xattrs = 0;
+		} else if (status == STATUS_INVALID_EA_NAME) {
+			ctx->num_xattr_failures++;
+			if (ctx->num_xattr_failures < 5) {
+				winnt_warning(status,
+					      L"Can't set extended attributes on \"%ls\"",
+					      current_path(ctx));
+			} else if (ctx->num_xattr_failures == 5) {
+				WARNING("Suppressing further warnings about "
+					"failure to set extended attributes.");
+			}
+		} else {
+			winnt_error(status, L"Can't set extended attributes on \"%ls\"",
+				    current_path(ctx));
+			ret = WIMLIB_ERR_SET_XATTR;
+			goto out;
+		}
+	}
+	ret = 0;
+out:
+	if (buf != _buf)
+		FREE(buf);
+	return ret;
+}
+
 /* Set the security descriptor @desc, of @desc_size bytes, on the file with open
  * handle @h.  */
 static NTSTATUS
@@ -2948,10 +3059,17 @@ do_apply_metadata_to_file(HANDLE h, const struct wim_inode *inode,
 {
 	FILE_BASIC_INFORMATION info;
 	NTSTATUS status;
+	int ret;
 
 	/* Set the file's object ID if present and object IDs are supported by
 	 * the filesystem.  */
 	set_object_id(h, inode, ctx);
+
+	/* Set the file's extended attributes (EAs) if present and EAs are
+	 * supported by the filesystem.  */
+	ret = set_xattrs(h, inode, ctx);
+	if (ret)
+		return ret;
 
 	/* Set the file's security descriptor if present and we're not in
 	 * NO_ACLS mode  */
@@ -3017,7 +3135,7 @@ apply_metadata_to_file(const struct wim_dentry *dentry,
 	NTSTATUS status;
 	int ret;
 
-	perms = FILE_WRITE_ATTRIBUTES | WRITE_DAC |
+	perms = FILE_WRITE_ATTRIBUTES | FILE_WRITE_EA | WRITE_DAC |
 		WRITE_OWNER | ACCESS_SYSTEM_SECURITY;
 
 	build_extraction_path(dentry, ctx);
