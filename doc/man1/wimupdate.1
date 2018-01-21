@@ -102,6 +102,10 @@ Before updating the WIM, verify its integrity if it contains extra integrity
 information.  Also include extra integrity information in the updated WIM even
 if it was not present before.
 .TP
+\fB--include-integrity\fR
+Include extra integrity information in the updated WIM, i.e. like \fB--check\fR
+but don't also verify the WIM beforehand.
+.TP
 \fB--threads\fR=\fINUM_THREADS\fR
 Number of threads to use for compressing newly added files.  Default: autodetect
 (number of processors).

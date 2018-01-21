@@ -16,6 +16,10 @@ having names numbered in order of the parts.
 Before splitting the WIM, verify its integrity if it contains extra integrity
 information.  Also include extra integrity information in each split WIM part,
 even if \fIWIMFILE\fR did not contain it.
+.TP
+\fB--include-integrity\fR
+Include extra integrity information in each split WIM part, i.e. like
+\fB--check\fR but don't also verify \fIWIMFILE\fR beforehand.
 .SH EXAMPLES
 Splits the WIM 'windows.wim' into 'windows.swm', 'windows2.swm', 'windows3.swm',
 etc. where each part is at most 100 MiB:

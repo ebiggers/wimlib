@@ -27,7 +27,11 @@ images, although such a file may not be very useful.
 Before deleting the image, verify the WIM's integrity if extra integrity
 information is present.  In addition, include extra integrity information in the
 modified WIM, even if it was not present before.
-.TP 6
+.TP
+\fB--include-integrity\fR
+Include extra integrity information in the modified WIM, i.e. like \fB--check\fR
+but don't do any verification beforehand.
+.TP
 \fB--soft\fR
 Perform a "soft delete".  Specifying this flag overrides the default behavior of
 rebuilding the entire WIM after deleting an image.  Instead, only minimal

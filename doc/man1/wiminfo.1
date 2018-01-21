@@ -31,11 +31,15 @@ Windows PE from the WIM.
 .TP
 \fB--check\fR
 Verify the integrity of WIM if it contains extra integrity information.  In
-addition, if modifying the WIM, include extra integrity information in the
-modified WIM, even if it was not present before.
+addition, if modifying the WIM, add extra integrity information if it was not
+present before.
 .TP
 \fB--nocheck\fR
 If modifying the WIM, remove its extra integrity information, if it had any.
+.TP
+\fB--include-integrity\fR
+If modifying the WIM, add extra integrity information if it was not present
+before, i.e. like \fB--check\fR but don't also do the verification beforehand.
 .TP
 \fB--image-property\fR \fINAME\fR=\fIVALUE\fR
 Assign an arbitrary property to the specified \fIIMAGE\fR in the XML document of

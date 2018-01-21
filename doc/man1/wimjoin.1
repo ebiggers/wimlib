@@ -15,6 +15,10 @@ When reading each \fISPLIT_WIM_PART\fR, verify its integrity if it contains
 extra integrity information.  In addition, include extra integrity information
 in \fIOUT_WIMFILE\fR, even if the split WIM parts did not contain this
 information.
+.TP
+\fB--include-integrity\fR
+Include extra integrity information in \fIOUT_WIMFILE\fR, i.e. like
+\fB--check\fR but don't also verify the split WIM parts beforehand.
 .SH EXAMPLES
 Join a split WIM, with the parts named `windows*.swm' where the * is anything
 (usually the number of the part, except for the first part which may have no

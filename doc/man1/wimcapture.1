@@ -173,7 +173,12 @@ WIM.
 .TP
 \fB--check\fR
 Include extra integrity information in the resulting WIM.  With \fBwimappend\fR,
-also check the integrity of the WIM before appending to it.
+also check the integrity of the WIM before appending to it.  Also verify the
+integrity of any WIMs specified by \fB--update-of\fR and/or \fB--delta-from\fR.
+.TP
+\fB--include-integrity\fR
+Include extra integrity information in the resulting WIM, i.e. like
+\fB--check\fR but don't do any verification beforehand.
 .TP
 \fB--compress\fR=\fITYPE\fR[:\fILEVEL\fR]
 With \fBwimcapture\fR, use the specified compression format in the new WIM file.

@@ -177,6 +177,7 @@ enum {
 	IMAGEX_FORCE_OPTION,
 	IMAGEX_HEADER_OPTION,
 	IMAGEX_IMAGE_PROPERTY_OPTION,
+	IMAGEX_INCLUDE_INTEGRITY_OPTION,
 	IMAGEX_INCLUDE_INVALID_NAMES_OPTION,
 	IMAGEX_LAZY_OPTION,
 	IMAGEX_METADATA_OPTION,
@@ -241,6 +242,7 @@ static const struct option capture_or_append_options[] = {
 	{T("check"),       no_argument,       NULL, IMAGEX_CHECK_OPTION},
 	{T("no-check"),    no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("nocheck"),     no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
+	{T("include-integrity"), no_argument, NULL, IMAGEX_INCLUDE_INTEGRITY_OPTION},
 	{T("compress"),    required_argument, NULL, IMAGEX_COMPRESS_OPTION},
 	{T("chunk-size"),  required_argument, NULL, IMAGEX_CHUNK_SIZE_OPTION},
 	{T("solid"),       no_argument,      NULL, IMAGEX_SOLID_OPTION},
@@ -273,6 +275,7 @@ static const struct option capture_or_append_options[] = {
 
 static const struct option delete_options[] = {
 	{T("check"), no_argument, NULL, IMAGEX_CHECK_OPTION},
+	{T("include-integrity"), no_argument, NULL, IMAGEX_INCLUDE_INTEGRITY_OPTION},
 	{T("soft"),  no_argument, NULL, IMAGEX_SOFT_OPTION},
 	{T("unsafe-compact"), no_argument, NULL, IMAGEX_UNSAFE_COMPACT_OPTION},
 	{NULL, 0, NULL, 0},
@@ -291,6 +294,7 @@ static const struct option export_options[] = {
 	{T("check"),       no_argument,       NULL, IMAGEX_CHECK_OPTION},
 	{T("nocheck"),     no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("no-check"),    no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
+	{T("include-integrity"), no_argument, NULL, IMAGEX_INCLUDE_INTEGRITY_OPTION},
 	{T("compress"),    required_argument, NULL, IMAGEX_COMPRESS_OPTION},
 	{T("recompress"),  no_argument,       NULL, IMAGEX_RECOMPRESS_OPTION},
 	{T("chunk-size"),  required_argument, NULL, IMAGEX_CHUNK_SIZE_OPTION},
@@ -334,6 +338,7 @@ static const struct option info_options[] = {
 	{T("check"),        no_argument,       NULL, IMAGEX_CHECK_OPTION},
 	{T("nocheck"),      no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("no-check"),     no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
+	{T("include-integrity"), no_argument,  NULL, IMAGEX_INCLUDE_INTEGRITY_OPTION},
 	{T("extract-xml"),  required_argument, NULL, IMAGEX_EXTRACT_XML_OPTION},
 	{T("header"),       no_argument,       NULL, IMAGEX_HEADER_OPTION},
 	{T("lookup-table"), no_argument,       NULL, IMAGEX_BLOBS_OPTION},
@@ -345,6 +350,7 @@ static const struct option info_options[] = {
 
 static const struct option join_options[] = {
 	{T("check"), no_argument, NULL, IMAGEX_CHECK_OPTION},
+	{T("include-integrity"), no_argument, NULL, IMAGEX_INCLUDE_INTEGRITY_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -365,6 +371,7 @@ static const struct option optimize_options[] = {
 	{T("check"),       no_argument,       NULL, IMAGEX_CHECK_OPTION},
 	{T("nocheck"),     no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
 	{T("no-check"),    no_argument,       NULL, IMAGEX_NOCHECK_OPTION},
+	{T("include-integrity"), no_argument, NULL, IMAGEX_INCLUDE_INTEGRITY_OPTION},
 	{T("compress"),    required_argument, NULL, IMAGEX_COMPRESS_OPTION},
 	{T("recompress"),  no_argument,       NULL, IMAGEX_RECOMPRESS_OPTION},
 	{T("chunk-size"),  required_argument, NULL, IMAGEX_CHUNK_SIZE_OPTION},
@@ -381,6 +388,7 @@ static const struct option optimize_options[] = {
 
 static const struct option split_options[] = {
 	{T("check"), no_argument, NULL, IMAGEX_CHECK_OPTION},
+	{T("include-integrity"), no_argument, NULL, IMAGEX_INCLUDE_INTEGRITY_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -403,6 +411,7 @@ static const struct option update_options[] = {
 	 * update_command_add_option().  */
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
 	{T("check"),       no_argument,       NULL, IMAGEX_CHECK_OPTION},
+	{T("include-integrity"), no_argument, NULL, IMAGEX_INCLUDE_INTEGRITY_OPTION},
 	{T("rebuild"),     no_argument,       NULL, IMAGEX_REBUILD_OPTION},
 	{T("command"),     required_argument, NULL, IMAGEX_COMMAND_OPTION},
 	{T("wimboot-config"), required_argument, NULL, IMAGEX_WIMBOOT_CONFIG_OPTION},
@@ -1895,6 +1904,8 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			break;
 		case IMAGEX_CHECK_OPTION:
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
+			/* fall-through */
+		case IMAGEX_INCLUDE_INTEGRITY_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			break;
 		case IMAGEX_NOCHECK_OPTION:
@@ -2428,6 +2439,8 @@ imagex_delete(int argc, tchar **argv, int cmd)
 		switch (c) {
 		case IMAGEX_CHECK_OPTION:
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
+			/* fall-through */
+		case IMAGEX_INCLUDE_INTEGRITY_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			break;
 		case IMAGEX_SOFT_OPTION:
@@ -2889,6 +2902,8 @@ imagex_export(int argc, tchar **argv, int cmd)
 			break;
 		case IMAGEX_CHECK_OPTION:
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
+			/* fall-through */
+		case IMAGEX_INCLUDE_INTEGRITY_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			break;
 		case IMAGEX_NOCHECK_OPTION:
@@ -3344,8 +3359,6 @@ imagex_info(int argc, tchar **argv, int cmd)
 {
 	int c;
 	bool boot         = false;
-	bool check        = false;
-	bool nocheck      = false;
 	bool header       = false;
 	bool blobs        = false;
 	bool xml          = false;
@@ -3358,6 +3371,7 @@ imagex_info(int argc, tchar **argv, int cmd)
 	int image;
 	int ret;
 	int open_flags = 0;
+	int write_flags = 0;
 	struct wimlib_wim_info info;
 
 	for_opt(c, info_options) {
@@ -3366,10 +3380,13 @@ imagex_info(int argc, tchar **argv, int cmd)
 			boot = true;
 			break;
 		case IMAGEX_CHECK_OPTION:
-			check = true;
+			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
+			/* fall-through */
+		case IMAGEX_INCLUDE_INTEGRITY_OPTION:
+			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			break;
 		case IMAGEX_NOCHECK_OPTION:
-			nocheck = true;
+			write_flags |= WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY;
 			break;
 		case IMAGEX_HEADER_OPTION:
 			header = true;
@@ -3422,14 +3439,6 @@ imagex_info(int argc, tchar **argv, int cmd)
 		if (ret)
 			goto out;
 	}
-
-	if (check && nocheck) {
-		imagex_error(T("Can't specify both --check and --nocheck"));
-		goto out_err;
-	}
-
-	if (check)
-		open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
 
 	ret = wimlib_open_wim_with_progress(wimfile, open_flags, &wim,
 					    imagex_progress_func, NULL);
@@ -3568,15 +3577,11 @@ imagex_info(int argc, tchar **argv, int cmd)
 		/* Only call wimlib_overwrite() if something actually needs to
 		 * be changed.  */
 		if (boot || any_property_changes ||
-		    (check && !info.has_integrity_table) ||
-		    (nocheck && info.has_integrity_table))
+		    ((write_flags & WIMLIB_WRITE_FLAG_CHECK_INTEGRITY) &&
+		     !info.has_integrity_table) ||
+		    ((write_flags & WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY) &&
+		     info.has_integrity_table))
 		{
-			int write_flags = 0;
-
-			if (check)
-				write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
-			if (nocheck)
-				write_flags |= WIMLIB_WRITE_FLAG_NO_CHECK_INTEGRITY;
 			ret = wimlib_overwrite(wim, write_flags, 1);
 		} else {
 			imagex_printf(T("The file \"%"TS"\" was not modified "
@@ -3593,7 +3598,6 @@ out:
 
 out_usage:
 	usage(CMD_INFO, stderr);
-out_err:
 	ret = -1;
 	goto out;
 }
@@ -3612,6 +3616,8 @@ imagex_join(int argc, tchar **argv, int cmd)
 		switch (c) {
 		case IMAGEX_CHECK_OPTION:
 			swm_open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
+			/* fall-through */
+		case IMAGEX_INCLUDE_INTEGRITY_OPTION:
 			wim_write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			break;
 		default:
@@ -3792,6 +3798,8 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 		switch (c) {
 		case IMAGEX_CHECK_OPTION:
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
+			/* fall-through */
+		case IMAGEX_INCLUDE_INTEGRITY_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			break;
 		case IMAGEX_NOCHECK_OPTION:
@@ -3939,6 +3947,8 @@ imagex_split(int argc, tchar **argv, int cmd)
 		switch (c) {
 		case IMAGEX_CHECK_OPTION:
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
+			/* fall-through */
+		case IMAGEX_INCLUDE_INTEGRITY_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			break;
 		default:
@@ -4084,6 +4094,8 @@ imagex_update(int argc, tchar **argv, int cmd)
 			break;
 		case IMAGEX_CHECK_OPTION:
 			open_flags |= WIMLIB_OPEN_FLAG_CHECK_INTEGRITY;
+			/* fall-through */
+		case IMAGEX_INCLUDE_INTEGRITY_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_CHECK_INTEGRITY;
 			break;
 		case IMAGEX_REBUILD_OPTION:

@@ -41,13 +41,18 @@ images are being exported, make the image that was the bootable image of the
 source WIM also the bootable image of the destination WIM.
 .TP
 \fB--check\fR
-Before exporting the image(s), verify the integrity of the source and
-destination WIMs if extra integrity information is present.  Also include extra
-integrity information in the destination WIM, even if it was not present before.
+Before exporting the image(s), verify the integrity of the source WIM,
+destination WIM, and any referenced WIMs whenever they have extra integrity
+information present.  Also include extra integrity information in the
+destination WIM, even if it was not present before.
 .TP
 \fB--nocheck\fR
 Do not include extra integrity information in the destination WIM, even if it
 was present before.
+.TP
+\fB--include-integrity\fR
+Include extra integrity information in the destination WIM, i.e. like
+\fB--check\fR but don't do any verification beforehand.
 .TP
 \fB--compress\fR=\fITYPE\fR[:\fILEVEL\fR]
 Specify the compression type, and optionally the compression level for that

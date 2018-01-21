@@ -25,6 +25,10 @@ even if it was not present before.
 Do not include extra integrity information in the optimized WIM, even if it was
 present before.
 .TP
+\fB--include-integrity\fR
+Include extra integrity information in the optimized WIM, i.e. like
+\fB--check\fR but don't also verify the WIM beforehand.
+.TP
 \fB--recompress\fR
 Recompress all data in the WIM while optimizing it.  This will significantly
 increase the time needed to optimize the WIM, but it may result in a better
