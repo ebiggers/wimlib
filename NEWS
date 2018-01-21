@@ -1,3 +1,19 @@
+Version 1.13.0-BETA:
+	On Windows, wimlib now supports capturing and applying extended
+	attributes (EAs).  It is compatible with DISM with the /EA option,
+	available since Windows 10 version 1607.  wimlib's EA support is on by
+	default; no option has to be provided, and it should work on older
+	versions of Windows too.
+
+	Added an '--include-integrity' option to various wimlib-imagex commands.
+	'--include-integrity' is like '--check', but it will just include an
+	integrity table in the output WIM(s), while skipping verification of any
+	existing integrity tables.  This can be useful to avoid unwanted
+	verification of large WIM files, e.g. WIMs given by '--delta-from'.
+
+	'wimlib-imagex --version' now shows the version of the library it is
+	actually using (in case it is different from wimlib-imagex's version).
+
 Version 1.12.0:
 	Fixed a bug that was causing the LZMS decompressor to be miscompiled
 	with GCC 7 (this broke extracting "solid" archives).
