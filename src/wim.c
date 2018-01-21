@@ -935,6 +935,12 @@ wimlib_get_version(void)
 		WIMLIB_PATCH_VERSION;
 }
 
+WIMLIBAPI const tchar *
+wimlib_get_version_string(void)
+{
+	return T(PACKAGE_VERSION);
+}
+
 static bool lib_initialized = false;
 static pthread_mutex_t lib_initialization_mutex = PTHREAD_MUTEX_INITIALIZER;
 

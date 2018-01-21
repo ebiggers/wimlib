@@ -3274,6 +3274,16 @@ extern uint32_t
 wimlib_get_version(void);
 
 /**
+ * @ingroup G_general
+ *
+ * Since wimlib v1.13.0: like wimlib_get_version(), but returns the full
+ * PACKAGE_VERSION string that was set at build time.  (This allows a beta
+ * release to be distinguished from an official release.)
+ */
+extern const wimlib_tchar *
+wimlib_get_version_string(void);
+
+/**
  * @ingroup G_wim_information
  *
  * Get basic information about a WIM file.

@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2012-2017 Eric Biggers
+ * Copyright (C) 2012-2018 Eric Biggers
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -4520,22 +4520,18 @@ static const tchar *get_cmd_string(int cmd, bool only_short_form)
 static void
 version(void)
 {
-	uint32_t vers = wimlib_get_version();
-
 	static const tchar * const fmt =
 	T(
-"wimlib-imagex " PACKAGE_VERSION " (using wimlib %u.%u.%u)\n"
-"Copyright (C) 2012-2017 Eric Biggers\n"
+"wimlib-imagex " PACKAGE_VERSION " (using wimlib %"TS")\n"
+"Copyright (C) 2012-2018 Eric Biggers\n"
 "License GPLv3+; GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>.\n"
 "This is free software: you are free to change and redistribute it.\n"
 "There is NO WARRANTY, to the extent permitted by law.\n"
 "\n"
 "Report bugs to "PACKAGE_BUGREPORT".\n"
 	);
-	tfprintf(stdout, fmt,
-		 vers >> 20, (vers >> 10) & 0x3ff, vers & 0x3ff);
+	tfprintf(stdout, fmt, wimlib_get_version_string());
 }
-
 
 static void
 do_common_options(int *argc_p, tchar **argv, int cmd)
