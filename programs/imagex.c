@@ -1867,7 +1867,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	STRING_LIST(base_wimfiles);
 	WIMStruct **base_wims;
 
-	WIMStruct *template_wim;
+	WIMStruct *template_wim = NULL;
 	const tchar *template_wimfile = NULL;
 	const tchar *template_image_name_or_num = NULL;
 	int template_image = WIMLIB_NO_IMAGE;
@@ -2286,13 +2286,19 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	 * open the WIM if needed and parse the image index.  */
 	if (template_image_name_or_num) {
 
-
-		if (base_wimfiles.num_strings == 1 &&
-		    template_wimfile == base_wimfiles.strings[0]) {
-			template_wim = base_wims[0];
-		} else if (template_wimfile == wimfile) {
+		if (cmd == CMD_APPEND && !tstrcmp(template_wimfile, wimfile)) {
 			template_wim = wim;
 		} else {
+			for (size_t i = 0; i < base_wimfiles.num_strings; i++) {
+				if (!tstrcmp(template_wimfile,
+					     base_wimfiles.strings[i])) {
+					template_wim = base_wims[i];
+					break;
+				}
+			}
+		}
+
+		if (!template_wim) {
 			ret = wimlib_open_wim_with_progress(template_wimfile,
 							    open_flags,
 							    &template_wim,
@@ -2324,8 +2330,6 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 							template_wimfile);
 		if (ret)
 			goto out_free_template_wim;
-	} else {
-		template_wim = NULL;
 	}
 
 	ret = wimlib_add_image_multisource(wim,
@@ -2377,10 +2381,13 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 					 write_flags, num_threads);
 	}
 out_free_template_wim:
-	/* template_wim may alias base_wims[0] or wim.  */
-	if ((base_wimfiles.num_strings != 1 || template_wim != base_wims[0]) &&
-	    template_wim != wim)
-		wimlib_free(template_wim);
+	/* 'template_wim' may alias 'wim' or any of the 'base_wims' */
+	if (template_wim == wim)
+		goto out_free_base_wims;
+	for (size_t i = 0; i < base_wimfiles.num_strings; i++)
+		if (template_wim == base_wims[i])
+			goto out_free_base_wims;
+	wimlib_free(template_wim);
 out_free_base_wims:
 	for (size_t i = 0; i < base_wimfiles.num_strings; i++)
 		wimlib_free(base_wims[i]);
