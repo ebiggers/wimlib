@@ -8,7 +8,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers
+ * Copyright (C) 2012-2018 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -510,15 +510,25 @@ stream_blob(const struct wim_inode_stream *strm, const struct blob_table *table)
 		return lookup_blob(table, strm->_stream_hash);
 }
 
-/* Return the SHA-1 message digest of the data of the specified stream, or a
- * void SHA-1 of all zeroes if the specified stream is empty.   */
+/*
+ * Return the SHA-1 message digest of the data of the specified stream, or a
+ * void SHA-1 of all zeroes if the specified stream is empty, or NULL if the
+ * specified stream is unhashed.  (Most callers ensure the stream cannot be
+ * unhashed.)
+ */
 const u8 *
 stream_hash(const struct wim_inode_stream *strm)
 {
-	if (strm->stream_resolved)
-		return strm->_stream_blob ? strm->_stream_blob->hash : zero_hash;
-	else
+	if (!strm->stream_resolved)
 		return strm->_stream_hash;
+
+	if (!strm->_stream_blob)
+		return zero_hash;
+
+	if (strm->_stream_blob->unhashed)
+		return NULL;
+
+	return strm->_stream_blob->hash;
 }
 
 /*
@@ -557,7 +567,9 @@ inode_get_blob_for_unnamed_data_stream_resolved(const struct wim_inode *inode)
 /*
  * Return the SHA-1 message digest of the unnamed data stream of the inode, or a
  * void SHA-1 of all zeroes if the inode does not have an unnamed data stream or
- * if the inode's unnamed data stream is empty.
+ * if the inode's unnamed data stream is empty, or NULL if the inode's unnamed
+ * data stream is unhashed.  (Most callers ensure the stream cannot be
+ * unhashed.)
  */
 const u8 *
 inode_get_hash_of_unnamed_data_stream(const struct wim_inode *inode)

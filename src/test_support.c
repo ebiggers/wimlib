@@ -679,36 +679,6 @@ generate_data(u8 *buffer, size_t size, struct generation_context *ctx)
 	}
 }
 
-static int
-add_stream(struct wim_inode *inode, struct generation_context *ctx,
-	   int stream_type, const utf16lechar *stream_name,
-	   void *buffer, size_t size)
-{
-	struct blob_descriptor *blob = NULL;
-	struct wim_inode_stream *strm;
-
-	if (size) {
-		blob = new_blob_descriptor();
-		if (!blob)
-			goto err_nomem;
-		blob->attached_buffer = buffer;
-		blob->blob_location = BLOB_IN_ATTACHED_BUFFER;
-		blob->size = size;
-	}
-
-	strm = inode_add_stream(inode, stream_type, stream_name, blob);
-	if (unlikely(!strm))
-		goto err_nomem;
-
-	prepare_unhashed_blob(blob, inode, strm->stream_id,
-			      ctx->params->unhashed_blobs);
-	return 0;
-
-err_nomem:
-	free_blob_descriptor(blob);
-	return WIMLIB_ERR_NOMEM;
-}
-
 static noinline_for_stack int
 set_random_reparse_point(struct wim_inode *inode, struct generation_context *ctx)
 {
@@ -770,6 +740,7 @@ add_random_data_stream(struct wim_inode *inode, struct generation_context *ctx,
 {
 	void *buffer = NULL;
 	size_t size;
+	int ret;
 
 	size = select_stream_size(ctx);
 	if (size) {
@@ -779,8 +750,12 @@ add_random_data_stream(struct wim_inode *inode, struct generation_context *ctx,
 		generate_data(buffer, size, ctx);
 	}
 
-	return add_stream(inode, ctx, STREAM_TYPE_DATA, stream_name,
-			  buffer, size);
+	ret = 0;
+	if (!inode_add_stream_with_data(inode, STREAM_TYPE_DATA, stream_name,
+					buffer, size, ctx->params->blob_table))
+		ret = WIMLIB_ERR_NOMEM;
+	FREE(buffer);
+	return ret;
 }
 
 static int
