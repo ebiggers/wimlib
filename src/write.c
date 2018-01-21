@@ -2590,14 +2590,15 @@ write_pipable_wim(WIMStruct *wim, int image, int write_flags,
 	/* At this point, the header at the beginning of the file has already
 	 * been written.  */
 
-	/* For efficiency, when wimlib adds an image to the WIM with
-	 * wimlib_add_image(), the SHA-1 message digests of files are not
-	 * calculated; instead, they are calculated while the files are being
-	 * written.  However, this does not work when writing a pipable WIM,
-	 * since when writing a blob to a pipable WIM, its SHA-1 message digest
-	 * needs to be known before the blob data is written.  Therefore, before
-	 * getting much farther, we need to pre-calculate the SHA-1 message
-	 * digests of all blobs that will be written.  */
+	/*
+	 * For efficiency, wimlib normally delays calculating each newly added
+	 * stream's hash until while that stream being written, or just before
+	 * it is written.  However, when writing a pipable WIM (potentially to a
+	 * pipe), we first have to write the metadata resources, which contain
+	 * all the hashes.  Moreover each blob is prefixed with its hash (struct
+	 * pwm_blob_hdr).  Thus, we have to calculate all the hashes before
+	 * writing anything.
+	 */
 	ret = wim_checksum_unhashed_blobs(wim);
 	if (ret)
 		return ret;
