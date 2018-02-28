@@ -31,6 +31,7 @@
 #include "wimlib/error.h"
 #include "wimlib/list.h"
 #include "wimlib/metadata.h"
+#include "wimlib/paths.h"
 #include "wimlib/progress.h"
 #include "wimlib/resource.h"
 #include "wimlib/wim.h"
@@ -74,7 +75,7 @@ write_split_wim(WIMStruct *orig_wim, const tchar *swm_name,
 	swm_name_len = tstrlen(swm_name);
 	swm_name_buf = alloca((swm_name_len + 20) * sizeof(tchar));
 	tstrcpy(swm_name_buf, swm_name);
-	dot = tstrchr(swm_name_buf, T('.'));
+	dot = tstrrchr(path_basename(swm_name_buf), T('.'));
 	if (dot) {
 		swm_base_name_len = dot - swm_name_buf;
 		swm_suffix = alloca((tstrlen(dot) + 1) * sizeof(tchar));

@@ -11,6 +11,9 @@ Version 1.13.0-BETA:
 	existing integrity tables.  This can be useful to avoid unwanted
 	verification of large WIM files, e.g. WIMs given by '--delta-from'.
 
+	wimsplit (API: wimlib_split()) now correctly handles a dot in the path
+	to the first split WIM part, prior to the filename extension.
+
 	'wimlib-imagex --version' now shows the version of the library it is
 	actually using (in case it is different from wimlib-imagex's version).
 
