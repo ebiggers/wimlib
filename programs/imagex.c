@@ -46,6 +46,11 @@
 #  include <alloca.h>
 #endif
 
+/* NetBSD is missing getopt_long_only() but has getopt_long() */
+#ifndef HAVE_GETOPT_LONG_ONLY
+#  define getopt_long_only getopt_long
+#endif
+
 #define WIMLIB_COMPRESSION_TYPE_INVALID (-1)
 
 #ifdef __WIN32__

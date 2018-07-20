@@ -26,6 +26,7 @@
 
 /* Round 'v' up to the next 'alignment'-byte aligned boundary.  'alignment' must
  * be a power of 2.  */
+#undef ALIGN	/* NetBSD <sys/param.h> defines this already */
 #define ALIGN(v, alignment)	(((v) + ((alignment) - 1)) & ~((alignment) - 1))
 
 /* Maximum number of bytes that can be allocated on the stack.

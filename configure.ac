@@ -61,7 +61,7 @@ AM_CONDITIONAL([WINDOWS_NATIVE_BUILD], [test "$WINDOWS_NATIVE_BUILD" = "yes"])
 # Useful functions which we can do without.
 AC_CHECK_FUNCS([futimens utimensat flock mempcpy	\
 		openat fstatat readlinkat fdopendir posix_fallocate \
-		llistxattr lgetxattr fsetxattr lsetxattr])
+		llistxattr lgetxattr fsetxattr lsetxattr getopt_long_only])
 
 # Header checks, most of which are only here to satisfy conditional includes
 # made by the libntfs-3g headers.

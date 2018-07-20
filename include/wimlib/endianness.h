@@ -24,6 +24,14 @@
 #include "wimlib/compiler.h"
 #include "wimlib/types.h"
 
+#ifdef HAVE_SYS_ENDIAN_H
+   /* Needed on NetBSD to stop system bswap macros from messing things up */
+#  include <sys/endian.h>
+#  undef bswap16
+#  undef bswap32
+#  undef bswap64
+#endif
+
 /* Watch out for conflict with ntfs-3g/endians.h ... */
 #ifndef _NTFS_ENDIANS_H
 
