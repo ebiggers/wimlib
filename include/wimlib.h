@@ -3055,6 +3055,9 @@ wimlib_extract_image_from_pipe_with_progress(int pipe_fd,
  * are otherwise delimited by the newline character.  However, quotes will be
  * stripped if present.
  *
+ * If @p path_list_file is @c NULL, then the pathlist file is read from standard
+ * input.
+ *
  * The error codes are the same as those returned by wimlib_extract_paths(),
  * except that wimlib_extract_pathlist() returns an appropriate error code if it
  * cannot read the path list file (e.g. ::WIMLIB_ERR_OPEN, ::WIMLIB_ERR_STAT,

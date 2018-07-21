@@ -37,6 +37,38 @@
 #include "wimlib/util.h"
 
 static int
+stdin_get_contents(void **buf_ret, size_t *bufsize_ret)
+{
+	char *buf = NULL;
+	size_t filled = 0;
+	size_t capacity = 0;
+
+	do {
+		size_t new_capacity = (capacity * 2) + 256;
+		char *new_buf;
+
+		if (new_capacity <= capacity ||
+		    !(new_buf = REALLOC(buf, new_capacity))) {
+			ERROR("Too much data sent on stdin!");
+			FREE(buf);
+			return WIMLIB_ERR_INVALID_PARAM;
+		}
+		buf = new_buf;
+		capacity = new_capacity;
+		filled += fread(&buf[filled], 1, capacity - filled, stdin);
+	} while (filled == capacity);
+
+	if (!feof(stdin)) {
+		ERROR_WITH_ERRNO("Error reading stdin");
+		FREE(buf);
+		return WIMLIB_ERR_READ;
+	}
+	*buf_ret = buf;
+	*bufsize_ret = filled;
+	return 0;
+}
+
+static int
 read_file_contents(const tchar *path, void **buf_ret, size_t *bufsize_ret)
 {
 	int raw_fd;
@@ -45,9 +77,6 @@ read_file_contents(const tchar *path, void **buf_ret, size_t *bufsize_ret)
 	void *buf;
 	int ret;
 	int errno_save;
-
-	if (!path || !*path)
-		return WIMLIB_ERR_INVALID_PARAM;
 
 	raw_fd = topen(path, O_RDONLY | O_BINARY);
 	if (raw_fd < 0) {
@@ -273,13 +302,14 @@ parse_text_file(const tchar *path, tchar *buf, size_t buflen,
 }
 
 /**
- * do_load_text_file -
+ * load_text_file -
  *
- * Read and parse lines from a text file from an on-disk file or a buffer.
- * The file may contain sections, like in an INI file.
+ * Read and parse lines from a text file given as an on-disk file, standard
+ * input, or a buffer.  The file may contain sections, like in an INI file.
  *
  * @path
- *	Path to the file on disk to read, or a dummy name for the buffer.
+ *	If @buf is NULL, then either the path to the file on-disk to read, or
+ *	NULL to read from standard input.  Else, a dummy name for the buffer.
  * @buf
  *	If NULL, the data will be read from the @path file.  Otherwise the data
  *	will be read from this buffer.
@@ -297,7 +327,7 @@ parse_text_file(const tchar *path, tchar *buf, size_t buflen,
  * @num_pos_sections
  *	Number of entries in the @pos_sections array.
  * @flags
- *	Flags: LOAD_TEXT_FILE_REMOVE_QUOTES, LOAD_TEXT_FILE_NO_WARNINGS.
+ *	Flags: LOAD_TEXT_FILE_* flags.
  * @mangle_line
  *	Optional callback to validate and/or modify each line being read.
  *
@@ -307,34 +337,40 @@ parse_text_file(const tchar *path, tchar *buf, size_t buflen,
  * LOAD_TEXT_FILE_NO_WARNINGS is specified.
  */
 int
-do_load_text_file(const tchar *path,
-		  const void *buf, size_t bufsize,
-		  void **mem_ret,
-		  const struct text_file_section *pos_sections,
-		  int num_pos_sections,
-		  int flags,
-		  line_mangle_t mangle_line)
+load_text_file(const tchar *path, const void *buf, size_t bufsize,
+	       void **mem_ret,
+	       const struct text_file_section *pos_sections,
+	       int num_pos_sections,
+	       int flags, line_mangle_t mangle_line)
 {
 	int ret;
-	bool pathmode = (buf == NULL);
+	bool is_filemode = (buf == NULL);
+	bool is_stdin = (is_filemode && path == NULL);
 	tchar *tstr;
 	size_t tstr_nchars;
 
-	if (pathmode) {
-		ret = read_file_contents(path, (void **)&buf, &bufsize);
+	if (is_stdin && !(flags & LOAD_TEXT_FILE_ALLOW_STDIN))
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	if (is_filemode) {
+		if (is_stdin)
+			ret = stdin_get_contents((void **)&buf, &bufsize);
+		else
+			ret = read_file_contents(path, (void **)&buf, &bufsize);
 		if (ret)
 			return ret;
 	}
 
 	ret = translate_text_buffer(buf, bufsize, &tstr, &tstr_nchars);
-	if (pathmode)
+	if (is_filemode)
 		FREE((void *)buf);
 	if (ret)
 		return ret;
 
 	tstr[tstr_nchars++] = T('\n');
 
-	ret = parse_text_file(path, tstr, tstr_nchars, pos_sections,
+	ret = parse_text_file(is_stdin ? T("<stdin>") : path,
+			      tstr, tstr_nchars, pos_sections,
 			      num_pos_sections, flags, mangle_line);
 	if (ret) {
 		for (int i = 0; i < num_pos_sections; i++)

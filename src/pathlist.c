@@ -41,7 +41,9 @@ read_path_list_file(const tchar *listfile,
 	void *buf;
 	int ret;
 
-	ret = load_text_file(listfile, &buf, &tmp, 1, NULL);
+	ret = load_text_file(listfile, NULL, 0, &buf, &tmp, 1,
+			     LOAD_TEXT_FILE_REMOVE_QUOTES |
+			     LOAD_TEXT_FILE_ALLOW_STDIN, NULL);
 	if (ret)
 		return ret;
 

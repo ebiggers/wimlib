@@ -17,6 +17,9 @@ Version 1.13.0-BETA:
 	existing integrity tables.  This can be useful to avoid unwanted
 	verification of large WIM files, e.g. WIMs given by '--delta-from'.
 
+	'wimextract' now reads a pathlist file from standard input when "@-" is
+	given as an argument.
+
 	wimsplit (API: wimlib_split()) now correctly handles a dot in the path
 	to the first split WIM part, prior to the filename extension.
 

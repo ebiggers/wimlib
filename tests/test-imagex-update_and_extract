@@ -225,6 +225,16 @@ wimextract test.wim 1 @pathlist --dest-dir=out.dir
 ../tree-cmp hello2 out.dir/hello2
 [ ! -e out.dir/otherfile ]
 
+msg "Testing path list extract (stdin)"
+rm -rf out.dir
+wimextract test.wim 1 @- --dest-dir=out.dir << EOF
+hello1
+hello2
+EOF
+../tree-cmp hello1 out.dir/hello1
+../tree-cmp hello2 out.dir/hello2
+[ ! -e out.dir/otherfile ]
+
 msg "Testing path list extract (w/ wildcard)"
 cat > pathlist << EOF
 hello*

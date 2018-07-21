@@ -22,7 +22,9 @@ Otherwise, each additional argument is interpreted as a \fIPATH\fR if it does
 not begin with the '@' character, or a \fILISTFILE\fR if it does.  Each
 \fIPATH\fR specifies a file or directory tree within the WIM image to extract,
 whereas each \fILISTFILE\fR specifies a file that itself contains a list of
-paths to extract.  See \fBPATHS AND LISTFILES\fR for more details.
+paths to extract.  If a \fILISTFILE\fR is "-" (i.e. the whole argument is "@-"),
+then the listfile is read from standard input.  See \fBPATHS AND LISTFILES\fR
+for more details.
 .PP
 By default, files and directories are extracted to the current directory.  Use
 \fB--dest-dir\fR to select a different destination directory.  Alternatively,

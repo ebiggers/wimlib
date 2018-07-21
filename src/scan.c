@@ -214,9 +214,9 @@ read_capture_config(const tchar *config_file, const void *buf,
 	};
 	void *mem;
 
-	ret = do_load_text_file(config_file, buf, bufsize, &mem,
-				sections, ARRAY_LEN(sections),
-				LOAD_TEXT_FILE_REMOVE_QUOTES, mangle_pat);
+	ret = load_text_file(config_file, buf, bufsize, &mem,
+			     sections, ARRAY_LEN(sections),
+			     LOAD_TEXT_FILE_REMOVE_QUOTES, mangle_pat);
 	if (ret) {
 		ERROR("Failed to load capture configuration file \"%"TS"\"",
 		      config_file);

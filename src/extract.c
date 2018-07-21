@@ -1930,7 +1930,7 @@ wimlib_extract_pathlist(WIMStruct *wim, int image, const tchar *target,
 	ret = read_path_list_file(path_list_file, &paths, &num_paths, &mem);
 	if (ret) {
 		ERROR("Failed to read path list file \"%"TS"\"",
-		      path_list_file);
+		      path_list_file ? path_list_file : T("<stdin>"));
 		return ret;
 	}
 

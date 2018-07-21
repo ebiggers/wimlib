@@ -3308,9 +3308,15 @@ imagex_extract(int argc, tchar **argv, int cmd)
 			argc -= num_paths;
 			argv += num_paths;
 		} else {
+			const tchar *listfile = argv[0] + 1;
+
+			if (!tstrcmp(listfile, T("-"))) {
+				tputs(T("Reading pathlist file from standard input..."));
+				listfile = NULL;
+			}
+
 			ret = wimlib_extract_pathlist(wim, image, dest_dir,
-						      argv[0] + 1,
-						      extract_flags);
+						      listfile, extract_flags);
 			argc--;
 			argv++;
 		}

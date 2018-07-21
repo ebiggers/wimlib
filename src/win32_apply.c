@@ -415,10 +415,10 @@ load_prepopulate_pats(struct win32_apply_ctx *ctx)
 	sec.name = T("PrepopulateList");
 	sec.strings = strings;
 
-	ret = do_load_text_file(path, buf, blob->size, &mem, &sec, 1,
-				LOAD_TEXT_FILE_REMOVE_QUOTES |
-					LOAD_TEXT_FILE_NO_WARNINGS,
-				mangle_pat);
+	ret = load_text_file(path, buf, blob->size, &mem, &sec, 1,
+			     LOAD_TEXT_FILE_REMOVE_QUOTES |
+			     LOAD_TEXT_FILE_NO_WARNINGS,
+			     mangle_pat);
 	STATIC_ASSERT(OS_PREFERRED_PATH_SEPARATOR == WIM_PATH_SEPARATOR);
 	FREE(buf);
 	if (ret) {
