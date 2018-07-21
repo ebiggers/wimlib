@@ -1,0 +1,10 @@
+# case insensitive
+[ExclusionList]
+foo
+
+@@@
+
+- FOO
+- foo
+  BOO
+  boo

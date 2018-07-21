@@ -152,6 +152,65 @@ if [ -e out.dir/hiberfil.sys -o -e "out.dir/System Volume Information" ]; then
 	error "Files were not excluded from capture as expected"
 fi
 
+#
+# Execute one of the exclusion list test cases in tests/exclusionlists/.
+# The file is divided into two sections, separated by a line containing "@@@".
+# The first is the capture configuration file.  The second is a list of files
+# and directories, where the ones that should be excluded are marked with "- ".
+#
+exclusionlist_test() {
+	local t_file="$1"
+	local in_paths_section=false
+	local path
+	local include
+
+	__msg "Testing exclusion list: ${t_file##*/}"
+
+	echo "/" > expected_out
+	sed -n -e '/^@@@/q;p' "$t_file" > config.txt
+	rm -rf in.dir
+	mkdir in.dir
+	cd in.dir
+	while read -r path; do
+		path="$(echo "$path" | sed -e 's/[[:space:]]*$//')"
+		if ! $in_paths_section; then
+			if [ "$path" = "# case insensitive" ]; then
+				export WIMLIB_IMAGEX_IGNORE_CASE=1
+			elif [ "$path" = "@@@" ]; then
+				in_paths_section=true
+			fi
+			continue
+		fi
+		if [ -z "$path" ]; then
+			continue
+		fi
+		include=true
+		if [ "${path:0:2}" = "- " ]; then
+			include=false
+			path="${path:2}"
+		fi
+		if [ "${path: -1}" = "/" ]; then
+			path="${path:0:$(( ${#path} - 1))}"
+			mkdir "$path"
+		else
+			touch "$path"
+		fi
+		if $include; then
+			echo "/$path" >> ../expected_out
+		fi
+	done < "$t_file"
+	cd ..
+	$in_paths_section || error "malformed test file: $t_file (never found separator)"
+	wimcapture in.dir test.wim --compress=none --config=config.txt
+	unset WIMLIB_IMAGEX_IGNORE_CASE
+	wimdir test.wim 1 > actual_out
+	diff expected_out actual_out
+}
+
+for t_file in "$srcdir/tests/exclusionlists"/*; do
+	exclusionlist_test "$t_file"
+done
+
 # Make sure reparse point fixups are working as expected
 __msg "Testing --rpfix"
 rm -r in.dir out.dir

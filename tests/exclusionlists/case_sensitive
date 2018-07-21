@@ -1,0 +1,7 @@
+[ExclusionList]
+foo
+
+@@@
+
+- foo
+  FOO

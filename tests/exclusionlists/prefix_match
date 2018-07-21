@@ -1,0 +1,12 @@
+[ExclusionList]
+foo*
+
+@@@
+
+  boo
+  boofoo
+- foo
+- foobar
+  goo/
+- goo/foo
+- goo/foobar

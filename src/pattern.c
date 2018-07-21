@@ -86,9 +86,8 @@ advance_through_component(const tchar *p)
  *	(which matches any single character).  If there is no leading path
  *	separator, then the match is attempted with the filename component of
  *	@path only; otherwise, the match is attempted with the entire @path.
- * @prefix_ok
- *	If %true, also allow a prefix of @path terminated by a path separator
- *	(a.k.a. an ancestor directory) to match the pattern.
+ * @match_flags
+ *	MATCH_* flags, see the flag definitions.
  *
  * @path and @pattern can both contain path separators (character
  * WIM_PATH_SEPARATOR).  Leading and trailing path separators are not
@@ -102,7 +101,7 @@ advance_through_component(const tchar *p)
  * Returns %true iff the path matched the pattern.
  */
 bool
-match_path(const tchar *path, const tchar *pattern, bool prefix_ok)
+match_path(const tchar *path, const tchar *pattern, int match_flags)
 {
 	/* Filename only?  */
 	if (*pattern != WIM_PATH_SEPARATOR)
@@ -117,11 +116,11 @@ match_path(const tchar *path, const tchar *pattern, bool prefix_ok)
 
 		/* Is the pattern exhausted?  */
 		if (!*pattern)
-			return !*path || prefix_ok;
+			return !*path || (match_flags & MATCH_RECURSIVELY);
 
 		/* Is the path exhausted (but not the pattern)?  */
 		if (!*path)
-			return false;
+			return (match_flags & MATCH_ANCESTORS);
 
 		path_component_end = advance_through_component(path);
 		pattern_component_end = advance_through_component(pattern);

@@ -1,0 +1,11 @@
+[ExclusionList]
+/dir
+
+[ExclusionException]
+/dir/include*
+
+@@@
+
+  dir/
+- dir/exclude.txt
+  dir/include.txt

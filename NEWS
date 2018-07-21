@@ -5,6 +5,12 @@ Version 1.13.0-BETA:
 	default; no option has to be provided, and it should work on older
 	versions of Windows too.
 
+	Partially fixed a bug where [ExclusionException] entries didn't take
+	effect when the containing directory is matched by [ExclusionList].  It
+	now works when the [ExclusionException] patterns are absolute.  For
+	example, listing "/dir/file" in [ExclusionException] now works even if
+	"/dir" is matched by [ExclusionList].
+
 	Added an '--include-integrity' option to various wimlib-imagex commands.
 	'--include-integrity' is like '--check', but it will just include an
 	integrity table in the output WIM(s), while skipping verification of any

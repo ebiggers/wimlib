@@ -1,0 +1,12 @@
+[ExclusionList]
+foo*bar*baz
+
+@@@
+
+  bar
+  barbaz
+  baz
+  foo
+  foobar
+- foobarbaz
+- fooXYZbarXYZbaz

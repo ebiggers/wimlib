@@ -291,8 +291,13 @@ bracketed sections.  Currently, the following sections are recognized:
 [ExclusionList] ---  contains a list of path globs to exclude from capture.  If
 a directory is matched, both the directory and its contents are excluded.
 .IP \[bu]
-[ExclusionException] --- contains a list of path globs to include in the
-capture, even when the file or directory also matches a glob in [ExclusionList].
+[ExclusionException] --- contains a list of path globs to include, even when the
+file or directory also matches a glob in [ExclusionList].  If a directory is
+matched, then all its contents are included as well.  Files or directories
+\fIwithin\fR a directory excluded by [ExclusionList] may even be included using
+this, though currently it only works for absolute globs (those that begin with
+"/" or "\\"); for example, "/dir/file" can be included while "/dir" can be
+excluded, but including simply "file" won't work in that case.
 .IP \[bu]
 [PrepopulateList] --- this does not affect capture, but if the image is applied
 later with \fB--wimboot\fR, these are globs of files that shall be extracted

@@ -1,0 +1,13 @@
+[ExclusionList]
+dir
+
+@@@
+
+- dir/
+- dir/a
+- dir/b
+  foo
+  goo
+  subdir/
+- subdir/dir/
+- subdir/dir/abcd

@@ -1,0 +1,10 @@
+[ExclusionList]
+*.jpg
+
+@@@
+
+  a.png
+- a.jpg
+  dir/
+  dir/a.png
+- dir/a.jpg

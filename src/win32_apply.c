@@ -437,7 +437,8 @@ can_externally_back_path(const wchar_t *path, const struct win32_apply_ctx *ctx)
 {
 	/* Does the path match a pattern given in the [PrepopulateList] section
 	 * of WimBootCompress.ini?  */
-	if (ctx->prepopulate_pats && match_pattern_list(path, ctx->prepopulate_pats))
+	if (ctx->prepopulate_pats && match_pattern_list(path, ctx->prepopulate_pats,
+							MATCH_RECURSIVELY))
 		return false;
 
 	/* Since we attempt to modify the SYSTEM registry after it's extracted
@@ -449,7 +450,7 @@ can_externally_back_path(const wchar_t *path, const struct win32_apply_ctx *ctx)
 	 * However, a WIM that wasn't specifically captured in "WIMBoot mode"
 	 * may contain SYSTEM.* files.  So to make things "just work", hard-code
 	 * the pattern.  */
-	if (match_path(path, L"\\Windows\\System32\\config\\SYSTEM*", false))
+	if (match_path(path, L"\\Windows\\System32\\config\\SYSTEM*", 0))
 		return false;
 
 	return true;
@@ -2557,7 +2558,8 @@ set_system_compression_on_inode(struct wim_inode *inode, int format,
 			}
 
 			incompatible = match_pattern_list(dentry->d_full_path,
-							  &bootloader_patterns);
+							  &bootloader_patterns,
+							  MATCH_RECURSIVELY);
 			FREE(dentry->d_full_path);
 			dentry->d_full_path = NULL;
 

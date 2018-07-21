@@ -254,14 +254,15 @@ destroy_capture_config(struct capture_config *config)
 }
 
 /*
- * Determine whether @path, or any ancestor directory of @path, matches any of
- * the patterns in @list.  Path separators in @path must be WIM_PATH_SEPARATOR.
+ * Determine whether @path matches any of the patterns in @list.
+ * Path separators in @path must be WIM_PATH_SEPARATOR.
  */
 bool
-match_pattern_list(const tchar *path, const struct string_list *list)
+match_pattern_list(const tchar *path, const struct string_list *list,
+		   int match_flags)
 {
 	for (size_t i = 0; i < list->num_strings; i++)
-		if (match_path(path, list->strings[i], true))
+		if (match_path(path, list->strings[i], match_flags))
 			return true;
 	return false;
 }
@@ -292,8 +293,10 @@ try_exclude(const struct scan_params *params)
 
 	if (params->config) {
 		const tchar *path = params->cur_path + params->root_path_nchars;
-		if (match_pattern_list(path, &params->config->exclusion_pats) &&
-		    !match_pattern_list(path, &params->config->exclusion_exception_pats))
+		if (match_pattern_list(path, &params->config->exclusion_pats,
+				       MATCH_RECURSIVELY) &&
+		    !match_pattern_list(path, &params->config->exclusion_exception_pats,
+					MATCH_RECURSIVELY | MATCH_ANCESTORS))
 			return -1;
 	}
 

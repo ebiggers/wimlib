@@ -1,0 +1,13 @@
+[ExclusionList]
+*.jpg
+
+[ExclusionException]
+?oo.jpg
+
+@@@
+
+- a.jpg
+- abcd.jpg
+  boo.jpg
+  foo.jpg
+  foo.png

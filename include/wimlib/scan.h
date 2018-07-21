@@ -88,7 +88,8 @@ extern void
 destroy_capture_config(struct capture_config *config);
 
 extern bool
-match_pattern_list(const tchar *path, const struct string_list *list);
+match_pattern_list(const tchar *path, const struct string_list *list,
+		   int match_flags);
 
 extern int
 try_exclude(const struct scan_params *params);
