@@ -46,11 +46,6 @@
 #  include <alloca.h>
 #endif
 
-/* NetBSD is missing getopt_long_only() but has getopt_long() */
-#ifndef HAVE_GETOPT_LONG_ONLY
-#  define getopt_long_only getopt_long
-#endif
-
 #define WIMLIB_COMPRESSION_TYPE_INVALID (-1)
 
 #ifdef __WIN32__
@@ -63,6 +58,10 @@
 static inline void set_fd_to_binary_mode(int fd)
 {
 }
+/* NetBSD is missing getopt_long_only() but has getopt_long() */
+#ifndef HAVE_GETOPT_LONG_ONLY
+#  define getopt_long_only getopt_long
+#endif
 #endif /* !__WIN32 */
 
 /* Don't confuse the user by presenting the mounting commands on Windows when
