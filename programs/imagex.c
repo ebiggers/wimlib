@@ -171,6 +171,7 @@ enum {
 	IMAGEX_COMPACT_OPTION,
 	IMAGEX_COMPRESS_OPTION,
 	IMAGEX_CONFIG_OPTION,
+	IMAGEX_CREATE_OPTION,
 	IMAGEX_DEBUG_OPTION,
 	IMAGEX_DELTA_FROM_OPTION,
 	IMAGEX_DEREFERENCE_OPTION,
@@ -274,6 +275,7 @@ static const struct option capture_or_append_options[] = {
 	{T("wimboot"),     no_argument,       NULL, IMAGEX_WIMBOOT_OPTION},
 	{T("unsafe-compact"), no_argument,    NULL, IMAGEX_UNSAFE_COMPACT_OPTION},
 	{T("snapshot"),    no_argument,       NULL, IMAGEX_SNAPSHOT_OPTION},
+	{T("create"),      no_argument,       NULL, IMAGEX_CREATE_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -1853,14 +1855,18 @@ out_usage:
 	goto out_free_refglobs;
 }
 
-/* Create a WIM image from a directory tree, NTFS volume, or multiple files or
- * directory trees.  'wimlib-imagex capture': create a new WIM file containing
- * the desired image.  'wimlib-imagex append': add a new image to an existing
- * WIM file. */
+/*
+ * Create a WIM image from a directory tree, NTFS volume, or multiple files or
+ * directory trees.  'wimcapture': create a new WIM file containing the desired
+ * image.  'wimappend': add a new image to an existing WIM file; or, with
+ * '--create' behave like 'wimcapture' if the WIM file doesn't exist.
+ */
 static int
 imagex_capture_or_append(int argc, tchar **argv, int cmd)
 {
 	int c;
+	bool create = false;
+	bool appending = (cmd == CMD_APPEND);
 	int open_flags = 0;
 	int add_flags = WIMLIB_ADD_FLAG_EXCLUDE_VERBOSE |
 			WIMLIB_ADD_FLAG_WINCONFIG |
@@ -2025,15 +2031,17 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			add_flags |= WIMLIB_ADD_FLAG_WIMBOOT;
 			break;
 		case IMAGEX_UNSAFE_COMPACT_OPTION:
-			if (cmd != CMD_APPEND) {
-				imagex_error(T("'--unsafe-compact' is only "
-					       "valid for append!"));
-				goto out_err;
-			}
 			write_flags |= WIMLIB_WRITE_FLAG_UNSAFE_COMPACT;
 			break;
 		case IMAGEX_SNAPSHOT_OPTION:
 			add_flags |= WIMLIB_ADD_FLAG_SNAPSHOT;
+			break;
+		case IMAGEX_CREATE_OPTION:
+			if (cmd == CMD_CAPTURE) {
+				imagex_error(T("'--create' is only valid for 'wimappend', not 'wimcapture'"));
+				goto out_err;
+			}
+			create = true;
 			break;
 		default:
 			goto out_usage;
@@ -2069,6 +2077,8 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 
 	if (!tstrcmp(wimfile, T("-"))) {
 		/* Writing captured WIM to standard output.  */
+		if (create)
+			appending = false;
 	#if 0
 		if (!(write_flags & WIMLIB_WRITE_FLAG_PIPABLE)) {
 			imagex_error("Can't write a non-pipable WIM to "
@@ -2080,7 +2090,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	#else
 		write_flags |= WIMLIB_WRITE_FLAG_PIPABLE;
 	#endif
-		if (cmd == CMD_APPEND) {
+		if (appending) {
 			imagex_error(T("Using standard output for append does "
 				       "not make sense."));
 			goto out_err;
@@ -2089,6 +2099,16 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		wimfile = NULL;
 		imagex_output_to_stderr();
 		set_fd_to_binary_mode(wim_fd);
+	} else {
+		struct stat stbuf;
+
+		if (create && tstat(wimfile, &stbuf) != 0 && errno == ENOENT)
+			appending = false;
+	}
+
+	if ((write_flags & WIMLIB_WRITE_FLAG_UNSAFE_COMPACT) && !appending) {
+		imagex_error(T("'--unsafe-compact' is only valid for append!"));
+		goto out_err;
 	}
 
 	/* If template image was specified using --update-of=IMAGE rather
@@ -2098,7 +2118,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 			/* Capturing delta WIM based on single WIM:  default to
 			 * base WIM.  */
 			template_wimfile = base_wimfiles.strings[0];
-		} else if (cmd == CMD_APPEND) {
+		} else if (appending) {
 			/* Appending to WIM:  default to WIM being appended to.
 			 */
 			template_wimfile = wimfile;
@@ -2176,7 +2196,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	}
 
 	/* Open the existing WIM, or create a new one.  */
-	if (cmd == CMD_APPEND) {
+	if (appending) {
 		ret = wimlib_open_wim_with_progress(wimfile,
 						    open_flags | WIMLIB_OPEN_FLAG_WRITE_ACCESS,
 						    &wim,
@@ -2200,7 +2220,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 
 		int ctype = compression_type;
 
-		if (cmd == CMD_APPEND) {
+		if (appending) {
 			struct wimlib_wim_info info;
 			wimlib_get_wim_info(wim, &info);
 			ctype = info.compression_type;
@@ -2249,7 +2269,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	/* If the user did not specify an image name, and the basename of the
 	 * source already exists as an image name in the WIM file, append a
 	 * suffix to make it unique. */
-	if (cmd == CMD_APPEND && name_defaulted) {
+	if (appending && name_defaulted) {
 		unsigned long conflict_idx;
 		tchar *name_end = tstrchr(name, T('\0'));
 		for (conflict_idx = 1;
@@ -2301,7 +2321,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	 * open the WIM if needed and parse the image index.  */
 	if (template_image_name_or_num) {
 
-		if (cmd == CMD_APPEND && !tstrcmp(template_wimfile, wimfile)) {
+		if (appending && !tstrcmp(template_wimfile, wimfile)) {
 			template_wim = wim;
 		} else {
 			for (size_t i = 0; i < base_wimfiles.num_strings; i++) {
@@ -2386,7 +2406,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 
 	/* Write the new WIM or overwrite the existing WIM with the new image
 	 * appended.  */
-	if (cmd == CMD_APPEND) {
+	if (appending) {
 		ret = wimlib_overwrite(wim, write_flags, num_threads);
 	} else if (wimfile) {
 		ret = wimlib_write(wim, wimfile, WIMLIB_ALL_IMAGES,
@@ -4426,7 +4446,7 @@ T(
 "                    [--threads=NUM_THREADS] [--no-acls] [--strict-acls]\n"
 "                    [--rpfix] [--norpfix] [--update-of=[WIMFILE:]IMAGE]\n"
 "                    [--delta-from=WIMFILE] [--wimboot] [--unix-data]\n"
-"                    [--dereference] [--snapshot]\n"
+"                    [--dereference] [--snapshot] [--create]\n"
 ),
 [CMD_APPLY] =
 T(

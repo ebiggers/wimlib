@@ -10,7 +10,8 @@ The \fBwimcapture\fR (equivalently: \fBwimlib-imagex capture\fR) and
 \fBwimappend\fR (equivalently: \fBwimlib-imagex append\fR) commands create
 ("capture") a new Windows Imaging (WIM) image.  \fBwimcapture\fR creates a new
 WIM archive \fIWIMFILE\fR to contain the new image, while \fBwimappend\fR adds
-the image to the existing WIM archive \fIWIMFILE\fR.
+the image to the existing WIM archive \fIWIMFILE\fR (or with \fB--create\fR,
+creating it if needed).
 .PP
 \fISOURCE\fR specifies the location of the files from which to create the WIM
 image.  If \fISOURCE\fR is a directory or a symbolic link pointing to a
@@ -588,6 +589,10 @@ running into problems with locked files.  For the VSS snapshot to be
 successfully created, \fBwimlib-imagex\fR must be run as an Administrator, and
 it cannot be run in WoW64 mode (i.e. if Windows is 64-bit, then
 \fBwimlib-imagex\fR must be 64-bit as well).
+.TP
+\fB--create\fR
+With \fBwimappend\fR, if the WIM file doesn't exist yet, then create it (like
+\fBwimcapture\fR).
 .SH NOTES
 \fBwimappend\fR does not support appending an image to a split WIM.
 .PP

@@ -65,6 +65,21 @@ for comp_type in None LZX XPRESS; do
 	rm -rf dir.wim tmp
 done
 
+# Test wimappend --create
+rm -f dir.wim
+if wimappend dir dir.wim; then
+	error "wimappend to nonexisting file unexpectedly succeeded"
+fi
+if ! wimappend dir dir.wim --create; then
+	error "wimappend --create to nonexisting file failed"
+fi
+if ! wimappend dir dir.wim --create; then
+	error "wimappend --create to existing file failed"
+fi
+if ! test "`wiminfo dir.wim | grep 'Image Count' | awk '{print $3}'`" = 2; then
+	error "Incorrect WIM image count after wimappend --create"
+fi
+
 # Capturing and modifying name, description, and bootable flag
 
 echo "Testing capture of WIM with default name and description"

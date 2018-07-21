@@ -11,6 +11,9 @@ Version 1.13.0-BETA:
 	example, listing "/dir/file" in [ExclusionException] now works even if
 	"/dir" is matched by [ExclusionList].
 
+	Added a '--create' option to 'wimappend' which makes it create the WIM
+	file (like 'wimcapture') if it doesn't exist yet.
+
 	Added an '--include-integrity' option to various wimlib-imagex commands.
 	'--include-integrity' is like '--check', but it will just include an
 	integrity table in the output WIM(s), while skipping verification of any
