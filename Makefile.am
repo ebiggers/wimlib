@@ -20,7 +20,7 @@ AM_LDFLAGS	= $(PLATFORM_LDFLAGS)
 EXTRA_DIST	= README README.WINDOWS					\
 		  COPYING COPYING.GPLv3	COPYING.LGPLv3 COPYING.CC0	\
 		  examples						\
-		  archlinux debian rpm
+		  debian rpm
 
 ##############################################################################
 #				Library					     #

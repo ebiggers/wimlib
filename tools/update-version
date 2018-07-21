@@ -26,8 +26,6 @@ sed -i -e 's/\(#define WIMLIB_MAJOR_VERSION[[:space:]]\+\)[[:digit:]]\+/\1'$newm
 sed -i -e "1s/$oldmonth $oldyear/$newmonth $newyear/;1s/wimlib $oldver/wimlib $newver/"	\
 	  doc/man[1-9]/*.[1-9]
 
-sed -i "s/pkgver=$oldver/pkgver=$newver/" archlinux/PKGBUILD
-
 sed -i "1i\\
 wimlib ($newver-1) unstable; urgency=low\\
 \\
