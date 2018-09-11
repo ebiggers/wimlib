@@ -2020,6 +2020,9 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 					template_image_name_or_num = optarg;
 				}
 			}
+		#ifdef __WIN32__
+			imagex_printf(T("[WARNING] '--update-of' is unreliable on Windows!\n"));
+		#endif
 			break;
 		case IMAGEX_DELTA_FROM_OPTION:
 			ret = string_list_append(&base_wimfiles, optarg);
