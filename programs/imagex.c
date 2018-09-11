@@ -2102,8 +2102,20 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 	} else {
 		struct stat stbuf;
 
-		if (create && tstat(wimfile, &stbuf) != 0 && errno == ENOENT)
+		/* Check for 'wimappend --create' acting as wimcapture */
+		if (create && tstat(wimfile, &stbuf) != 0 && errno == ENOENT) {
+
 			appending = false;
+
+			/* Ignore '--update-of' for the target WIMFILE */
+			if (template_image_name_or_num &&
+			    (!template_wimfile ||
+			     !tstrcmp(template_wimfile, wimfile)))
+			{
+				template_image_name_or_num = NULL;
+				template_wimfile = NULL;
+			}
+		}
 	}
 
 	if ((write_flags & WIMLIB_WRITE_FLAG_UNSAFE_COMPACT) && !appending) {
