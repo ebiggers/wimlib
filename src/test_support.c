@@ -475,7 +475,11 @@ set_random_xattrs(struct wim_inode *inode)
 	struct wim_xattr_entry *entry = (void *)entries;
 	size_t entries_size;
 	struct wimlib_unix_data unix_data;
+#ifdef __WIN32__
+	const char *prefix = "";
+#else
 	const char *prefix = "user.";
+#endif
 	static const char capability_name[] = "security.capability";
 	bool generated_capability_xattr = false;
 
@@ -497,6 +501,11 @@ set_random_xattrs(struct wim_inode *inode)
 		int value_len = rand32() % 64;
 		u8 *p;
 
+	#ifdef __WIN32__
+		if (value_len == 0)
+			value_len++;
+	#endif
+
 		entry->value_len = cpu_to_le16(value_len);
 		entry->flags = 0;
 
@@ -511,10 +520,14 @@ set_random_xattrs(struct wim_inode *inode)
 
 			entry->name_len = strlen(prefix) + name_len;
 			p = mempcpy(entry->name, prefix, strlen(prefix));
-			*p++ = 'a' + i;
+			*p++ = 'A' + i;
 			for (int j = 1; j < name_len; j++) {
 				do {
+				#ifdef __WIN32__
+					*p = 'A' + rand8() % 26;
+				#else
 					*p = rand8();
+				#endif
 				} while (*p == '\0');
 				p++;
 			}
@@ -1430,8 +1443,7 @@ cmp_xattrs(const struct wim_inode *inode1, const struct wim_inode *inode2,
 	if (!xattrs1 && !xattrs2) {
 		return 0;
 	} else if (xattrs1 && !xattrs2) {
-		if (cmp_flags & (WIMLIB_CMP_FLAG_NTFS_3G_MODE |
-				 WIMLIB_CMP_FLAG_WINDOWS_MODE))
+		if (cmp_flags & WIMLIB_CMP_FLAG_NTFS_3G_MODE)
 			return 0;
 		ERROR("%"TS" unexpectedly lost its xattrs",
 		      inode_any_full_path(inode1));
