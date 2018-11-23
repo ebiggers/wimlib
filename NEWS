@@ -1,9 +1,8 @@
-Version 1.13.0-BETA:
+Version 1.13.0:
 	On Windows, wimlib now supports capturing and applying extended
 	attributes (EAs).  It is compatible with DISM with the /EA option,
 	available since Windows 10 version 1607.  wimlib's EA support is on by
-	default; no option has to be provided, and it should work on older
-	versions of Windows too.
+	default and works on older versions of Windows too.
 
 	Partially fixed a bug where [ExclusionException] entries didn't take
 	effect when the containing directory is matched by [ExclusionList].  It
