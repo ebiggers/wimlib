@@ -10,7 +10,7 @@
 #
 
 ARCHITECTURES		:= i686 x86_64
-LIBXML2_VERSION		:= 2.9.7
+LIBXML2_VERSION		:= 2.9.8
 WINPTHREADS_VERSION	:= 5.0.3
 
 LIBXML_URL		:= ftp://xmlsoft.org/libxml2/libxml2-$(LIBXML2_VERSION).tar.gz
