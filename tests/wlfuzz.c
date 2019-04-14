@@ -498,48 +498,67 @@ get_random_write_flags(void)
 	return write_flags;
 }
 
+static uint32_t
+get_random_chunk_size(int min_order, int max_order)
+{
+	return 1 << (min_order + (rand32() % (max_order - min_order + 1)));
+}
+
 static void
 op__create_new_wim(void)
 {
 	printf(":::op__create_new_wim\n");
 
 	const tchar *wimfile;
-	WIMStruct *wim;
+	enum wimlib_compression_type ctype = WIMLIB_COMPRESSION_TYPE_NONE;
+	uint32_t chunk_size = 0;
+	uint32_t solid_chunk_size = 0;
 	int write_flags;
+	WIMStruct *wim;
 
 	if (num_wimfiles_in_use == MAX_NUM_WIMS)
 		return;
 
 	wimfile = select_new_wimfile();
 
-	CHECK_RET(wimlib_create_new_wim(WIMLIB_COMPRESSION_TYPE_NONE, &wim));
-
 	/* Select a random compression type and chunk size.  */
-	switch (rand32() % 8) {
-	default:
-		CHECK_RET(wimlib_set_output_compression_type(wim, WIMLIB_COMPRESSION_TYPE_NONE));
+	switch (rand32() % 4) {
+	case 0:
 		break;
-	case 3 ... 4:
-		CHECK_RET(wimlib_set_output_compression_type(wim, WIMLIB_COMPRESSION_TYPE_XPRESS));
-		CHECK_RET(wimlib_set_output_chunk_size(wim, 1 << (12 + rand32() % 5)));
+	case 1:
+		ctype = WIMLIB_COMPRESSION_TYPE_XPRESS;
+		chunk_size = get_random_chunk_size(12, 16);
 		break;
-	case 5 ... 6:
-		CHECK_RET(wimlib_set_output_compression_type(wim, WIMLIB_COMPRESSION_TYPE_LZX));
+	case 2:
+		ctype = WIMLIB_COMPRESSION_TYPE_LZX;
 		if (randbool())
-			CHECK_RET(wimlib_set_output_chunk_size(wim, 1 << 15));
+			chunk_size = 1 << 15;
 		else
-			CHECK_RET(wimlib_set_output_chunk_size(wim, 1 << (15 + rand32() % 7)));
+			chunk_size = get_random_chunk_size(15, 21);
 		break;
-	case 7:
-		CHECK_RET(wimlib_set_output_compression_type(wim, WIMLIB_COMPRESSION_TYPE_LZMS));
-		CHECK_RET(wimlib_set_output_chunk_size(wim, 1 << (15 + rand32() % 12)));
+	case 3:
+		ctype = WIMLIB_COMPRESSION_TYPE_LZMS;
+		chunk_size = get_random_chunk_size(15, 28);
+		if (randbool())
+			solid_chunk_size = get_random_chunk_size(15, 26);
+		else
+			solid_chunk_size = get_random_chunk_size(26, 28);
 		break;
 	}
 
 	/* Select random write flags.  */
 	write_flags = get_random_write_flags();
 
-	printf("Creating %"TS" with write flags 0x%08x\n", wimfile, write_flags);
+	printf("Creating %"TS" with write flags 0x%08x, compression_type=%"TS", chunk_size=%u, solid_chunk_size=%u\n",
+	       wimfile, write_flags,
+	       wimlib_get_compression_type_string(ctype),
+	       chunk_size, solid_chunk_size);
+
+	CHECK_RET(wimlib_create_new_wim(ctype, &wim));
+	if (chunk_size != 0)
+		CHECK_RET(wimlib_set_output_chunk_size(wim, chunk_size));
+	if (solid_chunk_size != 0)
+		CHECK_RET(wimlib_set_output_pack_chunk_size(wim, solid_chunk_size));
 
 	CHECK_RET(wimlib_write(wim, wimfile, WIMLIB_ALL_IMAGES, write_flags, 0));
 
