@@ -593,9 +593,7 @@ lcpit_matchfinder_init(struct lcpit_matchfinder *mf, size_t max_bufsize,
 	}
 
 	mf->min_match_len = min_match_len;
-	mf->nice_match_len = min(nice_match_len,
-				 (max_bufsize <= MAX_NORMAL_BUFSIZE) ?
-				 LCP_MAX : HUGE_LCP_MAX);
+	mf->orig_nice_match_len = nice_match_len;
 	return true;
 }
 
@@ -664,6 +662,7 @@ lcpit_matchfinder_load_buffer(struct lcpit_matchfinder *mf, const u8 *T, u32 n)
 	build_SA(mf->intervals, T, n, mf->pos_data);
 	build_ISA(mf->pos_data, mf->intervals, n);
 	if (n <= MAX_NORMAL_BUFSIZE) {
+		mf->nice_match_len = min(mf->orig_nice_match_len, LCP_MAX);
 		for (u32 i = 0; i < PREFETCH_SAFETY; i++) {
 			mf->intervals[n + i] = 0;
 			mf->pos_data[n + i] = 0;
@@ -673,6 +672,7 @@ lcpit_matchfinder_load_buffer(struct lcpit_matchfinder *mf, const u8 *T, u32 n)
 		build_LCPIT(mf->intervals, mf->pos_data, n);
 		mf->huge_mode = false;
 	} else {
+		mf->nice_match_len = min(mf->orig_nice_match_len, HUGE_LCP_MAX);
 		for (u32 i = 0; i < PREFETCH_SAFETY; i++) {
 			mf->intervals64[n + i] = 0;
 			mf->pos_data[n + i] = 0;

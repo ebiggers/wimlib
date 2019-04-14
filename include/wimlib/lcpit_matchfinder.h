@@ -37,6 +37,7 @@ struct lcpit_matchfinder {
 	u32 min_match_len;
 	u32 nice_match_len;
 	u32 next[2];
+	u32 orig_nice_match_len;
 };
 
 struct lz_match {
