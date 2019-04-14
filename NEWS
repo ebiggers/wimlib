@@ -1,3 +1,11 @@
+Version 1.13.1-BETA1:
+	Fixed a crash or incorrect output during LZMS compression with a
+	compression level greater than 50 and a chunk size greater than 64 MiB.
+	This affected wimlib v1.8.0 and later.  In the unlikely event that you
+	used all these non-default compression settings in combination, e.g.
+	'wimcapture --solid --solid-compress=LZMS:100 --solid-chunk-size=128M',
+	run 'wimverify' on your archives to verify your data is intact.
+
 Version 1.13.0:
 	On Windows, wimlib now supports capturing and applying extended
 	attributes (EAs).  It is compatible with DISM with the /EA option,
