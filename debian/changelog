@@ -1,3 +1,9 @@
+wimlib (1.13.1-1) unstable; urgency=low
+
+  * Update to v1.13.1
+
+ -- Eric Biggers <ebiggers3@gmail.com>  Mon, 06 May 2019 19:23:40 -0700
+
 wimlib (1.13.0-1) unstable; urgency=low
 
   * Update to v1.13.0

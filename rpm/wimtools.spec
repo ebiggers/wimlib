@@ -1,6 +1,6 @@
 Name:      wimtools
 Summary:   Tools to create, extract, modify, and mount WIM files
-Version:   1.13.0
+Version:   1.13.1
 Release:   1
 License:   GPLv3+
 URL:       https://wimlib.net

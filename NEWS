@@ -1,4 +1,4 @@
-Version 1.13.1-BETA1:
+Version 1.13.1:
 	Fixed a crash or incorrect output during LZMS compression with a
 	compression level greater than 50 and a chunk size greater than 64 MiB.
 	This affected wimlib v1.8.0 and later.  In the unlikely event that you

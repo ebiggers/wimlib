@@ -1,15 +1,23 @@
 #!/bin/bash
 
-oldver='1\.12\.0'
-oldmonth=July
-oldyear=2017
+set -eu
 
-newmajor=1
-newminor=13
-newpatch=0
-newmonth=November
-newyear=2018
+if [ $# -ne 1 ]; then
+	echo "Usage: $0 NEW_VERS" 1>&2
+	exit 1
+fi
 
+oldmonth=$(head -1 doc/man1/wimcapture.1 | cut -d' ' -f4 | tr -d '"')
+oldyear=$(head -1 doc/man1/wimcapture.1 | cut -d' ' -f5 | tr -d '"')
+oldver=$(grep 'the library interface of wimlib' include/wimlib.h \
+	 | egrep -o '[0-9]+\.[0-9]+\.[0-9]+')
+
+newver=$1
+newmajor=$(echo "$newver" | cut -d'.' -f1)
+newminor=$(echo "$newver" | cut -d'.' -f2)
+newpatch=$(echo "$newver" | cut -d'.' -f3)
+newmonth=$(date +%B)
+newyear=$(date +%Y)
 
 newver="${newmajor}.${newminor}.${newpatch}"
 pat='This is wimlib version [^[:space:]]\+ ([^[:space:]]\+ [^[:space:]]\+)'
