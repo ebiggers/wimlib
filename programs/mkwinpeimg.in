@@ -488,7 +488,8 @@ make_disk_img() {
 	for biosdir in				\
 		/usr/lib/syslinux/modules/bios	\
 		/usr/lib/syslinux/bios		\
-		/usr/lib/syslinux
+		/usr/lib/syslinux		\
+		/usr/share/syslinux
 	do
 		if [ -e "$biosdir/chain.c32" ]; then
 			break
