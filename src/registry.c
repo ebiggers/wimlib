@@ -243,7 +243,7 @@ iterate_subkeys_recursive(const struct regf *regf, le32 subkey_list_offset,
 	unsigned num_offsets;
 	size_t extra_size;
 	unsigned increment;
-	const le32 *p;
+	size_t i = 0;
 	enum hive_status status;
 
 	if (stats->levels_remaining == 0 || stats->subkey_lists_remaining == 0)
@@ -270,8 +270,6 @@ iterate_subkeys_recursive(const struct regf *regf, le32 subkey_list_offset,
 			     sizeof(struct subkey_list) + extra_size))
 		return HIVE_CORRUPT;
 
-	p = list->elements;
-
 	switch (list->base.magic) {
 	case LF_MAGIC:
 	case LH_MAGIC:
@@ -283,18 +281,20 @@ iterate_subkeys_recursive(const struct regf *regf, le32 subkey_list_offset,
 		while (num_offsets--) {
 			const struct nk *sub_nk;
 
-			sub_nk = get_cell_pointer(regf, *p, sizeof(struct nk));
+			sub_nk = get_cell_pointer(regf, list->elements[i],
+						  sizeof(struct nk));
 			if (!sub_nk || sub_nk->base.magic != NK_MAGIC)
 				return HIVE_CORRUPT;
 
-			if (!revalidate_cell(regf, *p, sizeof(struct nk) +
+			if (!revalidate_cell(regf, list->elements[i],
+					     sizeof(struct nk) +
 						le16_to_cpu(sub_nk->name_size)))
 				return HIVE_CORRUPT;
 
 			status = (*cb)(sub_nk, cb_ctx);
 			if (status != HIVE_OK)
 				return status;
-			p += increment;
+			i += increment;
 		}
 		return HIVE_OK;
 	case RI_MAGIC:
@@ -302,8 +302,9 @@ iterate_subkeys_recursive(const struct regf *regf, le32 subkey_list_offset,
 		status = HIVE_OK;
 		stats->levels_remaining--;
 		while (num_offsets--) {
-			status = iterate_subkeys_recursive(regf, *p++,
-							   cb, cb_ctx, stats);
+			status = iterate_subkeys_recursive(regf,
+						list->elements[i++],
+						cb, cb_ctx, stats);
 			if (status != HIVE_OK)
 				break;
 		}
