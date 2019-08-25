@@ -1094,7 +1094,7 @@ prepare_target(struct list_head *dentry_list, struct win32_apply_ctx *ctx)
 
 	path_max = compute_path_max(dentry_list);
 	/* Add some extra for building Win32 paths for the file encryption APIs,
-	 * and ensure we have at least enough to potentially use a 8.3 name for
+	 * and ensure we have at least enough to potentially use an 8.3 name for
 	 * the last component.  */
 	path_max += max(2 + (ctx->target_ntpath.Length / sizeof(wchar_t)),
 			8 + 1 + 3);

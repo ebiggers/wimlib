@@ -2738,7 +2738,7 @@ wimlib_add_tree(WIMStruct *wim, int image,
  * @param wim_ret
  *	On success, a pointer to the new ::WIMStruct is written to the memory
  *	location pointed to by this parameter.  This ::WIMStruct must be freed
- *	using using wimlib_free() when finished with it.
+ *	using wimlib_free() when finished with it.
  *
  * @return 0 on success; a ::wimlib_error_code value on failure.
  *
@@ -3623,8 +3623,8 @@ wimlib_mount_image(WIMStruct *wim,
  * @param wim_ret
  *	On success, a pointer to a new ::WIMStruct backed by the specified
  *	on-disk WIM file is written to the memory location pointed to by this
- *	parameter.  This ::WIMStruct must be freed using using wimlib_free()
- *	when finished with it.
+ *	parameter.  This ::WIMStruct must be freed using wimlib_free() when
+ *	finished with it.
  *
  * @return 0 on success; a ::wimlib_error_code value on failure.
  *

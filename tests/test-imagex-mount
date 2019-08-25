@@ -128,7 +128,7 @@ if ! wimmountrw dir.wim dir tmp.mnt; then
 	error "Failed to re-mount test WIM read-write"
 fi
 if ! imagex_unmount tmp.mnt --commit --check; then
-	error "Failed to unmount read-write mounted WIM with changes commited (no changes made)"
+	error "Failed to unmount read-write mounted WIM with changes committed (no changes made)"
 fi
 echo "Testing removing file from mounted WIM"
 if ! wimmountrw dir.wim dir tmp.mnt; then

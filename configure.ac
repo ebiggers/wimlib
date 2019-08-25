@@ -225,7 +225,7 @@ AM_CONDITIONAL([ENABLE_SSSE3_SHA1], [test "$ENABLE_SSSE3_SHA1" = "yes"])
 
 AC_MSG_CHECKING([whether to include error messages])
 AC_ARG_ENABLE([error_messages],
-	AS_HELP_STRING([--disable-error-messages], [do not compile in error messsages]),
+	AS_HELP_STRING([--disable-error-messages], [do not compile in error messages]),
 	[ENABLE_ERROR_MESSAGES=$enableval],
 	[ENABLE_ERROR_MESSAGES=yes])
 AC_MSG_RESULT([$ENABLE_ERROR_MESSAGES])

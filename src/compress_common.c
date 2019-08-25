@@ -544,18 +544,17 @@ gen_codewords(u32 A[restrict], u8 lens[restrict],
  * shortening the longest codeword that is generated.
  *
  * There also is the issue of how codewords longer than @max_codeword_len
- * are dealt with.  Fortunately, for LZMS this is irrelevant because
- * because for the LZMS alphabets no codeword can ever exceed
- * LZMS_MAX_CODEWORD_LEN (= 15).  Since the LZMS algorithm regularly
- * halves all frequencies, the frequencies cannot become high enough for
- * a length 16 codeword to be generated.  Specifically, I think that if
- * ties are broken in favor of non-leaves (as we do), the lowest total
- * frequency that would give a length-16 codeword would be the sum of the
- * frequencies 1 1 1 3 4 7 11 18 29 47 76 123 199 322 521 843 1364, which
- * is 3570.  And in LZMS we can't get a frequency that high based on the
- * alphabet sizes, rebuild frequencies, and scaling factors.  This
- * worst-case scenario is based on the following degenerate case (only
- * the bottom of the tree shown):
+ * are dealt with.  Fortunately, for LZMS this is irrelevant because for
+ * the LZMS alphabets no codeword can ever exceed LZMS_MAX_CODEWORD_LEN
+ * (= 15).  Since the LZMS algorithm regularly halves all frequencies,
+ * the frequencies cannot become high enough for a length 16 codeword to
+ * be generated.  Specifically, I think that if ties are broken in favor
+ * of non-leaves (as we do), the lowest total frequency that would give a
+ * length-16 codeword would be the sum of the frequencies 1 1 1 3 4 7 11
+ * 18 29 47 76 123 199 322 521 843 1364, which is 3570.  And in LZMS we
+ * can't get a frequency that high based on the alphabet sizes, rebuild
+ * frequencies, and scaling factors.  This worst-case scenario is based
+ * on the following degenerate case (only the bottom of the tree shown):
  *
  *                          ...
  *                        17

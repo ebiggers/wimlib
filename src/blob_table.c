@@ -900,7 +900,7 @@ read_blob_table(WIMStruct *wim)
 	if (!table)
 		goto oom;
 
-	/* Allocate and initalize blob descriptors from the raw blob table
+	/* Allocate and initialize blob descriptors from the raw blob table
 	 * buffer.  */
 	for (size_t i = 0; i < num_entries; i++) {
 		const struct blob_descriptor_disk *disk_entry =
