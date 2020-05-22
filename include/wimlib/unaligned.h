@@ -21,25 +21,25 @@
 #ifndef _WIMLIB_UNALIGNED_H
 #define _WIMLIB_UNALIGNED_H
 
+#include <string.h>
+
 #include "wimlib/compiler.h"
 #include "wimlib/endianness.h"
 #include "wimlib/types.h"
 
 #define DEFINE_UNALIGNED_TYPE(type)				\
-struct type##_unaligned {					\
-	type v;							\
-} _packed_attribute _may_alias_attribute;			\
-								\
 static forceinline type						\
 load_##type##_unaligned(const void *p)				\
 {								\
-	return ((const struct type##_unaligned *)p)->v;		\
+	type v;							\
+	memcpy(&v, p, sizeof(v));				\
+	return v;						\
 }								\
 								\
 static forceinline void						\
-store_##type##_unaligned(type val, void *p)			\
+store_##type##_unaligned(type v, void *p)			\
 {								\
-	((struct type##_unaligned *)p)->v = val;		\
+	memcpy(p, &v, sizeof(v));				\
 }
 
 DEFINE_UNALIGNED_TYPE(u16);
