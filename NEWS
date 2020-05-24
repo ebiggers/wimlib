@@ -1,3 +1,14 @@
+Version 1.13.2:
+	Prevented miscompilation with gcc 10 at -O3
+	(https://gcc.gnu.org/bugzilla/show_bug.cgi?id=94994).
+
+	Avoided some compiler warnings with gcc 9 and later.
+
+	The 'mkwinpeimg' script now also looks for syslinux modules in
+	/usr/share/syslinux, to handle where openSUSE installs them.
+
+	Removed obsolete packaging files from the source tree.
+
 Version 1.13.1:
 	Fixed a crash or incorrect output during LZMS compression with a
 	compression level greater than 50 and a chunk size greater than 64 MiB.
