@@ -511,6 +511,21 @@ prepare_wimoverlay_dat(const struct WimOverlay_dat_header *old_hdr,
 	return 0;
 }
 
+static bool
+valid_wim_filename(const struct WimOverlay_dat_entry_2 *entry, size_t name_len)
+{
+	size_t i;
+
+	if (name_len % sizeof(wchar_t))
+		return false;
+	name_len /= sizeof(wchar_t);
+	if (name_len < 2)
+		return false;
+	for (i = 0; i < name_len && entry->wim_file_name[i] != 0; i++)
+		;
+	return i == name_len - 1;
+}
+
 /*
  * Reads and validates a WimOverlay.dat file.
  *
@@ -686,13 +701,7 @@ retry:
 
 		wim_file_name_length = entry_1->entry_2_length -
 					sizeof(struct WimOverlay_dat_entry_2);
-		if ((wim_file_name_length < 2 * sizeof(wchar_t)) ||
-		    (wim_file_name_length % sizeof(wchar_t) != 0) ||
-		    (wmemchr(entry_2->wim_file_name, L'\0',
-			     wim_file_name_length / sizeof(wchar_t))
-		     != &entry_2->wim_file_name[wim_file_name_length /
-						sizeof(wchar_t) - 1]))
-		{
+		if (!valid_wim_filename(entry_2, wim_file_name_length)) {
 			ERROR("\"%ls\": entry %"PRIu32" (2) "
 			      "(data source ID 0x%016"PRIx64") "
 			      "has invalid WIM file name",
