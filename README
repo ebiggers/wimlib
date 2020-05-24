@@ -10,8 +10,7 @@ and DISM.
 
 To install wimlib and wimlib-imagex on UNIX-like systems, you can compile from
 source (e.g. './configure && make && sudo make install').  Alternatively, check
-if a package has already been prepared for your operating system.  Example files
-for Debian and RPM packaging are in the debian/ and rpm/ directories.
+if a package has already been prepared for your operating system.
 
 To install wimlib and wimlib-imagex on Windows, just download and extract the
 ZIP file containing the latest binaries.  See README.WINDOWS for more details.

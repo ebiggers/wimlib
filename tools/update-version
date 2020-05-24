@@ -33,14 +33,3 @@ sed -i -e 's/\(#define WIMLIB_MAJOR_VERSION[[:space:]]\+\)[[:digit:]]\+/\1'$newm
 
 sed -i -e "1s/$oldmonth $oldyear/$newmonth $newyear/;1s/wimlib $oldver/wimlib $newver/"	\
 	  doc/man[1-9]/*.[1-9]
-
-sed -i "1i\\
-wimlib ($newver-1) unstable; urgency=low\\
-\\
-  * Update to v$newver\\
-\\
- -- Eric Biggers <ebiggers3@gmail.com>  $(date -R)\\
-" debian/changelog
-
-sed -i 's/\(Version:[[:space:]]*\)[^[:space:]]\+/\1'"$newver"'/' \
-		rpm/*.spec
