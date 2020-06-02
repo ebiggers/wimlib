@@ -1,3 +1,7 @@
+Version 1.13.3-BETA1:
+	On Windows, improved performance of capturing an entire drive
+	in some cases.
+
 Version 1.13.2:
 	Prevented miscompilation with gcc 10 at -O3
 	(https://gcc.gnu.org/bugzilla/show_bug.cgi?id=94994).
