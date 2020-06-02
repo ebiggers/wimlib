@@ -803,12 +803,13 @@ out:
 }
 
 static int
-winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
-				  HANDLE cur_dir,
-				  const wchar_t *relative_path,
-				  size_t relative_path_nchars,
-				  const wchar_t *filename,
-				  struct winnt_scan_ctx *ctx);
+winnt_build_dentry_tree(struct wim_dentry **root_ret,
+			HANDLE cur_dir,
+			const wchar_t *relative_path,
+			size_t relative_path_nchars,
+			const wchar_t *filename,
+			struct winnt_scan_ctx *ctx,
+			bool recursive);
 
 static int
 winnt_recurse_directory(HANDLE h,
@@ -850,13 +851,14 @@ winnt_recurse_directory(HANDLE h,
 				if (!filename)
 					goto out_free_buf;
 
-				ret = winnt_build_dentry_tree_recursive(
+				ret = winnt_build_dentry_tree(
 							&child,
 							h,
 							filename,
 							info->FileNameLength / 2,
 							filename,
-							ctx);
+							ctx,
+							true);
 
 				pathbuf_truncate(ctx->params, orig_path_nchars);
 
@@ -1701,12 +1703,13 @@ get_volume_information(HANDLE h, struct winnt_scan_ctx *ctx)
 }
 
 static int
-winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
-				  HANDLE cur_dir,
-				  const wchar_t *relative_path,
-				  size_t relative_path_nchars,
-				  const wchar_t *filename,
-				  struct winnt_scan_ctx *ctx)
+winnt_build_dentry_tree(struct wim_dentry **root_ret,
+			HANDLE cur_dir,
+			const wchar_t *relative_path,
+			size_t relative_path_nchars,
+			const wchar_t *filename,
+			struct winnt_scan_ctx *ctx,
+			bool recursive)
 {
 	struct wim_dentry *root = NULL;
 	struct wim_inode *inode = NULL;
@@ -1883,7 +1886,7 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 
 	set_sort_key(inode, sort_key);
 
-	if (inode_is_directory(inode)) {
+	if (inode_is_directory(inode) && recursive) {
 
 		/* Directory: recurse to children.  */
 
@@ -1907,10 +1910,16 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	}
 
 out_progress:
-	if (likely(root))
-		ret = do_scan_progress(ctx->params, WIMLIB_SCAN_DENTRY_OK, inode);
-	else
-		ret = do_scan_progress(ctx->params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
+	ret = 0;
+	if (recursive) { /* if !recursive, caller handles progress */
+		if (likely(root))
+			ret = do_scan_progress(ctx->params,
+					       WIMLIB_SCAN_DENTRY_OK, inode);
+		else
+			ret = do_scan_progress(ctx->params,
+					       WIMLIB_SCAN_DENTRY_EXCLUDED,
+					       NULL);
+	}
 out:
 	if (likely(h))
 		NtClose(h);
@@ -2710,10 +2719,10 @@ security_map_destroy(struct security_map *map)
  *	ntfs_stream	=> wim_inode_stream
  *
  * This also handles things such as exclusions and issuing progress messages.
- * It's similar to winnt_build_dentry_tree_recursive(), but this is much faster
- * because almost all information we need is already loaded in memory in the
- * ntfs_* structures.  However, in some cases we still fall back to
- * winnt_build_dentry_tree_recursive() and/or opening the file.
+ * It's similar to winnt_build_dentry_tree(), but this is much faster because
+ * almost all information we need is already loaded in memory in the ntfs_*
+ * structures.  However, in some cases we still fall back to
+ * winnt_build_dentry_tree() and/or opening the file.
  */
 static int
 generate_wim_structures_recursive(struct wim_dentry **root_ret,
@@ -2732,7 +2741,7 @@ generate_wim_structures_recursive(struct wim_dentry **root_ret,
 	if (NTFS_IS_SPECIAL_FILE(ni->ino))
 		goto out;
 
-	/* Fall back to a recursive scan for unhandled cases.  Reparse points,
+	/* Fall back to the standard scan for unhandled cases.  Reparse points,
 	 * in particular, can't be properly handled here because a commonly used
 	 * filter driver (WOF) hides reparse points from regular filesystem APIs
 	 * but not from FSCTL_QUERY_FILE_LAYOUT.  */
@@ -2740,13 +2749,16 @@ generate_wim_structures_recursive(struct wim_dentry **root_ret,
 			      FILE_ATTRIBUTE_ENCRYPTED) ||
 	    ni->special_streams != 0)
 	{
-		ret = winnt_build_dentry_tree_recursive(&root,
-							NULL,
-							ctx->params->cur_path,
-							ctx->params->cur_path_nchars,
-							filename,
-							ctx);
-		goto out;
+		ret = winnt_build_dentry_tree(&root, NULL,
+					      ctx->params->cur_path,
+					      ctx->params->cur_path_nchars,
+					      filename, ctx, false);
+		if (ret) /* Error? */
+			goto out;
+		if (!root) /* Excluded? */
+			goto out_progress;
+		inode = root->d_inode;
+		goto process_children;
 	}
 
 	/* Test for exclusion based on path.  */
@@ -2866,6 +2878,7 @@ generate_wim_structures_recursive(struct wim_dentry **root_ret,
 	/* If processing a directory, then recurse to its children.  In this
 	 * version there is no need to go to disk, as we already have the list
 	 * of children cached from the MFT.  */
+process_children:
 	if (inode_is_directory(inode)) {
 		const struct ntfs_dentry *nd = ni->first_child;
 
@@ -3027,10 +3040,8 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 		}
 	}
 #endif
-	ret = winnt_build_dentry_tree_recursive(root_ret, NULL,
-						params->cur_path,
-						params->cur_path_nchars,
-						L"", &ctx);
+	ret = winnt_build_dentry_tree(root_ret, NULL, params->cur_path,
+				      params->cur_path_nchars, L"", &ctx, true);
 out:
 	vss_put_snapshot(ctx.snapshot);
 	if (ret == 0)
