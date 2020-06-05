@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2013-2018 Eric Biggers
+ * Copyright (C) 2013-2020 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -242,14 +242,6 @@ get_vol_flags(const wchar_t *target, DWORD *vol_flags_ret,
 		 * MS documentation they are only user-settable on NTFS.  */
 		*short_names_supported_ret = true;
 	}
-}
-
-/* Is the image being extracted an OS image for Windows 10 or later?  */
-static bool
-is_image_windows_10_or_later(struct win32_apply_ctx *ctx)
-{
-	/* Note: if no build number is available, this returns false.  */
-	return ctx->windows_build_number >= 10240;
 }
 
 static const wchar_t *
@@ -2530,6 +2522,22 @@ static const struct string_list bootloader_patterns = {
 	.num_strings = ARRAY_LEN(bootloader_pattern_strings),
 };
 
+/* Returns true if the specified system compression format is supported by the
+ * bootloader of the image being applied.  */
+static bool
+bootloader_supports_compression_format(struct win32_apply_ctx *ctx, int format)
+{
+	/* Windows 10 and later support XPRESS4K */
+	if (format == FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS4K)
+		return ctx->windows_build_number >= 10240;
+
+	/*
+	 * Windows 10 version 1903 and later support the other formats;
+	 * see https://wimlib.net/forums/viewtopic.php?f=1&t=444
+	 */
+	return ctx->windows_build_number >= 18362;
+}
+
 static NTSTATUS
 set_system_compression_on_inode(struct wim_inode *inode, int format,
 				struct win32_apply_ctx *ctx)
@@ -2539,12 +2547,8 @@ set_system_compression_on_inode(struct wim_inode *inode, int format,
 	HANDLE h;
 
 	/* If it may be needed for compatibility with the Windows bootloader,
-	 * force this file to XPRESS4K or uncompressed format.  The bootloader
-	 * of Windows 10 supports XPRESS4K only; older versions don't support
-	 * system compression at all.  */
-	if (!is_image_windows_10_or_later(ctx) ||
-	    format != FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS4K)
-	{
+	 * force this file to XPRESS4K or uncompressed format.  */
+	if (!bootloader_supports_compression_format(ctx, format)) {
 		/* We need to check the patterns against every name of the
 		 * inode, in case any of them match.  */
 		struct wim_dentry *dentry;
@@ -2568,7 +2572,9 @@ set_system_compression_on_inode(struct wim_inode *inode, int format,
 
 			warned = (ctx->num_system_compression_exclusions++ > 0);
 
-			if (is_image_windows_10_or_later(ctx)) {
+			if (bootloader_supports_compression_format(ctx,
+				   FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS4K))
+			{
 				/* Force to XPRESS4K  */
 				if (!warned) {
 					WARNING("For compatibility with the "
