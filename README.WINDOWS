@@ -104,8 +104,8 @@ packages from category "Devel":
     - mingw64-x86_64-binutils
     - mingw64-x86_64-gcc-g++
     - mingw64-x86_64-libxml2
-    - mingw64-x86_64-pkg-config
     - mingw64-x86_64-winpthreads
+    - pkg-config
 
 Download wimlib's source code from https://wimlib.net/downloads/wimlib-1.13.0.tar.gz.
 
@@ -153,7 +153,6 @@ install the following additional Cygwin packages:
     - git           (category "Devel")
     - libtool       (category "Devel")
     - nasm          (category "Devel")
-    - pkg-config    (category "Devel")
     - ghostscript   (category "Graphics")
     - wget          (category "Web")
 
