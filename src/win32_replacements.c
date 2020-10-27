@@ -692,7 +692,7 @@ win32_wglob(const wchar_t *pattern, int flags,
 		pglob->gl_pathv[pglob->gl_pathc++] = path;
 	} while (FindNextFileW(hFind, &dat));
 	err = GetLastError();
-	CloseHandle(hFind);
+	FindClose(hFind);
 	if (err != ERROR_NO_MORE_FILES) {
 		set_errno_from_win32_error(err);
 		ret = GLOB_ABORTED;
@@ -701,7 +701,7 @@ win32_wglob(const wchar_t *pattern, int flags,
 	return 0;
 
 oom:
-	CloseHandle(hFind);
+	FindClose(hFind);
 	errno = ENOMEM;
 	ret = GLOB_NOSPACE;
 fail_globfree:
