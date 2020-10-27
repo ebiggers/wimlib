@@ -1,6 +1,15 @@
-Version 1.13.3-BETA1:
-	On Windows, improved performance of capturing an entire drive
-	in some cases.
+Version 1.13.3:
+	On Windows, improved performance of capturing an entire drive in some
+	cases.
+
+	On Windows, fixed leaking a directory handle (or triggering a SEH
+	exception when running under a debugger) when referencing WIM files.
+
+	On Windows, when applying a Windows OS image using the --compact flag,
+	bootloader files can now be compressed with stronger compression
+	algorithms if the version of Windows is recent enough to support it.
+
+	Clarified the license text.
 
 Version 1.13.2:
 	Prevented miscompilation with gcc 10 at -O3
