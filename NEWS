@@ -1,3 +1,7 @@
+Version 1.13.4-BETA1:
+	wimsplit now prints progress messages regularly rather than just once
+	per WIM part.
+
 Version 1.13.3:
 	On Windows, improved performance of capturing an entire drive in some
 	cases.
