@@ -96,7 +96,6 @@ write_split_wim(WIMStruct *orig_wim, const tchar *swm_name,
 
 	for (part_number = 1; part_number <= swm_info->num_parts; part_number++) {
 		int part_write_flags;
-		wimlib_progress_func_t progfunc;
 
 		if (part_number != 1) {
 			tsprintf(swm_name_buf + swm_base_name_len,
@@ -118,8 +117,6 @@ write_split_wim(WIMStruct *orig_wim, const tchar *swm_name,
 		if (part_number != 1)
 			part_write_flags |= WIMLIB_WRITE_FLAG_NO_METADATA;
 
-		progfunc = orig_wim->progfunc;
-		orig_wim->progfunc = NULL;
 		ret = write_wim_part(orig_wim,
 				     progress.split.part_name,
 				     WIMLIB_ALL_IMAGES,
@@ -129,7 +126,6 @@ write_split_wim(WIMStruct *orig_wim, const tchar *swm_name,
 				     swm_info->num_parts,
 				     &swm_info->parts[part_number - 1].blob_list,
 				     guid);
-		orig_wim->progfunc = progfunc;
 		if (ret)
 			return ret;
 

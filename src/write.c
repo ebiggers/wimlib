@@ -301,7 +301,8 @@ struct write_blobs_progress_data {
 
 static int
 do_write_blobs_progress(struct write_blobs_progress_data *progress_data,
-			u64 complete_size, u32 complete_count, bool discarded)
+			u64 complete_size, u64 complete_compressed_size,
+			u32 complete_count, bool discarded)
 {
 	union wimlib_progress_info *progress = &progress_data->progress;
 	int ret;
@@ -316,6 +317,8 @@ do_write_blobs_progress(struct write_blobs_progress_data *progress_data,
 		}
 	} else {
 		progress->write_streams.completed_bytes += complete_size;
+		progress->write_streams.completed_compressed_bytes +=
+			complete_compressed_size;
 		progress->write_streams.completed_streams += complete_count;
 	}
 
@@ -713,7 +716,9 @@ write_blob_begin_read(struct blob_descriptor *blob, void *_ctx)
 				 * output reference count to the duplicate blob
 				 * in the former case.  */
 				ret = do_write_blobs_progress(&ctx->progress_data,
-							      blob->size, 1, true);
+							      blob->size,
+							      blob->size,
+							      1, true);
 				list_del(&blob->write_blobs_list);
 				list_del(&blob->blob_table_list);
 				if (new_blob->will_be_in_output_wim)
@@ -867,8 +872,7 @@ write_chunk(struct write_blobs_ctx *ctx, const void *cchunk,
 {
 	int ret;
 	struct blob_descriptor *blob;
-	u32 completed_blob_count;
-	u32 completed_size;
+	u32 completed_blob_count = 0;
 
 	blob = list_entry(ctx->blobs_being_compressed.next,
 			  struct blob_descriptor, write_blobs_list);
@@ -915,8 +919,6 @@ write_chunk(struct write_blobs_ctx *ctx, const void *cchunk,
 
 	ctx->cur_write_blob_offset += usize;
 
-	completed_size = usize;
-	completed_blob_count = 0;
 	if (ctx->write_resource_flags & WRITE_RESOURCE_FLAG_SOLID) {
 		/* Wrote chunk in solid mode.  It may have finished multiple
 		 * blobs.  */
@@ -973,7 +975,7 @@ write_chunk(struct write_blobs_ctx *ctx, const void *cchunk,
 		}
 	}
 
-	return do_write_blobs_progress(&ctx->progress_data, completed_size,
+	return do_write_blobs_progress(&ctx->progress_data, usize, csize,
 				       completed_blob_count, false);
 
 write_error:
@@ -1287,15 +1289,18 @@ write_raw_copy_resources(struct list_head *raw_copy_blobs,
 		blob->rdesc->raw_copy_ok = 1;
 
 	list_for_each_entry(blob, raw_copy_blobs, write_blobs_list) {
+		u64 compressed_size = 0;
+
 		if (blob->rdesc->raw_copy_ok) {
 			/* Write each solid resource only one time.  */
 			ret = write_raw_copy_resource(blob->rdesc, out_fd);
 			if (ret)
 				return ret;
 			blob->rdesc->raw_copy_ok = 0;
+			compressed_size = blob->rdesc->size_in_wim;
 		}
 		ret = do_write_blobs_progress(progress_data, blob->size,
-					      1, false);
+					      compressed_size, 1, false);
 		if (ret)
 			return ret;
 	}

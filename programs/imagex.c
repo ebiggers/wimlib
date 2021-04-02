@@ -1163,6 +1163,31 @@ report_scan_progress(const struct wimlib_progress_info_scan *scan, bool done)
 		last_scan_progress = *scan;
 	}
 }
+
+static struct wimlib_progress_info_split last_split_progress;
+
+static void
+report_split_progress(uint64_t bytes_completed_in_part)
+{
+	uint64_t completed_bytes = last_split_progress.completed_bytes +
+				   bytes_completed_in_part;
+	unsigned percent_done = TO_PERCENT(completed_bytes,
+					   last_split_progress.total_bytes);
+	unsigned unit_shift;
+	const tchar *unit_name;
+
+	unit_shift = get_unit(last_split_progress.total_bytes, &unit_name);
+	imagex_printf(T("\rSplitting WIM: %"PRIu64" %"TS" of "
+			"%"PRIu64" %"TS" (%u%%) written, part %u of %u"),
+		      completed_bytes >> unit_shift,
+		      unit_name,
+		      last_split_progress.total_bytes >> unit_shift,
+		      unit_name,
+		      percent_done,
+		      last_split_progress.cur_part_number,
+		      last_split_progress.total_parts);
+}
+
 /* Progress callback function passed to various wimlib functions. */
 static enum wimlib_progress_status
 imagex_progress_func(enum wimlib_progress_msg msg,
@@ -1175,6 +1200,12 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 
 	switch (msg) {
 	case WIMLIB_PROGRESS_MSG_WRITE_STREAMS:
+		if (last_split_progress.total_bytes != 0) {
+			/* wimlib_split() in progress; use the split-specific
+			 * progress message.  */
+			report_split_progress(info->write_streams.completed_compressed_bytes);
+			break;
+		}
 		{
 			static bool started;
 			if (!started) {
@@ -1330,26 +1361,9 @@ imagex_progress_func(enum wimlib_progress_msg msg,
 		}
 		break;
 	case WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART:
-		percent_done = TO_PERCENT(info->split.completed_bytes,
-					  info->split.total_bytes);
-		unit_shift = get_unit(info->split.total_bytes, &unit_name);
-		imagex_printf(T("Writing \"%"TS"\" (part %u of %u): %"PRIu64" %"TS" of "
-			  "%"PRIu64" %"TS" (%u%%) written\n"),
-			info->split.part_name,
-			info->split.cur_part_number,
-			info->split.total_parts,
-			info->split.completed_bytes >> unit_shift,
-			unit_name,
-			info->split.total_bytes >> unit_shift,
-			unit_name,
-			percent_done);
-		break;
 	case WIMLIB_PROGRESS_MSG_SPLIT_END_PART:
-		if (info->split.completed_bytes == info->split.total_bytes) {
-			imagex_printf(T("Finished writing split WIM part %u of %u\n"),
-				info->split.cur_part_number,
-				info->split.total_parts);
-		}
+		last_split_progress = info->split;
+		report_split_progress(0);
 		break;
 	case WIMLIB_PROGRESS_MSG_UPDATE_END_COMMAND:
 		switch (info->update.command->op) {
@@ -4019,6 +4033,7 @@ imagex_split(int argc, tchar **argv, int cmd)
 		goto out;
 
 	ret = wimlib_split(wim, argv[1], part_size, write_flags);
+	tprintf(T("\nFinished splitting \"%"TS"\"\n"), argv[0]);
 	wimlib_free(wim);
 out:
 	return ret;

@@ -649,7 +649,8 @@ enum wimlib_progress_msg {
 	 * to ::wimlib_progress_info.write_streams.  This message may be
 	 * received many times while the WIM file is being written or appended
 	 * to with wimlib_write(), wimlib_overwrite(), or wimlib_write_to_fd().
-	 */
+	 * Since wimlib v1.13.4 it will also be received when a split WIM part
+	 * is being written by wimlib_split().  */
 	WIMLIB_PROGRESS_MSG_WRITE_STREAMS = 12,
 
 	/** Per-image metadata is about to be written to the WIM file.  @p info
@@ -825,7 +826,8 @@ union wimlib_progress_info {
 		/** The number of bytes of file data that have been written so
 		 * far.  This starts at 0 and ends at @p total_bytes.  This
 		 * number is the uncompressed size; the actual size may be lower
-		 * due to compression.  */
+		 * due to compression.  See @p completed_compressed_bytes for
+		 * the compressed size.  */
 		uint64_t completed_bytes;
 
 		/** The number of distinct file data "blobs" that have been
@@ -848,6 +850,10 @@ union wimlib_progress_info {
 
 		/** This is currently broken and will always be 0.  */
 		uint32_t completed_parts;
+
+		/** Since wimlib v1.13.4: Like @p completed_bytes, but counts
+		 * the compressed size.  */
+		uint64_t completed_compressed_bytes;
 	} write_streams;
 
 	/** Valid on messages ::WIMLIB_PROGRESS_MSG_SCAN_BEGIN,
@@ -4305,7 +4311,9 @@ wimlib_set_wim_info(WIMStruct *wim, const struct wimlib_wim_info *info,
  * If a progress function is registered with @p wim, then for each split WIM
  * part that is written it will receive the messages
  * ::WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART and
- * ::WIMLIB_PROGRESS_MSG_SPLIT_END_PART.
+ * ::WIMLIB_PROGRESS_MSG_SPLIT_END_PART.  Since wimlib v1.13.4 it will also
+ * receive ::WIMLIB_PROGRESS_MSG_WRITE_STREAMS messages while writing each part;
+ * these messages will report the progress of the current part only.
  */
 extern int
 wimlib_split(WIMStruct *wim,
