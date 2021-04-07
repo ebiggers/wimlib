@@ -2,6 +2,12 @@ Version 1.13.4-BETA1:
 	wimsplit now prints progress messages regularly rather than just once
 	per WIM part.
 
+	Added support for a data recovery mode which causes files to be
+	extracted even if they are corrupted.  The option is --recover-data for
+	wimapply and wimextract, and WIMLIB_EXTRACT_FLAG_RECOVER_DATA for the
+	library.  Note that this option won't help with all types of corruption;
+	some types of corruption will still cause a fatal error.
+
 Version 1.13.3:
 	On Windows, improved performance of capturing an entire drive in some
 	cases.

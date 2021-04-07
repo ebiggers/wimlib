@@ -488,7 +488,8 @@ read_win32_encrypted_file_prefix(const wchar_t *path, bool is_dir, u64 size,
  * described by @blob.  */
 int
 read_windows_file_prefix(const struct blob_descriptor *blob, u64 size,
-			 const struct consume_chunk_callback *cb)
+			 const struct consume_chunk_callback *cb,
+			 bool recover_data)
 {
 	const struct windows_file *file = blob->windows_file;
 

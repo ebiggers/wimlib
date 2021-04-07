@@ -72,6 +72,7 @@
 /* Keep in sync with wimlib.h  */
 #define WIMLIB_EXTRACT_MASK_PUBLIC				\
 	(WIMLIB_EXTRACT_FLAG_NTFS			|	\
+	 WIMLIB_EXTRACT_FLAG_RECOVER_DATA		|	\
 	 WIMLIB_EXTRACT_FLAG_UNIX_DATA			|	\
 	 WIMLIB_EXTRACT_FLAG_NO_ACLS			|	\
 	 WIMLIB_EXTRACT_FLAG_STRICT_ACLS		|	\
@@ -310,7 +311,9 @@ read_blobs_from_pipe(struct apply_ctx *ctx, const struct read_blob_callbacks *cb
 		    && (blob->out_refcnt))
 		{
 			wim_reshdr_to_desc_and_blob(&reshdr, ctx->wim, &rdesc, blob);
-			ret = read_blob_with_sha1(blob, cbs);
+			ret = read_blob_with_sha1(blob, cbs,
+						  ctx->extract_flags &
+						  WIMLIB_EXTRACT_FLAG_RECOVER_DATA);
 			blob_unset_is_located_in_wim_resource(blob);
 			if (ret)
 				return ret;
@@ -504,17 +507,38 @@ extract_from_tmpfile(const tchar *tmpfile_name,
 
 	for (u32 i = 0; i < orig_blob->out_refcnt; i++) {
 		tmpfile_blob.inline_blob_extraction_targets[0] = targets[i];
-		ret = read_blob_with_cbs(&tmpfile_blob, cbs);
+		ret = read_blob_with_cbs(&tmpfile_blob, cbs, false);
 		if (ret)
 			return ret;
 	}
 	return 0;
 }
 
+static void
+warn_about_corrupted_file(struct wim_dentry *dentry,
+			  const struct wim_inode_stream *stream)
+{
+	WARNING("Corruption in %s\"%"TS"\"!  Extracting anyway since data recovery mode is enabled.",
+		stream_is_unnamed_data_stream(stream) ? "" : "alternate stream of ",
+		dentry_full_path(dentry));
+}
+
 static int
 end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
 {
 	struct apply_ctx *ctx = _ctx;
+
+	if ((ctx->extract_flags & WIMLIB_EXTRACT_FLAG_RECOVER_DATA) &&
+	    !status && blob->corrupted) {
+		const struct blob_extraction_target *targets =
+			blob_extraction_targets(blob);
+		for (u32 i = 0; i < blob->out_refcnt; i++) {
+			struct wim_dentry *dentry =
+				inode_first_extraction_dentry(targets[i].inode);
+
+			warn_about_corrupted_file(dentry, targets[i].stream);
+		}
+	}
 
 	if (unlikely(filedes_valid(&ctx->tmpfile_fd))) {
 		filedes_close(&ctx->tmpfile_fd);
@@ -560,10 +584,15 @@ extract_blob_list(struct apply_ctx *ctx, const struct read_blob_callbacks *cbs)
 	if (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_FROM_PIPE) {
 		return read_blobs_from_pipe(ctx, &wrapper_cbs);
 	} else {
+		int flags = VERIFY_BLOB_HASHES;
+
+		if (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_RECOVER_DATA)
+			flags |= RECOVER_DATA;
+
 		return read_blob_list(&ctx->blob_list,
 				      offsetof(struct blob_descriptor,
 					       extraction_list),
-				      &wrapper_cbs, VERIFY_BLOB_HASHES);
+				      &wrapper_cbs, flags);
 	}
 }
 
@@ -574,11 +603,13 @@ extract_blob_list(struct apply_ctx *ctx, const struct read_blob_callbacks *cbs)
  * unnamed data stream only.  */
 static int
 extract_dentry_to_stdout(struct wim_dentry *dentry,
-			 const struct blob_table *blob_table)
+			 const struct blob_table *blob_table, int extract_flags)
 {
 	struct wim_inode *inode = dentry->d_inode;
 	struct blob_descriptor *blob;
 	struct filedes _stdout;
+	bool recover = (extract_flags & WIMLIB_EXTRACT_FLAG_RECOVER_DATA);
+	int ret;
 
 	if (inode->i_attributes & (FILE_ATTRIBUTE_REPARSE_POINT |
 				   FILE_ATTRIBUTE_DIRECTORY |
@@ -598,15 +629,23 @@ extract_dentry_to_stdout(struct wim_dentry *dentry,
 	}
 
 	filedes_init(&_stdout, STDOUT_FILENO);
-	return extract_blob_to_fd(blob, &_stdout);
+	ret = extract_blob_to_fd(blob, &_stdout, recover);
+	if (ret)
+		return ret;
+	if (recover && blob->corrupted)
+		warn_about_corrupted_file(dentry,
+					  inode_get_unnamed_data_stream(inode));
+	return 0;
 }
 
 static int
 extract_dentries_to_stdout(struct wim_dentry **dentries, size_t num_dentries,
-			   const struct blob_table *blob_table)
+			   const struct blob_table *blob_table,
+			   int extract_flags)
 {
 	for (size_t i = 0; i < num_dentries; i++) {
-		int ret = extract_dentry_to_stdout(dentries[i], blob_table);
+		int ret = extract_dentry_to_stdout(dentries[i], blob_table,
+						   extract_flags);
 		if (ret)
 			return ret;
 	}
@@ -1446,7 +1485,8 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_TO_STDOUT) {
 		ret = extract_dentries_to_stdout(trees, num_trees,
-						 wim->blob_table);
+						 wim->blob_table,
+						 extract_flags);
 		goto out;
 	}
 

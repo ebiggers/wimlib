@@ -273,6 +273,7 @@ call_end_blob(struct blob_descriptor *blob, int status,
 #define VERIFY_BLOB_HASHES		0x1
 #define COMPUTE_MISSING_BLOB_HASHES	0x2
 #define BLOB_LIST_ALREADY_SORTED	0x4
+#define RECOVER_DATA			0x8
 
 extern int
 read_blob_list(struct list_head *blob_list, size_t list_head_offset,
@@ -280,18 +281,19 @@ read_blob_list(struct list_head *blob_list, size_t list_head_offset,
 
 extern int
 read_blob_with_cbs(struct blob_descriptor *blob,
-		   const struct read_blob_callbacks *cbs);
+		   const struct read_blob_callbacks *cbs, bool recover_data);
 
 extern int
 read_blob_with_sha1(struct blob_descriptor *blob,
-		    const struct read_blob_callbacks *cbs);
+		    const struct read_blob_callbacks *cbs, bool recover_data);
 
 extern int
 extract_blob_prefix_to_fd(struct blob_descriptor *blob, u64 size,
 			  struct filedes *fd);
 
 extern int
-extract_blob_to_fd(struct blob_descriptor *blob, struct filedes *fd);
+extract_blob_to_fd(struct blob_descriptor *blob, struct filedes *fd,
+		   bool recover_data);
 
 /* Miscellaneous blob functions.  */
 

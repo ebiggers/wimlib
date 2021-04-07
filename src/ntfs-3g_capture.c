@@ -117,7 +117,8 @@ open_ntfs_attr(ntfs_inode *ni, const struct ntfs_location *loc)
 
 int
 read_ntfs_attribute_prefix(const struct blob_descriptor *blob, u64 size,
-			   const struct consume_chunk_callback *cb)
+			   const struct consume_chunk_callback *cb,
+			   bool recover_data)
 {
 	const struct ntfs_location *loc = blob->ntfs_loc;
 	ntfs_volume *vol = loc->volume->vol;

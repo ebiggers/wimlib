@@ -355,15 +355,22 @@ files matching any of the patterns in this section will not be compressed.
 In addition, wimlib has a hardcoded list of files for which it knows, for
 compatibility with the Windows bootloader, to override the requested compression
 format.
+.TP
+\fB--recover-data\fR
+If a file is corrupted (its stored hash doesn't match its actual hash, or some
+parts of it can't be decompressed), extract the corrupted file anyway with a
+warning, rather than aborting with an error.  This may be useful to recover data
+if a WIM archive was corrupted.  Note that recovering data is not guaranteed to
+succeed, as it depends on the type of corruption that occurred.
 .SH NOTES
 \fIData integrity\fR: WIM files include checksums of file data.  To detect
 accidental (non-malicious) data corruption, wimlib calculates the checksum of
 every file it extracts and issues an error if it does not have the expected
-value.  (This default behavior seems equivalent to the \fB/verify\fR option of
-ImageX.)  In addition, a WIM file can include an integrity table (extra
-checksums) over the raw data of the entire WIM file.  For performance reasons
-wimlib does not check the integrity table by default, but the \fB--check\fR
-option can be passed to make it do so.
+value, unless the \fB--recover-data\fR option is given.  (This default behavior
+seems equivalent to the \fB/verify\fR option of ImageX.)  In addition, a WIM
+file can include an integrity table (extra checksums) over the raw data of the
+entire WIM file.  For performance reasons wimlib does not check the integrity
+table by default, but the \fB--check\fR option can be passed to make it do so.
 .PP
 \fIESD files\fR: wimlib can extract files from solid-compressed WIMs, or "ESD"
 (.esd) files, just like from normal WIM (.wim) files.  However, Microsoft

@@ -25,7 +25,8 @@ cmp_windows_files(const struct windows_file *file1,
 
 extern int
 read_windows_file_prefix(const struct blob_descriptor *blob, u64 size,
-			 const struct consume_chunk_callback *cb);
+			 const struct consume_chunk_callback *cb,
+			 bool recover_data);
 
 extern int
 win32_global_init(int init_flags);

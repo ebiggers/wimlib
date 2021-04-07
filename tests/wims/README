@@ -1,5 +1,9 @@
 Some fun files:
 
+corrupted_file_1.wim:  This WIM contains a file whose SHA-1 digest doesn't match.
+
+corrupted_file_2.wim:  This WIM contains a file that fails to decompress.
+
 cyclic.wim:  This WIM has an image with a cyclic directory structure and should be
 detected as invalid.
 

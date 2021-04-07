@@ -340,7 +340,8 @@ EXTRA_DIST +=					\
 	tests/security_descriptor_1.base64	\
 	tests/security_descriptor_1.bin		\
 	tests/security_descriptor_2.base64	\
-	tests/security_descriptor_2.bin
+	tests/security_descriptor_2.bin		\
+	tests/wims
 
 if WINDOWS_NATIVE_BUILD
 # Tests are run manually for Windows builds.

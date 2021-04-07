@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2012-2018 Eric Biggers
+ * Copyright (C) 2012-2021 Eric Biggers
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -202,6 +202,7 @@ enum {
 	IMAGEX_PRESERVE_DIR_STRUCTURE_OPTION,
 	IMAGEX_REBUILD_OPTION,
 	IMAGEX_RECOMPRESS_OPTION,
+	IMAGEX_RECOVER_DATA_OPTION,
 	IMAGEX_RECURSIVE_OPTION,
 	IMAGEX_REF_OPTION,
 	IMAGEX_RPFIX_OPTION,
@@ -239,6 +240,7 @@ static const struct option apply_options[] = {
 	{T("include-invalid-names"), no_argument,       NULL, IMAGEX_INCLUDE_INVALID_NAMES_OPTION},
 	{T("wimboot"),     no_argument,       NULL, IMAGEX_WIMBOOT_OPTION},
 	{T("compact"),     required_argument, NULL, IMAGEX_COMPACT_OPTION},
+	{T("recover-data"), no_argument,      NULL, IMAGEX_RECOVER_DATA_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -336,6 +338,7 @@ static const struct option extract_options[] = {
 	{T("preserve-dir-structure"), no_argument, NULL, IMAGEX_PRESERVE_DIR_STRUCTURE_OPTION},
 	{T("wimboot"),     no_argument,       NULL, IMAGEX_WIMBOOT_OPTION},
 	{T("compact"),     required_argument, NULL, IMAGEX_COMPACT_OPTION},
+	{T("recover-data"), no_argument,      NULL, IMAGEX_RECOVER_DATA_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -1746,6 +1749,9 @@ imagex_apply(int argc, tchar **argv, int cmd)
 			ret = set_compact_mode(optarg, &extract_flags);
 			if (ret)
 				goto out_free_refglobs;
+			break;
+		case IMAGEX_RECOVER_DATA_OPTION:
+			extract_flags |= WIMLIB_EXTRACT_FLAG_RECOVER_DATA;
 			break;
 		default:
 			goto out_usage;
@@ -3294,6 +3300,9 @@ imagex_extract(int argc, tchar **argv, int cmd)
 			if (ret)
 				goto out_free_refglobs;
 			break;
+		case IMAGEX_RECOVER_DATA_OPTION:
+			extract_flags |= WIMLIB_EXTRACT_FLAG_RECOVER_DATA;
+			break;
 		default:
 			goto out_usage;
 		}
@@ -4484,7 +4493,7 @@ T(
 "                    [--check] [--ref=\"GLOB\"] [--no-acls] [--strict-acls]\n"
 "                    [--no-attributes] [--rpfix] [--norpfix]\n"
 "                    [--include-invalid-names] [--wimboot] [--unix-data]\n"
-"                    [--compact=FORMAT]\n"
+"                    [--compact=FORMAT] [--recover-data]\n"
 ),
 [CMD_CAPTURE] =
 T(
@@ -4517,8 +4526,8 @@ T(
 "    %"TS" WIMFILE IMAGE [(PATH | @LISTFILE)...]\n"
 "                    [--check] [--ref=\"GLOB\"] [--dest-dir=CMD_DIR]\n"
 "                    [--to-stdout] [--no-acls] [--strict-acls]\n"
-"                    [--no-attributes] [--include-invalid-names]\n"
-"                    [--no-globs] [--nullglob] [--preserve-dir-structure]\n"
+"                    [--no-attributes] [--include-invalid-names] [--no-globs]\n"
+"                    [--nullglob] [--preserve-dir-structure] [--recover-data]\n"
 ),
 [CMD_INFO] =
 T(
@@ -4602,7 +4611,7 @@ version(void)
 	static const tchar * const fmt =
 	T(
 "wimlib-imagex " PACKAGE_VERSION " (using wimlib %"TS")\n"
-"Copyright (C) 2012-2018 Eric Biggers\n"
+"Copyright (C) 2012-2021 Eric Biggers\n"
 "License GPLv3+; GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>.\n"
 "This is free software: you are free to change and redistribute it.\n"
 "There is NO WARRANTY, to the extent permitted by law.\n"

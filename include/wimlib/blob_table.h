@@ -141,6 +141,9 @@ struct blob_descriptor {
 	/* 1 iff the SHA-1 message digest of this blob is unknown.  */
 	u16 unhashed : 1;
 
+	/* 1 iff this blob has failed its checksum.  */
+	u16 corrupted : 1;
+
 	/* Temporary fields used when writing blobs; set as documented for
 	 * prepare_blob_list_for_write().  */
 	u16 unique_size : 1;

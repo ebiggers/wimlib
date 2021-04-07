@@ -83,6 +83,34 @@ struct data_range {
 	u64 size;
 };
 
+static int
+decompress_chunk(const void *cbuf, u32 chunk_csize, u8 *ubuf, u32 chunk_usize,
+		 struct wimlib_decompressor *decompressor, bool recover_data)
+{
+	int res = wimlib_decompress(cbuf, chunk_csize, ubuf, chunk_usize,
+				    decompressor);
+	if (likely(res == 0))
+		return 0;
+
+	if (recover_data) {
+		WARNING("Failed to decompress data!  Continuing anyway since data recovery mode is enabled.");
+
+		/* Continue on with *something*.  In the worst case just use a
+		 * zeroed buffer.  But, try to fill as much of it with
+		 * decompressed data as we can.  This works because if the
+		 * corruption isn't located right at the beginning of the
+		 * compressed chunk, wimlib_decompress() may write some correct
+		 * output at the beginning even if it fails later.  */
+		memset(ubuf, 0, chunk_usize);
+		(void)wimlib_decompress(cbuf, chunk_csize, ubuf,
+					chunk_usize, decompressor);
+		return 0;
+	}
+	ERROR("Failed to decompress data!");
+	errno = EINVAL;
+	return WIMLIB_ERR_DECOMPRESSION;
+}
+
 /*
  * Read data from a compressed WIM resource.
  *
@@ -98,6 +126,9 @@ struct data_range {
  *	the data being read.  Each call provides the next chunk of the requested
  *	data, uncompressed.  Each chunk will be nonempty and will not cross
  *	range boundaries but otherwise will be of unspecified size.
+ * @recover_data
+ *	If a chunk can't be fully decompressed due to being corrupted, continue
+ *	with whatever data can be recovered rather than return an error.
  *
  * Possible return values:
  *
@@ -114,7 +145,8 @@ static int
 read_compressed_wim_resource(const struct wim_resource_descriptor * const rdesc,
 			     const struct data_range * const ranges,
 			     const size_t num_ranges,
-			     const struct consume_chunk_callback *cb)
+			     const struct consume_chunk_callback *cb,
+			     bool recover_data)
 {
 	int ret;
 	u64 *chunk_offsets = NULL;
@@ -446,17 +478,12 @@ read_compressed_wim_resource(const struct wim_resource_descriptor * const rdesc,
 				goto read_error;
 
 			if (read_buf == cbuf) {
-				ret = wimlib_decompress(cbuf,
-							chunk_csize,
-							ubuf,
-							chunk_usize,
-							decompressor);
-				if (unlikely(ret)) {
-					ERROR("Failed to decompress data!");
-					ret = WIMLIB_ERR_DECOMPRESSION;
-					errno = EINVAL;
+				ret = decompress_chunk(cbuf, chunk_csize,
+						       ubuf, chunk_usize,
+						       decompressor,
+						       recover_data);
+				if (unlikely(ret))
 					goto out_cleanup;
-				}
 			}
 			cur_read_offset += chunk_csize;
 
@@ -592,7 +619,8 @@ bufferer_cb(const void *chunk, size_t size, void *_ctx)
 static int
 read_partial_wim_resource(const struct wim_resource_descriptor *rdesc,
 			  const u64 offset, const u64 size,
-			  const struct consume_chunk_callback *cb)
+			  const struct consume_chunk_callback *cb,
+			  bool recover_data)
 {
 	if (rdesc->flags & (WIM_RESHDR_FLAG_COMPRESSED |
 			    WIM_RESHDR_FLAG_SOLID))
@@ -604,7 +632,8 @@ read_partial_wim_resource(const struct wim_resource_descriptor *rdesc,
 			.offset = offset,
 			.size = size,
 		};
-		return read_compressed_wim_resource(rdesc, &range, 1, cb);
+		return read_compressed_wim_resource(rdesc, &range, 1, cb,
+						    recover_data);
 	}
 
 	/* Uncompressed resource  */
@@ -626,7 +655,7 @@ read_partial_wim_blob_into_buf(const struct blob_descriptor *blob,
 	return read_partial_wim_resource(blob->rdesc,
 					 blob->offset_in_res + offset,
 					 size,
-					 &cb);
+					 &cb, false);
 }
 
 static int
@@ -643,15 +672,15 @@ skip_wim_resource(const struct wim_resource_descriptor *rdesc)
 		.func = noop_cb,
 	};
 	return read_partial_wim_resource(rdesc, 0,
-					 rdesc->uncompressed_size, &cb);
+					 rdesc->uncompressed_size, &cb, false);
 }
 
 static int
 read_wim_blob_prefix(const struct blob_descriptor *blob, u64 size,
-		     const struct consume_chunk_callback *cb)
+		     const struct consume_chunk_callback *cb, bool recover_data)
 {
 	return read_partial_wim_resource(blob->rdesc, blob->offset_in_res,
-					 size, cb);
+					 size, cb, recover_data);
 }
 
 /* This function handles reading blob data that is located in an external file,
@@ -664,7 +693,8 @@ read_wim_blob_prefix(const struct blob_descriptor *blob, u64 size,
  * encrypted), so Windows uses its own code for its equivalent case.  */
 static int
 read_file_on_disk_prefix(const struct blob_descriptor *blob, u64 size,
-			 const struct consume_chunk_callback *cb)
+			 const struct consume_chunk_callback *cb,
+			 bool recover_data)
 {
 	int ret;
 	int raw_fd;
@@ -684,7 +714,8 @@ read_file_on_disk_prefix(const struct blob_descriptor *blob, u64 size,
 #ifdef WITH_FUSE
 static int
 read_staging_file_prefix(const struct blob_descriptor *blob, u64 size,
-			 const struct consume_chunk_callback *cb)
+			 const struct consume_chunk_callback *cb,
+			 bool recover_data)
 {
 	int raw_fd;
 	struct filedes fd;
@@ -708,7 +739,8 @@ read_staging_file_prefix(const struct blob_descriptor *blob, u64 size,
  * already located in an in-memory buffer.  */
 static int
 read_buffer_prefix(const struct blob_descriptor *blob,
-		   u64 size, const struct consume_chunk_callback *cb)
+		   u64 size, const struct consume_chunk_callback *cb,
+		   bool recover_data)
 {
 	if (unlikely(!size))
 		return 0;
@@ -717,7 +749,8 @@ read_buffer_prefix(const struct blob_descriptor *blob,
 
 typedef int (*read_blob_prefix_handler_t)(const struct blob_descriptor *blob,
 					  u64 size,
-					  const struct consume_chunk_callback *cb);
+					  const struct consume_chunk_callback *cb,
+					  bool recover_data);
 
 /*
  * Read the first @size bytes from a generic "blob", which may be located in any
@@ -728,11 +761,12 @@ typedef int (*read_blob_prefix_handler_t)(const struct blob_descriptor *blob,
  * Returns 0 on success; nonzero on error.  A nonzero value will be returned if
  * the blob data cannot be successfully read (for a number of different reasons,
  * depending on the blob location), or if @cb returned nonzero in which case
- * that error code will be returned.
+ * that error code will be returned.  If @recover_data is true, then errors
+ * decompressing chunks in WIM resources will be ignored.
  */
 static int
 read_blob_prefix(const struct blob_descriptor *blob, u64 size,
-		 const struct consume_chunk_callback *cb)
+		 const struct consume_chunk_callback *cb, bool recover_data)
 {
 	static const read_blob_prefix_handler_t handlers[] = {
 		[BLOB_IN_WIM] = read_wim_blob_prefix,
@@ -751,7 +785,7 @@ read_blob_prefix(const struct blob_descriptor *blob, u64 size,
 	wimlib_assert(blob->blob_location < ARRAY_LEN(handlers)
 		      && handlers[blob->blob_location] != NULL);
 	wimlib_assert(size <= blob->size);
-	return handlers[blob->blob_location](blob, size, cb);
+	return handlers[blob->blob_location](blob, size, cb, recover_data);
 }
 
 struct blob_chunk_ctx {
@@ -775,7 +809,7 @@ consume_blob_chunk(const void *chunk, size_t size, void *_ctx)
  * callbacks (all of which are optional).  */
 int
 read_blob_with_cbs(struct blob_descriptor *blob,
-		   const struct read_blob_callbacks *cbs)
+		   const struct read_blob_callbacks *cbs, bool recover_data)
 {
 	int ret;
 	struct blob_chunk_ctx ctx = {
@@ -792,7 +826,7 @@ read_blob_with_cbs(struct blob_descriptor *blob,
 	if (unlikely(ret))
 		return ret;
 
-	ret = read_blob_prefix(blob, blob->size, &cb);
+	ret = read_blob_prefix(blob, blob->size, &cb, recover_data);
 
 	return call_end_blob(blob, ret, cbs);
 }
@@ -807,7 +841,7 @@ read_blob_into_buf(const struct blob_descriptor *blob, void *buf)
 		.func	= bufferer_cb,
 		.ctx	= &buf,
 	};
-	return read_blob_prefix(blob, blob->size, &cb);
+	return read_blob_prefix(blob, blob->size, &cb, false);
 }
 
 /* Retrieve the full uncompressed data of the specified blob.  A buffer large
@@ -955,6 +989,7 @@ hasher_begin_blob(struct blob_descriptor *blob, void *_ctx)
 	struct hasher_context *ctx = _ctx;
 
 	sha1_init(&ctx->sha_ctx);
+	blob->corrupted = 0;
 
 	return call_begin_blob(blob, &ctx->cbs);
 }
@@ -977,8 +1012,8 @@ hasher_continue_blob(const struct blob_descriptor *blob, u64 offset,
 }
 
 static int
-report_sha1_mismatch_error(const struct blob_descriptor *blob,
-			   const u8 actual_hash[SHA1_HASH_SIZE])
+report_sha1_mismatch(struct blob_descriptor *blob,
+		     const u8 actual_hash[SHA1_HASH_SIZE], bool recover_data)
 {
 	tchar expected_hashstr[SHA1_HASH_SIZE * 2 + 1];
 	tchar actual_hashstr[SHA1_HASH_SIZE * 2 + 1];
@@ -989,6 +1024,8 @@ report_sha1_mismatch_error(const struct blob_descriptor *blob,
 	sprint_hash(blob->hash, expected_hashstr);
 	sprint_hash(actual_hash, actual_hashstr);
 
+	blob->corrupted = 1;
+
 	if (blob_is_in_file(blob)) {
 		ERROR("A file was concurrently modified!\n"
 		      "        Path: \"%"TS"\"\n"
@@ -997,18 +1034,21 @@ report_sha1_mismatch_error(const struct blob_descriptor *blob,
 		      blob_file_path(blob), expected_hashstr, actual_hashstr);
 		return WIMLIB_ERR_CONCURRENT_MODIFICATION_DETECTED;
 	} else if (blob->blob_location == BLOB_IN_WIM) {
+	#ifdef ENABLE_ERROR_MESSAGES
 		const struct wim_resource_descriptor *rdesc = blob->rdesc;
-		ERROR("A WIM resource is corrupted!\n"
-		      "        WIM file: \"%"TS"\"\n"
-		      "        Blob uncompressed size: %"PRIu64"\n"
-		      "        Resource offset in WIM: %"PRIu64"\n"
-		      "        Resource uncompressed size: %"PRIu64"\n"
-		      "        Resource size in WIM: %"PRIu64"\n"
-		      "        Resource flags: 0x%x%"TS"\n"
-		      "        Resource compression type: %"TS"\n"
-		      "        Resource compression chunk size: %"PRIu32"\n"
-		      "        Expected SHA-1: %"TS"\n"
-		      "        Actual SHA-1: %"TS"\n",
+
+		(recover_data ? wimlib_warning : wimlib_error)(
+		      T("A WIM resource is corrupted!\n"
+			"        WIM file: \"%"TS"\"\n"
+			"        Blob uncompressed size: %"PRIu64"\n"
+			"        Resource offset in WIM: %"PRIu64"\n"
+			"        Resource uncompressed size: %"PRIu64"\n"
+			"        Resource size in WIM: %"PRIu64"\n"
+			"        Resource flags: 0x%x%"TS"\n"
+			"        Resource compression type: %"TS"\n"
+			"        Resource compression chunk size: %"PRIu32"\n"
+			"        Expected SHA-1: %"TS"\n"
+			"        Actual SHA-1: %"TS"\n"),
 		      rdesc->wim->filename,
 		      blob->size,
 		      rdesc->offset_in_wim,
@@ -1020,6 +1060,9 @@ report_sha1_mismatch_error(const struct blob_descriptor *blob,
 						rdesc->compression_type),
 		      rdesc->chunk_size,
 		      expected_hashstr, actual_hashstr);
+	#endif /* ENABLE_ERROR_MESSAGES */
+		if (recover_data)
+			return 0;
 		return WIMLIB_ERR_INVALID_RESOURCE_HASH;
 	} else {
 		ERROR("File data was concurrently modified!\n"
@@ -1058,7 +1101,8 @@ hasher_end_blob(struct blob_descriptor *blob, int status, void *_ctx)
 	} else if ((ctx->flags & VERIFY_BLOB_HASHES) &&
 		   unlikely(!hashes_equal(hash, blob->hash)))
 	{
-		ret = report_sha1_mismatch_error(blob, hash);
+		ret = report_sha1_mismatch(blob, hash,
+					   ctx->flags & RECOVER_DATA);
 		goto out_next_cb;
 	}
 	ret = 0;
@@ -1071,10 +1115,11 @@ out_next_cb:
  * SHA-1 message digest of the blob.  */
 int
 read_blob_with_sha1(struct blob_descriptor *blob,
-		    const struct read_blob_callbacks *cbs)
+		    const struct read_blob_callbacks *cbs, bool recover_data)
 {
 	struct hasher_context hasher_ctx = {
-		.flags = VERIFY_BLOB_HASHES | COMPUTE_MISSING_BLOB_HASHES,
+		.flags = VERIFY_BLOB_HASHES | COMPUTE_MISSING_BLOB_HASHES |
+			 (recover_data ? RECOVER_DATA : 0),
 		.cbs = *cbs,
 	};
 	struct read_blob_callbacks hasher_cbs = {
@@ -1083,7 +1128,7 @@ read_blob_with_sha1(struct blob_descriptor *blob,
 		.end_blob	= hasher_end_blob,
 		.ctx		= &hasher_ctx,
 	};
-	return read_blob_with_cbs(blob, &hasher_cbs);
+	return read_blob_with_cbs(blob, &hasher_cbs, recover_data);
 }
 
 static int
@@ -1091,7 +1136,8 @@ read_blobs_in_solid_resource(struct blob_descriptor *first_blob,
 			     struct blob_descriptor *last_blob,
 			     size_t blob_count,
 			     size_t list_head_offset,
-			     const struct read_blob_callbacks *sink_cbs)
+			     const struct read_blob_callbacks *sink_cbs,
+			     bool recover_data)
 {
 	struct data_range *ranges;
 	bool ranges_malloced;
@@ -1141,7 +1187,7 @@ read_blobs_in_solid_resource(struct blob_descriptor *first_blob,
 	};
 
 	ret = read_compressed_wim_resource(first_blob->rdesc, ranges,
-					   blob_count, &cb);
+					   blob_count, &cb, recover_data);
 
 	if (ranges_malloced)
 		FREE(ranges);
@@ -1178,7 +1224,8 @@ oom:
  *		For all blobs being read that have already had SHA-1 message
  *		digests computed, calculate the SHA-1 message digest of the read
  *		data and compare it with the previously computed value.  If they
- *		do not match, return WIMLIB_ERR_INVALID_RESOURCE_HASH.
+ *		do not match, return WIMLIB_ERR_INVALID_RESOURCE_HASH (unless
+ *		RECOVER_DATA is also set, in which case just issue a warning).
  *
  *	COMPUTE_MISSING_BLOB_HASHES
  *		For all blobs being read that have not yet had their SHA-1
@@ -1187,6 +1234,9 @@ oom:
  *
  *	BLOB_LIST_ALREADY_SORTED
  *		@blob_list is already sorted in sequential order for reading.
+ *
+ *	RECOVER_DATA
+ *		Don't consider corrupted blob data to be an error.
  *
  * The callback functions are allowed to delete the current blob from the list
  * if necessary.
@@ -1273,14 +1323,15 @@ read_blob_list(struct list_head *blob_list, size_t list_head_offset,
 				ret = read_blobs_in_solid_resource(blob, blob_last,
 								   blob_count,
 								   list_head_offset,
-								   sink_cbs);
+								   sink_cbs,
+								   flags & RECOVER_DATA);
 				if (ret)
 					return ret;
 				continue;
 			}
 		}
 
-		ret = read_blob_with_cbs(blob, sink_cbs);
+		ret = read_blob_with_cbs(blob, sink_cbs, flags & RECOVER_DATA);
 		if (unlikely(ret && ret != BEGIN_BLOB_STATUS_SKIP_BLOB))
 			return ret;
 	}
@@ -1314,19 +1365,20 @@ extract_blob_prefix_to_fd(struct blob_descriptor *blob, u64 size,
 		.func	= extract_chunk_to_fd,
 		.ctx	= fd,
 	};
-	return read_blob_prefix(blob, size, &cb);
+	return read_blob_prefix(blob, size, &cb, false);
 }
 
 /* Extract the full uncompressed contents of the specified blob to the specified
  * file descriptor.  This checks the SHA-1 message digest.  */
 int
-extract_blob_to_fd(struct blob_descriptor *blob, struct filedes *fd)
+extract_blob_to_fd(struct blob_descriptor *blob, struct filedes *fd,
+		   bool recover_data)
 {
 	struct read_blob_callbacks cbs = {
 		.continue_blob	= extract_blob_chunk_to_fd,
 		.ctx		= fd,
 	};
-	return read_blob_with_sha1(blob, &cbs);
+	return read_blob_with_sha1(blob, &cbs, recover_data);
 }
 
 /* Calculate the SHA-1 message digest of a blob and store it in @blob->hash.  */
@@ -1335,7 +1387,7 @@ sha1_blob(struct blob_descriptor *blob)
 {
 	static const struct read_blob_callbacks cbs = {
 	};
-	return read_blob_with_sha1(blob, &cbs);
+	return read_blob_with_sha1(blob, &cbs, false);
 }
 
 /*

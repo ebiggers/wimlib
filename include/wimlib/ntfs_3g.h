@@ -11,7 +11,8 @@ struct ntfs_location;
 
 extern int
 read_ntfs_attribute_prefix(const struct blob_descriptor *blob, u64 size,
-			   const struct consume_chunk_callback *cb);
+			   const struct consume_chunk_callback *cb,
+			   bool recover_data);
 
 extern struct ntfs_location *
 clone_ntfs_location(const struct ntfs_location *loc);

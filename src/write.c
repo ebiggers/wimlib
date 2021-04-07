@@ -767,7 +767,7 @@ write_blob_uncompressed(struct blob_descriptor *blob, struct filedes *out_fd)
 	if (filedes_seek(out_fd, begin_offset) == -1)
 		return 0;
 
-	ret = extract_blob_to_fd(blob, out_fd);
+	ret = extract_blob_to_fd(blob, out_fd, false);
 	if (ret) {
 		/* Error reading the uncompressed data.  */
 		if (out_fd->offset == begin_offset &&

@@ -1928,6 +1928,10 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
  * wimlib_extract_paths() when passed multiple paths.  */
 #define WIMLIB_EXTRACT_FLAG_NTFS			0x00000001
 
+/** Since wimlib v1.13.4: Don't consider corrupted files to be an error.  Just
+ * extract them in whatever form we can.  */
+#define WIMLIB_EXTRACT_FLAG_RECOVER_DATA		0x00000002
+
 /** UNIX-like systems only:  Extract UNIX-specific metadata captured with
  * ::WIMLIB_ADD_FLAG_UNIX_DATA.  */
 #define WIMLIB_EXTRACT_FLAG_UNIX_DATA			0x00000020

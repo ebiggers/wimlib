@@ -142,6 +142,20 @@ mkdir in.dir out.dir
 
 . $srcdir/tests/common_tests.sh
 
+# Test the data recovery mode
+__msg "Testing data recovery mode"
+for file in corrupted_file_1.wim corrupted_file_2.wim; do
+	rm -rf out.dir
+	wimapply $srcdir/tests/wims/$file 1 out.dir 2>/dev/null && \
+		error "Applying $file in default mode unexpectedly succeeded"
+	rm -rf out.dir
+	wimapply --recover-data $srcdir/tests/wims/$file 1 out.dir || \
+		error "Applying $file in data recovery mode unexpectedly failed"
+	if [ ! -e out.dir/file ]; then
+		error "Recovered file not found"
+	fi
+done
+
 # Make sure exclusion list works
 __msg "Testing default capture configuration file"
 touch in.dir/hiberfil.sys
