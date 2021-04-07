@@ -1,6 +1,6 @@
 ###############################################################################
 
-AC_INIT([wimlib], [1.13.4-BETA1], [https://wimlib.net/forums/])
+AC_INIT([wimlib], [1.13.4-BETA2], [https://wimlib.net/forums/])
 AC_CONFIG_SRCDIR([src/wim.c])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR([build-aux])
