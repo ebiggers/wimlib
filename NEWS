@@ -1,4 +1,4 @@
-Version 1.13.4-BETA2:
+Version 1.13.4:
 	wimsplit now prints progress messages regularly rather than just once
 	per WIM part.
 
