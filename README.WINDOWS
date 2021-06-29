@@ -147,7 +147,7 @@ libraries are linked in statically rather than dynamically, so it does not
 depend on any DLLs other than standard Windows DLLs.  If you want to do this,
 install the following additional Cygwin packages:
 
-    - p7zip         (category "Archiver")
+    - p7zip         (category "Archive")
     - autoconf      (category "Devel")
     - automake      (category "Devel")
     - git           (category "Devel")
