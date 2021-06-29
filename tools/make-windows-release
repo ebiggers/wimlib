@@ -43,7 +43,8 @@ fi
 
 # Compile wimlib
 
-if ! grep -q "./configure --host=${ARCH}-w64-mingw32" config.log || \
+if ! [ -e config.log ] ||
+	! grep -q "./configure --host=${ARCH}-w64-mingw32" config.log || \
 	! grep -q "configure: exit 0" config.log || \
 	[ $# -gt 0 ]
 then
