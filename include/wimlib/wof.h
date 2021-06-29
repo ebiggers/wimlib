@@ -2,13 +2,11 @@
  * wof.h
  *
  * Definitions for the Windows Overlay Filesystem filter (WOF) ioctls, as well
- * some definitions for associated undocumented data structures.  See
- * http://msdn.microsoft.com/en-us/library/windows/hardware/ff540367(v=vs.85).aspx
- * for more information about the documented ioctls.
+ * some definitions for associated undocumented data structures.
  *
  * The following copying information applies to this specific source code file:
  *
- * Written in 2014-2016 by Eric Biggers <ebiggers3@gmail.com>
+ * Written in 2014-2021 by Eric Biggers <ebiggers3@gmail.com>
  *
  * To the extent possible under law, the author(s) have dedicated all copyright
  * and related and neighboring rights to this software to the public domain
@@ -64,39 +62,149 @@
  */
 
 
-/* Current version of the WOF driver/protocol  */
-#define WOF_CURRENT_VERSION		1
+/*----------------------------------------------------------------------------*
+ *                          WOF ioctl definitions                             *
+ *----------------------------------------------------------------------------*/
 
-/* Specifies the WIM backing provider  */
-#define WOF_PROVIDER_WIM		1
+#ifndef WOF_CURRENT_VERSION
+/* Identifies a file backing provider and the overlay service version it supports.
+ * Ref: https://docs.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_wof_external_info */
+typedef struct _WOF_EXTERNAL_INFO {
+#define WOF_CURRENT_VERSION 1
+	DWORD Version;
+	DWORD Provider;
+} WOF_EXTERNAL_INFO, *PWOF_EXTERNAL_INFO;
+#endif /* WOF_CURRENT_VERSION */
 
-/* Specifies the "file" backing provider (a.k.a. System Compression)  */
-#define WOF_PROVIDER_FILE		2
+/* WIM provider ("WIMBoot") */
+#ifndef WOF_PROVIDER_WIM
+#define WOF_PROVIDER_WIM 1
+/*
+ * The identifier and status information for the Windows Image File (WIM)
+ * external backing provider.
+ * Ref: https://docs.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_wim_provider_external_info
+ */
+typedef struct _WIM_PROVIDER_EXTERNAL_INFO {
+#define WIM_PROVIDER_CURRENT_VERSION 1
+	ULONG         Version;
+	ULONG         Flags;
+	LARGE_INTEGER DataSourceId;
+#define WIM_PROVIDER_HASH_SIZE 20
+	UCHAR         ResourceHash[WIM_PROVIDER_HASH_SIZE];
+} WIM_PROVIDER_EXTERNAL_INFO, *PWIM_PROVIDER_EXTERNAL_INFO;
+#endif /* WOF_PROVIDER_WIM */
 
-/* The current version of the WIM backing provider  */
-#define WIM_PROVIDER_CURRENT_VERSION	1
+/* File provider ("system compression") */
+#ifndef WOF_PROVIDER_FILE
+#define WOF_PROVIDER_FILE 2
+/* Defines metadata specific to files provided by WOF_PROVIDER_FILE.
+ * Ref: https://docs.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_provider_external_info_v1 */
+typedef struct _FILE_PROVIDER_EXTERNAL_INFO_V1 {
+#define FILE_PROVIDER_CURRENT_VERSION 1
+	DWORD Version;
+#define FILE_PROVIDER_COMPRESSION_XPRESS4K	0
+#define FILE_PROVIDER_COMPRESSION_LZX		1
+#define FILE_PROVIDER_COMPRESSION_XPRESS8K	2
+#define FILE_PROVIDER_COMPRESSION_XPRESS16K	3
+	DWORD Algorithm;
+	DWORD Flags;
+} FILE_PROVIDER_EXTERNAL_INFO_V1, *PFILE_PROVIDER_EXTERNAL_INFO_V1;
+#endif /* WOF_PROVIDER_FILE */
 
-/* The current version of the file backing provider  */
-#define FILE_PROVIDER_CURRENT_VERSION	1
+/* Sets the backing source for a file.
+ * Ref: https://docs.microsoft.com/en-us/windows-hardware/drivers/ifs/fsctl-set-external-backing */
+#ifndef FSCTL_SET_EXTERNAL_BACKING
+#define FSCTL_SET_EXTERNAL_BACKING \
+	CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 195, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
+#endif
 
-/* Identifies a backing provider for a specific overlay service version.  */
-struct wof_external_info {
+/* Gets the backing information for a file from an external backing provider.
+ * Ref: https://docs.microsoft.com/en-us/windows-hardware/drivers/ifs/fsctl-get-external-backing */
+#ifndef FSCTL_GET_EXTERNAL_BACKING
+#define FSCTL_GET_EXTERNAL_BACKING \
+	CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 196, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#endif
 
-	/* Version of the overlay service supported by the backing provider.
-	 * Set to WOF_CURRENT_VERSION.  */
-	u32 version;
+#ifndef STATUS_OBJECT_NOT_EXTERNALLY_BACKED
+#define STATUS_OBJECT_NOT_EXTERNALLY_BACKED	0xC000046D
+#endif
 
-	/* Identifier for the backing provider.  Example value:
-	 * WOF_PROVIDER_WIM.  */
-	u32 provider;
-};
+/* Removes the association of a file with an external backing provider.
+ * Ref: https://docs.microsoft.com/en-us/windows-hardware/drivers/ifs/fsctl-delete-external-backing */
+#ifndef FSCTL_DELETE_EXTERNAL_BACKING
+#define FSCTL_DELETE_EXTERNAL_BACKING \
+	CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 197, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
+#endif
 
+/* Begins or continues an enumeration of files on a volume that have a backing source.
+ * Ref: https://docs.microsoft.com/en-us/windows-hardware/drivers/ifs/fsctl-enum-external-backing */
+#ifndef FSCTL_ENUM_EXTERNAL_BACKING
+#define FSCTL_ENUM_EXTERNAL_BACKING \
+	CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 198, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#endif
+
+/* Enumerates all the data sources from a backing provider for a specified volume.
+ * Ref: https://docs.microsoft.com/en-us/windows-hardware/drivers/ifs/fsctl-enum-overlay */
+#ifndef FSCTL_ENUM_OVERLAY
+#define FSCTL_ENUM_OVERLAY \
+	CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 199, METHOD_NEITHER, FILE_ANY_ACCESS)
+typedef struct _WIM_PROVIDER_OVERLAY_ENTRY {
+	ULONG NextEntryOffset;
+	LARGE_INTEGER DataSourceId;
+	GUID WimGuid;
+	ULONG WimFileNameOffset;
+	ULONG WimType;
+	ULONG WimIndex;
+	ULONG Flags;
+} WIM_PROVIDER_OVERLAY_ENTRY, *PWIM_PROVIDER_OVERLAY_ENTRY;
+#endif /* FSCTL_ENUM_OVERLAY */
+
+/* Add a new external backing source to a volume's namespace.
+ * Ref: https://docs.microsoft.com/en-us/windows-hardware/drivers/ifs/fsctl-add-overlay */
+#ifndef FSCTL_ADD_OVERLAY
+#define FSCTL_ADD_OVERLAY \
+	CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 204, METHOD_BUFFERED, FILE_WRITE_DATA)
+typedef struct _WIM_PROVIDER_ADD_OVERLAY_INPUT {
+#define WIM_BOOT_NOT_OS_WIM	0
+#define WIM_BOOT_OS_WIM		1
+	ULONG WimType;
+	ULONG WimIndex;
+	ULONG WimFileNameOffset;
+	ULONG WimFileNameLength;
+} WIM_PROVIDER_ADD_OVERLAY_INPUT, *PWIM_PROVIDER_ADD_OVERLAY_INPUT;
+#endif /* FSCTL_ADD_OVERLAY */
+
+/* Removes a backing source from a volume.
+ * Ref: https://docs.microsoft.com/en-us/windows-hardware/drivers/ifs/fsctl-remove-overlay */
+#ifndef FSCTL_REMOVE_OVERLAY
+#define FSCTL_REMOVE_OVERLAY \
+	CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 205, METHOD_BUFFERED, FILE_WRITE_DATA)
+typedef struct _WIM_PROVIDER_REMOVE_OVERLAY_INPUT {
+	LARGE_INTEGER DataSourceId;
+} WIM_PROVIDER_REMOVE_OVERLAY_INPUT, *PWIM_PROVIDER_REMOVE_OVERLAY_INPUT;
+#endif /* FSCTL_REMOVE_OVERLAY */
+
+/* Updates a new data source identifier for a backing source attached to a volume.
+ * Ref: https://docs.microsoft.com/en-us/windows-hardware/drivers/ifs/fsctl-update-overlay */
+#ifndef FSCTL_UPDATE_OVERLAY
+#define FSCTL_UPDATE_OVERLAY \
+	CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 206, METHOD_BUFFERED, FILE_WRITE_DATA)
+typedef struct _WIM_PROVIDER_UPDATE_OVERLAY_INPUT {
+	LARGE_INTEGER DataSourceId;
+	ULONG         WimFileNameOffset;
+	ULONG         WimFileNameLength;
+} WIM_PROVIDER_UPDATE_OVERLAY_INPUT, *PWIM_PROVIDER_UPDATE_OVERLAY_INPUT;
+#endif /* FSCTL_UPDATE_OVERLAY */
+
+/*----------------------------------------------------------------------------*
+ *        WOF reparse point and WimOverlay.dat structs (undocumented)         *
+ *----------------------------------------------------------------------------*/
 
 /*
  * Format of the WIM provider reparse data.  This is the data which follows the
  * portion of the reparse point common to WOF.  (The common portion consists of
- * a reparse point header where the reparse tag is 0x80000017, then a 'struct
- * wof_external_info' which specifies the provider.)
+ * a reparse point header where the reparse tag is 0x80000017, then a
+ * WOF_EXTERNAL_INFO struct which specifies the provider.)
  *
  * Note that Microsoft does not document any of the reparse point formats for
  * WOF, although they document the structures which must be passed into the
@@ -307,280 +415,5 @@ wof_check_structs(void)
 	STATIC_ASSERT(sizeof(struct WimOverlay_dat_entry_1) == 40);
 	STATIC_ASSERT(sizeof(struct WimOverlay_dat_entry_2) == 104);
 }
-
-/*****************************************************************************
- *
- * --- FSCTL_SET_EXTERNAL_BACKING ---
- *
- * Sets the backing source of a file.
- *
- * DeviceType:	9 (FILE_DEVICE_FILE_SYSTEM)
- * Access:	0 (FILE_ANY_ACCESS)
- * Function:	195
- * Method:	0 (METHOD_BUFFERED)
- *
- * Input buffer:  'struct wof_external_info' followed by provider-specific data
- * ('struct wim_provider_external_info' in the case of WIM).
- *
- * Output buffer: None
- */
-#define FSCTL_SET_EXTERNAL_BACKING 0x9030C
-
-struct wim_provider_external_info {
-
-	/* Set to WIM_PROVIDER_CURRENT_VERSION.  */
-	u32 version;
-
-	/* 0 when WIM provider active, otherwise
-	 * WIM_PROVIDER_EXTERNAL_FLAG_NOT_ACTIVE or
-	 * WIM_PROVIDER_EXTERNAL_FLAG_SUSPENDED.  */
-	u32 flags;
-
-	/* Integer ID that identifies the WIM.  Get this with the
-	 * FSCTL_ADD_OVERLAY ioctl.  */
-	u64 data_source_id;
-
-	/* SHA-1 message digest of the file's unnamed data stream.  */
-	u8 unnamed_data_stream_hash[20];
-};
-
-struct file_provider_external_info {
-
-	/* Set to FILE_PROVIDER_CURRENT_VERSION.  */
-	u32 version;
-
-	u32 compression_format;
-#define FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS4K	0
-#define FILE_PROVIDER_COMPRESSION_FORMAT_LZX		1
-#define FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS8K	2
-#define FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS16K	3
-};
-
-/*****************************************************************************
- *
- * --- FSCTL_GET_EXTERNAL_BACKING ---
- *
- * Get external backing information for the specified file.
- *
- * DeviceType: 9 (FILE_DEVICE_FILE_SYSTEM)
- * Access:     0 (FILE_ANY_ACCESS)
- * Function:   196
- * Method:     0 (METHOD_BUFFERED)
- *
- * Input buffer: None
- * Output buffer:  'struct wof_external_info' followed by provider-specific data
- * ('struct wim_provider_external_info' in the case of WIM).
- */
-#define FSCTL_GET_EXTERNAL_BACKING 0x90310
-
-#define STATUS_OBJECT_NOT_EXTERNALLY_BACKED	0xC000046D
-
-/*****************************************************************************
- *
- * --- FSCTL_DELETE_EXTERNAL_BACKING ---
- *
- * Copy a file from its backing source to its volume, then disassociate it from
- * its backing provider.
- *
- * DeviceType: 9 (FILE_DEVICE_FILE_SYSTEM)
- * Access:     0 (FILE_ANY_ACCESS)
- * Function:   197
- * Method:     0 (METHOD_BUFFERED)
- *
- * Input buffer: None
- * Output buffer: None
- */
-#define FSCTL_DELETE_EXTERNAL_BACKING 0x90314
-
-/*****************************************************************************
- *
- * --- FSCTL_ENUM_EXTERNAL_BACKING ---
- *
- * Enumerate externally backed files on a volume.
- *
- * DeviceType: 9 (FILE_DEVICE_FILE_SYSTEM)
- * Access:     0 (FILE_ANY_ACCESS)
- * Function:   198
- * Method:     0 (METHOD_BUFFERED)
- *
- * Input buffer: None
- * Output buffer: A 16-byte buffer that receives the 128-bit file ID for the
- * next externally backed file.
- *
- * The handle used may be either the volume handle or the handle for any file or
- * directory on the volume.
- *
- * When all externally backed files on the volume have been enumerated, the
- * function fails with ERROR_NO_MORE_FILES.
- */
-#define FSCTL_ENUM_EXTERNAL_BACKING 0x90318
-
-/*****************************************************************************
- *
- * --- FSCTL_ENUM_OVERLAY ---
- *
- * Enumerates the volume's overlay sources from the specified provider.
- *
- * DeviceType: 9 (FILE_DEVICE_FILE_SYSTEM)
- * Access:     0 (FILE_ANY_ACCESS)
- * Function:   199
- * Method:     3 (METHOD_NEITHER)
- *
- * Input buffer:  'struct wof_external_info' to specify the provider for which
- * to enumerate the overlay sources.
- *
- * Output buffer:  Provider-specific data.  For the WIM provider, an array of
- * 'struct wim_provider_overlay_entry'.
- *
- * This ioctl must be performed on the volume handle, such as \\.\C:
- */
-#define FSCTL_ENUM_OVERLAY 0x9031F
-
-struct wim_provider_overlay_entry {
-	/* Byte offset of the next entry from the beginning of this structure,
-	 * or 0 if there are no more entries.  */
-	u32 next_entry_offset;
-
-	u32 padding;
-
-	/* Identifier for the WIM file.  */
-	u64 data_source_id;
-
-	/* GUID of the WIM file.  */
-	u8 guid[16];
-
-	/* Byte offset of the WIM's file name from the beginning of this
-	 * structure.  */
-	u32 wim_file_name_offset;
-
-	/* Type of WIM file: WIM_BOOT_OS_WIM or WIM_BOOT_NOT_OS_WIM.  */
-	u32 wim_type;
-
-	/* Index of the image in the WIM to use??? (This doesn't really make
-	 * sense, since WIM files combine file data "blobs" for all images into
-	 * a single table.  Set to 1 if unsure...)  */
-	u32 wim_index;
-
-	/* 0 when WIM provider active, otherwise
-	 * WIM_PROVIDER_EXTERNAL_FLAG_NOT_ACTIVE or
-	 * WIM_PROVIDER_EXTERNAL_FLAG_SUSPENDED.  */
-	u32 flags;
-
-	/* Full path to the WIM in the NT device namespace, e.g.
-	 * "\Device\HardDiskVolume2\test.wim".  Seems to be null-terminated,
-	 * although you probably shouldn't assume so.  */
-	wchar_t wim_file_name[];
-};
-
-
-/*****************************************************************************
- *
- * --- FSCTL_ADD_OVERLAY ---
- *
- * Adds a new external backing source to a volume.
- *
- * DeviceType: 9 (FILE_DEVICE_FILE_SYSTEM)
- * Access:     2 (FILE_WRITE_ACCESS)
- * Function:   204
- * Method:     0 (METHOD_BUFFERED)
- *
- * Input buffer:  'struct wof_external_info' followed by provider-specific data
- * ('struct wim_provider_add_overlay_input' in the case of WIM).
- *
- * Output buffer:  Buffer large enough to receive any information resulting from
- * the add operation.  For the WIM provider, this must be an 8 byte buffer that
- * receives the 64-bit WIM file ID.
- *
- * This ioctl must be performed on the volume handle, such as \\.\C:
- */
-#define FSCTL_ADD_OVERLAY 0x98330
-
-struct wim_provider_add_overlay_input {
-
-	/* Type of WIM file.  */
-	u32 wim_type;
-#define WIM_BOOT_OS_WIM		0
-#define WIM_BOOT_NOT_OS_WIM	1
-
-	/* Index of the image in the WIM to use??? (This doesn't really make
-	 * sense, since WIM files combine file data "blobs" for all images into
-	 * a single table.  Set to 1 if unsure...)  */
-	u32 wim_index;
-
-	/* Byte offset of wim_file_name in this buffer, not including the
-	 * preceding 'struct wof_external_info' (should be 16).  */
-	u32 wim_file_name_offset;
-
-	/* Number of bytes in wim_file_name.  */
-	u32 wim_file_name_length;
-
-	/* Full path to the WIM, e.g. "\??\C:\test-wimboot.wim".
-	 * Does NOT need to be null terminated (MS docs claim otherwise).  */
-	wchar_t wim_file_name[];
-};
-
-/*****************************************************************************
- *
- * --- FSCTL_REMOVE_OVERLAY ---
- *
- * Removes an external backing source from a volume.
- *
- * DeviceType: 9 (FILE_DEVICE_FILE_SYSTEM)
- * Access:     2 (FILE_WRITE_ACCESS)
- * Function:   205
- * Method:     0 (METHOD_BUFFERED)
- *
- * Input buffer:  'struct wof_external_info' followed by provider-specific data
- * ('struct wim_provider_remove_overlay_input' in the case of WIM).
- *
- * Output buffer:  None
- *
- * This ioctl must be performed on the volume handle, such as \\.\C:
- */
-#define FSCTL_REMOVE_OVERLAY 0x98334
-
-struct wim_provider_remove_overlay_input {
-	/* Integer ID that identifies the WIM.  */
-	u64 data_source_id;
-};
-
-
-/*****************************************************************************
- *
- * --- FSCTL_UPDATE_OVERLAY ---
- *
- * Updates an overlay source for a volume.
- *
- * DeviceType: 9 (FILE_DEVICE_FILE_SYSTEM)
- * Access:     2 (FILE_WRITE_ACCESS)
- * Function:   206
- * Method:     0 (METHOD_BUFFERED)
- *
- * Input buffer:  'struct wof_external_info' followed by provider-specific data
- * ('struct wim_provider_update_overlay_input' in the case of WIM).
- *
- * Output buffer:  None
- *
- * This ioctl must be performed on the volume handle, such as \\.\C:
- */
-#define FSCTL_UPDATE_OVERLAY 0x98338
-
-struct wim_provider_update_overlay_input {
-	/* Integer ID that identifies the WIM data source.  */
-	u64 data_source_id;
-
-	/* Byte offset of wim_file_name in this buffer, not including the
-	 * preceding 'struct wof_external_info' (should be 16).  */
-	u32 wim_file_name_offset;
-
-	/* Number of bytes in wim_file_name.  */
-	u32 wim_file_name_length;
-
-	/* Full path to the WIM, e.g. "\??\C:\test-wimboot.wim".
-	 * Does NOT need to be null terminated (MS docs claim otherwise).
-	 * This WIM must be renamed from the original WIM, or at least be an
-	 * identical copy of it!  (Maybe the WIM's GUID field is checked.)  */
-	wchar_t wim_file_name[];
-};
 
 #endif /* _WOF_H_ */

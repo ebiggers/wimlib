@@ -11,7 +11,7 @@
  */
 
 /*
- * Copyright (C) 2014-2016 Eric Biggers
+ * Copyright (C) 2014-2021 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -887,8 +887,9 @@ wimboot_alloc_data_source_id(const wchar_t *wim_path,
 	size_t wim_file_name_length;
 	void *in;
 	size_t insize;
-	struct wof_external_info *wof_info;
-	struct wim_provider_add_overlay_input *wim_info;
+	WOF_EXTERNAL_INFO *wof_info;
+	WIM_PROVIDER_ADD_OVERLAY_INPUT *wim_info;
+	wchar_t *WimFileName;
 	HANDLE h;
 	u64 data_source_id;
 	DWORD bytes_returned;
@@ -908,28 +909,25 @@ wimboot_alloc_data_source_id(const wchar_t *wim_path,
 	wim_file_name_length = sizeof(wchar_t) *
 			       (wim_path_nchars + prefix_nchars);
 
-	insize = sizeof(struct wof_external_info) +
-		 sizeof(struct wim_provider_add_overlay_input) +
-		 wim_file_name_length;
-
-	in = MALLOC(insize);
+	insize = sizeof(*wof_info) + sizeof(*wim_info) + wim_file_name_length;
+	in = CALLOC(1, insize);
 	if (!in) {
 		ret = WIMLIB_ERR_NOMEM;
 		goto out;
 	}
 
-	wof_info = (struct wof_external_info *)in;
-	wof_info->version = WOF_CURRENT_VERSION;
-	wof_info->provider = WOF_PROVIDER_WIM;
+	wof_info = (WOF_EXTERNAL_INFO *)in;
+	wof_info->Version = WOF_CURRENT_VERSION;
+	wof_info->Provider = WOF_PROVIDER_WIM;
 
-	wim_info = (struct wim_provider_add_overlay_input *)(wof_info + 1);
-	wim_info->wim_type = WIM_BOOT_NOT_OS_WIM;
-	wim_info->wim_index = image;
-	wim_info->wim_file_name_offset = offsetof(struct wim_provider_add_overlay_input,
-						  wim_file_name);
-	wim_info->wim_file_name_length = wim_file_name_length;
-	wmemcpy(&wim_info->wim_file_name[0], prefix, prefix_nchars);
-	wmemcpy(&wim_info->wim_file_name[prefix_nchars], wim_path, wim_path_nchars);
+	wim_info = (WIM_PROVIDER_ADD_OVERLAY_INPUT *)(wof_info + 1);
+	wim_info->WimType = WIM_BOOT_NOT_OS_WIM;
+	wim_info->WimIndex = image;
+	wim_info->WimFileNameOffset = sizeof(*wim_info);
+	wim_info->WimFileNameLength = wim_file_name_length;
+	WimFileName = (wchar_t *)(wim_info + 1);
+	wmemcpy(WimFileName, prefix, prefix_nchars);
+	wmemcpy(&WimFileName[prefix_nchars], wim_path, wim_path_nchars);
 
 retry_ioctl:
 	h = open_file(drive_path, GENERIC_WRITE);
@@ -1027,20 +1025,20 @@ wimboot_set_pointer(HANDLE h,
 		 * using FSCTL_SET_EXTERNAL_BACKING.  */
 		unsigned int max_retries = 4;
 		struct {
-			struct wof_external_info wof_info;
-			struct wim_provider_external_info wim_info;
+			WOF_EXTERNAL_INFO wof_info;
+			WIM_PROVIDER_EXTERNAL_INFO wim_info;
 		} in;
 
 	retry:
 		memset(&in, 0, sizeof(in));
 
-		in.wof_info.version = WOF_CURRENT_VERSION;
-		in.wof_info.provider = WOF_PROVIDER_WIM;
+		in.wof_info.Version = WOF_CURRENT_VERSION;
+		in.wof_info.Provider = WOF_PROVIDER_WIM;
 
-		in.wim_info.version = WIM_PROVIDER_CURRENT_VERSION;
-		in.wim_info.flags = 0;
-		in.wim_info.data_source_id = data_source_id;
-		copy_hash(in.wim_info.unnamed_data_stream_hash, blob->hash);
+		in.wim_info.Version = WIM_PROVIDER_CURRENT_VERSION;
+		in.wim_info.Flags = 0;
+		in.wim_info.DataSourceId.QuadPart = data_source_id;
+		copy_hash(in.wim_info.ResourceHash, blob->hash);
 
 		/* blob_table_hash is not necessary  */
 
@@ -1074,20 +1072,20 @@ wimboot_set_pointer(HANDLE h,
 				le16 rpdatalen;
 				le16 rpreserved;
 			} hdr;
-			struct wof_external_info wof_info;
+			WOF_EXTERNAL_INFO wof_info;
 			struct wim_provider_rpdata wim_info;
 		} in;
 
 		STATIC_ASSERT(sizeof(in) == 8 +
-			      sizeof(struct wof_external_info) +
+			      sizeof(WOF_EXTERNAL_INFO) +
 			      sizeof(struct wim_provider_rpdata));
 
 		in.hdr.rptag = WIM_IO_REPARSE_TAG_WOF;
 		in.hdr.rpdatalen = sizeof(in) - sizeof(in.hdr);
 		in.hdr.rpreserved = 0;
 
-		in.wof_info.version = WOF_CURRENT_VERSION;
-		in.wof_info.provider = WOF_PROVIDER_WIM;
+		in.wof_info.Version = WOF_CURRENT_VERSION;
+		in.wof_info.Provider = WOF_PROVIDER_WIM;
 
 		in.wim_info.version = 2;
 		in.wim_info.flags = 0;

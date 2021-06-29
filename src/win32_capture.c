@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2013-2018 Eric Biggers
+ * Copyright (C) 2013-2021 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -1518,7 +1518,7 @@ try_to_use_wimboot_hash(HANDLE h, struct wim_inode *inode,
 	if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
 		struct reparse_buffer_disk rpbuf;
 		struct {
-			struct wof_external_info wof_info;
+			WOF_EXTERNAL_INFO wof_info;
 			struct wim_provider_rpdata wim_info;
 		} *rpdata = (void *)rpbuf.rpdata;
 		struct blob_descriptor *reparse_blob;
@@ -1536,8 +1536,8 @@ try_to_use_wimboot_hash(HANDLE h, struct wim_inode *inode,
 		if (ret)
 			return ret;
 
-		if (rpdata->wof_info.version != WOF_CURRENT_VERSION ||
-		    rpdata->wof_info.provider != WOF_PROVIDER_WIM ||
+		if (rpdata->wof_info.Version != WOF_CURRENT_VERSION ||
+		    rpdata->wof_info.Provider != WOF_PROVIDER_WIM ||
 		    rpdata->wim_info.version != 2)
 			return 0;  /* Not a WIM-backed file  */
 
@@ -1545,8 +1545,8 @@ try_to_use_wimboot_hash(HANDLE h, struct wim_inode *inode,
 		copy_hash(hash, rpdata->wim_info.unnamed_data_stream_hash);
 	} else {
 		struct {
-			struct wof_external_info wof_info;
-			struct wim_provider_external_info wim_info;
+			WOF_EXTERNAL_INFO wof_info;
+			WIM_PROVIDER_EXTERNAL_INFO wim_info;
 		} out;
 		NTSTATUS status;
 
@@ -1580,13 +1580,13 @@ try_to_use_wimboot_hash(HANDLE h, struct wim_inode *inode,
 		}
 
 		/* Is this file backed by a WIM?  */
-		if (out.wof_info.version != WOF_CURRENT_VERSION ||
-		    out.wof_info.provider != WOF_PROVIDER_WIM ||
-		    out.wim_info.version != WIM_PROVIDER_CURRENT_VERSION)
+		if (out.wof_info.Version != WOF_CURRENT_VERSION ||
+		    out.wof_info.Provider != WOF_PROVIDER_WIM ||
+		    out.wim_info.Version != WIM_PROVIDER_CURRENT_VERSION)
 			return 0;
 
 		/* Okay, this is a WIM backed file.  Get its SHA-1 hash.  */
-		copy_hash(hash, out.wim_info.unnamed_data_stream_hash);
+		copy_hash(hash, out.wim_info.ResourceHash);
 	}
 
 	/* If the file's unnamed data stream is nonempty, then fill in its hash

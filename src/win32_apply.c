@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2013-2020 Eric Biggers
+ * Copyright (C) 2013-2021 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -2424,15 +2424,15 @@ static int
 get_system_compression_format(int extract_flags)
 {
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS4K)
-		return FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS4K;
+		return FILE_PROVIDER_COMPRESSION_XPRESS4K;
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS8K)
-		return FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS8K;
+		return FILE_PROVIDER_COMPRESSION_XPRESS8K;
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS16K)
-		return FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS16K;
+		return FILE_PROVIDER_COMPRESSION_XPRESS16K;
 
-	return FILE_PROVIDER_COMPRESSION_FORMAT_LZX;
+	return FILE_PROVIDER_COMPRESSION_LZX;
 }
 
 
@@ -2440,11 +2440,11 @@ static const wchar_t *
 get_system_compression_format_string(int format)
 {
 	switch (format) {
-	case FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS4K:
+	case FILE_PROVIDER_COMPRESSION_XPRESS4K:
 		return L"XPRESS4K";
-	case FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS8K:
+	case FILE_PROVIDER_COMPRESSION_XPRESS8K:
 		return L"XPRESS8K";
-	case FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS16K:
+	case FILE_PROVIDER_COMPRESSION_XPRESS16K:
 		return L"XPRESS16K";
 	default:
 		return L"LZX";
@@ -2456,16 +2456,16 @@ set_system_compression(HANDLE h, int format)
 {
 	NTSTATUS status;
 	struct {
-		struct wof_external_info wof_info;
-		struct file_provider_external_info file_info;
+		WOF_EXTERNAL_INFO wof_info;
+		FILE_PROVIDER_EXTERNAL_INFO_V1 file_info;
 	} in = {
 		.wof_info = {
-			.version = WOF_CURRENT_VERSION,
-			.provider = WOF_PROVIDER_FILE,
+			.Version = WOF_CURRENT_VERSION,
+			.Provider = WOF_PROVIDER_FILE,
 		},
 		.file_info = {
-			.version = FILE_PROVIDER_CURRENT_VERSION,
-			.compression_format = format,
+			.Version = FILE_PROVIDER_CURRENT_VERSION,
+			.Algorithm = format,
 		},
 	};
 
@@ -2528,7 +2528,7 @@ static bool
 bootloader_supports_compression_format(struct win32_apply_ctx *ctx, int format)
 {
 	/* Windows 10 and later support XPRESS4K */
-	if (format == FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS4K)
+	if (format == FILE_PROVIDER_COMPRESSION_XPRESS4K)
 		return ctx->windows_build_number >= 10240;
 
 	/*
@@ -2573,7 +2573,7 @@ set_system_compression_on_inode(struct wim_inode *inode, int format,
 			warned = (ctx->num_system_compression_exclusions++ > 0);
 
 			if (bootloader_supports_compression_format(ctx,
-				   FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS4K))
+				   FILE_PROVIDER_COMPRESSION_XPRESS4K))
 			{
 				/* Force to XPRESS4K  */
 				if (!warned) {
@@ -2586,7 +2586,7 @@ set_system_compression_on_inode(struct wim_inode *inode, int format,
 						"          you requested.",
 						get_system_compression_format_string(format));
 				}
-				format = FILE_PROVIDER_COMPRESSION_FORMAT_XPRESS4K;
+				format = FILE_PROVIDER_COMPRESSION_XPRESS4K;
 				break;
 			} else {
 				/* Force to uncompressed  */

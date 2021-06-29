@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2015-2016 Eric Biggers
+ * Copyright (C) 2015-2021 Eric Biggers
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -820,10 +820,10 @@ unregister_all_backing_wims(const tchar drive_letter)
 	HANDLE h;
 	void *overlay_list;
 	DWORD bytes_returned;
-	const struct wim_provider_overlay_entry *entry;
+	const WIM_PROVIDER_OVERLAY_ENTRY *entry;
 	struct {
-		struct wof_external_info wof_info;
-		struct wim_provider_remove_overlay_input wim;
+		WOF_EXTERNAL_INFO wof_info;
+		WIM_PROVIDER_REMOVE_OVERLAY_INPUT wim;
 	} in;
 
 	wsprintf(volume, L"\\\\.\\%lc:", drive_letter);
@@ -837,11 +837,11 @@ unregister_all_backing_wims(const tchar drive_letter)
 	overlay_list = malloc(32768);
 	ASSERT(overlay_list != NULL, "out of memory");
 
-	in.wof_info.version = WOF_CURRENT_VERSION;
-	in.wof_info.provider = WOF_PROVIDER_WIM;
+	in.wof_info.Version = WOF_CURRENT_VERSION;
+	in.wof_info.Provider = WOF_PROVIDER_WIM;
 
 	if (!DeviceIoControl(h, FSCTL_ENUM_OVERLAY,
-			     &in, sizeof(struct wof_external_info),
+			     &in, sizeof(WOF_EXTERNAL_INFO),
 			     overlay_list, 32768, &bytes_returned, NULL))
 	{
 		ASSERT(GetLastError() == ERROR_INVALID_FUNCTION ||
@@ -854,16 +854,16 @@ unregister_all_backing_wims(const tchar drive_letter)
 	entry = overlay_list;
 	for (;;) {
 		printf("Unregistering data source ID %"PRIu64"\n",
-		       entry->data_source_id);
-		in.wim.data_source_id = entry->data_source_id;
+		       entry->DataSourceId.QuadPart);
+		in.wim.DataSourceId = entry->DataSourceId;
 		ASSERT(DeviceIoControl(h, FSCTL_REMOVE_OVERLAY, &in, sizeof(in),
 				       NULL, 0, &bytes_returned, NULL),
 		       "FSCTL_REMOVE_OVERLAY failed; error=%u",
 		       (unsigned )GetLastError());
-		if (entry->next_entry_offset == 0)
+		if (entry->NextEntryOffset == 0)
 			break;
-		entry = (const struct wim_provider_overlay_entry *)
-			((const uint8_t *)entry + entry->next_entry_offset);
+		entry = (const WIM_PROVIDER_OVERLAY_ENTRY *)
+			((const uint8_t *)entry + entry->NextEntryOffset);
 	}
 	free(overlay_list);
 	CloseHandle(h);
