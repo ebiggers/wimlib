@@ -55,11 +55,15 @@ then
 	# Note: putting -static-libgcc in CC is a workaround for libtool
 	# stripping it:
 	# http://www.gnu.org/software/libtool/manual/libtool.html#Stripped-link-flags
+	#
+	# We also need to override the MinGW pkg-config with the "native" one in
+	# order for it to correctly restrict the include path to our $SYSROOT.
 	./configure --host=${ARCH}-w64-mingw32 --disable-static		\
 		CC="${ARCH}-w64-mingw32-gcc -static-libgcc"		\
 		CPPFLAGS="-I$SYSROOT/include"				\
 		LDFLAGS="-L$SYSROOT/lib"				\
-		PKG_CONFIG_PATH="$SYSROOT/lib/pkgconfig"		\
+		PKG_CONFIG=pkg-config					\
+		PKG_CONFIG_LIBDIR="$SYSROOT/lib/pkgconfig"		\
 		--without-libcrypto					\
 		$extra_args "$@"
 	$MAKE clean
