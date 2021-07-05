@@ -114,7 +114,8 @@ inode_copy_checksums(struct wim_inode *inode,
 
 		back_ptr = retrieve_pointer_to_unhashed_blob(blob);
 		copy_hash(blob->hash, template_blob->hash);
-		if (after_blob_hashed(blob, back_ptr, blob_table) != blob)
+		if (after_blob_hashed(blob, back_ptr, blob_table,
+				      inode) != blob)
 			free_blob_descriptor(blob);
 	}
 }

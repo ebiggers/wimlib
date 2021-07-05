@@ -412,7 +412,7 @@ new_blob_from_data_buffer(const void *buffer, size_t size,
 extern struct blob_descriptor *
 after_blob_hashed(struct blob_descriptor *blob,
 		  struct blob_descriptor **back_ptr,
-		  struct blob_table *blob_table);
+		  struct blob_table *blob_table, struct wim_inode *inode);
 
 extern int
 hash_unhashed_blob(struct blob_descriptor *blob, struct blob_table *blob_table,

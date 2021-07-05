@@ -1604,7 +1604,8 @@ try_to_use_wimboot_hash(HANDLE h, struct wim_inode *inode,
 			return 0;
 		back_ptr = retrieve_pointer_to_unhashed_blob(blob);
 		copy_hash(blob->hash, hash);
-		if (after_blob_hashed(blob, back_ptr, blob_table) != blob)
+		if (after_blob_hashed(blob, back_ptr, blob_table,
+				      inode) != blob)
 			free_blob_descriptor(blob);
 	}
 

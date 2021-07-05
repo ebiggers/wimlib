@@ -36,6 +36,7 @@
 #include "wimlib/assert.h"
 #include "wimlib/bitops.h"
 #include "wimlib/blob_table.h"
+#include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
@@ -1259,7 +1260,7 @@ new_blob_from_data_buffer(const void *buffer, size_t size,
 struct blob_descriptor *
 after_blob_hashed(struct blob_descriptor *blob,
 		  struct blob_descriptor **back_ptr,
-		  struct blob_table *blob_table)
+		  struct blob_table *blob_table, struct wim_inode *inode)
 {
 	struct blob_descriptor *duplicate_blob;
 
@@ -1273,7 +1274,16 @@ after_blob_hashed(struct blob_descriptor *blob,
 		 * this blob to the duplicate and update the reference to this
 		 * blob (from a stream) to point to the duplicate.  The caller
 		 * is responsible for freeing @blob if needed.  */
-		wimlib_assert(duplicate_blob->size == blob->size);
+		if (duplicate_blob->size != blob->size) {
+			tchar hash_str[SHA1_HASH_SIZE * 2 + 1];
+
+			sprint_hash(blob->hash, hash_str);
+			WARNING("SHA-1 collision at \"%"TS"\"\n"
+				"          (hash=%"TS", size=%"PRIu64", other_size=%"PRIu64").\n"
+				"          File will be corrupted!",
+				inode_any_full_path(inode), hash_str,
+				blob->size, duplicate_blob->size);
+		}
 		duplicate_blob->refcnt += blob->refcnt;
 		blob->refcnt = 0;
 		*back_ptr = duplicate_blob;
@@ -1307,15 +1317,17 @@ hash_unhashed_blob(struct blob_descriptor *blob, struct blob_table *blob_table,
 		   struct blob_descriptor **blob_ret)
 {
 	struct blob_descriptor **back_ptr;
+	struct wim_inode *inode;
 	int ret;
 
 	back_ptr = retrieve_pointer_to_unhashed_blob(blob);
+	inode = blob->back_inode;
 
 	ret = sha1_blob(blob);
 	if (ret)
 		return ret;
 
-	*blob_ret = after_blob_hashed(blob, back_ptr, blob_table);
+	*blob_ret = after_blob_hashed(blob, back_ptr, blob_table, inode);
 	return 0;
 }
 
