@@ -157,11 +157,12 @@ install the following additional Cygwin packages:
     - wget          (category "Web")
 
 Then, in a Cygwin terminal, clone the git repository, checkout the wimlib
-version you want, bootstrap the repository, and run the Windows release script:
+version you want (if you don't want to build the latest master branch),
+bootstrap the repository, and run the Windows release script:
 
     git clone git://wimlib.net/wimlib
     cd wimlib
-    git checkout v1.13.0
+    git checkout v1.13.0  # example only; omit if building the master branch
     ./bootstrap
     ./tools/make-windows-release x86_64
 
