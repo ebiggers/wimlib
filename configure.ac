@@ -1,6 +1,6 @@
 ###############################################################################
 
-AC_INIT([wimlib], m4_esyscmd([tools/get-version-number]),
+AC_INIT([wimlib], m4_esyscmd_s([tools/get-version-number]),
 	[https://wimlib.net/forums/])
 AC_CONFIG_SRCDIR([src/wim.c])
 AC_CONFIG_MACRO_DIR([m4])
