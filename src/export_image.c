@@ -179,6 +179,26 @@ wimlib_export_image(WIMStruct *src_wim,
 	/* Enable rollbacks  */
 	for_blob_in_table(dest_wim->blob_table, blob_set_not_exported, NULL);
 
+	/* Forbid exports where the destination WIM already contains image(s)
+	 * with the requested name(s).  However, allow multi-image exports where
+	 * there is a duplication among the source names only.  */
+	if (!(export_flags & WIMLIB_EXPORT_FLAG_NO_NAMES)) {
+		for (src_image = start_src_image;
+		     src_image <= end_src_image;
+		     src_image++)
+		{
+			const tchar *name = dest_name ? dest_name :
+				wimlib_get_image_name(src_wim, src_image);
+
+			if (wimlib_image_name_in_use(dest_wim, name)) {
+				ERROR("There is already an image named \"%"TS"\" "
+				      "in the destination WIM", name);
+				ret = WIMLIB_ERR_IMAGE_NAME_COLLISION;
+				goto out_rollback;
+			}
+		}
+	}
+
 	/* Export each requested image.  */
 	for (src_image = start_src_image;
 	     src_image <= end_src_image;
@@ -203,14 +223,6 @@ wimlib_export_image(WIMStruct *src_wim,
 			next_dest_description = dest_description;
 		else
 			next_dest_description = wimlib_get_image_description(src_wim, src_image);
-
-		/* Check for name conflict.  */
-		if (wimlib_image_name_in_use(dest_wim, next_dest_name)) {
-			ERROR("There is already an image named \"%"TS"\" "
-			      "in the destination WIM", next_dest_name);
-			ret = WIMLIB_ERR_IMAGE_NAME_COLLISION;
-			goto out_rollback;
-		}
 
 		/* Load metadata for source image into memory.  */
 		ret = select_wim_image(src_wim, src_image);
