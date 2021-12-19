@@ -1,8 +1,11 @@
-version 1.13.5-BETA1:
-	Fixed build errors with the latest version of Mingw-w64.
+version 1.13.5:
+	Exporting "all" images from a WIM file no longer fails if multiple
+	images in that WIM file have the same name.
 
 	wimlib now warns rather than aborts if two files have the same SHA-1
 	hash but different sizes.
+
+	Fixed build errors with the latest version of Mingw-w64.
 
 Version 1.13.4:
 	wimsplit now prints progress messages regularly rather than just once
