@@ -269,11 +269,6 @@ wimlib_iterate_dir_tree(WIMStruct *wim, int image, const tchar *_path,
 	path = canonicalize_wim_path(_path);
 	if (path == NULL)
 		return WIMLIB_ERR_NOMEM;
-
-	ret = wim_checksum_unhashed_blobs(wim);
-	if (ret)
-		return ret;
-
 	struct image_iterate_dir_tree_ctx ctx = {
 		.path = path,
 		.flags = flags,
