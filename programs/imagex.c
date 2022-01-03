@@ -4042,7 +4042,8 @@ imagex_split(int argc, tchar **argv, int cmd)
 		goto out;
 
 	ret = wimlib_split(wim, argv[1], part_size, write_flags);
-	tprintf(T("\nFinished splitting \"%"TS"\"\n"), argv[0]);
+	if (ret == 0)
+		tprintf(T("\nFinished splitting \"%"TS"\"\n"), argv[0]);
 	wimlib_free(wim);
 out:
 	return ret;
