@@ -81,7 +81,12 @@ struct apply_ctx {
 /* Maximum number of UNIX file descriptors, NTFS attributes, or Windows file
  * handles that can be opened simultaneously to extract a blob to multiple
  * destinations.  */
+#ifndef __APPLE__
 #define MAX_OPEN_FILES 512
+#else /* !__APPLE__ */
+/* With macOS, reduce to 128 because the default value for ulimit -n is 256 */
+#define MAX_OPEN_FILES 128
+#endif /* __APPLE__ */
 
 static inline int
 extract_progress(struct apply_ctx *ctx, enum wimlib_progress_msg msg)
