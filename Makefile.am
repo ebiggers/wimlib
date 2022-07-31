@@ -17,8 +17,8 @@ AM_CFLAGS	= -std=gnu99 $(PLATFORM_CFLAGS) -fno-common	\
 
 AM_LDFLAGS	= $(PLATFORM_LDFLAGS)
 
-EXTRA_DIST	= README README.WINDOWS					\
-		  COPYING COPYING.GPLv3	COPYING.LGPLv3 COPYING.CC0	\
+EXTRA_DIST	= README README.WINDOWS				\
+		  COPYING COPYING.GPLv3	COPYING.LGPLv3		\
 		  examples
 
 ##############################################################################

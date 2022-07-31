@@ -25,9 +25,3 @@ Therefore, if your build of libwim links to libntfs-3g, then you can't choose
 the LGPL option.  You may choose the LGPL option for Windows builds of libwim,
 since they don't link to libntfs-3g.  Likewise, you may choose the LGPL option
 for UNIX builds of libwim that were built with './configure --without-ntfs-3g'.
-
-NOTE! The file COPYING.CC0 contains a public domain dedication.  This public
-domain dedication does not apply to wimlib as a whole, but rather to individual
-source code files which the author(s) have elected to place into the public
-domain, as noted in the corresponding file headers.  As usual, such code carries
-NO WARRANTY, to the extent permitted by law.  See COPYING.CC0 for more details.
