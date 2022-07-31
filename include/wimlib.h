@@ -1399,7 +1399,7 @@ struct wimlib_wim_info {
  *    sha1_hash.  This case can only occur with wimlib_iterate_dir_tree(), never
  *    wimlib_iterate_lookup_table().
  *
- * 2. Otherwise we know the the uncompressed_size, the reference_count, and the
+ * 2. Otherwise we know the uncompressed_size, the reference_count, and the
  *    is_metadata flag.  In addition:
  *
  *    A. If the blob is located in a non-solid WIM resource, then we also know
