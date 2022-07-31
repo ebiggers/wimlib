@@ -266,7 +266,7 @@ struct blob_descriptor {
 };
 
 extern struct blob_table *
-new_blob_table(size_t capacity) _malloc_attribute;
+new_blob_table(size_t capacity);
 
 extern void
 free_blob_table(struct blob_table *table);
@@ -282,10 +282,10 @@ write_blob_table_from_blob_list(struct list_head *blob_list,
 				int write_resource_flags);
 
 extern struct blob_descriptor *
-new_blob_descriptor(void) _malloc_attribute;
+new_blob_descriptor(void);
 
 extern struct blob_descriptor *
-clone_blob_descriptor(const struct blob_descriptor *blob) _malloc_attribute;
+clone_blob_descriptor(const struct blob_descriptor *blob);
 
 extern void
 blob_decrement_refcnt(struct blob_descriptor *blob, struct blob_table *table);

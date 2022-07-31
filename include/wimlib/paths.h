@@ -17,7 +17,7 @@ extern void
 do_canonicalize_path(const tchar *in, tchar *out);
 
 extern tchar *
-canonicalize_wim_path(const tchar *wim_path) _malloc_attribute;
+canonicalize_wim_path(const tchar *wim_path);
 
 /* is_any_path_separator() - characters treated as path separators in WIM path
  * specifications and capture configuration files (the former will be translated

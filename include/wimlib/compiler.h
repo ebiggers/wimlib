@@ -99,10 +99,6 @@
 #  define _cold_attribute
 #endif
 
-/* Hint that the annotated function is malloc-like: any non-null pointer it
- * returns will not alias any pointer previously in use by the program.  */
-#define _malloc_attribute	__attribute__((malloc))
-
 /* Hint that the annotated function takes a printf()-like format string and
  * arguments.  This is currently disabled on Windows because MinGW does not
  * support this attribute on functions taking wide-character strings.  */

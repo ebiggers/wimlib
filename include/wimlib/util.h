@@ -43,7 +43,7 @@
  *******************/
 
 extern void *
-wimlib_malloc(size_t size) _malloc_attribute;
+wimlib_malloc(size_t size);
 
 extern void
 wimlib_free_memory(void *p);
@@ -52,24 +52,24 @@ extern void *
 wimlib_realloc(void *ptr, size_t size);
 
 extern void *
-wimlib_calloc(size_t nmemb, size_t size) _malloc_attribute;
+wimlib_calloc(size_t nmemb, size_t size);
 
 extern char *
-wimlib_strdup(const char *str) _malloc_attribute;
+wimlib_strdup(const char *str);
 
 #ifdef __WIN32__
 extern wchar_t *
-wimlib_wcsdup(const wchar_t *str) _malloc_attribute;
+wimlib_wcsdup(const wchar_t *str);
 #endif
 
 extern void *
-wimlib_aligned_malloc(size_t size, size_t alignment) _malloc_attribute;
+wimlib_aligned_malloc(size_t size, size_t alignment);
 
 extern void
 wimlib_aligned_free(void *ptr);
 
 extern void *
-memdup(const void *mem, size_t size) _malloc_attribute;
+memdup(const void *mem, size_t size);
 
 #define MALLOC		wimlib_malloc
 #define FREE		wimlib_free_memory
