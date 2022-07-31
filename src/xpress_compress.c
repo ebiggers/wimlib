@@ -961,12 +961,12 @@ xpress_find_matches(struct xpress_compressor * restrict c,
 				break;
 			--best_len;
 			do {
-				bt_matchfinder_skip_position(&c->bt_mf,
-							     in_begin,
-							     in_next - in_begin,
-							     nice_len,
-							     c->max_search_depth,
-							     next_hashes);
+				bt_matchfinder_skip_byte(&c->bt_mf,
+							 in_begin,
+							 in_next - in_begin,
+							 nice_len,
+							 c->max_search_depth,
+							 next_hashes);
 				cache_ptr->length = 0;
 				cache_ptr->offset = *in_next++;
 				cache_ptr++;

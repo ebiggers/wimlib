@@ -2273,7 +2273,7 @@ lzx_compress_near_optimal(struct lzx_compressor * restrict c,
 			} else {
 				/* Don't search for matches at this position. */
 				CALL_BT_MF(is_16_bit, c,
-					   bt_matchfinder_skip_position,
+					   bt_matchfinder_skip_byte,
 					   in_begin,
 					   in_next - in_begin,
 					   nice_len,

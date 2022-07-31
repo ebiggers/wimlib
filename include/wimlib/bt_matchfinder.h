@@ -142,28 +142,27 @@ TEMPLATED(bt_right_child)(struct TEMPLATED(bt_matchfinder) *mf, u32 node)
 }
 
 /* The minimum permissible value of 'max_len' for bt_matchfinder_get_matches()
- * and bt_matchfinder_skip_position().  There must be sufficiently many bytes
+ * and bt_matchfinder_skip_byte().  There must be sufficiently many bytes
  * remaining to load a 32-bit integer from the *next* position.  */
 #define BT_MATCHFINDER_REQUIRED_NBYTES	5
 
 /* Advance the binary tree matchfinder by one byte, optionally recording
  * matches.  @record_matches should be a compile-time constant.  */
 static forceinline struct lz_match *
-TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * const restrict mf,
-					   const u8 * const restrict in_begin,
+TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * const mf,
+					   const u8 * const in_begin,
 					   const ptrdiff_t cur_pos,
 					   const u32 max_len,
 					   const u32 nice_len,
 					   const u32 max_search_depth,
-					   u32 next_hashes[const restrict static 2],
-					   u32 * const restrict best_len_ret,
-					   struct lz_match * restrict lz_matchptr,
+					   u32 * const next_hashes,
+					   u32 * const best_len_ret,
+					   struct lz_match *lz_matchptr,
 					   const bool record_matches)
 {
 	const u8 *in_next = in_begin + cur_pos;
 	u32 depth_remaining = max_search_depth;
-	u32 next_seq4;
-	u32 next_seq3;
+	u32 next_hashseq;
 	u32 hash3;
 	u32 hash4;
 #ifdef BT_MATCHFINDER_HASH2_ORDER
@@ -182,14 +181,13 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 	u32 len;
 	u32 best_len = 3;
 
-	next_seq4 = load_u32_unaligned(in_next + 1);
-	next_seq3 = loaded_u32_to_u24(next_seq4);
+	next_hashseq = get_unaligned_le32(in_next + 1);
 
 	hash3 = next_hashes[0];
 	hash4 = next_hashes[1];
 
-	next_hashes[0] = lz_hash(next_seq3, BT_MATCHFINDER_HASH3_ORDER);
-	next_hashes[1] = lz_hash(next_seq4, BT_MATCHFINDER_HASH4_ORDER);
+	next_hashes[0] = lz_hash(next_hashseq & 0xFFFFFF, BT_MATCHFINDER_HASH3_ORDER);
+	next_hashes[1] = lz_hash(next_hashseq, BT_MATCHFINDER_HASH4_ORDER);
 	prefetchw(&mf->hash3_tab[next_hashes[0]]);
 	prefetchw(&mf->hash4_tab[next_hashes[1]]);
 
@@ -301,8 +299,8 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
  * @in_begin
  *	Pointer to the beginning of the input buffer.
  * @cur_pos
- *	The current position in the input buffer (the position of the sequence
- *	being matched against).
+ *	The current position in the input buffer relative to @in_begin (the
+ *	position of the sequence being matched against).
  * @max_len
  *	The maximum permissible match length at this position.  Must be >=
  *	BT_MATCHFINDER_REQUIRED_NBYTES.
@@ -337,7 +335,7 @@ TEMPLATED(bt_matchfinder_get_matches)(struct TEMPLATED(bt_matchfinder) *mf,
 				      u32 max_len,
 				      u32 nice_len,
 				      u32 max_search_depth,
-				      u32 next_hashes[static 2],
+				      u32 next_hashes[2],
 				      u32 *best_len_ret,
 				      struct lz_match *lz_matchptr)
 {
@@ -360,12 +358,12 @@ TEMPLATED(bt_matchfinder_get_matches)(struct TEMPLATED(bt_matchfinder) *mf,
  * must do hashing and tree re-rooting.
  */
 static forceinline void
-TEMPLATED(bt_matchfinder_skip_position)(struct TEMPLATED(bt_matchfinder) *mf,
-					const u8 *in_begin,
-					ptrdiff_t cur_pos,
-					u32 nice_len,
-					u32 max_search_depth,
-					u32 next_hashes[static 2])
+TEMPLATED(bt_matchfinder_skip_byte)(struct TEMPLATED(bt_matchfinder) *mf,
+				    const u8 *in_begin,
+				    ptrdiff_t cur_pos,
+				    u32 nice_len,
+				    u32 max_search_depth,
+				    u32 next_hashes[2])
 {
 	u32 best_len;
 	TEMPLATED(bt_matchfinder_advance_one_byte)(mf,
