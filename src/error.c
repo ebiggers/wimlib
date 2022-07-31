@@ -46,7 +46,6 @@
 #include "wimlib/util.h"
 #include "wimlib/win32.h"
 
-#ifdef ENABLE_ERROR_MESSAGES
 bool wimlib_print_errors = false;
 FILE *wimlib_error_file = NULL; /* Set in wimlib_global_init() */
 static bool wimlib_owns_error_file = false;
@@ -119,7 +118,6 @@ wimlib_warning_with_errno(const tchar *format, ...)
 	wimlib_vmsg(T("\r[WARNING] "), format, va, true);
 	va_end(va);
 }
-#endif /* ENABLE_ERROR_MESSAGES */
 
 void
 print_byte_field(const u8 *field, size_t len, FILE *out)
@@ -131,34 +129,24 @@ print_byte_field(const u8 *field, size_t len, FILE *out)
 WIMLIBAPI int
 wimlib_set_print_errors(bool show_error_messages)
 {
-#ifdef ENABLE_ERROR_MESSAGES
 	wimlib_print_errors = show_error_messages;
-#else
-	if (show_error_messages)
-		return WIMLIB_ERR_UNSUPPORTED;
-#endif
 	return 0;
 }
 
 WIMLIBAPI int
 wimlib_set_error_file(FILE *fp)
 {
-#ifdef ENABLE_ERROR_MESSAGES
 	if (wimlib_owns_error_file)
 		fclose(wimlib_error_file);
 	wimlib_error_file = fp;
 	wimlib_print_errors = (fp != NULL);
 	wimlib_owns_error_file = false;
 	return 0;
-#else
-	return WIMLIB_ERR_UNSUPPORTED;
-#endif
 }
 
 WIMLIBAPI int
 wimlib_set_error_file_by_name(const tchar *path)
 {
-#ifdef ENABLE_ERROR_MESSAGES
 	FILE *fp;
 
 #ifdef __WIN32__
@@ -171,9 +159,6 @@ wimlib_set_error_file_by_name(const tchar *path)
 	wimlib_set_error_file(fp);
 	wimlib_owns_error_file = true;
 	return 0;
-#else
-	return WIMLIB_ERR_UNSUPPORTED;
-#endif
 }
 
 static const tchar * const error_strings[] = {

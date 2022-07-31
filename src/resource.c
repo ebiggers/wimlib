@@ -1034,7 +1034,6 @@ report_sha1_mismatch(struct blob_descriptor *blob,
 		      blob_file_path(blob), expected_hashstr, actual_hashstr);
 		return WIMLIB_ERR_CONCURRENT_MODIFICATION_DETECTED;
 	} else if (blob->blob_location == BLOB_IN_WIM) {
-	#ifdef ENABLE_ERROR_MESSAGES
 		const struct wim_resource_descriptor *rdesc = blob->rdesc;
 
 		(recover_data ? wimlib_warning : wimlib_error)(
@@ -1060,7 +1059,6 @@ report_sha1_mismatch(struct blob_descriptor *blob,
 						rdesc->compression_type),
 		      rdesc->chunk_size,
 		      expected_hashstr, actual_hashstr);
-	#endif /* ENABLE_ERROR_MESSAGES */
 		if (recover_data)
 			return 0;
 		return WIMLIB_ERR_INVALID_RESOURCE_HASH;

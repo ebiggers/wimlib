@@ -224,38 +224,6 @@ AM_CONDITIONAL([ENABLE_SSSE3_SHA1], [test "$ENABLE_SSSE3_SHA1" = "yes"])
 
 # ----------------------------- Other options ---------------------------------
 
-AC_MSG_CHECKING([whether to include error messages])
-AC_ARG_ENABLE([error_messages],
-	AS_HELP_STRING([--disable-error-messages], [do not compile in error messages]),
-	[ENABLE_ERROR_MESSAGES=$enableval],
-	[ENABLE_ERROR_MESSAGES=yes])
-AC_MSG_RESULT([$ENABLE_ERROR_MESSAGES])
-if test "$ENABLE_ERROR_MESSAGES" = "yes"; then
-	AC_DEFINE([ENABLE_ERROR_MESSAGES], [1], [Define to 1 if including error messages])
-fi
-
-AC_MSG_CHECKING([whether to include assertions])
-AC_ARG_ENABLE([assertions],
-	AS_HELP_STRING([--disable-assertions], [do not include assertions]),
-	[ENABLE_ASSERTIONS=$enableval],
-	[ENABLE_ASSERTIONS=yes])
-AC_MSG_RESULT([$ENABLE_ASSERTIONS])
-if test "$ENABLE_ASSERTIONS" = "yes"; then
-	AC_DEFINE([ENABLE_ASSERTIONS], [1], [Define to 1 if including assertions])
-fi
-
-AC_MSG_CHECKING([whether to include support for multi-threaded compression])
-AC_ARG_ENABLE([multithreaded-compression],
-	AS_HELP_STRING([--disable-multithreaded-compression],
-		       [disable support for multithreaded compression]),
-	[ENABLE_MULTITHREADED_COMPRESSION=$enableval],
-	[ENABLE_MULTITHREADED_COMPRESSION=yes])
-AC_MSG_RESULT([$ENABLE_MULTITHREADED_COMPRESSION])
-if test "$ENABLE_MULTITHREADED_COMPRESSION" = "yes"; then
-	AC_DEFINE([ENABLE_MULTITHREADED_COMPRESSION], [1],
-		  [Define to 1 to support multithreaded compression])
-fi
-
 AC_ARG_WITH(pkgconfigdir,
             [  --with-pkgconfigdir=DIR      pkgconfig file in DIR @<:@LIBDIR/pkgconfig@:>@],
             [pkgconfigdir=$withval],

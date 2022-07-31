@@ -1551,7 +1551,6 @@ write_blob_list(struct list_head *blob_list,
 	 * specified number of threads, unless the upper bound on the number
 	 * bytes needing to be compressed is less than a heuristic value.  */
 	if (num_nonraw_bytes != 0 && out_ctype != WIMLIB_COMPRESSION_TYPE_NONE) {
-	#ifdef ENABLE_MULTITHREADED_COMPRESSION
 		if (num_nonraw_bytes > max(2000000, out_chunk_size)) {
 			ret = new_parallel_chunk_compressor(out_ctype,
 							    out_chunk_size,
@@ -1563,7 +1562,6 @@ write_blob_list(struct list_head *blob_list,
 					wimlib_get_error_string(ret));
 			}
 		}
-	#endif
 
 		if (ctx.compressor == NULL) {
 			ret = new_serial_chunk_compressor(out_ctype, out_chunk_size,

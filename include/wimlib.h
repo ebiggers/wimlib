@@ -4028,10 +4028,7 @@ wimlib_resolve_image(WIMStruct *wim,
  * This also enables error messages, as if by a call to
  * wimlib_set_print_errors(true).
  *
- * @return 0 on success; a ::wimlib_error_code value on failure.
- *
- * @retval ::WIMLIB_ERR_UNSUPPORTED
- *	wimlib was compiled using the <c>--without-error-messages</c> option.
+ * @return 0
  */
 extern int
 wimlib_set_error_file(FILE *fp);
@@ -4049,8 +4046,6 @@ wimlib_set_error_file(FILE *fp);
  *
  * @retval ::WIMLIB_ERR_OPEN
  *	The file named by @p path could not be opened for appending.
- * @retval ::WIMLIB_ERR_UNSUPPORTED
- *	wimlib was compiled using the <c>--without-error-messages</c> option.
  */
 extern int
 wimlib_set_error_file_by_name(const wimlib_tchar *path);
@@ -4248,10 +4243,7 @@ wimlib_set_output_pack_compression_type(WIMStruct *wim,
  *	@c true if messages are to be printed; @c false if messages are not to
  *	be printed.
  *
- * @return 0 on success; a ::wimlib_error_code value on failure.
- *
- * @retval ::WIMLIB_ERR_UNSUPPORTED
- *	wimlib was compiled using the <c>--without-error-messages</c> option.
+ * @return 0
  */
 extern int
 wimlib_set_print_errors(bool show_messages);

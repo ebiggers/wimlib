@@ -63,12 +63,10 @@ struct chunk_compressor {
 
 /* Functions that return implementations of the chunk_compressor interface.  */
 
-#ifdef ENABLE_MULTITHREADED_COMPRESSION
 int
 new_parallel_chunk_compressor(int out_ctype, u32 out_chunk_size,
 			      unsigned num_threads, u64 max_memory,
 			      struct chunk_compressor **compressor_ret);
-#endif
 
 int
 new_serial_chunk_compressor(int out_ctype, u32 out_chunk_size,

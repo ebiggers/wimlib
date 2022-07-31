@@ -25,8 +25,6 @@
 #  include "config.h"
 #endif
 
-#ifdef ENABLE_MULTITHREADED_COMPRESSION
-
 #include <errno.h>
 #include <pthread.h>
 #include <stdlib.h>
@@ -515,5 +513,3 @@ err:
 	parallel_chunk_compressor_destroy(&ctx->base);
 	return ret;
 }
-
-#endif /* ENABLE_MULTITHREADED_COMPRESSION */

@@ -958,10 +958,8 @@ wimlib_global_init(int init_flags)
 	if (lib_initialized)
 		goto out_unlock;
 
-#ifdef ENABLE_ERROR_MESSAGES
 	if (!wimlib_error_file)
 		wimlib_error_file = stderr;
-#endif
 
 	ret = WIMLIB_ERR_INVALID_PARAM;
 	if (init_flags & ~(WIMLIB_INIT_FLAG_ASSUME_UTF8 |
