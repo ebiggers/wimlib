@@ -149,17 +149,20 @@
 #  define min(a, b)  ({ typeof(a) _a = (a); typeof(b) _b = (b); \
 			(_a < _b) ? _a : _b; })
 #endif
+#define MIN(a, b)	min((a), (b))
 
 /* Get the maximum of two variables, without multiple evaluation.  */
 #ifndef max
 #  define max(a, b)  ({ typeof(a) _a = (a); typeof(b) _b = (b); \
 			(_a > _b) ? _a : _b; })
 #endif
+#define MAX(a, b)	max((a), (b))
 
 /* Swap the values of two variables, without multiple evaluation.  */
 #ifndef swap
 #  define swap(a, b) ({ typeof(a) _a = (a); (a) = (b); (b) = _a; })
 #endif
+#define SWAP(a, b)	swap((a), (b))
 
 /* (Optional) Efficiently swap the bytes of a 16-bit integer.  */
 #if GCC_PREREQ(4, 8) || __has_builtin(__builtin_bswap16)

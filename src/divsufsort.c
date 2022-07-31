@@ -56,9 +56,6 @@
 
 
 /*- Macros -*/
-#define SWAP swap
-#define MIN min
-#define MAX max
 
 #define STACK_PUSH(_a, _b, _c, _d)\
   do {\
