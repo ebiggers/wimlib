@@ -88,7 +88,7 @@
  * chain for length 3+ matches, the algorithm just checks for one close length 3
  * match, then focuses on finding length 4+ matches.
  *
- * The longest_match() and skip_positions() functions are inlined into the
+ * The longest_match() and skip_bytes() functions are inlined into the
  * compressors that use them.  This isn't just about saving the overhead of a
  * function call.  These functions are intended to be called from the inner
  * loops of compressors, where giving the compiler more control over register
@@ -125,8 +125,8 @@
 #include "wimlib/lz_hash.h"
 #include "wimlib/unaligned.h"
 
-#define HC_MATCHFINDER_HASH3_ORDER	14
-#define HC_MATCHFINDER_HASH4_ORDER	15
+#define HC_MATCHFINDER_HASH3_ORDER	15
+#define HC_MATCHFINDER_HASH4_ORDER	16
 
 /* TEMPLATED functions and structures have MF_SUFFIX appended to their name.  */
 #undef TEMPLATED
@@ -169,9 +169,9 @@ TEMPLATED(hc_matchfinder_init)(struct TEMPLATED(hc_matchfinder) *mf)
  *	The matchfinder structure.
  * @in_begin
  *	Pointer to the beginning of the input buffer.
- * @cur_pos
- *	The current position in the input buffer (the position of the sequence
- *	being matched against).
+ * @in_next
+ *	Pointer to the next position in the input buffer, i.e. the sequence
+ *	being matched against.
  * @best_len
  *	Require a match longer than this length.
  * @max_len
@@ -192,25 +192,25 @@ TEMPLATED(hc_matchfinder_init)(struct TEMPLATED(hc_matchfinder) *mf)
  * 'best_len' was found.
  */
 static forceinline u32
-TEMPLATED(hc_matchfinder_longest_match)(struct TEMPLATED(hc_matchfinder) * const restrict mf,
-					const u8 * const restrict in_begin,
-					const ptrdiff_t cur_pos,
+TEMPLATED(hc_matchfinder_longest_match)(struct TEMPLATED(hc_matchfinder) * const mf,
+					const u8 * const in_begin,
+					const u8 * const in_next,
 					u32 best_len,
 					const u32 max_len,
 					const u32 nice_len,
 					const u32 max_search_depth,
-					u32 next_hashes[const restrict static 2],
-					u32 * const restrict offset_ret)
+					u32 * const next_hashes,
+					u32 * const offset_ret)
 {
-	const u8 *in_next = in_begin + cur_pos;
 	u32 depth_remaining = max_search_depth;
 	const u8 *best_matchptr = in_next;
 	mf_pos_t cur_node3, cur_node4;
 	u32 hash3, hash4;
-	u32 next_seq3, next_seq4;
+	u32 next_hashseq;
 	u32 seq4;
 	const u8 *matchptr;
 	u32 len;
+	u32 cur_pos = in_next - in_begin;
 
 	if (unlikely(max_len < 5)) /* can we read 4 bytes from 'in_next + 1'? */
 		goto out;
@@ -233,10 +233,9 @@ TEMPLATED(hc_matchfinder_longest_match)(struct TEMPLATED(hc_matchfinder) * const
 	mf->next_tab[cur_pos] = cur_node4;
 
 	/* Compute the next hash codes.  */
-	next_seq4 = load_u32_unaligned(in_next + 1);
-	next_seq3 = loaded_u32_to_u24(next_seq4);
-	next_hashes[0] = lz_hash(next_seq3, HC_MATCHFINDER_HASH3_ORDER);
-	next_hashes[1] = lz_hash(next_seq4, HC_MATCHFINDER_HASH4_ORDER);
+	next_hashseq = get_unaligned_le32(in_next + 1);
+	next_hashes[0] = lz_hash(next_hashseq & 0xFFFFFF, HC_MATCHFINDER_HASH3_ORDER);
+	next_hashes[1] = lz_hash(next_hashseq, HC_MATCHFINDER_HASH4_ORDER);
 	prefetchw(&mf->hash3_tab[next_hashes[0]]);
 	prefetchw(&mf->hash4_tab[next_hashes[1]]);
 
@@ -346,54 +345,49 @@ out:
  *	The matchfinder structure.
  * @in_begin
  *	Pointer to the beginning of the input buffer.
- * @cur_pos
- *	The current position in the input buffer (the position of the sequence
- *	being matched against).
- * @end_pos
- *	The length of the input buffer.
+ * @in_next
+ *	Pointer to the next position in the input buffer.
+ * @in_end
+ *	Pointer to the end of the input buffer.
+ * @count
+ *	The number of bytes to advance.  Must be > 0.
  * @next_hashes
  *	The precomputed hash codes for the sequence beginning at @in_next.
  *	These will be used and then updated with the precomputed hashcodes for
  *	the sequence beginning at @in_next + @count.
- * @count
- *	The number of bytes to advance.  Must be > 0.
- *
- * Returns @in_next + @count.
  */
-static forceinline const u8 *
-TEMPLATED(hc_matchfinder_skip_positions)(struct TEMPLATED(hc_matchfinder) * const restrict mf,
-					 const u8 * const restrict in_begin,
-					 const ptrdiff_t cur_pos,
-					 const ptrdiff_t end_pos,
-					 const u32 count,
-					 u32 next_hashes[const restrict static 2])
+static forceinline void
+TEMPLATED(hc_matchfinder_skip_bytes)(struct TEMPLATED(hc_matchfinder) * const mf,
+				     const u8 * const in_begin,
+				     const u8 *in_next,
+				     const u8 * const in_end,
+				     const u32 count,
+				     u32 * const next_hashes)
 {
-	const u8 *in_next = in_begin + cur_pos;
-	const u8 * const stop_ptr = in_next + count;
+	u32 cur_pos;
+	u32 hash3, hash4;
+	u32 next_hashseq;
+	u32 remaining = count;
 
-	if (likely(count + 5 <= end_pos - cur_pos)) {
-		u32 hash3, hash4;
-		u32 next_seq3, next_seq4;
+	if (unlikely(count + 5 > in_end - in_next))
+		return;
 
-		hash3 = next_hashes[0];
-		hash4 = next_hashes[1];
-		do {
-			mf->hash3_tab[hash3] = in_next - in_begin;
-			mf->next_tab[in_next - in_begin] = mf->hash4_tab[hash4];
-			mf->hash4_tab[hash4] = in_next - in_begin;
+	cur_pos = in_next - in_begin;
+	hash3 = next_hashes[0];
+	hash4 = next_hashes[1];
+	do {
+		mf->hash3_tab[hash3] = cur_pos;
+		mf->next_tab[cur_pos] = mf->hash4_tab[hash4];
+		mf->hash4_tab[hash4] = cur_pos;
 
-			next_seq4 = load_u32_unaligned(++in_next);
-			next_seq3 = loaded_u32_to_u24(next_seq4);
-			hash3 = lz_hash(next_seq3, HC_MATCHFINDER_HASH3_ORDER);
-			hash4 = lz_hash(next_seq4, HC_MATCHFINDER_HASH4_ORDER);
+		next_hashseq = get_unaligned_le32(++in_next);
+		hash3 = lz_hash(next_hashseq & 0xFFFFFF, HC_MATCHFINDER_HASH3_ORDER);
+		hash4 = lz_hash(next_hashseq, HC_MATCHFINDER_HASH4_ORDER);
+		cur_pos++;
+	} while (--remaining);
 
-		} while (in_next != stop_ptr);
-
-		prefetchw(&mf->hash3_tab[hash3]);
-		prefetchw(&mf->hash4_tab[hash4]);
-		next_hashes[0] = hash3;
-		next_hashes[1] = hash4;
-	}
-
-	return stop_ptr;
+	prefetchw(&mf->hash3_tab[hash3]);
+	prefetchw(&mf->hash4_tab[hash4]);
+	next_hashes[0] = hash3;
+	next_hashes[1] = hash4;
 }

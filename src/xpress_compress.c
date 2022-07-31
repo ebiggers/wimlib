@@ -544,7 +544,7 @@ xpress_compress_greedy(struct xpress_compressor * restrict c,
 
 		length = hc_matchfinder_longest_match(&c->hc_mf,
 						      in_begin,
-						      in_next - in_begin,
+						      in_next,
 						      XPRESS_MIN_MATCH_LEN - 1,
 						      in_end - in_next,
 						      min(in_end - in_next, c->nice_match_length),
@@ -558,12 +558,12 @@ xpress_compress_greedy(struct xpress_compressor * restrict c,
 			*next_chosen_item++ =
 				xpress_record_match(c, length, offset);
 			in_next += 1;
-			hc_matchfinder_skip_positions(&c->hc_mf,
-						      in_begin,
-						      in_next - in_begin,
-						      in_end - in_begin,
-						      length - 1,
-						      next_hashes);
+			hc_matchfinder_skip_bytes(&c->hc_mf,
+						  in_begin,
+						  in_next,
+						  in_end,
+						  length - 1,
+						  next_hashes);
 			in_next += length - 1;
 		} else {
 			/* No match found  */
@@ -610,7 +610,7 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 		/* Find the longest match at the current position.  */
 		cur_len = hc_matchfinder_longest_match(&c->hc_mf,
 						       in_begin,
-						       in_next - in_begin,
+						       in_next,
 						       XPRESS_MIN_MATCH_LEN - 1,
 						       in_end - in_next,
 						       min(in_end - in_next, c->nice_match_length),
@@ -638,12 +638,12 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 			*next_chosen_item++ =
 				xpress_record_match(c, cur_len, cur_offset);
 
-			hc_matchfinder_skip_positions(&c->hc_mf,
-						      in_begin,
-						      in_next - in_begin,
-						      in_end - in_begin,
-						      cur_len - 1,
-						      next_hashes);
+			hc_matchfinder_skip_bytes(&c->hc_mf,
+						  in_begin,
+						  in_next,
+						  in_end,
+						  cur_len - 1,
+						  next_hashes);
 			in_next += cur_len - 1;
 			continue;
 		}
@@ -666,7 +666,7 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 		 */
 		next_len = hc_matchfinder_longest_match(&c->hc_mf,
 							in_begin,
-							in_next - in_begin,
+							in_next,
 							cur_len,
 						        in_end - in_next,
 						        min(in_end - in_next, c->nice_match_length),
@@ -688,12 +688,12 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 			 * output the current match.  */
 			*next_chosen_item++ =
 				xpress_record_match(c, cur_len, cur_offset);
-			hc_matchfinder_skip_positions(&c->hc_mf,
-						      in_begin,
-						      in_next - in_begin,
-						      in_end - in_begin,
-						      cur_len - 2,
-						      next_hashes);
+			hc_matchfinder_skip_bytes(&c->hc_mf,
+						  in_begin,
+						  in_next,
+						  in_end,
+						  cur_len - 2,
+						  next_hashes);
 			in_next += cur_len - 2;
 			continue;
 		}
