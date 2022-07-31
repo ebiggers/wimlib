@@ -386,7 +386,7 @@ lzms_ensure_bits(struct lzms_input_bitstream *is, unsigned num_bits)
 
 	avail = BITBUF_NBITS - is->bitsleft;
 
-	if (UNALIGNED_ACCESS_IS_FAST && CPU_IS_LITTLE_ENDIAN &&
+	if (UNALIGNED_ACCESS_IS_FAST && CPU_IS_LITTLE_ENDIAN() &&
 	    WORDBYTES == 8 && likely(is->next - is->begin >= 8))
 	{
 		is->next -= (avail & ~15) >> 3;

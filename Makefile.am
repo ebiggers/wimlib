@@ -122,12 +122,11 @@ libwim_la_SOURCES =		\
 	include/wimlib/integrity.h	\
 	include/wimlib/lcpit_matchfinder.h	\
 	include/wimlib/list.h		\
-	include/wimlib/lz_extend.h	\
-	include/wimlib/lz_hash.h	\
 	include/wimlib/lzms_common.h	\
 	include/wimlib/lzms_constants.h	\
 	include/wimlib/lzx_common.h	\
 	include/wimlib/lzx_constants.h	\
+	include/wimlib/matchfinder_common.h	\
 	include/wimlib/metadata.h	\
 	include/wimlib/object_id.h	\
 	include/wimlib/pathlist.h	\

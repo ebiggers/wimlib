@@ -65,8 +65,7 @@
 
 #include <string.h>
 
-#include "wimlib/lz_extend.h"
-#include "wimlib/lz_hash.h"
+#include "wimlib/matchfinder_common.h"
 
 #define BT_MATCHFINDER_HASH3_ORDER 15
 #define BT_MATCHFINDER_HASH3_WAYS  2

@@ -182,7 +182,6 @@
 #include "wimlib/compress_common.h"
 #include "wimlib/compressor_ops.h"
 #include "wimlib/error.h"
-#include "wimlib/lz_extend.h"
 #include "wimlib/lzx_common.h"
 #include "wimlib/unaligned.h"
 #include "wimlib/util.h"

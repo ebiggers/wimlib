@@ -93,7 +93,7 @@ static forceinline u64 do_bswap64(u64 n)
 #define bswap32(n) (__builtin_constant_p(n) ? bswap32_const(n) : do_bswap32(n))
 #define bswap64(n) (__builtin_constant_p(n) ? bswap64_const(n) : do_bswap64(n))
 
-#if CPU_IS_BIG_ENDIAN
+#if CPU_IS_BIG_ENDIAN()
 #  define cpu_to_le16(n) ((_force_attr le16)bswap16(n))
 #  define cpu_to_le32(n) ((_force_attr le32)bswap32(n))
 #  define cpu_to_le64(n) ((_force_attr le64)bswap64(n))

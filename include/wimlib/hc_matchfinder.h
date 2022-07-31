@@ -121,9 +121,7 @@
 
 #include <string.h>
 
-#include "wimlib/lz_extend.h"
-#include "wimlib/lz_hash.h"
-#include "wimlib/unaligned.h"
+#include "wimlib/matchfinder_common.h"
 
 #define HC_MATCHFINDER_HASH3_ORDER	15
 #define HC_MATCHFINDER_HASH4_ORDER	16

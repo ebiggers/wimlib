@@ -32,9 +32,8 @@
 #include "wimlib/compressor_ops.h"
 #include "wimlib/error.h"
 #include "wimlib/lcpit_matchfinder.h"
-#include "wimlib/lz_extend.h"
-#include "wimlib/lz_hash.h"
 #include "wimlib/lzms_common.h"
+#include "wimlib/matchfinder_common.h"
 #include "wimlib/unaligned.h"
 #include "wimlib/util.h"
 

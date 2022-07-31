@@ -117,21 +117,21 @@
  * the case if the function contains only static assertions.  */
 #define _unused_attribute	__attribute__((unused))
 
-/* Endianness definitions.  Either CPU_IS_BIG_ENDIAN or CPU_IS_LITTLE_ENDIAN is
- * set to 1.  The other is set to 0.  Note that newer gcc supports
+/* Endianness definitions.  Either CPU_IS_BIG_ENDIAN() or CPU_IS_LITTLE_ENDIAN()
+ * evaluates to 1.  The other evaluates to 0.  Note that newer gcc supports
  * __BYTE_ORDER__ for easily determining the endianness; older gcc doesn't.  In
  * the latter case we fall back to a configure-time check.  */
 #ifdef __BYTE_ORDER__
-#  define CPU_IS_BIG_ENDIAN	(__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+#  define CPU_IS_BIG_ENDIAN()	(__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
 #elif defined(HAVE_CONFIG_H)
 #  include "config.h"
 #  ifdef WORDS_BIGENDIAN
-#    define CPU_IS_BIG_ENDIAN 1
+#    define CPU_IS_BIG_ENDIAN()	1
 #  else
-#    define CPU_IS_BIG_ENDIAN 0
+#    define CPU_IS_BIG_ENDIAN()	0
 #  endif
 #endif
-#define CPU_IS_LITTLE_ENDIAN (!CPU_IS_BIG_ENDIAN)
+#define CPU_IS_LITTLE_ENDIAN() (!CPU_IS_BIG_ENDIAN())
 
 /* UNALIGNED_ACCESS_IS_FAST should be defined to 1 if unaligned memory accesses
  * can be performed efficiently on the target platform.  */
