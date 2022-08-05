@@ -34,6 +34,8 @@
 #include "wimlib/compiler.h"
 #include "wimlib/types.h"
 
+#ifdef __WIN32__
+
 /*
  * The Windows Overlay Filesystem filter (WOF, a.k.a. wof.sys) is a filesystem
  * filter driver, available in Windows 8.1 and later, which allows files to be
@@ -422,5 +424,7 @@ wof_check_structs(void)
 	STATIC_ASSERT(sizeof(struct WimOverlay_dat_entry_1) == 40);
 	STATIC_ASSERT(sizeof(struct WimOverlay_dat_entry_2) == 104);
 }
+
+#endif /* __WIN32__ */
 
 #endif /* _WOF_H_ */
