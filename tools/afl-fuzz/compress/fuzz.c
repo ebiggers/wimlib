@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
 	assert(ret == 1);
 	ret = read(fd, &level, 1);
 	assert(ret == 1);
-	ctype = 1 + ((ctype - 1) % 3); /* 1-3 */
+	ctype = 1 + ((uint8_t)(ctype - 1) % 3); /* 1-3 */
 	level = 1 + (level % 100); /* 1-100 */
 	usize = stbuf.st_size - 2;
 

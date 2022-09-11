@@ -25,7 +25,7 @@ int main(int argc, char *argv[])
 		return 0;
 	ret = read(fd, &ctype, 1);
 	assert(ret == 1);
-	ctype = 1 + ((ctype - 1) % 3); /* 1-3 */
+	ctype = 1 + ((uint8_t)(ctype - 1) % 3); /* 1-3 */
 	csize = stbuf.st_size - 1;
 	uspace = csize * 8;
 
