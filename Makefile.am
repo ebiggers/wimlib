@@ -194,7 +194,7 @@ libwim_la_CFLAGS =		\
 	$(LIBFUSE_CFLAGS)	\
 	$(LIBCRYPTO_CFLAGS)
 
-libwim_la_LDFLAGS = $(AM_LDFLAGS) -version-info 35:0:20
+libwim_la_LDFLAGS = $(AM_LDFLAGS) -version-info 36:0:21
 
 libwim_la_LIBADD =		\
 	$(PTHREAD_LIBS)		\

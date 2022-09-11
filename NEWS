@@ -1,4 +1,20 @@
-version 1.13.5:
+Version 1.13.6:
+	wimsplit no longer prints a success message on failure.
+
+	wimlib_iterate_dir_tree() no longer hashes files that haven't yet been
+	written to the WIM file.
+
+	Reduced the maximum number of file descriptors that wimlib can use when
+	extracting files from a WIM image on macOS.
+
+	The files that used the CC0 public domain dedication now use the MIT
+	license instead.
+
+	Removed some configuration options (--disable-assertions,
+	--disable-error-messages, and --disable-multithreaded-compression)
+	that probably weren't being used by anyone.
+
+Version 1.13.5:
 	Exporting "all" images from a WIM file no longer fails if multiple
 	images in that WIM file have the same name.
 
