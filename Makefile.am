@@ -174,7 +174,7 @@ libwim_la_SOURCES += src/wimboot.c			\
 		     include/wimlib/win32_common.h	\
 		     include/wimlib/win32_vss.h		\
 		     include/wimlib/wof.h
-PLATFORM_LIBS = -lmsvcrt -lntdll
+PLATFORM_LIBS = -lntdll
 else
 libwim_la_SOURCES += src/unix_apply.c		\
 		     src/unix_capture.c
@@ -184,11 +184,6 @@ endif
 if ENABLE_TEST_SUPPORT
 libwim_la_SOURCES += src/test_support.c		\
 		     include/wimlib/test_support.h
-if WINDOWS_NATIVE_BUILD
-# Workaround for "multiple definition" error when math symbols are present in
-# both libmsvcrt.a and ntdll.a
-AM_LDFLAGS += -Wl,--allow-multiple-definition
-endif
 endif
 
 libwim_la_CFLAGS =		\
