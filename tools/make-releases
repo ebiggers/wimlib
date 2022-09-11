@@ -10,12 +10,11 @@ autoreconf -i -f # make sure the version number gets updated
 
 ./configure && $MAKE distcheck
 
-# Recompress with 7-Zip
+# Recompress with libdeflate
 gzfile=$(ls wimlib-*.tar.gz | tail -1)
 tarfile=${gzfile%.gz}
-gunzip $gzfile
-7z -mx9 a $gzfile $tarfile
-rm -f $tarfile
+libdeflate-gunzip $gzfile
+libdeflate-gzip -12 $tarfile
 
 for arch in i686 x86_64; do
 	./tools/make-windows-release $arch
