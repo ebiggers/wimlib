@@ -194,6 +194,10 @@ libwim_la_CFLAGS =		\
 	$(LIBFUSE_CFLAGS)	\
 	$(LIBCRYPTO_CFLAGS)
 
+# This is to avoid deprecation warnings for OpenSSL's SHA1_* functions.
+# Their replacement (EVP) is harder to use and less performant...
+libwim_la_CFLAGS += -Wno-deprecated-declarations
+
 libwim_la_LDFLAGS = $(AM_LDFLAGS) -version-info 36:0:21
 
 libwim_la_LIBADD =		\
