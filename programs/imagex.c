@@ -4006,7 +4006,7 @@ imagex_split(int argc, tchar **argv, int cmd)
 	int c;
 	int open_flags = 0;
 	int write_flags = 0;
-	unsigned long part_size;
+	uint64_t part_size;
 	tchar *tmp;
 	int ret;
 	WIMStruct *wim;
