@@ -141,17 +141,17 @@
 #define typeof     __typeof__
 
 /* Get the minimum of two variables, without multiple evaluation.  */
-#ifndef min
-#  define min(a, b)  ({ typeof(a) _a = (a); typeof(b) _b = (b); \
-			(_a < _b) ? _a : _b; })
-#endif
+#undef min
+#define min(a, b)  ({ typeof(a) _a = (a); typeof(b) _b = (b); \
+		    (_a < _b) ? _a : _b; })
+#undef MIN
 #define MIN(a, b)	min((a), (b))
 
 /* Get the maximum of two variables, without multiple evaluation.  */
-#ifndef max
-#  define max(a, b)  ({ typeof(a) _a = (a); typeof(b) _b = (b); \
-			(_a > _b) ? _a : _b; })
-#endif
+#undef max
+#define max(a, b)  ({ typeof(a) _a = (a); typeof(b) _b = (b); \
+		    (_a > _b) ? _a : _b; })
+#undef MAX
 #define MAX(a, b)	max((a), (b))
 
 /* Swap the values of two variables, without multiple evaluation.  */
