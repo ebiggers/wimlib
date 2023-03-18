@@ -122,6 +122,11 @@ wimlib_create_compressor(enum wimlib_compression_type ctype,
 {
 	bool destructive;
 	struct wimlib_compressor *c;
+	int ret;
+
+	ret = wimlib_global_init(0);
+	if (ret)
+		return ret;
 
 	destructive = (compression_level & WIMLIB_COMPRESSOR_FLAG_DESTRUCTIVE);
 	compression_level &= ~WIMLIB_COMPRESSOR_FLAG_DESTRUCTIVE;
@@ -146,8 +151,6 @@ wimlib_create_compressor(enum wimlib_compression_type ctype,
 	c->ctype = ctype;
 	c->max_block_size = max_block_size;
 	if (c->ops->create_compressor) {
-		int ret;
-
 		if (compression_level == 0)
 			compression_level = default_compression_levels[ctype];
 		if (compression_level == 0)

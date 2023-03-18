@@ -56,6 +56,11 @@ wimlib_create_decompressor(enum wimlib_compression_type ctype,
 			   struct wimlib_decompressor **dec_ret)
 {
 	struct wimlib_decompressor *dec;
+	int ret;
+
+	ret = wimlib_global_init(0);
+	if (ret)
+		return ret;
 
 	if (!decompressor_ctype_valid(ctype))
 		return WIMLIB_ERR_INVALID_COMPRESSION_TYPE;
@@ -73,8 +78,6 @@ wimlib_create_decompressor(enum wimlib_compression_type ctype,
 	dec->max_block_size = max_block_size;
 	dec->private = NULL;
 	if (dec->ops->create_decompressor) {
-		int ret;
-
 		ret = dec->ops->create_decompressor(max_block_size,
 						    &dec->private);
 		if (ret) {
