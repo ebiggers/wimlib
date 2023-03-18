@@ -1,3 +1,12 @@
+Version 1.14.0-BETA1:
+	Removed OpenSSL (libcrypto) as a dependency of wimlib.
+
+	Improved the performance of the Windows binaries on CPUs that have SHA-1
+	instructions.
+
+	Fixed a bug in 'wimsplit' where it didn't accept part sizes of 4 GiB or
+	larger on Windows and on 32-bit platforms.
+
 Version 1.13.6:
 	wimsplit no longer prints a success message on failure.
 
