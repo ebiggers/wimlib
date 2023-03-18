@@ -1737,7 +1737,7 @@ write_wim_resource_from_buffer(const void *buf,
 	}
 
 	blob_set_is_located_in_attached_buffer(&blob, (void *)buf, buf_size);
-	sha1_buffer(buf, buf_size, blob.hash);
+	sha1(buf, buf_size, blob.hash);
 	blob.unhashed = 0;
 	blob.is_metadata = is_metadata;
 

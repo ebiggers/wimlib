@@ -85,7 +85,7 @@ read_metadata_resource(struct wim_image_metadata *imd)
 		return ret;
 
 	/* Checksum the metadata resource.  */
-	sha1_buffer(buf, metadata_blob->size, hash);
+	sha1(buf, metadata_blob->size, hash);
 	if (!hashes_equal(metadata_blob->hash, hash)) {
 		ERROR("Metadata resource is corrupted "
 		      "(invalid SHA-1 message digest)!");

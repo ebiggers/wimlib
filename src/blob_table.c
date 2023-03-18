@@ -1236,7 +1236,7 @@ new_blob_from_data_buffer(const void *buffer, size_t size,
 	struct blob_descriptor *blob;
 	void *buffer_copy;
 
-	sha1_buffer(buffer, size, hash);
+	sha1(buffer, size, hash);
 
 	blob = lookup_blob(blob_table, hash);
 	if (blob)

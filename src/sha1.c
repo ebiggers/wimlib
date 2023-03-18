@@ -225,16 +225,15 @@ sha1_final(u8 md[20], SHA_CTX *ctx)
 		store_be32_unaligned(cpu_to_be32(ctx->state[i]), &md[i * 4]);
 }
 
-/* Calculate the SHA-1 message digest of the specified buffer.
- * @len is the buffer length in bytes.  */
+/* Calculate the SHA-1 message digest of the given data. */
 void
-sha1_buffer(const void *buffer, size_t len, u8 md[20])
+sha1(const void *data, size_t len, u8 hash[SHA1_HASH_SIZE])
 {
 	SHA_CTX ctx;
 
 	sha1_init(&ctx);
-	sha1_update(&ctx, buffer, len);
-	sha1_final(md, &ctx);
+	sha1_update(&ctx, data, len);
+	sha1_final(hash, &ctx);
 }
 
 #endif /* !WITH_LIBCRYPTO */

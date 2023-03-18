@@ -73,9 +73,9 @@ is_zero_hash(const u8 *hash)
 #define sha1_final    SHA1_Final
 
 static inline void
-sha1_buffer(const void *buffer, size_t len, u8 hash[SHA1_HASH_SIZE])
+sha1(const void *data, size_t len, u8 hash[SHA1_HASH_SIZE])
 {
-	SHA1(buffer, len, hash);
+	SHA1(data, len, hash);
 }
 
 #else /* WITH_LIBCRYPTO */
@@ -96,7 +96,7 @@ extern void
 sha1_final(u8 hash[SHA1_HASH_SIZE], SHA_CTX *ctx);
 
 extern void
-sha1_buffer(const void *buffer, size_t len, u8 hash[SHA1_HASH_SIZE]);
+sha1(const void *data, size_t len, u8 hash[SHA1_HASH_SIZE]);
 
 #endif /* !WITH_LIBCRYPTO */
 

@@ -307,7 +307,7 @@ sd_set_add_sd(struct wim_sd_set *sd_set, const char *descriptor, size_t size)
 	struct wim_security_data *sd;
 	bool bret;
 
-	sha1_buffer(descriptor, size, hash);
+	sha1(descriptor, size, hash);
 
 	security_id = lookup_sd(sd_set, hash);
 	if (security_id >= 0) /* Identical descriptor already exists */
@@ -378,7 +378,7 @@ init_sd_set(struct wim_sd_set *sd_set, struct wim_security_data *sd)
 			ret = WIMLIB_ERR_NOMEM;
 			goto out_destroy_sd_set;
 		}
-		sha1_buffer(sd->descriptors[i], sd->sizes[i], new->hash);
+		sha1(sd->descriptors[i], sd->sizes[i], new->hash);
 		new->security_id = i;
 		if (!insert_sd_node(sd_set, new))
 			FREE(new); /* Ignore duplicate security descriptor */
