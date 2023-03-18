@@ -11,7 +11,7 @@
 
 ARCHITECTURES		:= i686 x86_64
 LIBXML2_VERSION		:= 2.10.3
-WINPTHREADS_VERSION	:= 5.0.3
+WINPTHREADS_VERSION	:= 10.0.0
 
 LIBXML_URL		:= https://download.gnome.org/sources/libxml2/2.10/libxml2-$(LIBXML2_VERSION).tar.xz
 WINPTHREADS_URL		:= http://downloads.sourceforge.net/mingw-w64/mingw-w64/mingw-w64-release/mingw-w64-v$(WINPTHREADS_VERSION).tar.bz2
@@ -86,7 +86,6 @@ winpthreads_$(1):$(WINPTHREADS_SRCDIR)
 		CFLAGS=-O2;					\
 	$(MAKE) install;					\
 	sed -i -e 's/if defined DLL_EXPORT/if 0/'		\
-	       -e 's/pthread_getevent ()/pthread_getevent (void)/'\
 		../sysroot_$(1)/include/pthread.h;
 
 $(1)_BUILD_TARGETS += winpthreads_$(1)
