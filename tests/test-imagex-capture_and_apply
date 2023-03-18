@@ -221,7 +221,15 @@ exclusionlist_test() {
 	diff expected_out actual_out
 }
 
+macOS=false
+if [ "$(uname)" = Darwin ]; then
+	macOS=true
+fi
 for t_file in "$srcdir/tests/exclusionlists"/*; do
+	if $macOS && [[ $t_file == */case_*sensitive ]]; then
+		# Exclude test cases that fail on case-insensitive filesystem
+		continue
+	fi
 	exclusionlist_test "$t_file"
 done
 
