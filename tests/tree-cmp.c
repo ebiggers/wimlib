@@ -28,7 +28,7 @@
 #include <stdbool.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#ifdef HAVE_SYS_XATTR_H
+#ifdef __linux__
 #  include <sys/xattr.h>
 #endif
 #include <assert.h>
@@ -170,7 +170,7 @@ static void cmp(const char *file1, const char *file2, size_t size)
 	close(fd2);
 }
 
-#ifdef HAVE_SYS_XATTR_H
+#ifdef __linux__
 /* Compares an extended attribute of the files. */
 static void cmp_xattr(const char *file1, const char *file2,
 		      const char *xattr_name, ssize_t max_size,
@@ -275,13 +275,13 @@ static void cmp_ads(const char *file1, const char *file2)
 		free(list2);
 	}
 }
-#endif /* HAVE_SYS_XATTR_H */
+#endif /* __linux__ */
 
 /* Compares special NTFS data of the files, as accessed through extended
  * attributes. */
 static void special_cmp(const char *file1, const char *file2)
 {
-#ifdef HAVE_SYS_XATTR_H
+#ifdef __linux__
 	cmp_xattr(file1, file2, "system.ntfs_acl", 0, false);
 	cmp_xattr(file1, file2, "system.ntfs_attrib", 0, false);
 	cmp_xattr(file1, file2, "system.ntfs_dos_name", 0, true);
