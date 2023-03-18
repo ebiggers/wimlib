@@ -976,7 +976,7 @@ blobifier_cb(const void *chunk, size_t size, void *_ctx)
 }
 
 struct hasher_context {
-	SHA_CTX sha_ctx;
+	struct sha1_ctx sha_ctx;
 	int flags;
 	struct read_blob_callbacks cbs;
 };
@@ -1089,7 +1089,7 @@ hasher_end_blob(struct blob_descriptor *blob, int status, void *_ctx)
 	}
 
 	/* Retrieve the final SHA-1 message digest.  */
-	sha1_final(hash, &ctx->sha_ctx);
+	sha1_final(&ctx->sha_ctx, hash);
 
 	/* Set the SHA-1 message digest of the blob, or compare the calculated
 	 * value with stored value.  */

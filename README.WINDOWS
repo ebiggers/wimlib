@@ -152,7 +152,6 @@ install the following additional Cygwin packages:
     - automake      (category "Devel")
     - git           (category "Devel")
     - libtool       (category "Devel")
-    - nasm          (category "Devel")
     - ghostscript   (category "Graphics")
     - wget          (category "Web")
 

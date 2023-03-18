@@ -175,53 +175,6 @@ if test "$WITH_FUSE" = "yes"; then
 fi
 AM_CONDITIONAL([WITH_FUSE], [test "$WITH_FUSE" = "yes"])
 
-# ------------------------ SHA-1 implementation ---------------------------------
-
-AC_MSG_CHECKING([whether to use SSSE3-accelerated SHA-1])
-AC_ARG_ENABLE([ssse3-sha1],
-	      [AS_HELP_STRING([--enable-ssse3-sha1],
-			      [Include SSSE3-accelerated SHA-1 implementation by
-			       Intel.  This implies --without-libcrypto.])],
-	      [ENABLE_SSSE3_SHA1=$enableval],
-	      [ENABLE_SSSE3_SHA1=no])
-AC_MSG_RESULT([$ENABLE_SSSE3_SHA1])
-
-if test "$ENABLE_SSSE3_SHA1" = "yes" ; then
-	AC_DEFINE([ENABLE_SSSE3_SHA1], [1],
-		  [Define to 1 if using SSSE3 implementation of SHA-1])
-	AC_PROG_NASM
-	NASM_SYMBOL_PREFIX=""
-	NASM_PLATFORM_FLAGS=""
-	if test "$WINDOWS_NATIVE_BUILD" = "yes"; then
-		NASM_PLATFORM_FLAGS="-DWIN_ABI"
-	fi
-	case "$host_os" in
-	darwin* | rhapsody* | nextstep* | openstep* | macos*)
-		NASM_SYMBOL_PREFIX="_"
-		;;
-	esac
-	AC_SUBST([NASM_PLATFORM_FLAGS], [$NASM_PLATFORM_FLAGS])
-	AC_SUBST([NASM_SYMBOL_PREFIX], [$NASM_SYMBOL_PREFIX])
-else
-	AC_MSG_CHECKING([whether to use SHA-1 implementation from system libcrypto])
-	AC_ARG_WITH([libcrypto],
-		    [AS_HELP_STRING([--without-libcrypto],
-				    [build in the SHA-1 algorithm, rather than
-				     use external libcrypto from OpenSSL
-				     (default is autodetect)])],
-		    [WITH_LIBCRYPTO=$withval],
-		    [WITH_LIBCRYPTO=auto])
-	AC_MSG_RESULT([$WITH_LIBCRYPTO])
-	if test "$WITH_LIBCRYPTO" != "no"; then
-		PKG_CHECK_MODULES([LIBCRYPTO], [libcrypto], [
-			PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES libcrypto"
-			AC_DEFINE([WITH_LIBCRYPTO], [1],
-				  [Define to 1 if using libcrypto SHA-1])
-		], [AC_MSG_WARN([Cannot find libcrypto: using stand-alone SHA-1 code instead])])
-	fi
-fi
-AM_CONDITIONAL([ENABLE_SSSE3_SHA1], [test "$ENABLE_SSSE3_SHA1" = "yes"])
-
 # ----------------------------- Other options ---------------------------------
 
 AC_ARG_WITH(pkgconfigdir,

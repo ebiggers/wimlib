@@ -142,11 +142,6 @@ dependencies were already included and this section is irrelevant.
 	headers for libntfs-3g to be installed.  The minimum required version is
 	2011-4-12, but newer versions contain important bug fixes.
 
-* OpenSSL / libcrypto (optional)
-	wimlib can use the SHA-1 message digest implementation from libcrypto
-	(usually provided by OpenSSL) instead of compiling in yet another SHA-1
-	implementation.
-
 * cdrkit (optional)
 * mtools (optional)
 * syslinux (optional)
@@ -180,12 +175,6 @@ This section documents the most important options that may be passed to the
 
 	The default is --with-fuse when building for Linux, and --without-fuse
 	otherwise.
-
---without-libcrypto
-	Build in functions for SHA-1 rather than using external SHA-1 functions
-	from libcrypto (usually provided by OpenSSL).
-
-	The default is to use libcrypto if it is found on your system.
 
                                   PORTABILITY
 
@@ -271,11 +260,6 @@ posted to https://wimlib.net/forums/.
 
 wimlib is independently developed and does not contain any code, data, or files
 copyrighted by Microsoft.  It is not known to be affected by any patents.
-
-On UNIX-like systems, if you do not want wimlib to be dynamically linked with
-libcrypto (OpenSSL), configure with --without-libcrypto.  This replaces the SHA1
-implementation with built-in code and there will be no difference in
-functionality.
 
 Note: copyright years may be listed using range notation, e.g., 2012-2016,
 indicating that every year in the range, inclusive, is a copyrightable year that

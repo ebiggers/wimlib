@@ -191,12 +191,7 @@ libwim_la_CFLAGS =		\
 	$(PTHREAD_CFLAGS)	\
 	$(LIBXML2_CFLAGS)	\
 	$(LIBNTFS_3G_CFLAGS)	\
-	$(LIBFUSE_CFLAGS)	\
-	$(LIBCRYPTO_CFLAGS)
-
-# This is to avoid deprecation warnings for OpenSSL's SHA1_* functions.
-# Their replacement (EVP) is harder to use and less performant...
-libwim_la_CFLAGS += -Wno-deprecated-declarations
+	$(LIBFUSE_CFLAGS)
 
 libwim_la_LDFLAGS = $(AM_LDFLAGS) -version-info 36:0:21
 
@@ -206,21 +201,7 @@ libwim_la_LIBADD =		\
 	$(LIBNTFS_3G_LIBS)	\
 	$(LIBFUSE_LIBS)		\
 	$(LIBRT_LIBS)		\
-	$(LIBCRYPTO_LIBS)	\
 	$(PLATFORM_LIBS)
-
-if ENABLE_SSSE3_SHA1
-libwim_la_SOURCES += src/sha1-ssse3.asm
-libwim_la_LIBADD += src/sha1-ssse3.lo
-
-src/sha1-ssse3.lo:src/sha1-ssse3.asm
-	$(LIBTOOL) --mode=compile $(srcdir)/build-aux/nasm_lt.sh \
-	$(NASM) $(NAFLAGS) $(NASM_PLATFORM_FLAGS)			    \
-	-DINTEL_SHA1_UPDATE_FUNCNAME=$(NASM_SYMBOL_PREFIX)sha1_transform_blocks_ssse3	    \
-	-DINTEL_SHA1_UPDATE_DEFAULT_DISPATCH=$(NASM_SYMBOL_PREFIX)sha1_transform_blocks_default  \
-	$< -o $@
-endif
-EXTRA_DIST += build-aux/nasm_lt.sh
 
 ##############################################################################
 #				Programs				     #

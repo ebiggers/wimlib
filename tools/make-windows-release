@@ -47,10 +47,6 @@ if ! [ -e config.log ] ||
 	! grep -q "configure: exit 0" config.log || \
 	[ $# -gt 0 ]
 then
-	extra_args=
-	if [ $ARCH = x86_64 ]; then
-		extra_args="--enable-ssse3-sha1"
-	fi
 	# Note: putting -static-libgcc in CC is a workaround for libtool
 	# stripping it:
 	# http://www.gnu.org/software/libtool/manual/libtool.html#Stripped-link-flags
@@ -63,8 +59,7 @@ then
 		LDFLAGS="-L$SYSROOT/lib"				\
 		PKG_CONFIG=pkg-config					\
 		PKG_CONFIG_LIBDIR="$SYSROOT/lib/pkgconfig"		\
-		--without-libcrypto					\
-		$extra_args "$@"
+		"$@"
 	$MAKE clean
 fi
 $MAKE

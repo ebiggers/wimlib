@@ -33,7 +33,26 @@
 #include "wimlib/types.h"
 #include "wimlib/util.h"
 
-#define SHA1_HASH_SIZE 20
+#define SHA1_HASH_SIZE	20
+#define SHA1_BLOCK_SIZE	64
+
+struct sha1_ctx {
+	u64 bytecount;
+	u32 h[5];
+	u8 buffer[SHA1_BLOCK_SIZE];
+};
+
+extern void
+sha1_init(struct sha1_ctx *ctx);
+
+extern void
+sha1_update(struct sha1_ctx *ctx, const void *data, size_t len);
+
+extern void
+sha1_final(struct sha1_ctx *ctx, u8 hash[SHA1_HASH_SIZE]);
+
+extern void
+sha1(const void *data, size_t len, u8 hash[SHA1_HASH_SIZE]);
 
 extern const u8 zero_hash[SHA1_HASH_SIZE];
 
@@ -62,43 +81,7 @@ hashes_equal(const u8 h1[SHA1_HASH_SIZE], const u8 h2[SHA1_HASH_SIZE])
 static inline bool
 is_zero_hash(const u8 *hash)
 {
-	return (hash == zero_hash || hashes_equal(hash, zero_hash));
+	return hash == zero_hash || hashes_equal(hash, zero_hash);
 }
-
-#ifdef WITH_LIBCRYPTO
-
-#include <openssl/sha.h>
-
-#define sha1_init     SHA1_Init
-#define sha1_update   SHA1_Update
-#define sha1_final    SHA1_Final
-
-static inline void
-sha1(const void *data, size_t len, u8 hash[SHA1_HASH_SIZE])
-{
-	SHA1(data, len, hash);
-}
-
-#else /* WITH_LIBCRYPTO */
-
-typedef struct {
-	u64 bytecount;
-	u32 state[5];
-	u8 buffer[64];
-} SHA_CTX;
-
-extern void
-sha1_init(SHA_CTX *ctx);
-
-extern void
-sha1_update(SHA_CTX *ctx, const void *data, size_t len);
-
-extern void
-sha1_final(u8 hash[SHA1_HASH_SIZE], SHA_CTX *ctx);
-
-extern void
-sha1(const void *data, size_t len, u8 hash[SHA1_HASH_SIZE]);
-
-#endif /* !WITH_LIBCRYPTO */
 
 #endif /* _WIMLIB_SHA1_H */
