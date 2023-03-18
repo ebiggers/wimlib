@@ -1275,7 +1275,7 @@ after_blob_hashed(struct blob_descriptor *blob,
 		 * blob (from a stream) to point to the duplicate.  The caller
 		 * is responsible for freeing @blob if needed.  */
 		if (duplicate_blob->size != blob->size) {
-			tchar hash_str[SHA1_HASH_SIZE * 2 + 1];
+			tchar hash_str[SHA1_HASH_STRING_LEN];
 
 			sprint_hash(blob->hash, hash_str);
 			WARNING("SHA-1 collision at \"%"TS"\"\n"

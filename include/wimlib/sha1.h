@@ -37,8 +37,9 @@
 
 extern const u8 zero_hash[SHA1_HASH_SIZE];
 
+#define SHA1_HASH_STRING_LEN	(2 * SHA1_HASH_SIZE + 1)
 extern void
-sprint_hash(const u8 hash[SHA1_HASH_SIZE], tchar strbuf[SHA1_HASH_SIZE * 2 + 1]);
+sprint_hash(const u8 hash[SHA1_HASH_SIZE], tchar strbuf[SHA1_HASH_STRING_LEN]);
 
 static inline void
 copy_hash(u8 dest[SHA1_HASH_SIZE], const u8 src[SHA1_HASH_SIZE])

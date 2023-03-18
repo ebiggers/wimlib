@@ -1015,8 +1015,8 @@ static int
 report_sha1_mismatch(struct blob_descriptor *blob,
 		     const u8 actual_hash[SHA1_HASH_SIZE], bool recover_data)
 {
-	tchar expected_hashstr[SHA1_HASH_SIZE * 2 + 1];
-	tchar actual_hashstr[SHA1_HASH_SIZE * 2 + 1];
+	tchar expected_hashstr[SHA1_HASH_STRING_LEN];
+	tchar actual_hashstr[SHA1_HASH_STRING_LEN];
 
 	wimlib_assert(blob->blob_location != BLOB_NONEXISTENT);
 	wimlib_assert(blob->blob_location != BLOB_IN_ATTACHED_BUFFER);

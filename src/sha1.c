@@ -43,7 +43,7 @@ const u8 zero_hash[20];
  * The output buffer must be at least 41 characters.
  */
 void
-sprint_hash(const u8 hash[SHA1_HASH_SIZE], tchar strbuf[SHA1_HASH_SIZE * 2 + 1])
+sprint_hash(const u8 hash[SHA1_HASH_SIZE], tchar strbuf[SHA1_HASH_STRING_LEN])
 {
 	int i;
 	u8 high, low;

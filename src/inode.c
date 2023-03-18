@@ -485,7 +485,7 @@ int
 blob_not_found_error(const struct wim_inode *inode, const u8 *hash)
 {
 	if (wimlib_print_errors) {
-		tchar hashstr[SHA1_HASH_SIZE * 2 + 1];
+		tchar hashstr[SHA1_HASH_STRING_LEN];
 
 		sprint_hash(hash, hashstr);
 
