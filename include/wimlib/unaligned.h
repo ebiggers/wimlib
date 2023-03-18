@@ -83,6 +83,16 @@ get_unaligned_le32(const u8 *p)
 			((u32)p[1] << 8) | p[0];
 }
 
+static forceinline u32
+get_unaligned_be32(const u8 *p)
+{
+	if (UNALIGNED_ACCESS_IS_FAST)
+		return be32_to_cpu(load_be32_unaligned(p));
+	else
+		return ((u32)p[0] << 24) | ((u32)p[1] << 16) |
+			((u32)p[2] << 8) | p[3];
+}
+
 static forceinline void
 put_unaligned_le16(u16 v, u8 *p)
 {
@@ -104,6 +114,19 @@ put_unaligned_le32(u32 v, u8 *p)
 		p[1] = (u8)(v >> 8);
 		p[2] = (u8)(v >> 16);
 		p[3] = (u8)(v >> 24);
+	}
+}
+
+static forceinline void
+put_unaligned_be32(u32 v, u8 *p)
+{
+	if (UNALIGNED_ACCESS_IS_FAST) {
+		store_be32_unaligned(cpu_to_be32(v), p);
+	} else {
+		p[0] = (u8)(v >> 24);
+		p[1] = (u8)(v >> 16);
+		p[2] = (u8)(v >> 8);
+		p[3] = (u8)(v >> 0);
 	}
 }
 
