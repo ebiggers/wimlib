@@ -10,22 +10,22 @@
 #
 
 ARCHITECTURES		:= i686 x86_64
-LIBXML2_VERSION		:= 2.9.12
+LIBXML2_VERSION		:= 2.10.3
 WINPTHREADS_VERSION	:= 5.0.3
 
-LIBXML_URL		:= ftp://xmlsoft.org/libxml2/libxml2-$(LIBXML2_VERSION).tar.gz
+LIBXML_URL		:= https://download.gnome.org/sources/libxml2/2.10/libxml2-$(LIBXML2_VERSION).tar.xz
 WINPTHREADS_URL		:= http://downloads.sourceforge.net/mingw-w64/mingw-w64/mingw-w64-release/mingw-w64-v$(WINPTHREADS_VERSION).tar.bz2
 
 
 LIBXML_SRCDIR		:= libxml2-$(LIBXML2_VERSION)
-LIBXML_DIST		:= $(LIBXML_SRCDIR).tar.gz
+LIBXML_DIST		:= $(LIBXML_SRCDIR).tar.xz
 SRCDIR_TARGETS		+= $(LIBXML_SRCDIR)
 DIST_TARGETS		+= $(LIBXML_DIST)
 $(LIBXML_DIST):
 	wget $(LIBXML_URL)
 $(LIBXML_SRCDIR):$(LIBXML_DIST) checksums_verified
 	tar xvf $<
-	cp $@/COPYING COPYING.libxml2
+	cp $@/Copyright COPYING.libxml2
 MAKE_CLEAN_FILES += $(LIBXML_SRCDIR) COPYING.libxml2
 
 WINPTHREADS_DIST	:= mingw-w64-v$(WINPTHREADS_VERSION).tar.bz2
