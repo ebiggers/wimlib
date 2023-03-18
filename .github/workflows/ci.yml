@@ -1,0 +1,151 @@
+name: CI
+on: [pull_request, push]
+env:
+  DEF_CFLAGS: -O2 -g -Wall -Werror
+  DEPENDENCIES: autoconf automake libtool pkg-config libxml2-dev libfuse-dev ntfs-3g-dev
+
+jobs:
+  gcc-build-and-test:
+    name: Build and test with gcc
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y $DEPENDENCIES
+    - run: ./bootstrap
+    - run: ./configure CC=gcc CFLAGS="$DEF_CFLAGS"
+    - run: make -j8 check V=1
+    - run: make -j8 install V=1 DESTDIR=$PWD/installdir
+    - run: make -j8 uninstall V=1 DESTDIR=$PWD/installdir
+    - uses: actions/upload-artifact@v3
+      if: failure()
+      with:
+        name: gcc-test-logs
+        path: tests/*.log
+
+  clang-build-and-test:
+    name: Build and test with clang
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang $DEPENDENCIES
+    - run: ./bootstrap
+    - run: ./configure CC=clang CFLAGS="$DEF_CFLAGS"
+    - run: make -j8 check V=1
+    - run: make -j8 install V=1 DESTDIR=$PWD/installdir
+    - run: make -j8 uninstall V=1 DESTDIR=$PWD/installdir
+    - uses: actions/upload-artifact@v3
+      if: failure()
+      with:
+        name: clang-test-logs
+        path: tests/*.log
+
+  i386-build-and-test:
+    name: Build and test with gcc -m32
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install dependencies
+      run: |
+        sudo dpkg --add-architecture i386
+        sudo apt-get update
+        sudo apt-get install -y gcc-multilib $DEPENDENCIES libxml2-dev:i386
+    - run: ./bootstrap
+    - run: ./configure CC=gcc CFLAGS="-m32 $DEF_CFLAGS" --without-fuse --without-ntfs-3g
+    - run: make -j8 check V=1
+    - run: make -j8 install V=1 DESTDIR=$PWD/installdir
+    - run: make -j8 uninstall V=1 DESTDIR=$PWD/installdir
+    - uses: actions/upload-artifact@v3
+      if: failure()
+      with:
+        name: i386-test-logs
+        path: tests/*.log
+
+  asan-build-and-test:
+    name: Build and test with ASAN enabled
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang $DEPENDENCIES
+    - run: ./bootstrap
+    - run: ./configure CC=clang CFLAGS="$DEF_CFLAGS -fsanitize=address"
+    - run: make -j8 check V=1
+    - uses: actions/upload-artifact@v3
+      if: failure()
+      with:
+        name: asan-test-logs
+        path: tests/*.log
+
+  ubsan-build-and-test:
+    name: Build and test with UBSAN enabled
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang $DEPENDENCIES
+    - run: ./bootstrap
+    - run: ./configure CC=clang CFLAGS="$DEF_CFLAGS -fsanitize=undefined"
+    - run: make -j8 check V=1
+    - uses: actions/upload-artifact@v3
+      if: failure()
+      with:
+        name: ubsan-test-logs
+        path: tests/*.log
+
+  macos-build-and-test:
+    name: Build and test on macOS
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install dependencies
+      run: |
+        brew install autoconf automake libtool pkg-config libxml2
+    - run: ./bootstrap
+    - run: ./configure CFLAGS="$DEF_CFLAGS" --without-fuse --without-ntfs-3g
+    - run: make -j8 check V=1
+    - run: make -j8 install DESTDIR=$PWD/installdir
+    - run: make -j8 uninstall DESTDIR=$PWD/installdir
+    - uses: actions/upload-artifact@v3
+      if: failure()
+      with:
+        name: macos-test-logs
+        path: tests/*.log
+
+  windows-build:
+    name: Build on Windows
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+        - { sys: mingw32, env: i686 }
+        - { sys: mingw64, env: x86_64 }
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+    - uses: actions/checkout@v3
+    - uses: msys2/setup-msys2@v2
+      with:
+        msystem: ${{matrix.sys}}
+        update: true
+        install: >
+          autoconf
+          automake
+          libtool
+          pkg-config
+          make
+          mingw-w64-${{matrix.env}}-cc
+          mingw-w64-${{matrix.env}}-libxml2
+    - run: ./bootstrap
+    - run: ./configure CFLAGS="$DEF_CFLAGS" --without-fuse --without-ntfs-3g
+    - run: make -j8
