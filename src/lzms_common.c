@@ -23,9 +23,9 @@
 #  include "config.h"
 #endif
 
+#include "wimlib/cpu_features.h"
 #include "wimlib/lzms_common.h"
 #include "wimlib/unaligned.h"
-#include "wimlib/x86_cpu_features.h"
 
 #ifdef __x86_64__
 #  include <emmintrin.h>
@@ -614,7 +614,7 @@ lzms_x86_filter(u8 data[restrict], s32 size,
 	tail_ptr = &data[size - 16];
 
 #ifdef __x86_64__
-	if (x86_have_cpu_feature(X86_CPU_FEATURE_SSE4_2)) {
+	if (cpu_features & X86_CPU_FEATURE_SSE4_2) {
 		u8 saved_byte = *tail_ptr;
 		*tail_ptr = 0xE8;
 		for (;;) {

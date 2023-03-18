@@ -32,6 +32,7 @@
 #include "wimlib.h"
 #include "wimlib/assert.h"
 #include "wimlib/blob_table.h"
+#include "wimlib/cpu_features.h"
 #include "wimlib/dentry.h"
 #include "wimlib/encoding.h"
 #include "wimlib/file_io.h"
@@ -977,6 +978,7 @@ wimlib_global_init(int init_flags)
 			    WIMLIB_INIT_FLAG_DEFAULT_CASE_INSENSITIVE))
 		goto out_unlock;
 
+	init_cpu_features();
 	xml_global_init();
 #ifdef __WIN32__
 	ret = win32_global_init(init_flags);

@@ -40,6 +40,7 @@ libwim_la_SOURCES =		\
 	src/compress_common.c	\
 	src/compress_parallel.c	\
 	src/compress_serial.c	\
+	src/cpu_features.c	\
 	src/decompress.c	\
 	src/decompress_common.c	\
 	src/delete_image.c	\
@@ -88,7 +89,6 @@ libwim_la_SOURCES =		\
 	src/verify.c		\
 	src/wim.c		\
 	src/write.c		\
-	src/x86_cpu_features.c	\
 	src/xml.c		\
 	src/xml_windows.c	\
 	src/xpress_compress.c	\
@@ -105,6 +105,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/compressor_ops.h	\
 	include/wimlib/compress_common.h	\
 	include/wimlib/chunk_compressor.h	\
+	include/wimlib/cpu_features.h	\
 	include/wimlib/decompressor_ops.h	\
 	include/wimlib/decompress_common.h	\
 	include/wimlib/dentry.h		\
@@ -150,7 +151,6 @@ libwim_la_SOURCES =		\
 	include/wimlib/util.h		\
 	include/wimlib/wim.h		\
 	include/wimlib/write.h		\
-	include/wimlib/x86_cpu_features.h	\
 	include/wimlib/xattr.h		\
 	include/wimlib/xml.h		\
 	include/wimlib/xml_windows.h	\
