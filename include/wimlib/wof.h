@@ -157,6 +157,7 @@ typedef struct _FILE_PROVIDER_EXTERNAL_INFO_V1 {
 #ifndef FSCTL_ENUM_OVERLAY
 #define FSCTL_ENUM_OVERLAY \
 	CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 199, METHOD_NEITHER, FILE_ANY_ACCESS)
+#endif
 typedef struct _WIM_PROVIDER_OVERLAY_ENTRY {
 	ULONG NextEntryOffset;
 	LARGE_INTEGER DataSourceId;
@@ -166,13 +167,13 @@ typedef struct _WIM_PROVIDER_OVERLAY_ENTRY {
 	ULONG WimIndex;
 	ULONG Flags;
 } WIM_PROVIDER_OVERLAY_ENTRY, *PWIM_PROVIDER_OVERLAY_ENTRY;
-#endif /* FSCTL_ENUM_OVERLAY */
 
 /* Add a new external backing source to a volume's namespace.
  * Ref: https://docs.microsoft.com/en-us/windows-hardware/drivers/ifs/fsctl-add-overlay */
 #ifndef FSCTL_ADD_OVERLAY
 #define FSCTL_ADD_OVERLAY \
 	CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 204, METHOD_BUFFERED, FILE_WRITE_DATA)
+#endif
 typedef struct _WIM_PROVIDER_ADD_OVERLAY_INPUT {
 #define WIM_BOOT_NOT_OS_WIM	0
 #define WIM_BOOT_OS_WIM		1
@@ -181,29 +182,28 @@ typedef struct _WIM_PROVIDER_ADD_OVERLAY_INPUT {
 	ULONG WimFileNameOffset;
 	ULONG WimFileNameLength;
 } WIM_PROVIDER_ADD_OVERLAY_INPUT, *PWIM_PROVIDER_ADD_OVERLAY_INPUT;
-#endif /* FSCTL_ADD_OVERLAY */
 
 /* Removes a backing source from a volume.
  * Ref: https://docs.microsoft.com/en-us/windows-hardware/drivers/ifs/fsctl-remove-overlay */
 #ifndef FSCTL_REMOVE_OVERLAY
 #define FSCTL_REMOVE_OVERLAY \
 	CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 205, METHOD_BUFFERED, FILE_WRITE_DATA)
+#endif
 typedef struct _WIM_PROVIDER_REMOVE_OVERLAY_INPUT {
 	LARGE_INTEGER DataSourceId;
 } WIM_PROVIDER_REMOVE_OVERLAY_INPUT, *PWIM_PROVIDER_REMOVE_OVERLAY_INPUT;
-#endif /* FSCTL_REMOVE_OVERLAY */
 
 /* Updates a new data source identifier for a backing source attached to a volume.
  * Ref: https://docs.microsoft.com/en-us/windows-hardware/drivers/ifs/fsctl-update-overlay */
 #ifndef FSCTL_UPDATE_OVERLAY
 #define FSCTL_UPDATE_OVERLAY \
 	CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 206, METHOD_BUFFERED, FILE_WRITE_DATA)
+#endif
 typedef struct _WIM_PROVIDER_UPDATE_OVERLAY_INPUT {
 	LARGE_INTEGER DataSourceId;
 	ULONG         WimFileNameOffset;
 	ULONG         WimFileNameLength;
 } WIM_PROVIDER_UPDATE_OVERLAY_INPUT, *PWIM_PROVIDER_UPDATE_OVERLAY_INPUT;
-#endif /* FSCTL_UPDATE_OVERLAY */
 
 /*----------------------------------------------------------------------------*
  *        WOF reparse point and WimOverlay.dat structs (undocumented)         *
