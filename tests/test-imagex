@@ -65,6 +65,17 @@ for comp_type in None LZX XPRESS; do
 	rm -rf dir.wim tmp
 done
 
+# Test wimverify and the SHA-1 code
+WIMLIB_DISABLE_CPU_FEATURES='*' wimcapture dir dir.wim --compress=none
+disabled=''
+for cpu_feature in '' sha1 bmi2 avx sse4.2 sse4.1 ssse3; do
+	[ -n "$disabled" ] && disabled+=','
+	disabled+="$cpu_feature"
+	if ! WIMLIB_DISABLE_CPU_FEATURES=$disabled wimverify dir.wim; then
+		error "wimverify failed (cpu_features_disabled=$disabled)"
+	fi
+done
+
 # Test wimappend --create
 rm -f dir.wim
 if wimappend dir dir.wim; then
