@@ -19,7 +19,7 @@
  * along with this file; if not, see http://www.gnu.org/licenses/.
  */
 
-#ifdef __WIN32__
+#ifdef _WIN32
 
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
@@ -407,4 +407,4 @@ winnt_fsctl(HANDLE h, u32 code, const void *in, u32 in_size,
 	return status;
 }
 
-#endif /* __WIN32__ */
+#endif /* _WIN32 */

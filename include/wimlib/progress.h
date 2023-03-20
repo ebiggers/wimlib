@@ -61,7 +61,7 @@ static inline tchar *
 progress_get_streamless_path(const tchar *path)
 {
 	tchar *cookie = NULL;
-#ifdef __WIN32__
+#ifdef _WIN32
 	cookie = (wchar_t *)path_stream_name(path);
 	if (cookie)
 		*--cookie = L'\0'; /* Overwrite the colon  */
@@ -74,7 +74,7 @@ progress_get_streamless_path(const tchar *path)
 static inline tchar *
 progress_get_win32_path(const tchar *path)
 {
-#ifdef __WIN32__
+#ifdef _WIN32
 	if (!wcsncmp(path, L"\\??\\", 4)) {
 		((wchar_t *)path)[1] = L'\\';
 		return (wchar_t *)&path[1];
@@ -87,7 +87,7 @@ progress_get_win32_path(const tchar *path)
 static inline void
 progress_put_win32_path(tchar *cookie)
 {
-#ifdef __WIN32__
+#ifdef _WIN32
 	if (cookie)
 		*cookie = L'?';
 #endif
@@ -97,7 +97,7 @@ progress_put_win32_path(tchar *cookie)
 static inline void
 progress_put_streamless_path(tchar *cookie)
 {
-#ifdef __WIN32__
+#ifdef _WIN32
 	if (cookie)
 		*cookie = L':';
 #endif

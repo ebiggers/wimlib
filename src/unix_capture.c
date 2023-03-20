@@ -19,7 +19,7 @@
  * along with this file; if not, see http://www.gnu.org/licenses/.
  */
 
-#ifndef __WIN32__
+#ifndef _WIN32
 
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
@@ -688,4 +688,4 @@ unix_build_dentry_tree(struct wim_dentry **root_ret,
 						root_disk_path, params);
 }
 
-#endif /* !__WIN32__ */
+#endif /* !_WIN32 */

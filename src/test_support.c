@@ -126,7 +126,7 @@ is_valid_windows_filename_char(utf16lechar c)
 static inline bool
 is_valid_filename_char(utf16lechar c)
 {
-#ifdef __WIN32__
+#ifdef _WIN32
 	return is_valid_windows_filename_char(c);
 #else
 	return c != cpu_to_le16('\0') && c != cpu_to_le16('/');
@@ -385,7 +385,7 @@ generate_random_security_descriptor(void *_desc, struct generation_context *ctx)
 static bool
 am_root(void)
 {
-#ifdef __WIN32__
+#ifdef _WIN32
 	return false;
 #else
 	return (getuid() == 0);
@@ -395,7 +395,7 @@ am_root(void)
 static u32
 generate_uid(void)
 {
-#ifdef __WIN32__
+#ifdef _WIN32
 	return 0;
 #else
 	if (am_root())
@@ -407,7 +407,7 @@ generate_uid(void)
 static u32
 generate_gid(void)
 {
-#ifdef __WIN32__
+#ifdef _WIN32
 	return 0;
 #else
 	if (am_root())
@@ -416,7 +416,7 @@ generate_gid(void)
 #endif
 }
 
-#ifdef __WIN32__
+#ifdef _WIN32
 #  ifndef S_IFLNK
 #    define S_IFLNK  0120000
 #  endif
@@ -475,7 +475,7 @@ set_random_xattrs(struct wim_inode *inode)
 	struct wim_xattr_entry *entry = (void *)entries;
 	size_t entries_size;
 	struct wimlib_unix_data unix_data;
-#ifdef __WIN32__
+#ifdef _WIN32
 	const char *prefix = "";
 #else
 	const char *prefix = "user.";
@@ -501,7 +501,7 @@ set_random_xattrs(struct wim_inode *inode)
 		int value_len = rand32() % 64;
 		u8 *p;
 
-	#ifdef __WIN32__
+	#ifdef _WIN32
 		if (value_len == 0)
 			value_len++;
 	#endif
@@ -523,7 +523,7 @@ set_random_xattrs(struct wim_inode *inode)
 			*p++ = 'A' + i;
 			for (int j = 1; j < name_len; j++) {
 				do {
-				#ifdef __WIN32__
+				#ifdef _WIN32
 					*p = 'A' + rand8() % 26;
 				#else
 					*p = rand8();

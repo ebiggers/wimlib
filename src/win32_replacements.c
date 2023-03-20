@@ -20,7 +20,7 @@
  * along with this file; if not, see http://www.gnu.org/licenses/.
  */
 
-#ifdef __WIN32__
+#ifdef _WIN32
 
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
@@ -770,4 +770,4 @@ now_as_wim_timestamp(void)
 	return ((u64)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
 }
 
-#endif /* __WIN32__ */
+#endif /* _WIN32 */

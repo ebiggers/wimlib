@@ -98,7 +98,7 @@ extern int
 make_link_reparse_point(const struct link_reparse_point *link,
 			struct reparse_buffer_disk *rpbuf, u16 *rpbuflen_ret);
 
-#ifndef __WIN32__
+#ifndef _WIN32
 extern int
 wim_inode_readlink(const struct wim_inode *inode, char *buf, size_t bufsize,
 		   const struct blob_descriptor *blob,

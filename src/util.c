@@ -106,7 +106,7 @@ wimlib_strdup(const char *str)
 	return memdup(str, strlen(str) + 1);
 }
 
-#ifdef __WIN32__
+#ifdef _WIN32
 wchar_t *
 wimlib_wcsdup(const wchar_t *str)
 {
@@ -174,7 +174,7 @@ void *mempcpy(void *dst, const void *src, size_t n)
  * Random number generation
  **************************/
 
-#ifndef __WIN32__
+#ifndef _WIN32
 /*
  * Generate @n cryptographically secure random bytes (thread-safe)
  *
@@ -231,7 +231,7 @@ try_dev_urandom:
 	} while (n != 0);
 	close(fd);
 }
-#endif /* !__WIN32__ */
+#endif /* !_WIN32 */
 
 /*
  * Generate @n cryptographically secure random alphanumeric characters
@@ -275,7 +275,7 @@ get_random_alnum_chars(tchar *p, size_t n)
  * System information
  ************************/
 
-#ifndef __WIN32__
+#ifndef _WIN32
 unsigned
 get_available_cpus(void)
 {
@@ -286,9 +286,9 @@ get_available_cpus(void)
 	}
 	return n;
 }
-#endif /* !__WIN32__ */
+#endif /* !_WIN32 */
 
-#ifndef __WIN32__
+#ifndef _WIN32
 u64
 get_available_memory(void)
 {
@@ -311,4 +311,4 @@ default_size:
 	WARNING("Failed to determine available memory; assuming 1 GiB");
 	return (u64)1 << 30;
 }
-#endif /* !__WIN32__ */
+#endif /* !_WIN32 */

@@ -104,7 +104,7 @@ ntfs_3g_build_dentry_tree(struct wim_dentry **root_ret,
 			  const tchar *device, struct scan_params *params);
 #endif
 
-#ifdef __WIN32__
+#ifdef _WIN32
 /* win32_capture.c */
 extern int
 win32_build_dentry_tree(struct wim_dentry **root_ret,

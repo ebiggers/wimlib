@@ -980,7 +980,7 @@ wimlib_global_init(int init_flags)
 
 	init_cpu_features();
 	xml_global_init();
-#ifdef __WIN32__
+#ifdef _WIN32
 	ret = win32_global_init(init_flags);
 	if (ret)
 		goto out_unlock;
@@ -1011,7 +1011,7 @@ wimlib_global_cleanup(void)
 		goto out_unlock;
 
 	xml_global_cleanup();
-#ifdef __WIN32__
+#ifdef _WIN32
 	win32_global_cleanup();
 #endif
 

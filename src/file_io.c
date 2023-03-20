@@ -30,7 +30,7 @@
 #include "wimlib/file_io.h"
 #include "wimlib/util.h"
 
-#ifdef __WIN32__
+#ifdef _WIN32
 #  include "wimlib/win32.h"
 #  define read win32_read
 #  define write win32_write

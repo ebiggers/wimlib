@@ -21,7 +21,7 @@
  * along with this file; if not, see http://www.gnu.org/licenses/.
  */
 
-#ifdef __WIN32__
+#ifdef _WIN32
 
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
@@ -3046,4 +3046,4 @@ out:
 	return ret;
 }
 
-#endif /* __WIN32__ */
+#endif /* _WIN32 */

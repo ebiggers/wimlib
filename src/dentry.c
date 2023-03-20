@@ -607,7 +607,7 @@ collate_dentry_names(const struct avl_tree_node *n1,
  * WIMLIB_INIT_FLAG_DEFAULT_CASE_SENSITIVE or
  * WIMLIB_INIT_FLAG_DEFAULT_CASE_INSENSITIVE to wimlib_global_init().  */
 bool default_ignore_case =
-#ifdef __WIN32__
+#ifdef _WIN32
 	true
 #else
 	false

@@ -1,6 +1,6 @@
 /* Windows-specific code for wimlib-imagex.  */
 
-#ifndef __WIN32__
+#ifndef _WIN32
 #  error "This file contains Windows code"
 #endif
 

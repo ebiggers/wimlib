@@ -1234,7 +1234,7 @@ check_add_command(struct wimlib_update_command *cmd,
 	}
 #endif
 
-#ifdef __WIN32__
+#ifdef _WIN32
 	/* Check for flags not supported on Windows.  */
 	if (add_flags & WIMLIB_ADD_FLAG_UNIX_DATA) {
 		ERROR("Capturing UNIX-specific data is not supported on Windows");

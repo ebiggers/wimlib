@@ -206,7 +206,7 @@ sort_blob_list_for_solid_compression(struct list_head *blob_list)
 							 blob_table.capacity]);
 			break;
 		case BLOB_IN_FILE_ON_DISK:
-	#ifdef __WIN32__
+	#ifdef _WIN32
 		case BLOB_IN_WINDOWS_FILE:
 	#endif
 			blob_set_solid_sort_name_from_inode(blob, blob->file_inode);

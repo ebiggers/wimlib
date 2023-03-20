@@ -5,7 +5,7 @@
 #ifndef _WIMLIB_WIN32_H
 #define _WIMLIB_WIN32_H
 
-#ifdef __WIN32__
+#ifdef _WIN32
 
 #include "wimlib/types.h"
 
@@ -64,6 +64,6 @@ win32_pread(int fd, void *buf, size_t count, off_t offset);
 extern ssize_t
 win32_pwrite(int fd, const void *buf, size_t count, off_t offset);
 
-#endif /* __WIN32__ */
+#endif /* _WIN32 */
 
 #endif /* _WIMLIB_WIN32_H */

@@ -156,7 +156,7 @@ make_link_reparse_point(const struct link_reparse_point *link,
 }
 
 /* UNIX symlink <=> Windows reparse point translation  */
-#ifndef __WIN32__
+#ifndef _WIN32
 
 /* Retrieve the inode's reparse point buffer into @rpbuf and @rpbuflen_ret.
  * This gets the reparse data from @blob if specified, otherwise from the
@@ -442,4 +442,4 @@ out_free_target:
 	return ret;
 }
 
-#endif /* !__WIN32__ */
+#endif /* !_WIN32 */

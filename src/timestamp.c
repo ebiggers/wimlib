@@ -70,7 +70,7 @@ wim_timestamp_to_wimlib_timespec(u64 timestamp, struct wimlib_timespec *wts,
 		*high_part_ret = sec >> 32;
 }
 
-#ifdef __WIN32__
+#ifdef _WIN32
 static _unused_attribute void
 check_sizeof_time_t(void)
 {
@@ -127,7 +127,7 @@ now_as_wim_timestamp(void)
 	gettimeofday(&tv, NULL);
 	return timeval_to_wim_timestamp(&tv);
 }
-#endif /* !__WIN32__ */
+#endif /* !_WIN32 */
 
 /* Translate a WIM timestamp into a human-readable string.  */
 void

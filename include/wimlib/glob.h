@@ -1,7 +1,7 @@
 #ifndef _WIMLIB_GLOB_H
 #define _WIMLIB_GLOB_H
 
-#ifndef __WIN32__
+#ifndef _WIN32
 #  include <glob.h>
 #else
 #include <stddef.h>
@@ -29,6 +29,6 @@ extern void globfree(glob_t *pglob);
 #define	GLOB_ABORTED	2	/* Read error.  */
 #define	GLOB_NOMATCH	3	/* No matches found.  */
 
-#endif /* __WIN32__ */
+#endif /* _WIN32 */
 
 #endif /* _WIMLIB_GLOB_H */

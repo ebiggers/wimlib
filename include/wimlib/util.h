@@ -57,7 +57,7 @@ wimlib_calloc(size_t nmemb, size_t size);
 extern char *
 wimlib_strdup(const char *str);
 
-#ifdef __WIN32__
+#ifdef _WIN32
 extern wchar_t *
 wimlib_wcsdup(const wchar_t *str);
 #endif

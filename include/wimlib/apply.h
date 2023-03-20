@@ -268,7 +268,7 @@ struct apply_operations {
 	bool single_tree_only;
 };
 
-#ifdef __WIN32__
+#ifdef _WIN32
   extern const struct apply_operations win32_apply_ops;
 #else
   extern const struct apply_operations unix_apply_ops;

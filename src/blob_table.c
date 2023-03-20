@@ -132,7 +132,7 @@ clone_blob_descriptor(const struct blob_descriptor *old)
 		if (new->file_on_disk == NULL)
 			goto out_free;
 		break;
-#ifdef __WIN32__
+#ifdef _WIN32
 	case BLOB_IN_WINDOWS_FILE:
 		new->windows_file = clone_windows_file(old->windows_file);
 		break;
@@ -184,7 +184,7 @@ blob_release_location(struct blob_descriptor *blob)
 			      (void*)&blob->attached_buffer);
 		FREE(blob->file_on_disk);
 		break;
-#ifdef __WIN32__
+#ifdef _WIN32
 	case BLOB_IN_WINDOWS_FILE:
 		free_windows_file(blob->windows_file);
 		break;
@@ -462,7 +462,7 @@ cmp_blobs_by_sequential_order(const void *p1, const void *p2)
 		/* Compare files by path: just a heuristic that will place files
 		 * in the same directory next to each other.  */
 		return tstrcmp(blob1->file_on_disk, blob2->file_on_disk);
-#ifdef __WIN32__
+#ifdef _WIN32
 	case BLOB_IN_WINDOWS_FILE:
 		return cmp_windows_files(blob1->windows_file, blob2->windows_file);
 #endif

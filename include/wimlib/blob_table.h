@@ -40,7 +40,7 @@ enum blob_location {
 	BLOB_IN_NTFS_VOLUME,
 #endif
 
-#ifdef __WIN32__
+#ifdef _WIN32
 	/* Windows only: the blob's data is available in the file (or named data
 	 * stream) specified by @windows_file.  The data might be only properly
 	 * accessible through the Windows API.  */
@@ -384,13 +384,13 @@ static inline bool
 blob_is_in_file(const struct blob_descriptor *blob)
 {
 	return blob->blob_location == BLOB_IN_FILE_ON_DISK
-#ifdef __WIN32__
+#ifdef _WIN32
 	    || blob->blob_location == BLOB_IN_WINDOWS_FILE
 #endif
 	   ;
 }
 
-#ifdef __WIN32__
+#ifdef _WIN32
 extern const wchar_t *
 get_windows_file_path(const struct windows_file *file);
 #endif
@@ -398,7 +398,7 @@ get_windows_file_path(const struct windows_file *file);
 static inline const tchar *
 blob_file_path(const struct blob_descriptor *blob)
 {
-#ifdef __WIN32__
+#ifdef _WIN32
 	if (blob->blob_location == BLOB_IN_WINDOWS_FILE)
 		return get_windows_file_path(blob->windows_file);
 #endif

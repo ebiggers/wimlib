@@ -68,7 +68,7 @@ wimlib_vmsg(const tchar *tag, const tchar *format, va_list va, bool perror)
 				 T("unknown error (errno=%d)"),
 				 errno_save);
 		}
-	#ifdef WIN32
+	#ifdef _WIN32
 		if (errno_save == EBUSY)
 			tstrcpy(buf, T("Resource busy"));
 	#endif
@@ -149,7 +149,7 @@ wimlib_set_error_file_by_name(const tchar *path)
 {
 	FILE *fp;
 
-#ifdef __WIN32__
+#ifdef _WIN32
 	fp = win32_open_logfile(path);
 #else
 	fp = fopen(path, "a");

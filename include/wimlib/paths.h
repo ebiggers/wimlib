@@ -32,7 +32,7 @@ canonicalize_wim_path(const tchar *wim_path);
  * Currently needs to be '/' on UNIX for the WIM mounting code to work properly.
  */
 
-#ifdef __WIN32__
+#ifdef _WIN32
 #  define OS_PREFERRED_PATH_SEPARATOR L'\\'
 #  define is_any_path_separator(c) ((c) == L'/' || (c) == L'\\')
 #else

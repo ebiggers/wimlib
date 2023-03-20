@@ -19,7 +19,7 @@
  * along with this file; if not, see http://www.gnu.org/licenses/.
  */
 
-#ifdef __WIN32__
+#ifdef _WIN32
 
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
@@ -3350,4 +3350,4 @@ const struct apply_operations win32_apply_ops = {
 	.context_size           = sizeof(struct win32_apply_ctx),
 };
 
-#endif /* __WIN32__ */
+#endif /* _WIN32 */

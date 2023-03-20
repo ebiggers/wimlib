@@ -66,7 +66,7 @@
 #endif
 #include <unistd.h>
 
-#ifdef __WIN32__
+#ifdef _WIN32
 #  include <windows.h>
 #  include <winternl.h>
 #  include <ntstatus.h>
@@ -119,7 +119,7 @@ assertion_failed(int line, const char *format, ...)
 static void
 change_to_temporary_directory(void)
 {
-#ifdef __WIN32__
+#ifdef _WIN32
 	ASSERT(SetCurrentDirectory(L"E:\\"),
 	       "failed to change directory to E:\\");
 #else
@@ -186,7 +186,7 @@ create_ntfs_volume(const char *name)
 }
 #endif /* WITH_NTFS_3G */
 
-#ifdef __WIN32__
+#ifdef _WIN32
 
 extern WINAPI NTSTATUS NtQueryDirectoryFile (HANDLE FileHandle,
 					     HANDLE Event,
@@ -300,7 +300,7 @@ delete_directory_tree(const wchar_t *name)
 	ASSERT(GetFileAttributes(name) == 0xFFFFFFFF, "Deletion didn't work!");
 }
 
-#else /* __WIN32__ */
+#else /* _WIN32 */
 
 static void
 delete_directory_tree_recursive(int dirfd, const char *name)
@@ -332,7 +332,7 @@ delete_directory_tree(const tchar *name)
 	delete_directory_tree_recursive(AT_FDCWD, name);
 }
 
-#endif /* !__WIN32__ */
+#endif /* !_WIN32 */
 
 static uint32_t
 rand32(void)
@@ -411,7 +411,7 @@ get_image_count(WIMStruct *wim)
 	return info.image_count;
 }
 
-#ifdef __WIN32__
+#ifdef _WIN32
 static bool
 is_wimboot_capable(WIMStruct *wim)
 {
@@ -426,7 +426,7 @@ is_wimboot_capable(WIMStruct *wim)
 		 (info.compression_type == WIMLIB_COMPRESSION_TYPE_LZX &&
 		  info.chunk_size == 32768));
 }
-#endif /* __WIN32__ */
+#endif /* _WIN32 */
 
 static void
 overwrite_wim(WIMStruct *wim)
@@ -778,15 +778,15 @@ op__apply_and_capture_test(void)
 	} else
 #endif
 	{
-#ifdef __WIN32__
+#ifdef _WIN32
 		printf("applying in Windows mode\n");
 		cmp_flags |= WIMLIB_CMP_FLAG_WINDOWS_MODE;
-#else /* __WIN32__ */
+#else /* _WIN32 */
 		printf("applying in UNIX mode\n");
 		extract_flags |= WIMLIB_EXTRACT_FLAG_UNIX_DATA;
 		add_flags |= WIMLIB_ADD_FLAG_UNIX_DATA;
 		cmp_flags |= WIMLIB_CMP_FLAG_UNIX_MODE;
-#endif /* !__WIN32__ */
+#endif /* !_WIN32 */
 	}
 	add_flags |= WIMLIB_ADD_FLAG_NORPFIX;
 	CHECK_RET(wimlib_extract_image(wim, image, TMP_TARGET_NAME,
@@ -810,7 +810,7 @@ op__apply_and_capture_test(void)
 	wimlib_free(wim);
 }
 
-#ifdef __WIN32__
+#ifdef _WIN32
 
 /* Enumerate and unregister all backing WIMs from the specified volume  */
 static void
@@ -931,7 +931,7 @@ op__wimboot_test(void)
 	wimlib_free(wim);
 	wimlib_free(wim2);
 }
-#endif /* __WIN32__ */
+#endif /* _WIN32 */
 
 static int
 is_solid_resource(const struct wimlib_resource_entry *resource, void *_ctx)
@@ -1039,12 +1039,12 @@ static const operation_func operation_table[] = {
 	op__apply_and_capture_test,
 	op__split_test,
 	op__set_compression_level,
-#ifdef __WIN32__
+#ifdef _WIN32
 	op__wimboot_test,
 #endif
 };
 
-#ifdef __WIN32__
+#ifdef _WIN32
 extern int wmain(int argc, wchar_t **argv);
 #define main wmain
 #endif

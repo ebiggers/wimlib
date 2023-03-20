@@ -778,7 +778,7 @@ read_blob_prefix(const struct blob_descriptor *blob, u64 size,
 	#ifdef WITH_NTFS_3G
 		[BLOB_IN_NTFS_VOLUME] = read_ntfs_attribute_prefix,
 	#endif
-	#ifdef __WIN32__
+	#ifdef _WIN32
 		[BLOB_IN_WINDOWS_FILE] = read_windows_file_prefix,
 	#endif
 	};

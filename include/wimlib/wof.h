@@ -34,7 +34,7 @@
 #include "wimlib/compiler.h"
 #include "wimlib/types.h"
 
-#ifdef __WIN32__
+#ifdef _WIN32
 
 /*
  * The Windows Overlay Filesystem filter (WOF, a.k.a. wof.sys) is a filesystem
@@ -425,6 +425,6 @@ wof_check_structs(void)
 	STATIC_ASSERT(sizeof(struct WimOverlay_dat_entry_2) == 104);
 }
 
-#endif /* __WIN32__ */
+#endif /* _WIN32 */
 
 #endif /* _WOF_H_ */

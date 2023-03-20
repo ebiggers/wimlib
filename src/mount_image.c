@@ -33,7 +33,7 @@
 
 #ifdef WITH_FUSE
 
-#ifdef __WIN32__
+#ifdef _WIN32
 #  error "FUSE mount not supported on Windows!  Please configure --without-fuse"
 #endif
 
@@ -2515,7 +2515,7 @@ wimlib_unmount_image_with_progress(const char *dir, int unmount_flags,
 static int
 mount_unsupported_error(void)
 {
-#if defined(__WIN32__)
+#ifdef _WIN32
 	ERROR("Sorry-- Mounting WIM images is not supported on Windows!");
 #else
 	ERROR("wimlib was compiled with --without-fuse, which disables support "

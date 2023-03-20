@@ -387,7 +387,7 @@ create_temporary_file(struct filedes *fd_ret, tchar **name_ret)
 	tchar *name;
 	int raw_fd;
 
-#ifdef __WIN32__
+#ifdef _WIN32
 retry:
 	name = _wtempnam(NULL, L"wimlib");
 	if (!name) {
@@ -400,7 +400,7 @@ retry:
 		FREE(name);
 		goto retry;
 	}
-#else /* __WIN32__ */
+#else /* _WIN32 */
 	const char *tmpdir = getenv("TMPDIR");
 	if (!tmpdir)
 		tmpdir = P_tmpdir;
@@ -409,7 +409,7 @@ retry:
 		return WIMLIB_ERR_NOMEM;
 	sprintf(name, "%s/wimlibXXXXXX", tmpdir);
 	raw_fd = mkstemp(name);
-#endif /* !__WIN32__ */
+#endif /* !_WIN32 */
 
 	if (raw_fd < 0) {
 		ERROR_WITH_ERRNO("Failed to create temporary file "
@@ -804,7 +804,7 @@ destroy_blob_list(struct list_head *blob_list)
 			FREE(blob->blob_extraction_targets);
 }
 
-#ifdef __WIN32__
+#ifdef _WIN32
 static const utf16lechar replacement_char = cpu_to_le16(0xfffd);
 #else
 static const utf16lechar replacement_char = cpu_to_le16('?');
@@ -819,7 +819,7 @@ file_name_valid(utf16lechar *name, size_t num_chars, bool fix)
 		return true;
 	for (i = 0; i < num_chars; i++) {
 		switch (le16_to_cpu(name[i])) {
-	#ifdef __WIN32__
+	#ifdef _WIN32
 		case '\x01'...'\x1F':
 		case '\\':
 		case ':':
@@ -1467,7 +1467,7 @@ select_apply_operations(int extract_flags)
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_NTFS)
 		return &ntfs_3g_apply_ops;
 #endif
-#ifdef __WIN32__
+#ifdef _WIN32
 	return &win32_apply_ops;
 #else
 	return &unix_apply_ops;
@@ -1625,7 +1625,7 @@ mkdir_if_needed(const tchar *target)
 	if (errno == EEXIST)
 		return 0;
 
-#ifdef __WIN32__
+#ifdef _WIN32
 	/* _wmkdir() fails with EACCES if called on a drive root directory.  */
 	if (errno == EACCES)
 		return 0;
@@ -1664,7 +1664,7 @@ check_extract_flags(const WIMStruct *wim, int *extract_flags_p)
 #endif
 
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_WIMBOOT) {
-#ifdef __WIN32__
+#ifdef _WIN32
 		if (!wim->filename)
 			return WIMLIB_ERR_NO_FILENAME;
 #else
@@ -1678,7 +1678,7 @@ check_extract_flags(const WIMStruct *wim, int *extract_flags_p)
 			     WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS16K |
 			     WIMLIB_EXTRACT_FLAG_COMPACT_LZX))
 	{
-	#ifdef __WIN32__
+	#ifdef _WIN32
 		int count = 0;
 		count += ((extract_flags & WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS4K) != 0);
 		count += ((extract_flags & WIMLIB_EXTRACT_FLAG_COMPACT_XPRESS8K) != 0);
@@ -1871,7 +1871,7 @@ extract_single_image(WIMStruct *wim, int image,
 }
 
 static const tchar * const filename_forbidden_chars =
-#ifdef __WIN32__
+#ifdef _WIN32
 T("<>:\"/\\|?*");
 #else
 T("/");

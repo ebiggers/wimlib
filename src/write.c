@@ -3274,7 +3274,7 @@ overwrite_wim_via_tmpfile(WIMStruct *wim, int write_flags, unsigned num_threads)
 	if (ret) {
 		ERROR_WITH_ERRNO("Failed to rename `%"TS"' to `%"TS"'",
 				 tmpfile, wim->filename);
-	#ifdef __WIN32__
+	#ifdef _WIN32
 		if (ret < 0)
 	#endif
 		{

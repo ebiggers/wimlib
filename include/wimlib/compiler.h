@@ -51,7 +51,7 @@
 
 /* Declare that the annotated function should be exported from the shared
  * library (or DLL).  */
-#ifdef __WIN32__
+#ifdef _WIN32
 #  define WIMLIBAPI __declspec(dllexport)
 #else
 #  define WIMLIBAPI __attribute__((visibility("default")))
@@ -102,7 +102,7 @@
 /* Hint that the annotated function takes a printf()-like format string and
  * arguments.  This is currently disabled on Windows because MinGW does not
  * support this attribute on functions taking wide-character strings.  */
-#ifdef __WIN32__
+#ifdef _WIN32
 #  define _format_attribute(type, format_str, format_start)
 #else
 #  define _format_attribute(type, format_str, format_start)	\
