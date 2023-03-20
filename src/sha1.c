@@ -1,7 +1,7 @@
 /*
  * sha1.c - implementation of the Secure Hash Algorithm version 1 (FIPS 180-1)
  *
- * Copyright 2022 Eric Biggers
+ * Copyright 2022-2023 Eric Biggers
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation

@@ -1,7 +1,7 @@
 /*
  * cpu_features.c - runtime CPU feature detection
  *
- * Copyright 2022 Eric Biggers
+ * Copyright 2022-2023 Eric Biggers
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation

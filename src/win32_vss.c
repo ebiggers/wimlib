@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2015-2016 Eric Biggers
+ * Copyright (C) 2015-2023 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free

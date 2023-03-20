@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2012-2021 Eric Biggers
+ * Copyright (C) 2012-2023 Eric Biggers
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -4612,7 +4612,7 @@ version(void)
 	static const tchar * const fmt =
 	T(
 "wimlib-imagex " PACKAGE_VERSION " (using wimlib %"TS")\n"
-"Copyright (C) 2012-2021 Eric Biggers\n"
+"Copyright (C) 2012-2023 Eric Biggers\n"
 "License GPLv3+; GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>.\n"
 "This is free software: you are free to change and redistribute it.\n"
 "There is NO WARRANTY, to the extent permitted by law.\n"
