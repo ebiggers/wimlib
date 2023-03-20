@@ -4,6 +4,8 @@ Version 1.14.0-BETA1:
 	Improved the performance of the Windows binaries on CPUs that have SHA-1
 	instructions.
 
+	Removed support for Windows XP.
+
 	Fixed a bug in 'wimsplit' where it didn't accept part sizes of 4 GiB or
 	larger on Windows and on 32-bit platforms.
 

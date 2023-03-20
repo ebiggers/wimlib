@@ -27,7 +27,6 @@
 #endif
 
 #include <errno.h>
-#include <pthread.h>
 #include <io.h>	/* for _get_osfhandle()  */
 #include <fcntl.h>
 
@@ -467,21 +466,6 @@ win32_rename_replacement(const wchar_t *srcpath, const wchar_t *dstpath)
 err_set_errno:
 	set_errno_from_GetLastError();
 	return -1;
-}
-
-/* This really could be replaced with _wcserror_s, but this doesn't seem to
- * actually be available in MSVCRT.DLL on Windows XP (perhaps it's statically
- * linked in by Visual Studio...?). */
-int
-win32_strerror_r_replacement(int errnum, wchar_t *buf, size_t buflen)
-{
-	static pthread_mutex_t strerror_lock = PTHREAD_MUTEX_INITIALIZER;
-
-	pthread_mutex_lock(&strerror_lock);
-	mbstowcs(buf, strerror(errnum), buflen);
-	buf[buflen - 1] = '\0';
-	pthread_mutex_unlock(&strerror_lock);
-	return 0;
 }
 
 #define MAX_IO_AMOUNT 1048576

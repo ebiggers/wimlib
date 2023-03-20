@@ -1321,15 +1321,10 @@ winnt_scan_data_stream(wchar_t *raw_stream_name, size_t raw_stream_name_nchars,
  * Load information about the data streams of an open file into a WIM inode.
  *
  * We use the NtQueryInformationFile() system call instead of FindFirstStream()
- * and FindNextStream().  This is done for two reasons:
- *
- * - FindFirstStream() opens its own handle to the file or directory and
- *   apparently does so without specifying FILE_FLAG_BACKUP_SEMANTICS, thereby
- *   causing access denied errors on certain files (even when running as the
- *   Administrator).
- * - FindFirstStream() and FindNextStream() is only available on Windows Vista
- *   and later, whereas the stream support in NtQueryInformationFile() was
- *   already present in Windows XP.
+ * and FindNextStream(), since FindFirstStream() opens its own handle to the
+ * file or directory and apparently does so without specifying
+ * FILE_FLAG_BACKUP_SEMANTICS.  This causing access denied errors on certain
+ * files, even when running as the Administrator.
  */
 static noinline_for_stack int
 winnt_scan_data_streams(HANDLE h, struct wim_inode *inode, u64 file_size,

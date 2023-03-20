@@ -5,9 +5,9 @@ REM win32-test-imagex-capture_and_apply.bat
 REM
 REM Run some tests on the Windows version of wimlib-imagex.
 REM
-REM This must be run on Windows Vista or later in a clean directory, with
-REM Administrator privileges.  wimlib-imagex and win32-tree-cmp must be
-REM executable using the paths set below.
+REM This must be run in a clean directory, with Administrator privileges.
+REM wimlib-imagex, win32-tree-cmp, and set_reparse_point must be executable
+REM using the paths set below.
 
 setlocal EnableDelayedExpansion
 set WIMLIB_IMAGEX=wimlib-imagex

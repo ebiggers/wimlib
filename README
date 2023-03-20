@@ -179,7 +179,7 @@ This section documents the most important options that may be passed to the
                                   PORTABILITY
 
 wimlib works on both UNIX-like systems (Linux, Mac OS X, FreeBSD, etc.) and
-Windows (XP and later).
+Windows (Vista and later).
 
 As much code as possible is shared among all supported platforms, but there
 necessarily are some differences in what features are supported on each platform

@@ -131,21 +131,14 @@ struct IVssAsyncVTable {
 	void *AddRef;
 	ULONG (WINAPI *Release)(IVssAsync *this);
 	void *Cancel;
-	union {
-		HRESULT (WINAPI *Wait)(IVssAsync *this, DWORD dwMilliseconds);
-
-		/* Pre-Vista version */
-		HRESULT (WINAPI *OldWait)(IVssAsync *this);
-	};
+	HRESULT (WINAPI *Wait)(IVssAsync *this, DWORD dwMilliseconds);
 	void *QueryStatus;
 };
 
 typedef struct IVssBackupComponentsVTable IVssBackupComponentsVTable;
-typedef struct IVssBackupComponentsVTable_old IVssBackupComponentsVTable_old;
 
-typedef union {
+typedef struct {
 	IVssBackupComponentsVTable *vtable;
-	IVssBackupComponentsVTable_old *old_vtable;
 } IVssBackupComponents;
 
 struct IVssBackupComponentsVTable {
@@ -203,7 +196,6 @@ struct IVssBackupComponentsVTable {
 					IVssAsync **ppAsync);
 	void *DeleteSnapshots;
 	void *ImportSnapshots;
-	/*void *RemountReadWrite;*/	/* Old API only  */
 	void *BreakSnapshotSet;
 	HRESULT (WINAPI *GetSnapshotProperties)(IVssBackupComponents *this,
 						VSS_ID SnapshotId,
@@ -218,88 +210,6 @@ struct IVssBackupComponentsVTable {
 	void *QueryRevertStatus;
 };
 
-/* Pre-Vista version  */
-struct IVssBackupComponentsVTable_old {
-	void *QueryInterface;
-	void *AddRef;
-	ULONG (WINAPI *Release)(IVssBackupComponents *this);
-	void *GetWriterComponentsCount;
-	void *GetWriterComponents;
-	HRESULT (WINAPI *InitializeForBackup)(IVssBackupComponents *this,
-					      BSTR bstrXML);
-	HRESULT (WINAPI *SetBackupState)(IVssBackupComponents *this,
-					 BOOLEAN bSelectComponents,
-					 BOOLEAN bBackupBootableSystemState,
-					 VSS_BACKUP_TYPE backupType,
-					 BOOLEAN bPartialFileSupport);
-	void *InitializeForRestore;
-	/*void *SetRestoreState;*/	/* New API only */
-	HRESULT (WINAPI *GatherWriterMetadata)(IVssBackupComponents *this,
-					       IVssAsync **ppAsync);
-	void *GetWriterMetadataCount;
-	void *GetWriterMetadata;
-	void *FreeWriterMetadata;
-	void *AddComponent;
-	HRESULT (WINAPI *PrepareForBackup)(IVssBackupComponents *this,
-					   IVssAsync **ppAsync);
-	void *AbortBackup;
-	void *GatherWriterStatus;
-	void *GetWriterStatusCount;
-	void *FreeWriterStatus;
-	void *GetWriterStatus;
-	void *SetBackupSucceeded;
-	void *SetBackupOptions;
-	void *SetSelectedForRestore;
-	void *SetRestoreOptions;
-	void *SetAdditionalRestores;
-	void *SetPreviousBackupStamp;
-	void *SaveAsXML;
-	void *BackupComplete;
-	void *AddAlternativeLocationMapping;
-	void *AddRestoreSubcomponent;
-	void *SetFileRestoreStatus;
-	/*void *AddNewTarget;*/		/* New API only */
-	/*void *SetRangesFilePath;*/	/* New API only */
-	void *PreRestore;
-	void *PostRestore;
-	HRESULT (WINAPI *SetContext)(IVssBackupComponents *this,
-				     LONG lContext);
-	HRESULT (WINAPI *StartSnapshotSet)(IVssBackupComponents *this,
-					   VSS_ID *pSnapshotSetId);
-	HRESULT (WINAPI *AddToSnapshotSet)(IVssBackupComponents *this,
-					   VSS_PWSZ pwszVolumeName,
-					   VSS_ID ProviderId,
-					   VSS_ID *pidSnapshot);
-	HRESULT (WINAPI *DoSnapshotSet)(IVssBackupComponents *this,
-					IVssAsync **ppAsync);
-	void *DeleteSnapshots;
-	void *ImportSnapshots;
-	void *RemountReadWrite;
-	void *BreakSnapshotSet;
-	HRESULT (WINAPI *GetSnapshotProperties)(IVssBackupComponents *this,
-						VSS_ID SnapshotId,
-						VSS_SNAPSHOT_PROP *pprop);
-	void *Query;
-	void *IsVolumeSupported;
-	void *DisableWriterClasses;
-	void *EnableWriterClasses;
-	void *DisableWriterInstances;
-	void *ExposeSnapshot;
-	/*void *RevertToSnapshot;*/	/* New API only */
-	/*void *QueryRevertStatus;*/	/* New API only */
-};
-
-/* Call a method, assuming its signature is identical in the old and new APIs */
-#define CALL_METHOD(obj, method, ...)					\
-({									\
-	HRESULT res;							\
-	if (is_old_api)							\
-		res = (obj)->old_vtable->method((obj), ##__VA_ARGS__);	\
-	else								\
-		res = (obj)->vtable->method((obj), ##__VA_ARGS__);	\
-	res;								\
-})
-
 /*----------------------------------------------------------------------------*
  *                             VSS API initialization                         *
  *----------------------------------------------------------------------------*/
@@ -308,10 +218,9 @@ static bool vss_initialized;
 static pthread_mutex_t vss_initialization_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* vssapi.dll  */
-static bool is_old_api;		/* old VSS API (pre-Vista)?  */
 static HANDLE hVssapi;
-static HRESULT (WINAPI *func_CreateVssBackupComponents)(IVssBackupComponents **ppBackup);
-static void (WINAPI *func_VssFreeSnapshotProperties)(VSS_SNAPSHOT_PROP *pProp);
+static HRESULT (WINAPI *func_CreateVssBackupComponentsInternal)(IVssBackupComponents **ppBackup);
+static void (WINAPI *func_VssFreeSnapshotPropertiesInternal)(VSS_SNAPSHOT_PROP *pProp);
 
 /* ole32.dll  */
 static HANDLE hOle32;
@@ -327,29 +236,18 @@ vss_global_init_impl(void)
 		goto err;
 	}
 
-	func_CreateVssBackupComponents =
+	func_CreateVssBackupComponentsInternal =
 		(void *)GetProcAddress(hVssapi, "CreateVssBackupComponentsInternal");
-	if (!func_CreateVssBackupComponents) {
-		func_CreateVssBackupComponents =
-			(void *)GetProcAddress(hVssapi, "?CreateVssBackupComponents@@YGJPAPAVIVssBackupComponents@@@Z");
-		if (!func_CreateVssBackupComponents) {
-			ERROR("CreateVssBackupComponents() not found in vssapi.dll");
-			goto err_vssapi;
-		}
-		is_old_api = true;
-	} else {
-		is_old_api = false;
+	if (!func_CreateVssBackupComponentsInternal) {
+		ERROR("CreateVssBackupComponentsInternal() not found in vssapi.dll");
+		goto err_vssapi;
 	}
 
-	func_VssFreeSnapshotProperties =
+	func_VssFreeSnapshotPropertiesInternal =
 		(void *)GetProcAddress(hVssapi, "VssFreeSnapshotPropertiesInternal");
-	if (!func_VssFreeSnapshotProperties) {
-		func_VssFreeSnapshotProperties =
-			(void *)GetProcAddress(hVssapi, "VssFreeSnapshotProperties");
-		if (!func_VssFreeSnapshotProperties) {
-			ERROR("VssFreeSnapshotProperties() not found in vssapi.dll");
-			goto err_vssapi;
-		}
+	if (!func_VssFreeSnapshotPropertiesInternal) {
+		ERROR("VssFreeSnapshotPropertiesInternal() not found in vssapi.dll");
+		goto err_vssapi;
 	}
 
 	hOle32 = LoadLibrary(L"ole32.dll");
@@ -395,7 +293,7 @@ vss_global_init(void)
 	if (vss_initialized)
 		return true;
 	ERROR("The Volume Shadow Copy Service (VSS) API could not be "
-	      "initialized. Probably it isn't supported on this computer.");
+	      "initialized.");
 	return false;
 }
 
@@ -434,20 +332,17 @@ vss_delete_snapshot(struct vss_snapshot *snapshot)
 	internal = container_of(snapshot, struct vss_snapshot_internal, base);
 
 	if (internal->props.m_pwszSnapshotDeviceObject)
-		(*func_VssFreeSnapshotProperties)(&internal->props);
+		(*func_VssFreeSnapshotPropertiesInternal)(&internal->props);
 	if (internal->vss)
-		CALL_METHOD(internal->vss, Release);
+		internal->vss->vtable->Release(internal->vss);
 	FREE(internal);
 }
 
 static HRESULT
 wait_and_release(IVssAsync *async)
 {
-	HRESULT res;
-	if (is_old_api)
-		res = async->vtable->OldWait(async);
-	else
-		res = async->vtable->Wait(async, INFINITE);
+	HRESULT res = async->vtable->Wait(async, INFINITE);
+
 	async->vtable->Release(async);
 	return res;
 }
@@ -459,31 +354,31 @@ request_vss_snapshot(IVssBackupComponents *vss, wchar_t *volume,
 	HRESULT res;
 	IVssAsync *async;
 
-	res = CALL_METHOD(vss, InitializeForBackup, NULL);
+	res = vss->vtable->InitializeForBackup(vss, NULL);
 	if (FAILED(res)) {
 		ERROR("IVssBackupComponents.InitializeForBackup() error: %x", res);
 		return false;
 	}
 
-	res = CALL_METHOD(vss, SetBackupState, FALSE, TRUE, VSS_BT_COPY, FALSE);
+	res = vss->vtable->SetBackupState(vss, FALSE, TRUE, VSS_BT_COPY, FALSE);
 	if (FAILED(res)) {
 		ERROR("IVssBackupComponents.SetBackupState() error: %x", res);
 		return false;
 	}
 
-	res = CALL_METHOD(vss, StartSnapshotSet, snapshot_id);
+	res = vss->vtable->StartSnapshotSet(vss, snapshot_id);
 	if (FAILED(res)) {
 		ERROR("IVssBackupComponents.StartSnapshotSet() error: %x", res);
 		return false;
 	}
 
-	res = CALL_METHOD(vss, AddToSnapshotSet, volume, (GUID){}, snapshot_id);
+	res = vss->vtable->AddToSnapshotSet(vss, volume, (GUID){}, snapshot_id);
 	if (FAILED(res)) {
 		ERROR("IVssBackupComponents.AddToSnapshotSet() error: %x", res);
 		return false;
 	}
 
-	res = CALL_METHOD(vss, PrepareForBackup, &async);
+	res = vss->vtable->PrepareForBackup(vss, &async);
 	if (FAILED(res)) {
 		ERROR("IVssBackupComponents.PrepareForBackup() error: %x", res);
 		return false;
@@ -494,7 +389,7 @@ request_vss_snapshot(IVssBackupComponents *vss, wchar_t *volume,
 		return false;
 	}
 
-	res = CALL_METHOD(vss, DoSnapshotSet, &async);
+	res = vss->vtable->DoSnapshotSet(vss, &async);
 	if (FAILED(res)) {
 		ERROR("IVssBackupComponents.DoSnapshotSet() error: %x", res);
 		return false;
@@ -559,7 +454,7 @@ vss_create_snapshot(const wchar_t *source, UNICODE_STRING *vss_path_ret,
 	if (!vss_global_init())
 		goto vss_err;
 
-	res = (*func_CreateVssBackupComponents)(&vss);
+	res = (*func_CreateVssBackupComponentsInternal)(&vss);
 	if (FAILED(res)) {
 		ERROR("CreateVssBackupComponents error: %x", res);
 		goto vss_err;
@@ -570,7 +465,7 @@ vss_create_snapshot(const wchar_t *source, UNICODE_STRING *vss_path_ret,
 	if (!request_vss_snapshot(vss, volume, &snapshot_id))
 		goto vss_err;
 
-	res = CALL_METHOD(vss, GetSnapshotProperties, snapshot_id, &snapshot->props);
+	res = vss->vtable->GetSnapshotProperties(vss, snapshot_id, &snapshot->props);
 	if (FAILED(res)) {
 		ERROR("IVssBackupComponents.GetSnapshotProperties() error: %x", res);
 		goto vss_err;
