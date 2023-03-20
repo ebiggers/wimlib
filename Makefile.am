@@ -83,6 +83,7 @@ libwim_la_SOURCES =		\
 	src/tagged_items.c	\
 	src/template.c		\
 	src/textfile.c		\
+	src/threads.c		\
 	src/timestamp.c		\
 	src/update_image.c	\
 	src/util.c		\
@@ -144,6 +145,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/solid.h		\
 	include/wimlib/tagged_items.h	\
 	include/wimlib/textfile.h	\
+	include/wimlib/threads.h	\
 	include/wimlib/timestamp.h	\
 	include/wimlib/types.h		\
 	include/wimlib/unaligned.h	\

@@ -29,9 +29,9 @@
 #include "wimlib/win32_common.h"
 
 #include <cguid.h>
-#include <pthread.h>
 
 #include "wimlib/error.h"
+#include "wimlib/threads.h"
 #include "wimlib/util.h"
 #include "wimlib/win32_vss.h"
 
@@ -215,7 +215,7 @@ struct IVssBackupComponentsVTable {
  *----------------------------------------------------------------------------*/
 
 static bool vss_initialized;
-static pthread_mutex_t vss_initialization_mutex = PTHREAD_MUTEX_INITIALIZER;
+static struct mutex vss_initialization_mutex = MUTEX_INITIALIZER;
 
 /* vssapi.dll  */
 static HANDLE hVssapi;
@@ -285,10 +285,10 @@ vss_global_init(void)
 	if (vss_initialized)
 		return true;
 
-	pthread_mutex_lock(&vss_initialization_mutex);
+	mutex_lock(&vss_initialization_mutex);
 	if (!vss_initialized)
 		vss_initialized = vss_global_init_impl();
-	pthread_mutex_unlock(&vss_initialization_mutex);
+	mutex_unlock(&vss_initialization_mutex);
 
 	if (vss_initialized)
 		return true;
@@ -303,14 +303,14 @@ vss_global_cleanup(void)
 	if (!vss_initialized)
 		return;
 
-	pthread_mutex_lock(&vss_initialization_mutex);
+	mutex_lock(&vss_initialization_mutex);
 	if (vss_initialized) {
 		(*func_CoUninitialize)();
 		FreeLibrary(hOle32);
 		FreeLibrary(hVssapi);
 		vss_initialized = false;
 	}
-	pthread_mutex_unlock(&vss_initialization_mutex);
+	mutex_unlock(&vss_initialization_mutex);
 }
 
 /*----------------------------------------------------------------------------*

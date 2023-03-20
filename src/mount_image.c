@@ -46,7 +46,6 @@
 #include <fuse.h>
 #include <limits.h>
 #include <mqueue.h>
-#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -61,6 +60,7 @@
 #include "wimlib/paths.h"
 #include "wimlib/progress.h"
 #include "wimlib/reparse.h"
+#include "wimlib/threads.h"
 #include "wimlib/timestamp.h"
 #include "wimlib/unix_data.h"
 #include "wimlib/write.h"
@@ -2390,7 +2390,7 @@ do_unmount_commit(const char *dir, int unmount_flags,
 	struct wimfs_unmount_info unmount_info;
 	mqd_t mq;
 	struct commit_progress_thread_args args;
-	pthread_t commit_progress_tid;
+	struct thread commit_progress_tid;
 	int ret;
 
 	memset(&unmount_info, 0, sizeof(unmount_info));
@@ -2409,11 +2409,8 @@ do_unmount_commit(const char *dir, int unmount_flags,
 		args.mq = mq;
 		args.progfunc = progfunc;
 		args.progctx = progctx;
-		ret = pthread_create(&commit_progress_tid, NULL,
-				     commit_progress_thread_proc, &args);
-		if (ret) {
-			errno = ret;
-			ERROR_WITH_ERRNO("Can't create thread");
+		if (!thread_create(&commit_progress_tid,
+				   commit_progress_thread_proc, &args)) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto out_delete_mq;
 		}
@@ -2427,7 +2424,7 @@ do_unmount_commit(const char *dir, int unmount_flags,
 		/* Terminate the progress thread.  */
 		char empty[1];
 		mq_send(mq, empty, 0, 1);
-		pthread_join(commit_progress_tid, NULL);
+		thread_join(&commit_progress_tid);
 	}
 out_delete_mq:
 	if (progfunc) {

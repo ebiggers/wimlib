@@ -106,7 +106,9 @@ AC_CHECK_DECL([__NR_getrandom],
 ###############################################################################
 
 # ------------------------------ pthreads -------------------------------------
-AX_PTHREAD([], [AC_MSG_ERROR(["cannot find pthreads library"])])
+if test "$WINDOWS_NATIVE_BUILD" != "yes"; then
+	AX_PTHREAD([], [AC_MSG_ERROR(["cannot find pthreads library"])])
+fi
 
 # ------------------------------ libxml2 --------------------------------------
 PKG_CHECK_MODULES([LIBXML2], [libxml-2.0])

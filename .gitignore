@@ -50,7 +50,6 @@
 /tools/windeps/libxml2*
 /tools/windeps/mingw*
 /tools/windeps/sysroot_*
-/tools/windeps/winpthreads*
 /wimlib-*-bin/
 /wimlib-*.tar
 /wimlib-*.tar.*

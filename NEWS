@@ -6,6 +6,8 @@ Version 1.14.0-BETA1:
 
 	Removed support for Windows XP.
 
+	On Windows, wimlib no longer depends on winpthreads.
+
 	Fixed a bug in 'wimsplit' where it didn't accept part sizes of 4 GiB or
 	larger on Windows and on 32-bit platforms.
 

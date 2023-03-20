@@ -104,7 +104,6 @@ packages from category "Devel":
     - mingw64-x86_64-binutils
     - mingw64-x86_64-gcc-g++
     - mingw64-x86_64-libxml2
-    - mingw64-x86_64-winpthreads
     - pkg-config
 
 Download wimlib's source code from https://wimlib.net/downloads/wimlib-1.13.6.tar.gz.
@@ -125,7 +124,6 @@ x86_64-w64-mingw32-strip to strip them.
 
 libwim-15.dll will be linked to several other DLLs which you will need as well:
 
-    - libwinpthread-1.dll
     - libxml2-2.dll, which also requires:
         - iconv.dll
         - liblzma-5.dll
@@ -165,8 +163,8 @@ bootstrap the repository, and run the Windows release script:
     ./bootstrap
     ./tools/make-windows-release x86_64
 
-The release script will download and build libxml2 and winpthreads as static
-libraries, then build wimlib, then do some final tasks and bundle the resulting
-files up into a ZIP archive.  If successful you'll end up with a file like
+The release script will download and build libxml2 as a static library, then
+build wimlib, then do some final tasks and bundle the resulting files up into a
+ZIP archive.  If successful you'll end up with a file like
 "wimlib-1.13.6-windows-x86_64-bin.zip", just like the official releases.  For
 32-bit binaries just use "i686" instead of "x86_64".
