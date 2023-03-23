@@ -407,13 +407,14 @@ sha1_blocks_x86_sha(u32 h[5], const void *data, size_t num_blocks)
 	(defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 5))
 
 /*
- * clang's arm_neon.h has a bug where it only defines the SHA-1 intrinsics when
- * SHA-2 is enabled in the main target.  This prevents them from being used in
- * target attribute functions.  Work around this by defining __ARM_FEATURE_SHA2.
+ * With clang 15.0 and earlier, arm_neon.h has a bug where it only defines the
+ * SHA-1 intrinsics when SHA-2 is enabled in the main target.  This prevents
+ * them from being used in target attribute functions.  Work around this by
+ * defining __ARM_FEATURE_SHA2.
  *
  * And yes, the feature it wants is indeed *SHA-2*, not SHA-1.
  */
-#if defined(__clang__) && !defined(__ARM_FEATURE_SHA2)
+#if defined(__clang__) && __clang_major__ <= 15 && !defined(__ARM_FEATURE_SHA2)
 #  define __ARM_FEATURE_SHA2 1
 #  define USED_SHA2_FEATURE_WORKAROUND
 #endif
@@ -458,8 +459,13 @@ sha1_blocks_x86_sha(u32 h[5], const void *data, size_t num_blocks)
 #define HAVE_SHA1_BLOCKS_ARM_CE
 static void
 #ifdef __clang__
-	__attribute__((target("crypto")))
+	/*
+	 * clang has the SHA-1 instructions under "sha2".  "crypto" used to work
+	 * too, but only in clang 15 and earlier.  So, use "sha2" here.
+	 */
+	__attribute__((target("sha2")))
 #else
+	/* gcc wants "+crypto".  "+sha2" doesn't work. */
 	__attribute__((target("+crypto")))
 #endif
 sha1_blocks_arm_ce(u32 h[5], const void *data, size_t num_blocks)
