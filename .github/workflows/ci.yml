@@ -147,3 +147,37 @@ jobs:
           mingw-w64-${{matrix.env}}-gcc
           pkgconf
     - run: CFLAGS="$DEF_CFLAGS" ./tools/make-windows-release --no-docs --no-zip
+
+  fuzz-with-libFuzzer:
+    name: Fuzz with libFuzzer (${{matrix.target}} ${{matrix.sanitizer}})
+    strategy:
+      matrix:
+        include:
+        - target: wim
+          sanitizer:
+        - target: wim
+          sanitizer: --asan --ubsan
+        - target: xml
+          sanitizer:
+        - target: xml
+          sanitizer: --asan --ubsan
+        - target: compress
+          sanitizer:
+        - target: compress
+          sanitizer: --asan --ubsan
+        - target: decompress
+          sanitizer:
+        - target: decompress
+          sanitizer: --asan --ubsan
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang $DEPENDENCIES
+    - run: ./bootstrap
+    - name: Fuzz
+      run: |
+        tools/libFuzzer/fuzz.sh --time=120 ${{matrix.sanitizer}} \
+            ${{matrix.target}}

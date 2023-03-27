@@ -45,6 +45,8 @@
 /tests/tree-cmp
 /tests/wlfuzz
 /tests/wlfuzz.exe
+/tools/libFuzzer/*/fuzz
+/tools/libFuzzer/test-one-input
 /wimlib-*-bin/
 /wimlib-*.tar
 /wimlib-*.tar.*
