@@ -141,10 +141,9 @@ jobs:
         install: >
           autoconf
           automake
+          git
           libtool
-          pkg-config
           make
-          mingw-w64-${{matrix.env}}-cc
-    - run: ./bootstrap
-    - run: ./configure CFLAGS="$DEF_CFLAGS" --without-fuse --without-ntfs-3g
-    - run: make -j8
+          mingw-w64-${{matrix.env}}-gcc
+          pkgconf
+    - run: CFLAGS="$DEF_CFLAGS" ./tools/make-windows-release --no-docs --no-zip
