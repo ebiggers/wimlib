@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014 Eric Biggers
+ * Copyright 2012-2023 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -242,10 +242,10 @@ void
 rollback_new_security_descriptors(struct wim_sd_set *sd_set)
 {
 	struct wim_security_data *sd = sd_set->sd;
-	u8 **descriptors = sd->descriptors + sd_set->orig_num_entries;
-	u32 num_entries  = sd->num_entries - sd_set->orig_num_entries;
-	while (num_entries--)
-		FREE(*descriptors++);
+	u32 i;
+
+	for (i = sd_set->orig_num_entries; i < sd->num_entries; i++)
+		FREE(sd->descriptors[i]);
 	sd->num_entries = sd_set->orig_num_entries;
 }
 
