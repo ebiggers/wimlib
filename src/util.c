@@ -186,7 +186,7 @@ get_random_bytes(void *p, size_t n)
 {
 	if (n == 0)
 		return;
-#ifdef HAVE_NR_GETRANDOM
+#ifdef __NR_getrandom
 	static bool getrandom_unavailable;
 
 	if (getrandom_unavailable)
@@ -211,7 +211,7 @@ get_random_bytes(void *p, size_t n)
 
 try_dev_urandom:
 	;
-#endif /* HAVE_NR_GETRANDOM */
+#endif /* __NR_getrandom */
 	int fd = open("/dev/urandom", O_RDONLY);
 	if (fd < 0) {
 		ERROR_WITH_ERRNO("Unable to open /dev/urandom");

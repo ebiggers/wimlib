@@ -94,13 +94,6 @@ AC_CHECK_MEMBER([struct stat.st_mtim],
 		[],
 		[#include <sys/stat.h>])
 
-# Check for possible support for the Linux getrandom() system call
-AC_CHECK_DECL([__NR_getrandom],
-	      [AC_DEFINE([HAVE_NR_GETRANDOM], [1], [Define to 1 if the system
-	       headers define a system call number for getrandom()])],
-	      [],
-	      [#include <sys/syscall.h>])
-
 ###############################################################################
 #			     Required libraries				      #
 ###############################################################################
