@@ -24,6 +24,7 @@
 /config.log
 /config.status
 /configure
+/configure~
 /cscope.*
 /doc/Doxyfile
 /doc/html/
