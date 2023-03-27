@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2012-2016 Eric Biggers
+ * Copyright 2012-2023 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -43,7 +43,6 @@
 #include "wimlib/error.h"
 #include "wimlib/timestamp.h"
 #include "wimlib/util.h"
-#include "wimlib/xml.h"
 
 /*******************
  * Memory allocation
@@ -153,9 +152,6 @@ wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
 	wimlib_malloc_func  = malloc_func  ? malloc_func  : malloc;
 	wimlib_free_func    = free_func    ? free_func    : free;
 	wimlib_realloc_func = realloc_func ? realloc_func : realloc;
-
-	xml_set_memory_allocator(wimlib_malloc_func, wimlib_free_func,
-				 wimlib_realloc_func);
 	return 0;
 }
 

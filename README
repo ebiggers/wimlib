@@ -122,12 +122,6 @@ with it, when building for a UNIX-like system from source.  If you have
 downloaded the Windows binary distribution of wimlib and wimlib-imagex then all
 dependencies were already included and this section is irrelevant.
 
-* libxml2 (required)
-	This is a commonly used free library to read and write XML documents.
-	Almost all Linux distributions should include this; however, you may
-	need to install the header files, which might be in a package named
-	"libxml2-dev" or similar.  For more information see http://xmlsoft.org/.
-
 * libfuse (optional but recommended)
 	Unless configured --without-fuse, wimlib requires a non-ancient version
 	of libfuse.  Most Linux distributions already include this, but make

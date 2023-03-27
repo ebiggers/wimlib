@@ -92,6 +92,7 @@ libwim_la_SOURCES =		\
 	src/write.c		\
 	src/xml.c		\
 	src/xml_windows.c	\
+	src/xmlproc.c		\
 	src/xpress_compress.c	\
 	src/xpress_decompress.c \
 	include/wimlib/alloca.h		\
@@ -156,6 +157,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/xattr.h		\
 	include/wimlib/xml.h		\
 	include/wimlib/xml_windows.h	\
+	include/wimlib/xmlproc.h	\
 	include/wimlib/xpress_constants.h
 
 if WITH_NTFS_3G
@@ -191,7 +193,6 @@ endif
 libwim_la_CFLAGS =		\
 	$(AM_CFLAGS)		\
 	$(PTHREAD_CFLAGS)	\
-	$(LIBXML2_CFLAGS)	\
 	$(LIBNTFS_3G_CFLAGS)	\
 	$(LIBFUSE_CFLAGS)
 
@@ -199,7 +200,6 @@ libwim_la_LDFLAGS = $(AM_LDFLAGS) -version-info 36:0:21
 
 libwim_la_LIBADD =		\
 	$(PTHREAD_LIBS)		\
-	$(LIBXML2_LIBS)		\
 	$(LIBNTFS_3G_LIBS)	\
 	$(LIBFUSE_LIBS)		\
 	$(LIBRT_LIBS)		\

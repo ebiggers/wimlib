@@ -103,7 +103,6 @@ packages from category "Devel":
     - make
     - mingw64-x86_64-binutils
     - mingw64-x86_64-gcc-g++
-    - mingw64-x86_64-libxml2
     - pkg-config
 
 Download wimlib's source code from https://wimlib.net/downloads/wimlib-1.13.6.tar.gz.
@@ -121,17 +120,6 @@ have been produced in the .libs directory.
 
 By default the binaries are built with debug symbols.  If desired, you can use
 x86_64-w64-mingw32-strip to strip them.
-
-libwim-15.dll will be linked to several other DLLs which you will need as well:
-
-    - libxml2-2.dll, which also requires:
-        - iconv.dll
-        - liblzma-5.dll
-        - zlib1.dll
-
-These DLLs can be found in "C:\cygwin\usr\x86_64-w64-mingw32\sys-root\mingw\bin"
-and must be placed alongside libwim-15.dll for it to run portably.  But see
-below for an alternative.
 
 Building 32-bit binaries is very similar, but you'll need to replace "x86_64"
 with "i686" everywhere in the above instructions, and libwim-15.dll will also
@@ -163,8 +151,7 @@ bootstrap the repository, and run the Windows release script:
     ./bootstrap
     ./tools/make-windows-release x86_64
 
-The release script will download and build libxml2 as a static library, then
-build wimlib, then do some final tasks and bundle the resulting files up into a
-ZIP archive.  If successful you'll end up with a file like
-"wimlib-1.13.6-windows-x86_64-bin.zip", just like the official releases.  For
-32-bit binaries just use "i686" instead of "x86_64".
+The release script will build wimlib, then do some final tasks and bundle the
+resulting files up into a ZIP archive.  If successful you'll end up with a file
+like "wimlib-1.13.6-windows-x86_64-bin.zip", just like the official releases.
+For 32-bit binaries just use "i686" instead of "x86_64".

@@ -71,17 +71,4 @@ write_wim_xml_data(WIMStruct *wim, int image,
 		   u64 total_bytes, struct wim_reshdr *out_reshdr,
 		   int write_resource_flags);
 
-/*****************************************************************************/
-
-extern void
-xml_global_init(void);
-
-extern void
-xml_global_cleanup(void);
-
-extern void
-xml_set_memory_allocator(void *(*malloc_func)(size_t),
-			 void (*free_func)(void *),
-			 void *(*realloc_func)(void *, size_t));
-
 #endif /* _WIMLIB_XML_H */

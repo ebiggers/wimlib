@@ -39,6 +39,7 @@ typedef wchar_t tchar;
 #  define tstrchr	wcschr
 #  define tstrpbrk	wcspbrk
 #  define tstrrchr	wcsrchr
+#  define tstrstr	wcsstr
 #  define tstrlen	wcslen
 #  define tmemcmp	wmemcmp
 #  define tstrcasecmp   _wcsicmp
@@ -102,6 +103,7 @@ typedef char tchar;
 #  define tstrchr	strchr
 #  define tstrpbrk	strpbrk
 #  define tstrrchr	strrchr
+#  define tstrstr	strstr
 #  define tstrlen	strlen
 #  define tmemcmp	memcmp
 #  define tstrcasecmp   strcasecmp

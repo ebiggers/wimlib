@@ -1,12 +1,11 @@
 Version 1.14.0-BETA1:
-	Removed OpenSSL (libcrypto) as a dependency of wimlib.
+	Removed libxml2 and libcrypto (OpenSSL) as dependencies of wimlib.
+	Also removed winpthreads as a dependency of wimlib on Windows.
 
 	Improved the performance of the Windows binaries on CPUs that have SHA-1
 	instructions.
 
 	Removed support for Windows XP.
-
-	On Windows, wimlib no longer depends on winpthreads.
 
 	Fixed a bug in 'wimsplit' where it didn't accept part sizes of 4 GiB or
 	larger on Windows and on 32-bit platforms.

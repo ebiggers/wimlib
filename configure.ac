@@ -103,10 +103,6 @@ if test "$WINDOWS_NATIVE_BUILD" != "yes"; then
 	AX_PTHREAD([], [AC_MSG_ERROR(["cannot find pthreads library"])])
 fi
 
-# ------------------------------ libxml2 --------------------------------------
-PKG_CHECK_MODULES([LIBXML2], [libxml-2.0])
-PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES libxml-2.0"
-
 ###############################################################################
 #			  Configuration options				      #
 ###############################################################################

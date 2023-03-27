@@ -17,6 +17,9 @@ extern int
 wimlib_compare_images(WIMStruct *wim1, int image1,
 		      WIMStruct *wim2, int image2, int cmp_flags);
 
+extern int
+wimlib_parse_and_write_xml_doc(const tchar *in, tchar **out_ret);
+
 #endif /* ENABLE_TEST_SUPPORT */
 
 #endif /* _WIMLIB_TEST_SUPPORT_H */

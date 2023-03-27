@@ -31,14 +31,6 @@ VERSION=$(tools/get-version-number)
 DESTDIR=wimlib-${VERSION}-windows-${ARCH}-bin
 ZIPFILE=wimlib-${VERSION}-windows-${ARCH}-bin.zip
 MAKE="make -j $(grep -c processor /proc/cpuinfo)"
-WINDEPDIR=./tools/windeps
-SYSROOT=$WINDEPDIR/sysroot_${ARCH}
-
-# Prepare third party libraries
-
-if [ ! -e $SYSROOT ]; then
-	$MAKE -C $WINDEPDIR sysroot_${ARCH}
-fi
 
 # Compile wimlib
 
@@ -50,16 +42,8 @@ then
 	# Note: putting -static-libgcc in CC is a workaround for libtool
 	# stripping it:
 	# http://www.gnu.org/software/libtool/manual/libtool.html#Stripped-link-flags
-	#
-	# We also need to override the MinGW pkg-config with the "native" one in
-	# order for it to correctly restrict the include path to our $SYSROOT.
 	./configure --host=${ARCH}-w64-mingw32 --disable-static		\
-		CC="${ARCH}-w64-mingw32-gcc -static-libgcc"		\
-		CPPFLAGS="-I$SYSROOT/include"				\
-		LDFLAGS="-L$SYSROOT/lib"				\
-		PKG_CONFIG=pkg-config					\
-		PKG_CONFIG_LIBDIR="$SYSROOT/lib/pkgconfig"		\
-		"$@"
+		CC="${ARCH}-w64-mingw32-gcc -static-libgcc" "$@"
 	$MAKE clean
 fi
 $MAKE
@@ -77,7 +61,6 @@ ${ARCH}-w64-mingw32-strip $DESTDIR/*.{dll,exe}
 # Install text files
 
 cp NEWS README* COPYING* $DESTDIR
-cp $WINDEPDIR/COPYING* $DESTDIR
 
 sed -n '/^#/q; s/^[\/\* ]*//; p' src/divsufsort.c > $DESTDIR/COPYING.libdivsufsort-lite
 if ! grep -q 'Copyright' $DESTDIR/COPYING.libdivsufsort-lite; then

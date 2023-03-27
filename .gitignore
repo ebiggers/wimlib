@@ -45,12 +45,6 @@
 /tests/tree-cmp
 /tests/wlfuzz
 /tests/wlfuzz.exe
-/tools/windeps/*.tar.*
-/tools/windeps/COPYING.*
-/tools/windeps/build_*
-/tools/windeps/libxml2*
-/tools/windeps/mingw*
-/tools/windeps/sysroot_*
 /wimlib-*-bin/
 /wimlib-*.tar
 /wimlib-*.tar.*
