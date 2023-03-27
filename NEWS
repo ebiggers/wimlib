@@ -5,10 +5,15 @@ Version 1.14.0-BETA1:
 	Improved the performance of the Windows binaries on CPUs that have SHA-1
 	instructions.
 
-	Removed support for Windows XP.
-
 	Fixed a bug in 'wimsplit' where it didn't accept part sizes of 4 GiB or
 	larger on Windows and on 32-bit platforms.
+
+	The README.WINDOWS file and the tools/make-windows-release script have
+	been improved to make it easier to build wimlib on Windows.  The
+	instructions now use MSYS2 (instead of Cygwin as they did before), and
+	both gcc and clang are supported.
+
+	Removed support for Windows XP.
 
 Version 1.13.6:
 	wimsplit no longer prints a success message on failure.

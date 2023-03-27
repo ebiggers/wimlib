@@ -15,37 +15,62 @@ else
 	case "$MSYSTEM" in
 	MINGW32)
 		ARCH=i686
+		CC_PKG=mingw-w64-i686-gcc
 		;;
 	MINGW64)
 		ARCH=x86_64
+		CC_PKG=mingw-w64-x86_64-gcc
+		;;
+	CLANG32)
+		ARCH=i686
+		CC_PKG=mingw-w64-clang-i686-clang
+		;;
+	CLANG64)
+		ARCH=x86_64
+		CC_PKG=mingw-w64-clang-x86_64-clang
+		;;
+	CLANGARM64)
+		ARCH=aarch64
+		CC_PKG=mingw-w64-clang-aarch64-clang
 		;;
 	*)
-		echo 1>&2 "Unsupported MSYS2 environment: $MSYSTEM"
-		echo 1>&2 "In MSYS2, you must use the MINGW32 or MINGW64 environment."
+		echo 1>&2 "Unsupported MSYS2 environment: $MSYSTEM.  This script supports"
+		echo 1>&2 "MINGW32, MINGW64, CLANG32, CLANG64, and CLANGARM64."
 		echo 1>&2 "See https://www.msys2.org/docs/environments/"
 		exit 1
 	esac
 fi
+INCLUDE_DOCS=false
 INSTALL_MSYS2_PACKAGES=false
-BUILD_DOCS=true
-BUILD_ZIP=true
+SKIP_CONFIGURE=false
+ZIP=false
 
 longopts="help"
 longopts+=",arch:"
+longopts+=",include-docs"
 longopts+=",install-msys2-packages"
-longopts+=",no-docs"
-longopts+=",no-zip"
+longopts+=",skip-configure"
+longopts+=",zip"
 
 usage()
 {
 	cat << EOF
 Usage: $SCRIPTNAME [OPTION]... [EXTRA_CONFIGURE_ARG]...
 Options:
-  --arch=ARCH                Specify the architecture.  The default is taken
-                                 from MSYSTEM if available, otherwise is x86_64.
-  --install-msys2-packages   Install prerequisite MSYS2 packages
-  --no-docs                  Don't build and install PDF manual pages
-  --no-zip                   Don't create the final zip file
+  --arch=ARCH               Specify the CPU architecture.  This is unnecessary
+                            when using MSYS2.
+
+  --include-docs            Build and install the PDF manual pages.
+
+  --install-msys2-packages  Install the MSYS2 packages needed to build wimlib.
+                            You can omit this if you have already done this for
+                            the same MSYS2 environment.
+
+  --skip-configure          Skip running the configure script again.  You can
+                            use this to save time in incremental builds if you
+                            are sure you didn't change any options.
+
+  --zip                     Zip the output files up into a zip file.
 EOF
 }
 
@@ -64,6 +89,9 @@ while true; do
 		ARCH=$2
 		shift
 		;;
+	--include-docs)
+		INCLUDE_DOCS=true
+		;;
 	--install-msys2-packages)
 		if [ -z "$MSYSTEM" ]; then
 			echo 1>&2 "--install-msys2-packages is not allowed outside MSYS2."
@@ -71,11 +99,11 @@ while true; do
 		fi
 		INSTALL_MSYS2_PACKAGES=true
 		;;
-	--no-docs)
-		BUILD_DOCS=false
+	--skip-configure)
+		SKIP_CONFIGURE=true
 		;;
-	--no-zip)
-		BUILD_ZIP=false
+	--zip)
+		ZIP=true
 		;;
 	--)
 		shift
@@ -93,7 +121,7 @@ done
 EXTRA_CONFIGURE_ARGS=("$@")
 
 case "$ARCH" in
-i686|x86_64)
+i686|x86_64|aarch64)
 	;;
 *)
 	echo 1>&2 "Unknown ARCH: $ARCH.  Please specify a supported architecture with --arch"
@@ -111,16 +139,16 @@ mkdir "$DESTDIR"
 
 # Install the required MSYS2 packages if requested.
 if $INSTALL_MSYS2_PACKAGES; then
-	echo "Installing the MSYS2 packages required to build wimlib ($MSYSTEM)..."
+	echo "Installing the MSYS2 $MSYSTEM packages needed to build wimlib..."
 	pacman -Syu --noconfirm --needed \
 		autoconf \
 		automake \
 		git \
 		libtool \
 		make \
-		"mingw-w64-${ARCH}-gcc" \
+		"$CC_PKG" \
 		pkgconf
-	echo "Done installing the MSYS2 packages required to build wimlib ($MSYSTEM)."
+	echo "Done installing the MSYS2 $MSYSTEM packages needed to build wimlib."
 fi
 
 # Bootstrap the repository if not already done.
@@ -129,19 +157,19 @@ if [ ! -e configure ]; then
 	./bootstrap
 fi
 
-# Configure wimlib for the given $ARCH if not already done.
-if ! [ -e config.log ] ||
-	! grep -q "./configure --host=${ARCH}-w64-mingw32" config.log || \
-	! grep -q "configure: exit 0" config.log || \
-	[ ${#EXTRA_CONFIGURE_ARGS[@]} -gt 0 ]
-then
-	# Note: putting -static-libgcc in CC is a workaround for libtool
-	# stripping it:
-	# http://www.gnu.org/software/libtool/manual/libtool.html#Stripped-link-flags
+# Configure wimlib.
+if ! [ -e config.log ] || ! $SKIP_CONFIGURE; then
 	echo "Configuring wimlib..."
-	./configure --host="${ARCH}-w64-mingw32" --disable-static	\
-		CC="${ARCH}-w64-mingw32-gcc -static-libgcc"	\
-		"${EXTRA_CONFIGURE_ARGS[@]}"
+	configure_args=("--host=${ARCH}-w64-mingw32")
+	configure_args+=("--disable-static")
+	# -static-libgcc is needed with gcc.  It should go in the CFLAGS, but
+	# libtool strips it, so it must go directly in CC instead.  See
+	# http://www.gnu.org/software/libtool/manual/libtool.html#Stripped-link-flags
+	if "${ARCH}-w64-mingw32-cc" --version | grep -q '(GCC)'; then
+		configure_args+=("CC=${ARCH}-w64-mingw32-cc -static-libgcc")
+	fi
+	configure_args+=("${EXTRA_CONFIGURE_ARGS[@]}")
+	./configure "${configure_args[@]}"
 	$MAKE clean
 fi
 
@@ -188,7 +216,7 @@ function gen_pdf_from_man_page()
 	MANPATH="./doc" man -t "$cmd" | ps2pdf - "$pdf"
 }
 
-if $BUILD_DOCS; then
+if $INCLUDE_DOCS; then
 	echo "Installing manual pages..."
 	mkdir "$DESTDIR"/doc
 	for cmd in "${IMAGEX_CMDS[@]}"; do
@@ -211,7 +239,7 @@ mkdir "$DESTDIR"/devel
 cp .libs/libwim.dll.a "$DESTDIR"/devel/libwim.lib
 cp include/wimlib.h "$DESTDIR"/devel/
 
-if $BUILD_ZIP; then
+if $ZIP; then
 	echo "Creating zip file..."
 	cd "$DESTDIR"
 	7z -mx9 a ../"$ZIPFILE" . > /dev/null
