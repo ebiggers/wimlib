@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2012-2016 Eric Biggers
+ * Copyright 2012-2023 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -26,6 +26,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "wimlib.h"
@@ -644,10 +645,16 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd, int open_flags)
 		filedes_init(&wim->in_fd, *(const int*)wim_filename_or_fd);
 		wim->in_fd.is_pipe = 1;
 	} else {
+		struct stat stbuf;
+
 		wimfile = wim_filename_or_fd;
 		ret = open_wim_file(wimfile, &wim->in_fd);
 		if (ret)
 			return ret;
+
+		/* The file size is needed for enforcing some limits later. */
+		if (fstat(wim->in_fd.fd, &stbuf) == 0)
+			wim->file_size = stbuf.st_size;
 
 		/* The absolute path to the WIM is requested so that
 		 * wimlib_overwrite() still works even if the process changes

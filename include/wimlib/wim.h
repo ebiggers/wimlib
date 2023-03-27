@@ -96,6 +96,9 @@ struct WIMStruct {
 	 * Otherwise, this field is invalid (!filedes_valid(&out_fd)).  */
 	struct filedes out_fd;
 
+	/* The size of the backing file, or 0 if unknown */
+	u64 file_size;
+
 	/*
 	 * This is the cached decompressor for this WIM file, or NULL if no
 	 * decompressor is cached yet.  Normally, all the compressed data in a

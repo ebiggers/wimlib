@@ -112,7 +112,12 @@ struct wim_header_disk {
 	/* +0xd0 (208)  */
 } _packed_attribute;
 
-#define MAX_IMAGES (((INT_MAX < INT32_MAX) ? INT_MAX : INT32_MAX) - 1)
+/*
+ * Arbitrarily limit the maximum number of images to 65535, to prevent huge
+ * memory allocations when processing fuzzed files.  This can be increased if
+ * ever needed (up to INT_MAX - 1).
+ */
+#define MAX_IMAGES	65535
 
 /* In-memory representation of a WIM header.  See `struct wim_header_disk' for
  * field descriptions.  */

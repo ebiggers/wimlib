@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2015 Eric Biggers
+ * Copyright 2012-2023 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -144,6 +144,18 @@ read_wim_header(WIMStruct *wim, struct wim_header *hdr)
 	get_wim_reshdr(&disk_hdr.boot_metadata_reshdr, &hdr->boot_metadata_reshdr);
 	hdr->boot_idx = le32_to_cpu(disk_hdr.boot_idx);
 	get_wim_reshdr(&disk_hdr.integrity_table_reshdr, &hdr->integrity_table_reshdr);
+
+	/*
+	 * Prevent huge memory allocations when processing fuzzed files.  The
+	 * blob table, XML data, and integrity table are all uncompressed, so
+	 * they should never be larger than the WIM file itself.
+	 */
+	if (wim->file_size > 0 &&
+	    (hdr->blob_table_reshdr.uncompressed_size > wim->file_size ||
+	     hdr->xml_data_reshdr.uncompressed_size > wim->file_size ||
+	     hdr->integrity_table_reshdr.uncompressed_size > wim->file_size))
+		return WIMLIB_ERR_INVALID_HEADER;
+
 	return 0;
 
 read_error:
