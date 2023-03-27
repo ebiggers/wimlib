@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2015-2018 Eric Biggers
+ * Copyright 2015-2023 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -168,7 +168,7 @@ retry:
 	/* Generate the characters in the name. */
 	for (int i = 0; i < len; i++) {
 		do {
-			name[i] = rand16();
+			name[i] = cpu_to_le16(rand16());
 		} while (!is_valid_filename_char(name[i]));
 	}
 
@@ -801,7 +801,8 @@ set_random_streams(struct wim_inode *inode, struct generation_context *ctx)
 			ret = add_random_data_stream(inode, ctx, stream_name);
 			if (ret)
 				return ret;
-			stream_name[0] += cpu_to_le16(1);
+			stream_name[0] =
+				cpu_to_le16(le16_to_cpu(stream_name[0]) + 1);
 		}
 	}
 
@@ -903,7 +904,7 @@ retry:
 	 * within the same directory.  */
 	hash = 0;
 	for (const utf16lechar *p = name; *p; p++)
-		hash = (hash * 31) + *p;
+		hash = (hash * 31) + le16_to_cpu(*p);
 	FREE(child->d_short_name);
 	child->d_short_name = memdup(name, (name_len + 1) * 2);
 	child->d_short_name_nbytes = name_len * 2;
