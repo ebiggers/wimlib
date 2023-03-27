@@ -166,41 +166,45 @@ for fil in NEWS README* COPYING*; do
 done
 cd ..
 
+IMAGEX_CMDS=()
+for cmd in ./doc/man1/wim*.1; do
+	cmd=${cmd##*/}
+	cmd=${cmd%.1}
+	case "$cmd" in
+	wimlib-imagex|wimmount|wimmountrw|wimunmount)
+		;;
+	*)
+		IMAGEX_CMDS+=("$cmd")
+		;;
+	esac
+done
+
 function gen_pdf_from_man_page()
 {
-	local manbase=$1
-	local pdf=${DESTDIR}/doc/${manbase}.pdf
+	local cmd=$1
+	local pdf=${DESTDIR}/doc/${cmd}.pdf
 
 	echo "Generating $pdf"
-	MANPATH="./doc" man -t "$manbase" | ps2pdf - "$pdf"
+	MANPATH="./doc" man -t "$cmd" | ps2pdf - "$pdf"
 }
+
 if $BUILD_DOCS; then
 	echo "Installing manual pages..."
 	mkdir "$DESTDIR"/doc
-	for fil in ./doc/man1/wim*.1; do
-		manbase=$(basename "$fil")
-		cmd=${manbase%.1}
-		case "$cmd" in
-		wimlib-imagex|wimmount|wimmountrw|wimunmount)
-			continue
-			;;
-		esac
-
+	for cmd in "${IMAGEX_CMDS[@]}"; do
 		gen_pdf_from_man_page "$cmd"
 	done
 	gen_pdf_from_man_page wimlib-imagex
 fi
 
-echo "Installing wimlib-imagex command shortcut files..."
-for fil in ./doc/man1/wim*.1; do
-	manbase=$(basename "$fil")
-	cmd=${manbase%.1}
+echo "Installing wim*.cmd files..."
+for cmd in "${IMAGEX_CMDS[@]}"; do
 	sed 's/$/\r/g' > "${DESTDIR}/${cmd}.cmd" <<- EOF
 		@echo off
 		"%~dp0\\wimlib-imagex" ${cmd#wim} %*
 	EOF
+	chmod +x "${DESTDIR}/${cmd}.cmd"
 done
-chmod +x "${DESTDIR}/${cmd}.cmd"
 
 echo "Installing development files..."
 mkdir "$DESTDIR"/devel
