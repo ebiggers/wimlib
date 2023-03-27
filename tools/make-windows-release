@@ -1,125 +1,218 @@
 #!/bin/bash
 #
-# This script prepares a Windows binary distribution of wimlib on Linux using
-# MinGW-w64.  The desired architecture must be passed as the first argument.
+# This script prepares a Windows binary distribution of wimlib.
 
-set -e
+set -e -u
 
-if [ ! -e src/wim.c ]; then
-	echo "This script must be run from the toplevel directory" 1>&2
+SCRIPTNAME="$0"
+TOPDIR=$(dirname "$(dirname "$(realpath "$0")")")
+cd "$TOPDIR" # Top-level directory of the git repo
+
+MSYSTEM=${MSYSTEM:-}
+if [ -z "$MSYSTEM" ]; then
+	ARCH=x86_64
+else
+	case "$MSYSTEM" in
+	MINGW32)
+		ARCH=i686
+		;;
+	MINGW64)
+		ARCH=x86_64
+		;;
+	*)
+		echo 1>&2 "Unsupported MSYS2 environment: $MSYSTEM"
+		echo 1>&2 "In MSYS2, you must use the MINGW32 or MINGW64 environment."
+		echo 1>&2 "See https://www.msys2.org/docs/environments/"
+		exit 1
+	esac
+fi
+INSTALL_MSYS2_PACKAGES=false
+BUILD_DOCS=true
+BUILD_ZIP=true
+
+longopts="help"
+longopts+=",arch:"
+longopts+=",install-msys2-packages"
+longopts+=",no-docs"
+longopts+=",no-zip"
+
+usage()
+{
+	cat << EOF
+Usage: $SCRIPTNAME [OPTION]... [EXTRA_CONFIGURE_ARG]...
+Options:
+  --arch=ARCH                Specify the architecture.  The default is taken
+                                 from MSYSTEM if available, otherwise is x86_64.
+  --install-msys2-packages   Install prerequisite MSYS2 packages
+  --no-docs                  Don't build and install PDF manual pages
+  --no-zip                   Don't create the final zip file
+EOF
+}
+
+if ! options=$(getopt -o "" -l "$longopts" -- "$@"); then
+	usage 1>&2
 	exit 1
 fi
+eval set -- "$options"
+while true; do
+	case "$1" in
+	--help)
+		usage
+		exit 0
+		;;
+	--arch)
+		ARCH=$2
+		shift
+		;;
+	--install-msys2-packages)
+		if [ -z "$MSYSTEM" ]; then
+			echo 1>&2 "--install-msys2-packages is not allowed outside MSYS2."
+			exit 1
+		fi
+		INSTALL_MSYS2_PACKAGES=true
+		;;
+	--no-docs)
+		BUILD_DOCS=false
+		;;
+	--no-zip)
+		BUILD_ZIP=false
+		;;
+	--)
+		shift
+		break
+		;;
+	*)
+		echo 1>&2 "Invalid option '$1'"
+		usage 1>&2
+		exit 1
+		;;
+	esac
+	shift
+done
 
-if [ $# -lt 1 ]; then
-	echo "Usage: $0 i686|x86_64 [EXTRA_CONFIGURE_ARG]..." 1>&2
-	exit 1
-fi
-
-ARCH="$1"
-shift
+EXTRA_CONFIGURE_ARGS=("$@")
 
 case "$ARCH" in
 i686|x86_64)
 	;;
 *)
-	echo "ERROR: ARCH must be i686 or x86_64" 1>&2
+	echo 1>&2 "Unknown ARCH: $ARCH.  Please specify a supported architecture with --arch"
 	exit 1
 	;;
 esac
 
 VERSION=$(tools/get-version-number)
 DESTDIR=wimlib-${VERSION}-windows-${ARCH}-bin
-ZIPFILE=wimlib-${VERSION}-windows-${ARCH}-bin.zip
-MAKE="make -j $(grep -c processor /proc/cpuinfo)"
+ZIPFILE=$DESTDIR.zip
+MAKE="make -j$(getconf _NPROCESSORS_ONLN)"
 
-# Compile wimlib
+rm -rf "$DESTDIR" "$ZIPFILE"
+mkdir "$DESTDIR"
 
+# Install the required MSYS2 packages if requested.
+if $INSTALL_MSYS2_PACKAGES; then
+	echo "Installing the MSYS2 packages required to build wimlib ($MSYSTEM)..."
+	pacman -Syu --noconfirm --needed \
+		autoconf \
+		automake \
+		git \
+		libtool \
+		make \
+		"mingw-w64-${ARCH}-gcc" \
+		pkgconf
+	echo "Done installing the MSYS2 packages required to build wimlib ($MSYSTEM)."
+fi
+
+# Bootstrap the repository if not already done.
+if [ ! -e configure ]; then
+	echo "Bootstrapping the wimlib repository..."
+	./bootstrap
+fi
+
+# Configure wimlib for the given $ARCH if not already done.
 if ! [ -e config.log ] ||
 	! grep -q "./configure --host=${ARCH}-w64-mingw32" config.log || \
 	! grep -q "configure: exit 0" config.log || \
-	[ $# -gt 0 ]
+	[ ${#EXTRA_CONFIGURE_ARGS[@]} -gt 0 ]
 then
 	# Note: putting -static-libgcc in CC is a workaround for libtool
 	# stripping it:
 	# http://www.gnu.org/software/libtool/manual/libtool.html#Stripped-link-flags
-	./configure --host=${ARCH}-w64-mingw32 --disable-static		\
-		CC="${ARCH}-w64-mingw32-gcc -static-libgcc" "$@"
+	echo "Configuring wimlib..."
+	./configure --host="${ARCH}-w64-mingw32" --disable-static	\
+		CC="${ARCH}-w64-mingw32-gcc -static-libgcc"	\
+		"${EXTRA_CONFIGURE_ARGS[@]}"
 	$MAKE clean
 fi
+
+echo "Building wimlib..."
 $MAKE
 
-# Create empty destination directory
+echo "Installing binaries..."
+cp .libs/*.{dll,exe} "$DESTDIR"
+strip "$DESTDIR"/*.{dll,exe}
 
-rm -rf $DESTDIR
-mkdir $DESTDIR
-
-# Install binaries
-
-cp .libs/*.{dll,exe} $DESTDIR
-${ARCH}-w64-mingw32-strip $DESTDIR/*.{dll,exe}
-
-# Install text files
-
-cp NEWS README* COPYING* $DESTDIR
-
-sed -n '/^#/q; s/^[\/\* ]*//; p' src/divsufsort.c > $DESTDIR/COPYING.libdivsufsort-lite
-if ! grep -q 'Copyright' $DESTDIR/COPYING.libdivsufsort-lite; then
-	echo "ERROR: failed to extract libdivsufsort-lite license text" 1>&2
+echo "Installing NEWS, README, and licenses..."
+cp NEWS README* COPYING* "$DESTDIR"
+sed -n '/^#/q; s/^[\/\* ]*//; p' src/divsufsort.c > "$DESTDIR"/COPYING.libdivsufsort-lite
+if ! grep -q 'Copyright' "$DESTDIR"/COPYING.libdivsufsort-lite; then
+	echo 1>&2 "ERROR: failed to extract libdivsufsort-lite license text"
 	exit 1
 fi
-(
-	cd $DESTDIR
-	for fil in NEWS README* COPYING*; do
-		sed < $fil > ${fil}.txt -e 's/$/\r/g'
-		rm $fil
-	done
-)
+cd "$DESTDIR"
+for fil in NEWS README* COPYING*; do
+	sed < "$fil" > "${fil}".txt -e 's/$/\r/g'
+	rm "$fil"
+done
+cd ..
 
-
-# Install man pages
-
-mkdir $DESTDIR/doc
-
-function gen_pdf_from_man_page() {
+function gen_pdf_from_man_page()
+{
 	local manbase=$1
 	local pdf=${DESTDIR}/doc/${manbase}.pdf
 
 	echo "Generating $pdf"
-
-	MANPATH="./doc" man -t $manbase | ps2pdf - $pdf
+	MANPATH="./doc" man -t "$manbase" | ps2pdf - "$pdf"
 }
+if $BUILD_DOCS; then
+	echo "Installing manual pages..."
+	mkdir "$DESTDIR"/doc
+	for fil in ./doc/man1/wim*.1; do
+		manbase=$(basename "$fil")
+		cmd=${manbase%.1}
+		case "$cmd" in
+		wimlib-imagex|wimmount|wimmountrw|wimunmount)
+			continue
+			;;
+		esac
 
+		gen_pdf_from_man_page "$cmd"
+	done
+	gen_pdf_from_man_page wimlib-imagex
+fi
+
+echo "Installing wimlib-imagex command shortcut files..."
 for fil in ./doc/man1/wim*.1; do
-	manbase=`basename $fil`
+	manbase=$(basename "$fil")
 	cmd=${manbase%.1}
-	case $cmd in
-	wimlib-imagex|wimmount|wimmountrw|wimunmount)
-		continue
-		;;
-	esac
-
-	gen_pdf_from_man_page $cmd
-
-	sed 's/$/\r/g' > ${DESTDIR}/${cmd}.cmd <<- EOF
+	sed 's/$/\r/g' > "${DESTDIR}/${cmd}.cmd" <<- EOF
 		@echo off
 		"%~dp0\\wimlib-imagex" ${cmd#wim} %*
 	EOF
-	chmod +x ${DESTDIR}/${cmd}.cmd
 done
+chmod +x "${DESTDIR}/${cmd}.cmd"
 
-gen_pdf_from_man_page wimlib-imagex
+echo "Installing development files..."
+mkdir "$DESTDIR"/devel
+cp .libs/libwim.dll.a "$DESTDIR"/devel/libwim.lib
+cp include/wimlib.h "$DESTDIR"/devel/
 
-# Install development files
-
-mkdir $DESTDIR/devel
-cp .libs/libwim.dll.a $DESTDIR/devel/libwim.lib
-cp include/wimlib.h $DESTDIR/devel/
-
-# Generate ZIP file
-
-rm -f $ZIPFILE
-(
-	dir=$PWD
-	cd $DESTDIR
-	7z -mx9 a "$dir/$ZIPFILE" .
-)
+if $BUILD_ZIP; then
+	echo "Creating zip file..."
+	cd "$DESTDIR"
+	7z -mx9 a ../"$ZIPFILE" . > /dev/null
+	cd ..
+	echo "Success!  Output is in $ZIPFILE"
+else
+	echo "Success!  Output is in $DESTDIR"
+fi
