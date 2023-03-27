@@ -49,14 +49,6 @@
 #  define __has_builtin(builtin)	0
 #endif
 
-/* Declare that the annotated function should be exported from the shared
- * library (or DLL).  */
-#ifdef _WIN32
-#  define WIMLIBAPI __declspec(dllexport)
-#else
-#  define WIMLIBAPI __attribute__((visibility("default")))
-#endif
-
 /* Declare that the annotated function should always be inlined.  This might be
  * desirable in highly tuned code, e.g. compression codecs.  */
 #define forceinline		inline __attribute__((always_inline))

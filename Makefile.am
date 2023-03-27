@@ -191,6 +191,7 @@ libwim_la_SOURCES += src/test_support.c		\
 endif
 
 libwim_la_CFLAGS =		\
+	-DBUILDING_WIMLIB	\
 	$(AM_CFLAGS)		\
 	$(PTHREAD_CFLAGS)	\
 	$(LIBNTFS_3G_CFLAGS)	\

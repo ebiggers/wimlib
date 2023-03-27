@@ -401,6 +401,16 @@
 #include <stdint.h>
 #include <time.h>
 
+#ifdef BUILDING_WIMLIB
+#  ifdef _WIN32
+#    define WIMLIBAPI __declspec(dllexport)
+#  else
+#    define WIMLIBAPI __attribute__((visibility("default")))
+#  endif
+#else
+#  define WIMLIBAPI
+#endif
+
 /** @addtogroup G_general
  * @{ */
 
@@ -2638,7 +2648,7 @@ enum wimlib_error_code {
  * @retval ::WIMLIB_ERR_IMAGE_NAME_COLLISION
  *	The WIM already contains an image with the requested name.
  */
-extern int
+WIMLIBAPI int
 wimlib_add_empty_image(WIMStruct *wim,
 		       const wimlib_tchar *name,
 		       int *new_idx_ret);
@@ -2694,7 +2704,7 @@ wimlib_add_empty_image(WIMStruct *wim,
  * In addition, if ::WIMLIB_ADD_FLAG_VERBOSE is specified in @p add_flags, it
  * will receive ::WIMLIB_PROGRESS_MSG_SCAN_DENTRY.
  */
-extern int
+WIMLIBAPI int
 wimlib_add_image(WIMStruct *wim,
 		 const wimlib_tchar *source,
 		 const wimlib_tchar *name,
@@ -2711,7 +2721,7 @@ wimlib_add_image(WIMStruct *wim,
  * same as wimlib_add_image().  See the documentation for <b>wimcapture</b> for
  * full details on how this mode works.
  */
-extern int
+WIMLIBAPI int
 wimlib_add_image_multisource(WIMStruct *wim,
 			     const struct wimlib_capture_source *sources,
 			     size_t num_sources,
@@ -2728,7 +2738,7 @@ wimlib_add_image_multisource(WIMStruct *wim,
  * This just builds an appropriate ::wimlib_add_command and passes it to
  * wimlib_update_image().
  */
-extern int
+WIMLIBAPI int
 wimlib_add_tree(WIMStruct *wim, int image,
 		const wimlib_tchar *fs_source_path,
 		const wimlib_tchar *wim_target_path, int add_flags);
@@ -2761,7 +2771,7 @@ wimlib_add_tree(WIMStruct *wim, int image,
  * @retval ::WIMLIB_ERR_NOMEM
  *	Insufficient memory to allocate a new ::WIMStruct.
  */
-extern int
+WIMLIBAPI int
 wimlib_create_new_wim(enum wimlib_compression_type ctype, WIMStruct **wim_ret);
 
 /**
@@ -2792,7 +2802,7 @@ wimlib_create_new_wim(enum wimlib_compression_type ctype, WIMStruct **wim_ret);
  * If this function fails when @p image was ::WIMLIB_ALL_IMAGES, then it's
  * possible that some but not all of the images were deleted.
  */
-extern int
+WIMLIBAPI int
 wimlib_delete_image(WIMStruct *wim, int image);
 
 /**
@@ -2803,7 +2813,7 @@ wimlib_delete_image(WIMStruct *wim, int image);
  * This just builds an appropriate ::wimlib_delete_command and passes it to
  * wimlib_update_image().
  */
-extern int
+WIMLIBAPI int
 wimlib_delete_path(WIMStruct *wim, int image,
 		   const wimlib_tchar *path, int delete_flags);
 
@@ -2875,7 +2885,7 @@ wimlib_delete_path(WIMStruct *wim, int image,
  * indicate failure (for different reasons) to read the metadata resource for an
  * image in @p src_wim that needed to be exported.
  */
-extern int
+WIMLIBAPI int
 wimlib_export_image(WIMStruct *src_wim, int src_image,
 		    WIMStruct *dest_wim,
 		    const wimlib_tchar *dest_name,
@@ -2994,7 +3004,7 @@ wimlib_export_image(WIMStruct *src_wim, int src_image,
  * ::WIMLIB_PROGRESS_MSG_EXTRACT_METADATA messages, then
  * ::WIMLIB_PROGRESS_MSG_EXTRACT_IMAGE_END.
  */
-extern int
+WIMLIBAPI int
 wimlib_extract_image(WIMStruct *wim, int image,
 		     const wimlib_tchar *target, int extract_flags);
 
@@ -3036,7 +3046,7 @@ wimlib_extract_image(WIMStruct *wim, int image,
  * @retval ::WIMLIB_ERR_NOT_PIPABLE
  *	The WIM being piped over @p pipe_fd is a normal WIM, not a pipable WIM.
  */
-extern int
+WIMLIBAPI int
 wimlib_extract_image_from_pipe(int pipe_fd,
 			       const wimlib_tchar *image_num_or_name,
 			       const wimlib_tchar *target, int extract_flags);
@@ -3050,7 +3060,7 @@ wimlib_extract_image_from_pipe(int pipe_fd,
  * ::WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS, in addition to
  * ::WIMLIB_PROGRESS_MSG_EXTRACT_SPWM_PART_BEGIN.
  */
-extern int
+WIMLIBAPI int
 wimlib_extract_image_from_pipe_with_progress(int pipe_fd,
 					     const wimlib_tchar *image_num_or_name,
 					     const wimlib_tchar *target,
@@ -3077,7 +3087,7 @@ wimlib_extract_image_from_pipe_with_progress(int pipe_fd,
  * cannot read the path list file (e.g. ::WIMLIB_ERR_OPEN, ::WIMLIB_ERR_STAT,
  * ::WIMLIB_ERR_READ).
  */
-extern int
+WIMLIBAPI int
 wimlib_extract_pathlist(WIMStruct *wim, int image,
 			const wimlib_tchar *target,
 			const wimlib_tchar *path_list_file,
@@ -3152,7 +3162,7 @@ wimlib_extract_pathlist(WIMStruct *wim, int image,
  * If a progress function is registered with @p wim, then it will receive
  * ::WIMLIB_PROGRESS_MSG_EXTRACT_STREAMS.
  */
-extern int
+WIMLIBAPI int
 wimlib_extract_paths(WIMStruct *wim,
 		     int image,
 		     const wimlib_tchar *target,
@@ -3174,7 +3184,7 @@ wimlib_extract_paths(WIMStruct *wim,
  * @retval ::WIMLIB_ERR_WRITE
  *	Failed to write the data to the requested file.
  */
-extern int
+WIMLIBAPI int
 wimlib_extract_xml_data(WIMStruct *wim, FILE *fp);
 
 /**
@@ -3189,7 +3199,7 @@ wimlib_extract_xml_data(WIMStruct *wim, FILE *fp);
  * @param wim
  *	Pointer to the ::WIMStruct to release.  If @c NULL, no action is taken.
  */
-extern void
+WIMLIBAPI void
 wimlib_free(WIMStruct *wim);
 
 /**
@@ -3205,7 +3215,7 @@ wimlib_free(WIMStruct *wim);
  *	"None", "LZX", or "XPRESS".  If the value was unrecognized, then
  *	the resulting string will be "Invalid".
  */
-extern const wimlib_tchar *
+WIMLIBAPI const wimlib_tchar *
 wimlib_get_compression_type_string(enum wimlib_compression_type ctype);
 
 /**
@@ -3221,7 +3231,7 @@ wimlib_get_compression_type_string(enum wimlib_compression_type ctype);
  *	the value was unrecognized, then the resulting string will be "Unknown
  *	error".
  */
-extern const wimlib_tchar *
+WIMLIBAPI const wimlib_tchar *
 wimlib_get_error_string(enum wimlib_error_code code);
 
 /**
@@ -3230,7 +3240,7 @@ wimlib_get_error_string(enum wimlib_error_code code);
  * Get the description of the specified image.  Equivalent to
  * <tt>wimlib_get_image_property(wim, image, "DESCRIPTION")</tt>.
  */
-extern const wimlib_tchar *
+WIMLIBAPI const wimlib_tchar *
 wimlib_get_image_description(const WIMStruct *wim, int image);
 
 /**
@@ -3241,7 +3251,7 @@ wimlib_get_image_description(const WIMStruct *wim, int image);
  * wimlib_get_image_name() will return an empty string if the image is unnamed
  * whereas wimlib_get_image_property() may return @c NULL in that case.
  */
-extern const wimlib_tchar *
+WIMLIBAPI const wimlib_tchar *
 wimlib_get_image_name(const WIMStruct *wim, int image);
 
 /**
@@ -3272,7 +3282,7 @@ wimlib_get_image_name(const WIMStruct *wim, int image);
  *	no such property.  The string may not remain valid after later library
  *	calls, so the caller should duplicate it if needed.
  */
-extern const wimlib_tchar *
+WIMLIBAPI const wimlib_tchar *
 wimlib_get_image_property(const WIMStruct *wim, int image,
 			  const wimlib_tchar *property_name);
 
@@ -3287,7 +3297,7 @@ wimlib_get_image_property(const WIMStruct *wim, int image,
  * 20) | (WIMLIB_MINOR_VERSION << 10) | WIMLIB_PATCH_VERSION)</c> for the
  * corresponding header file.
  */
-extern uint32_t
+WIMLIBAPI uint32_t
 wimlib_get_version(void);
 
 /**
@@ -3297,7 +3307,7 @@ wimlib_get_version(void);
  * PACKAGE_VERSION string that was set at build time.  (This allows a beta
  * release to be distinguished from an official release.)
  */
-extern const wimlib_tchar *
+WIMLIBAPI const wimlib_tchar *
 wimlib_get_version_string(void);
 
 /**
@@ -3314,7 +3324,7 @@ wimlib_get_version_string(void);
  *
  * @return 0
  */
-extern int
+WIMLIBAPI int
 wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info);
 
 /**
@@ -3344,7 +3354,7 @@ wimlib_get_wim_info(WIMStruct *wim, struct wimlib_wim_info *info);
  * @retval ::WIMLIB_ERR_UNEXPECTED_END_OF_FILE
  *	Failed to read the XML document from the WIM file.
  */
-extern int
+WIMLIBAPI int
 wimlib_get_xml_data(WIMStruct *wim, void **buf_ret, size_t *bufsize_ret);
 
 /**
@@ -3365,7 +3375,7 @@ wimlib_get_xml_data(WIMStruct *wim, void **buf_ret, size_t *bufsize_ret);
  *	::WIMLIB_INIT_FLAG_STRICT_CAPTURE_PRIVILEGES were specified in @p
  *	init_flags, but the corresponding privileges could not be acquired.
  */
-extern int
+WIMLIBAPI int
 wimlib_global_init(int init_flags);
 
 /**
@@ -3374,7 +3384,7 @@ wimlib_global_init(int init_flags);
  * Cleanup function for wimlib.  You are not required to call this function, but
  * it will release any global resources allocated by the library.
  */
-extern void
+WIMLIBAPI void
 wimlib_global_cleanup(void);
 
 /**
@@ -3393,7 +3403,7 @@ wimlib_global_cleanup(void);
  *	if there is no image named @p name in @p wim.  If @p name is @c NULL or
  *	the empty string, then @c false is returned.
  */
-extern bool
+WIMLIBAPI bool
 wimlib_image_name_in_use(const WIMStruct *wim, const wimlib_tchar *name);
 
 /**
@@ -3440,7 +3450,7 @@ wimlib_image_name_in_use(const WIMStruct *wim, const wimlib_tchar *name);
  * indicate failure (for different reasons) to read the metadata resource for an
  * image over which iteration needed to be done.
  */
-extern int
+WIMLIBAPI int
 wimlib_iterate_dir_tree(WIMStruct *wim, int image, const wimlib_tchar *path,
 			int flags,
 			wimlib_iterate_dir_tree_callback_t cb, void *user_ctx);
@@ -3474,7 +3484,7 @@ wimlib_iterate_dir_tree(WIMStruct *wim, int image, const wimlib_tchar *path,
  * @return 0 if all calls to @p cb returned 0; otherwise the first nonzero value
  * that was returned from @p cb.
  */
-extern int
+WIMLIBAPI int
 wimlib_iterate_lookup_table(WIMStruct *wim, int flags,
 			    wimlib_iterate_lookup_table_callback_t cb,
 			    void *user_ctx);
@@ -3515,7 +3525,7 @@ wimlib_iterate_lookup_table(WIMStruct *wim, int flags,
  * an easy-to-use wrapper around this that has some advantages (e.g.  extra
  * sanity checks).
  */
-extern int
+WIMLIBAPI int
 wimlib_join(const wimlib_tchar * const *swms,
 	    unsigned num_swms,
 	    const wimlib_tchar *output_path,
@@ -3533,7 +3543,7 @@ wimlib_join(const wimlib_tchar * const *swms,
  * ::WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY messages when each of the split WIM
  * parts is opened.
  */
-extern int
+WIMLIBAPI int
 wimlib_join_with_progress(const wimlib_tchar * const *swms,
 			  unsigned num_swms,
 			  const wimlib_tchar *output_path,
@@ -3618,7 +3628,7 @@ wimlib_join_with_progress(const wimlib_tchar * const *swms,
  * To unmount the image, call wimlib_unmount_image().  This may be done in a
  * different process.
  */
-extern int
+WIMLIBAPI int
 wimlib_mount_image(WIMStruct *wim,
 		   int image,
 		   const wimlib_tchar *dir,
@@ -3694,7 +3704,7 @@ wimlib_mount_image(WIMStruct *wim,
  * @retval ::WIMLIB_ERR_XML
  *	The XML data of the WIM was invalid.
  */
-extern int
+WIMLIBAPI int
 wimlib_open_wim(const wimlib_tchar *wim_file,
 		int open_flags,
 		WIMStruct **wim_ret);
@@ -3710,7 +3720,7 @@ wimlib_open_wim(const wimlib_tchar *wim_file,
  * progress function will receive ::WIMLIB_PROGRESS_MSG_VERIFY_INTEGRITY
  * messages while checking the WIM file's integrity.
  */
-extern int
+WIMLIBAPI int
 wimlib_open_wim_with_progress(const wimlib_tchar *wim_file,
 			      int open_flags,
 			      WIMStruct **wim_ret,
@@ -3776,7 +3786,7 @@ wimlib_open_wim_with_progress(const wimlib_tchar *wim_file,
  * ::WIMLIB_PROGRESS_MSG_WRITE_METADATA_BEGIN, and
  * ::WIMLIB_PROGRESS_MSG_WRITE_METADATA_END.
  */
-extern int
+WIMLIBAPI int
 wimlib_overwrite(WIMStruct *wim, int write_flags, unsigned num_threads);
 
 /**
@@ -3799,7 +3809,7 @@ wimlib_overwrite(WIMStruct *wim, int write_flags, unsigned num_threads);
  * This function is deprecated; use wimlib_get_xml_data() or
  * wimlib_get_image_property() to query image information instead.
  */
-extern void
+WIMLIBAPI void
 wimlib_print_available_images(const WIMStruct *wim, int image);
 
 /**
@@ -3807,7 +3817,7 @@ wimlib_print_available_images(const WIMStruct *wim, int image);
  *
  * Print the header of the WIM file (intended for debugging only).
  */
-extern void
+WIMLIBAPI void
 wimlib_print_header(const WIMStruct *wim);
 
 /**
@@ -3851,7 +3861,7 @@ wimlib_print_header(const WIMStruct *wim);
  * This function can additionally return most values that can be returned by
  * wimlib_open_wim().
  */
-extern int
+WIMLIBAPI int
 wimlib_reference_resource_files(WIMStruct *wim,
 				const wimlib_tchar * const *resource_wimfiles_or_globs,
 				unsigned count,
@@ -3878,7 +3888,7 @@ wimlib_reference_resource_files(WIMStruct *wim,
  *
  * @return 0 on success; a ::wimlib_error_code value on failure.
  */
-extern int
+WIMLIBAPI int
 wimlib_reference_resources(WIMStruct *wim, WIMStruct **resource_wims,
 			   unsigned num_resource_wims, int ref_flags);
 
@@ -3944,7 +3954,7 @@ wimlib_reference_resources(WIMStruct *wim, WIMStruct **resource_wims,
  * indicate failure (for different reasons) to read the metadata resource for
  * the template image.
  */
-extern int
+WIMLIBAPI int
 wimlib_reference_template_image(WIMStruct *wim, int new_image,
 				WIMStruct *template_wim, int template_image,
 				int flags);
@@ -3964,7 +3974,7 @@ wimlib_reference_template_image(WIMStruct *wim, int new_image,
  *	The value which will be passed as the third argument to calls to @p
  *	progfunc.
  */
-extern void
+WIMLIBAPI void
 wimlib_register_progress_function(WIMStruct *wim,
 				  wimlib_progress_func_t progfunc,
 				  void *progctx);
@@ -3978,7 +3988,7 @@ wimlib_register_progress_function(WIMStruct *wim,
  * This just builds an appropriate ::wimlib_rename_command and passes it to
  * wimlib_update_image().
  */
-extern int
+WIMLIBAPI int
 wimlib_rename_path(WIMStruct *wim, int image,
 		   const wimlib_tchar *source_path, const wimlib_tchar *dest_path);
 
@@ -4012,7 +4022,7 @@ wimlib_rename_path(WIMStruct *wim, int image,
  *	images, an unnamed image must be specified by index to eliminate the
  *	ambiguity.)
  */
-extern int
+WIMLIBAPI int
 wimlib_resolve_image(WIMStruct *wim,
 		     const wimlib_tchar *image_name_or_num);
 
@@ -4030,7 +4040,7 @@ wimlib_resolve_image(WIMStruct *wim,
  *
  * @return 0
  */
-extern int
+WIMLIBAPI int
 wimlib_set_error_file(FILE *fp);
 
 /**
@@ -4047,7 +4057,7 @@ wimlib_set_error_file(FILE *fp);
  * @retval ::WIMLIB_ERR_OPEN
  *	The file named by @p path could not be opened for appending.
  */
-extern int
+WIMLIBAPI int
 wimlib_set_error_file_by_name(const wimlib_tchar *path);
 
 /**
@@ -4058,7 +4068,7 @@ wimlib_set_error_file_by_name(const wimlib_tchar *path);
  *
  * Note that "description" is misspelled in the name of this function.
  */
-extern int
+WIMLIBAPI int
 wimlib_set_image_descripton(WIMStruct *wim, int image,
 			    const wimlib_tchar *description);
 
@@ -4069,7 +4079,7 @@ wimlib_set_image_descripton(WIMStruct *wim, int image,
  * (usually something like "Core" or "Ultimate").  Equivalent to
  * <tt>wimlib_set_image_property(wim, image, "FLAGS", flags)</tt>.
  */
-extern int
+WIMLIBAPI int
 wimlib_set_image_flags(WIMStruct *wim, int image, const wimlib_tchar *flags);
 
 /**
@@ -4078,7 +4088,7 @@ wimlib_set_image_flags(WIMStruct *wim, int image, const wimlib_tchar *flags);
  * Change the name of a WIM image.  Equivalent to
  * <tt>wimlib_set_image_property(wim, image, "NAME", name)</tt>.
  */
-extern int
+WIMLIBAPI int
 wimlib_set_image_name(WIMStruct *wim, int image, const wimlib_tchar *name);
 
 /**
@@ -4118,7 +4128,7 @@ wimlib_set_image_name(WIMStruct *wim, int image, const wimlib_tchar *name);
  *	@p property_name has an unsupported format, or @p property_name included
  *	a bracketed index that was too high.
  */
-extern int
+WIMLIBAPI int
 wimlib_set_image_property(WIMStruct *wim, int image,
 			  const wimlib_tchar *property_name,
 			  const wimlib_tchar *property_value);
@@ -4151,7 +4161,7 @@ wimlib_set_image_property(WIMStruct *wim, int image,
  *
  * @return 0
  */
-extern int
+WIMLIBAPI int
 wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
 			    void (*free_func)(void *),
 			    void *(*realloc_func)(void *, size_t));
@@ -4181,7 +4191,7 @@ wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
  *	@p chunk_size was not 0 or a supported chunk size for the currently
  *	selected output compression type.
  */
-extern int
+WIMLIBAPI int
 wimlib_set_output_chunk_size(WIMStruct *wim, uint32_t chunk_size);
 
 /**
@@ -4190,7 +4200,7 @@ wimlib_set_output_chunk_size(WIMStruct *wim, uint32_t chunk_size);
  * Similar to wimlib_set_output_chunk_size(), but set the chunk size for writing
  * solid resources.
  */
-extern int
+WIMLIBAPI int
 wimlib_set_output_pack_chunk_size(WIMStruct *wim, uint32_t chunk_size);
 
 /**
@@ -4212,7 +4222,7 @@ wimlib_set_output_pack_chunk_size(WIMStruct *wim, uint32_t chunk_size);
  * @retval ::WIMLIB_ERR_INVALID_COMPRESSION_TYPE
  *	@p ctype did not specify a valid compression type.
  */
-extern int
+WIMLIBAPI int
 wimlib_set_output_compression_type(WIMStruct *wim,
 				   enum wimlib_compression_type ctype);
 
@@ -4222,7 +4232,7 @@ wimlib_set_output_compression_type(WIMStruct *wim,
  * Similar to wimlib_set_output_compression_type(), but set the compression type
  * for writing solid resources.  This cannot be ::WIMLIB_COMPRESSION_TYPE_NONE.
  */
-extern int
+WIMLIBAPI int
 wimlib_set_output_pack_compression_type(WIMStruct *wim,
 					enum wimlib_compression_type ctype);
 
@@ -4245,7 +4255,7 @@ wimlib_set_output_pack_compression_type(WIMStruct *wim,
  *
  * @return 0
  */
-extern int
+WIMLIBAPI int
 wimlib_set_print_errors(bool show_messages);
 
 /**
@@ -4271,7 +4281,7 @@ wimlib_set_print_errors(bool show_messages);
  *	::wimlib_wim_info.boot_index did not specify 0 or a valid 1-based image
  *	index in the WIM.
  */
-extern int
+WIMLIBAPI int
 wimlib_set_wim_info(WIMStruct *wim, const struct wimlib_wim_info *info,
 		    int which);
 
@@ -4315,7 +4325,7 @@ wimlib_set_wim_info(WIMStruct *wim, const struct wimlib_wim_info *info,
  * receive ::WIMLIB_PROGRESS_MSG_WRITE_STREAMS messages while writing each part;
  * these messages will report the progress of the current part only.
  */
-extern int
+WIMLIBAPI int
 wimlib_split(WIMStruct *wim,
 	     const wimlib_tchar *swm_name,
 	     uint64_t part_size,
@@ -4358,7 +4368,7 @@ wimlib_split(WIMStruct *wim,
  * ::WIMLIB_PROGRESS_MSG_END_VERIFY_IMAGE, and
  * ::WIMLIB_PROGRESS_MSG_VERIFY_STREAMS.
  */
-extern int
+WIMLIBAPI int
 wimlib_verify_wim(WIMStruct *wim, int verify_flags);
 
 /**
@@ -4394,7 +4404,7 @@ wimlib_verify_wim(WIMStruct *wim, int verify_flags);
  * by using the @c umount or @c fusermount programs.  However, you need to call
  * this function if you want changes to be committed.
  */
-extern int
+WIMLIBAPI int
 wimlib_unmount_image(const wimlib_tchar *dir, int unmount_flags);
 
 /**
@@ -4405,7 +4415,7 @@ wimlib_unmount_image(const wimlib_tchar *dir, int unmount_flags);
  * message.  In addition, if changes are committed from a read-write mount, the
  * progress function will receive ::WIMLIB_PROGRESS_MSG_WRITE_STREAMS messages.
  */
-extern int
+WIMLIBAPI int
 wimlib_unmount_image_with_progress(const wimlib_tchar *dir,
 				   int unmount_flags,
 				   wimlib_progress_func_t progfunc,
@@ -4501,7 +4511,7 @@ wimlib_unmount_image_with_progress(const wimlib_tchar *dir,
  * indicate failure (for different reasons) to read the metadata resource for an
  * image that needed to be updated.
  */
-extern int
+WIMLIBAPI int
 wimlib_update_image(WIMStruct *wim,
 		    int image,
 		    const struct wimlib_update_command *cmds,
@@ -4569,7 +4579,7 @@ wimlib_update_image(WIMStruct *wim,
  * ::WIMLIB_PROGRESS_MSG_WRITE_METADATA_BEGIN, and
  * ::WIMLIB_PROGRESS_MSG_WRITE_METADATA_END.
  */
-extern int
+WIMLIBAPI int
 wimlib_write(WIMStruct *wim,
 	     const wimlib_tchar *path,
 	     int image,
@@ -4596,7 +4606,7 @@ wimlib_write(WIMStruct *wim,
  *	@p fd was not seekable, but ::WIMLIB_WRITE_FLAG_PIPABLE was not
  *	specified in @p write_flags.
  */
-extern int
+WIMLIBAPI int
 wimlib_write_to_fd(WIMStruct *wim,
 		   int fd,
 		   int image,
@@ -4654,7 +4664,7 @@ struct wimlib_decompressor;
  * @retval ::WIMLIB_ERR_INVALID_COMPRESSION_TYPE
  *	@p ctype was neither a supported compression type nor -1.
  */
-extern int
+WIMLIBAPI int
 wimlib_set_default_compression_level(int ctype, unsigned int compression_level);
 
 /**
@@ -4665,7 +4675,7 @@ wimlib_set_default_compression_level(int ctype, unsigned int compression_level);
  * compression type is invalid, or the @p max_block_size for that compression
  * type is invalid.
  */
-extern uint64_t
+WIMLIBAPI uint64_t
 wimlib_get_compressor_needed_memory(enum wimlib_compression_type ctype,
 				    size_t max_block_size,
 				    unsigned int compression_level);
@@ -4740,7 +4750,7 @@ wimlib_get_compressor_needed_memory(enum wimlib_compression_type ctype,
  * @retval ::WIMLIB_ERR_NOMEM
  *	Insufficient memory to allocate the compressor.
  */
-extern int
+WIMLIBAPI int
 wimlib_create_compressor(enum wimlib_compression_type ctype,
 			 size_t max_block_size,
 			 unsigned int compression_level,
@@ -4766,7 +4776,7 @@ wimlib_create_compressor(enum wimlib_compression_type ctype,
  *	The size of the compressed data, in bytes, or 0 if the data could not be
  *	compressed to @p compressed_size_avail or fewer bytes.
  */
-extern size_t
+WIMLIBAPI size_t
 wimlib_compress(const void *uncompressed_data, size_t uncompressed_size,
 		void *compressed_data, size_t compressed_size_avail,
 		struct wimlib_compressor *compressor);
@@ -4777,7 +4787,7 @@ wimlib_compress(const void *uncompressed_data, size_t uncompressed_size,
  * @param compressor
  *	The compressor to free.  If @c NULL, no action is taken.
  */
-extern void
+WIMLIBAPI void
 wimlib_free_compressor(struct wimlib_compressor *compressor);
 
 /**
@@ -4813,7 +4823,7 @@ wimlib_free_compressor(struct wimlib_compressor *compressor);
  * @retval ::WIMLIB_ERR_NOMEM
  *	Insufficient memory to allocate the decompressor.
  */
-extern int
+WIMLIBAPI int
 wimlib_create_decompressor(enum wimlib_compression_type ctype,
 			   size_t max_block_size,
 			   struct wimlib_decompressor **decompressor_ret);
@@ -4845,7 +4855,7 @@ wimlib_create_decompressor(enum wimlib_compression_type ctype,
  * as the @p uncompressed_size parameter.  If this is not done correctly,
  * decompression may fail or the data may be decompressed incorrectly.
  */
-extern int
+WIMLIBAPI int
 wimlib_decompress(const void *compressed_data, size_t compressed_size,
 		  void *uncompressed_data, size_t uncompressed_size,
 		  struct wimlib_decompressor *decompressor);
@@ -4856,7 +4866,7 @@ wimlib_decompress(const void *compressed_data, size_t compressed_size,
  * @param decompressor
  *	The decompressor to free.  If @c NULL, no action is taken.
  */
-extern void
+WIMLIBAPI void
 wimlib_free_decompressor(struct wimlib_decompressor *decompressor);
 
 
