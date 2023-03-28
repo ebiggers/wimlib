@@ -16,6 +16,9 @@ srcdir="$(cd $srcdir; pwd)"
 
 TEST_SUBDIR=tmpdir_test-imagex-ntfs
 
+# In Debian, mkntfs is at /sbin/mkntfs but /sbin is not on the $PATH by default.
+PATH+=":/sbin"
+
 __do_unmount() {
 	for ((i = 0; i < 10; i++)); do
 		if fusermount -z -u $1; then
@@ -59,7 +62,7 @@ do_mount() {
 }
 
 do_mkntfs() {
-	if ! mkntfs --force --fast $1 > /dev/null; then
+	if ! mkntfs --force --fast $1 >/dev/null; then
 		error "Could not create NTFS volume \"$1\"!  Make sure ntfsprogs are installed."
 	fi
 }
