@@ -76,7 +76,7 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y clang $DEPENDENCIES
     - run: ./bootstrap
-    - run: ./configure CC=clang CFLAGS="$DEF_CFLAGS -fsanitize=address"
+    - run: ./configure CC=clang CFLAGS="$DEF_CFLAGS -fsanitize=address -fno-sanitize-recover=address"
     - run: make -j8 check V=1
     - uses: actions/upload-artifact@v3
       if: failure()
@@ -94,7 +94,7 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y clang $DEPENDENCIES
     - run: ./bootstrap
-    - run: ./configure CC=clang CFLAGS="$DEF_CFLAGS -fsanitize=undefined"
+    - run: ./configure CC=clang CFLAGS="$DEF_CFLAGS -fsanitize=undefined -fno-sanitize-recover=undefined"
     - run: make -j8 check V=1
     - uses: actions/upload-artifact@v3
       if: failure()
