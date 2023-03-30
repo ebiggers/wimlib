@@ -130,9 +130,6 @@
 #  define UNALIGNED_ACCESS_IS_FAST 0
 #endif
 
-/* Get the type of the specified expression.  */
-#define typeof     __typeof__
-
 /* Get the minimum of two variables, without multiple evaluation.  */
 #undef min
 #define min(a, b)  ({ typeof(a) _a = (a); typeof(b) _b = (b); \
