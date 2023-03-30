@@ -318,13 +318,20 @@ is_name_char(tchar c)
 		(c >= '0' && c <= '9') || c == '-' || c == '.';
 }
 
-bool
-xml_legal_name(const tchar *p)
+/* Allow characters used in element "paths"; see do_xml_path_walk() */
+static inline bool
+is_path_char(tchar c)
 {
-	if (!is_name_start_char(*p))
+	return c == '/' || c == '[' || c == ']';
+}
+
+bool
+xml_legal_path(const tchar *p)
+{
+	if (!is_name_start_char(*p) && !is_path_char(*p))
 		return false;
 	for (p = p + 1; *p; p++) {
-		if (!is_name_char(*p))
+		if (!is_name_char(*p) && !is_path_char(*p))
 			return false;
 	}
 	return true;

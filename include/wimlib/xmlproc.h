@@ -66,7 +66,7 @@ struct xml_node *
 xml_clone_tree(struct xml_node *orig);
 
 bool
-xml_legal_name(const tchar *name);
+xml_legal_path(const tchar *name);
 
 bool
 xml_legal_value(const tchar *value);

@@ -1213,7 +1213,7 @@ wimlib_set_image_property(WIMStruct *wim, int image, const tchar *property_name,
 	if (!property_name || !*property_name)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	if (!xml_legal_name(property_name)) {
+	if (!xml_legal_path(property_name)) {
 		ERROR("Property name '%"TS"' is illegal in XML", property_name);
 		return WIMLIB_ERR_INVALID_PARAM;
 	}
