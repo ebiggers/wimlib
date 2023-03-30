@@ -145,17 +145,17 @@ win32_get_drive_path(const wchar_t *file_path, wchar_t drive_path[7]);
 bool
 win32_try_to_attach_wof(const wchar_t *drive);
 
-void
-win32_warning(DWORD err, const wchar_t *format, ...) _cold_attribute;
+void __attribute__((cold))
+win32_warning(DWORD err, const wchar_t *format, ...);
 
-void
-win32_error(DWORD err, const wchar_t *format, ...) _cold_attribute;
+void __attribute__((cold))
+win32_error(DWORD err, const wchar_t *format, ...);
 
-void
-winnt_warning(NTSTATUS status, const wchar_t *format, ...) _cold_attribute;
+void __attribute__((cold))
+winnt_warning(NTSTATUS status, const wchar_t *format, ...);
 
-void
-winnt_error(NTSTATUS status, const wchar_t *format, ...) _cold_attribute;
+void __attribute__((cold))
+winnt_error(NTSTATUS status, const wchar_t *format, ...);
 
 NTSTATUS
 winnt_fsctl(HANDLE h, u32 code, const void *in, u32 in_size,

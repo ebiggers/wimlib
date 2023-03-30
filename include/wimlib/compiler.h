@@ -73,13 +73,6 @@
 /* Prefetch into L1 cache for write.  */
 #define prefetchw(addr)		__builtin_prefetch((addr), 1)
 
-/* Hint that the annotated function is rarely called.  */
-#if GCC_PREREQ(4, 4) || __has_attribute(cold)
-#  define _cold_attribute	__attribute__((cold))
-#else
-#  define _cold_attribute
-#endif
-
 /* Hint that the annotated function takes a printf()-like format string and
  * arguments.  This is currently disabled on Windows because MinGW does not
  * support this attribute on functions taking wide-character strings.  */
