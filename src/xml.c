@@ -291,7 +291,8 @@ xml_get_text_by_path(struct xml_node *root, const tchar *path)
  * or empty) an element containing text.
  */
 static int
-xml_set_text_by_path(struct xml_node *root, const tchar *path, const tchar *text)
+xml_set_text_by_path(struct xml_node *root, const tchar *path,
+		     const tchar *text)
 {
 	int ret;
 	struct xml_node *element;
@@ -304,9 +305,7 @@ xml_set_text_by_path(struct xml_node *root, const tchar *path, const tchar *text
 		return xml_element_set_text(element, text);
 	} else {
 		/* Remove  */
-		element = xml_get_element_by_path(root, path);
-		if (element)
-			xml_free_node(element);
+		xml_free_node(xml_get_element_by_path(root, path));
 		return 0;
 	}
 }

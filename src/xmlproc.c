@@ -592,8 +592,6 @@ parse_element(const tchar **pp, struct xml_node *parent, int depth,
 	if (*p == '/') {
 		/* Closing an empty element tag */
 		p++;
-		CHECK(*p == '>');
-		p++;
 	} else {
 		/* Closing the start tag */
 		CHECK(*p == '>');
@@ -609,9 +607,9 @@ parse_element(const tchar **pp, struct xml_node *parent, int depth,
 		CHECK(!tstrncmp(p, name_start, name_len));
 		p += name_len;
 		skip_whitespace(&p);
-		CHECK(*p == '>');
-		p++;
 	}
+	CHECK(*p == '>');
+	p++;
 	*pp = p;
 	if (element_ret)
 		*element_ret = element;
@@ -695,14 +693,14 @@ xml_escape_and_puts(struct xml_out_buf *buf, const tchar *str)
 }
 
 static void
-xml_write_element(struct xml_node *node, struct xml_out_buf *buf)
+xml_write_element(struct xml_node *element, struct xml_out_buf *buf)
 {
 	struct xml_node *child;
 
 	/* Write the start tag. */
 	xml_puts(buf, T("<"));
-	xml_puts(buf, node->name);
-	xml_node_for_each_child(node, child) {
+	xml_puts(buf, element->name);
+	xml_node_for_each_child(element, child) {
 		if (child->type == XML_ATTRIBUTE_NODE) {
 			xml_puts(buf, T(" "));
 			xml_puts(buf, child->name);
@@ -714,7 +712,7 @@ xml_write_element(struct xml_node *node, struct xml_out_buf *buf)
 	xml_puts(buf, T(">"));
 
 	/* Write the contents. */
-	xml_node_for_each_child(node, child) {
+	xml_node_for_each_child(element, child) {
 		if (child->type == XML_TEXT_NODE)
 			xml_escape_and_puts(buf, child->value);
 		else if (child->type == XML_ELEMENT_NODE)
@@ -723,7 +721,7 @@ xml_write_element(struct xml_node *node, struct xml_out_buf *buf)
 
 	/* Write the end tag. */
 	xml_puts(buf, T("</"));
-	xml_puts(buf, node->name);
+	xml_puts(buf, element->name);
 	xml_puts(buf, T(">"));
 }
 

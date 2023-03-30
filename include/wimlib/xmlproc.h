@@ -38,9 +38,6 @@ struct xml_node *
 xml_new_element_with_text(struct xml_node *parent, const tchar *name,
 			  const tchar *text);
 
-struct xml_node *
-xml_new_attrib(struct xml_node *parent, const tchar *name, const tchar *value);
-
 void
 xml_add_child(struct xml_node *parent, struct xml_node *child);
 
@@ -77,7 +74,7 @@ xml_legal_value(const tchar *value);
 /*****************************************************************************/
 
 int
-xml_parse_document(const tchar *p, struct xml_node **doc_ret);
+xml_parse_document(const tchar *raw_doc, struct xml_node **doc_ret);
 
 /*****************************************************************************/
 
