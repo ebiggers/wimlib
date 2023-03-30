@@ -72,7 +72,7 @@ struct wim_reshdr_disk {
 
 	/* Uncompressed size of the resource, in bytes.  */
 	le64 uncompressed_size;
-} _packed_attribute;
+} __attribute__((packed));
 
 /* In-memory version of a WIM resource header (`struct wim_reshdr_disk').  */
 struct wim_reshdr {
@@ -158,7 +158,7 @@ struct alt_chunk_table_header_disk {
 
 	/* This header is directly followed by a table of compressed sizes of
 	 * the chunks (4 bytes per entry).  */
-} _packed_attribute;
+} __attribute__((packed));
 
 static inline unsigned int
 get_chunk_entry_size(u64 res_size, bool is_alt)
@@ -321,12 +321,12 @@ struct pwm_blob_hdr {
 	u8 hash[SHA1_HASH_SIZE];	/* +16  */
 	le32 flags;			/* +36  */
 					/* +40  */
-} _packed_attribute;
+} __attribute__((packed));
 
 /* Header that precedes each chunk of a compressed resource in a pipable WIM.
  */
 struct pwm_chunk_hdr {
 	le32 compressed_size;
-} _packed_attribute;
+} __attribute__((packed));
 
 #endif /* _WIMLIB_RESOURCE_H */

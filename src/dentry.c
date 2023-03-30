@@ -155,10 +155,10 @@ struct wim_dentry_on_disk {
 			le32 reparse_tag;
 			le16 rp_reserved;
 			le16 rp_flags;
-		} _packed_attribute reparse;
+		} __attribute__((packed)) reparse;
 		struct {
 			le64 hard_link_group_id;
-		} _packed_attribute nonreparse;
+		} __attribute__((packed)) nonreparse;
 	};
 
 	/* Number of extra stream entries that directly follow this dentry
@@ -196,7 +196,7 @@ struct wim_dentry_on_disk {
 	 * for more information.  */
 	/* u8 tagged_items[] __attribute__((aligned(8))); */
 
-} _packed_attribute;
+} __attribute__((packed));
 	/* If num_extra_streams != 0, then there are that many extra stream
 	 * entries following the dentry, starting on the next 8-byte aligned
 	 * boundary.  They are not counted in the 'length' field of the dentry.
@@ -226,7 +226,7 @@ struct wim_extra_stream_entry_on_disk {
 	 * the null terminator.  There is a null terminator character if
 	 * @name_nbytes != 0; i.e., if this stream is named.  */
 	utf16lechar name[];
-} _packed_attribute;
+} __attribute__((packed));
 
 static void
 do_dentry_set_name(struct wim_dentry *dentry, utf16lechar *name,

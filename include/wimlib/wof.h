@@ -248,7 +248,7 @@ struct wim_provider_rpdata {
 
 	/* Byte offset of the file's unnamed data stream in the WIM.  */
 	le64 unnamed_data_stream_offset_in_wim;
-} _packed_attribute;
+} __attribute__((packed));
 
 /* WIM-specific information about a WIM data source  */
 struct WimOverlay_dat_entry_1 {
@@ -277,7 +277,7 @@ struct WimOverlay_dat_entry_1 {
 
 	/* GUID of the WIM file (copied from the WIM header, offset +0x18).  */
 	u8 guid[16];
-} _packed_attribute;
+} __attribute__((packed));
 
 /*
  * Format of file: "\System Volume Information\WimOverlay.dat"
@@ -308,7 +308,7 @@ struct WimOverlay_dat_header {
 	le64 next_data_source_id;
 
 	struct WimOverlay_dat_entry_1 entry_1s[];
-} _packed_attribute;
+} __attribute__((packed));
 
 /* Location information about a WIM data source  */
 struct WimOverlay_dat_entry_2 {
@@ -414,8 +414,8 @@ struct WimOverlay_dat_entry_2 {
 		/* Null-terminated path to WIM file.  Begins with \ but does
 		 * *not* include drive letter!  */
 		utf16lechar wim_file_name[];
-	} _packed_attribute;
-} _packed_attribute;
+	} __attribute__((packed));
+} __attribute__((packed));
 
 static _unused_attribute void
 wof_check_structs(void)

@@ -40,7 +40,7 @@ struct wim_xattr_entry {
 	/* u8 value[0]; */
 
 	/* no padding at end! */
-} _packed_attribute;
+} __attribute__((packed));
 
 static inline size_t
 xattr_entry_size(const struct wim_xattr_entry *entry)

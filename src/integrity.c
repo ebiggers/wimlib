@@ -52,7 +52,7 @@ struct integrity_table {
 	u32 num_entries;
 	u32 chunk_size;
 	u8  sha1sums[][20];
-} _packed_attribute;
+} __attribute__((packed));
 
 static int
 calculate_chunk_sha1(struct filedes *in_fd, size_t this_chunk_size,

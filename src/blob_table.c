@@ -585,7 +585,7 @@ struct blob_descriptor_disk {
 	/* SHA-1 message digest of the uncompressed data of this blob, or all
 	 * zeroes if this blob is of zero length.  */
 	u8 hash[SHA1_HASH_SIZE];
-} _packed_attribute;
+} __attribute__((packed));
 
 /* Given a nonempty run of consecutive blob descriptors with the SOLID flag set,
  * count how many specify resources (as opposed to blobs within those

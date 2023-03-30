@@ -46,7 +46,7 @@ struct regf {
 	le32 total_hbin_size;		/* Total size of all hbins  */
 	le32 f3[1013];
 	u8 hbin_area[0];		/* Start of hbin area  */
-} _packed_attribute;
+} __attribute__((packed));
 
 
 /* Cell header  */
@@ -56,7 +56,7 @@ struct cell {
 
 	/* Magic characters which identify the cell type  */
 	le16 magic;
-} _packed_attribute;
+} __attribute__((packed));
 
 /* NK cell - represents a registry key  */
 struct nk {
@@ -84,7 +84,7 @@ struct nk {
 	le16 name_size;
 	le16 unknown_0x4E;
 	char name[0];
-} _packed_attribute;
+} __attribute__((packed));
 
 /* Subkey list cell.  There are four types.  LF, LH, and LI cells reference
  * subkey NK cells directly, while RI cells reference other subkey lists.  All
@@ -99,13 +99,13 @@ struct subkey_list {
 	struct cell base;
 	le16 num_offsets;
 	le32 elements[0];
-} _packed_attribute;
+} __attribute__((packed));
 
 /* Value list cell - contains a list of value references  */
 struct value_list {
 	le32 size;
 	le32 vk_offsets[0];
-} _packed_attribute;
+} __attribute__((packed));
 
 /* VK cell - contains a value's data, or a reference to it  */
 struct vk {

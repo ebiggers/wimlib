@@ -73,10 +73,6 @@
 /* Prefetch into L1 cache for write.  */
 #define prefetchw(addr)		__builtin_prefetch((addr), 1)
 
-/* Declare that the members of the annotated struct are tightly packed, and the
- * struct itself may be misaligned.  */
-#define _packed_attribute	__attribute__((packed))
-
 /* Declare that pointers to the annotated type may alias other pointers.  */
 #define _may_alias_attribute	__attribute__((may_alias))
 

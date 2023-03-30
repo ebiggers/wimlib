@@ -14,8 +14,8 @@ struct blob_table;
  * On-disk format of a reparse point buffer.  See:
  *	https://msdn.microsoft.com/en-us/library/dd541671.aspx
  *
- * Note: we are not using _packed_attribute for this structure, so only cast to
- * this if properly aligned!
+ * Note: we are not using __attribute__((packed)) for this structure, so only
+ * cast to this if properly aligned!
  */
 struct reparse_buffer_disk {
 	le32 rptag;

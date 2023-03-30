@@ -102,15 +102,15 @@ struct wim_header_disk {
 	 * if the WIM has no integrity table.
 	 *
 	 * Note the integrity_table_reshdr here is 4-byte aligned even though it
-	 * would ordinarily be 8-byte aligned--- hence, the _packed_attribute on
-	 * this structure is essential.  */
+	 * would ordinarily be 8-byte aligned--- hence, the
+	 * __attribute__((packed)) on this structure is essential.  */
 	struct wim_reshdr_disk integrity_table_reshdr;
 
 	/* +0x94: Unused bytes.  */
 	u8 unused[60];
 
 	/* +0xd0 (208)  */
-} _packed_attribute;
+} __attribute__((packed));
 
 /*
  * Arbitrarily limit the maximum number of images to 65535, to prevent huge
