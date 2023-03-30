@@ -73,9 +73,6 @@
 /* Prefetch into L1 cache for write.  */
 #define prefetchw(addr)		__builtin_prefetch((addr), 1)
 
-/* Declare that pointers to the annotated type may alias other pointers.  */
-#define _may_alias_attribute	__attribute__((may_alias))
-
 /* Hint that the annotated function is rarely called.  */
 #if GCC_PREREQ(4, 4) || __has_attribute(cold)
 #  define _cold_attribute	__attribute__((cold))

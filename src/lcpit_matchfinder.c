@@ -375,8 +375,8 @@ lcpit_advance_one_byte(const u32 cur_pos,
 static void
 expand_SA(void *p, u32 n)
 {
-	typedef u32 _may_alias_attribute aliased_u32_t;
-	typedef u64 _may_alias_attribute aliased_u64_t;
+	typedef u32 __attribute__((may_alias)) aliased_u32_t;
+	typedef u64 __attribute__((may_alias)) aliased_u64_t;
 
 	aliased_u32_t *SA = p;
 	aliased_u64_t *SA64 = p;

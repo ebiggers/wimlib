@@ -333,8 +333,8 @@ read_compressed_wim_resource(const struct wim_resource_descriptor * const rdesc,
 		/* Now fill in chunk_offsets from the entries we have read in
 		 * chunk_tab_data.  We break aliasing rules here to avoid having
 		 * to allocate yet another array.  */
-		typedef le64 _may_alias_attribute aliased_le64_t;
-		typedef le32 _may_alias_attribute aliased_le32_t;
+		typedef le64 __attribute__((may_alias)) aliased_le64_t;
+		typedef le32 __attribute__((may_alias)) aliased_le32_t;
 		u64 * chunk_offsets_p = chunk_offsets;
 
 		if (alt_chunk_table) {
