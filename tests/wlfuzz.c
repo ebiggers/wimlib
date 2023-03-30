@@ -188,17 +188,17 @@ create_ntfs_volume(const char *name)
 
 #ifdef _WIN32
 
-extern WINAPI NTSTATUS NtQueryDirectoryFile (HANDLE FileHandle,
-					     HANDLE Event,
-					     PIO_APC_ROUTINE ApcRoutine,
-					     PVOID ApcContext,
-					     PIO_STATUS_BLOCK IoStatusBlock,
-					     PVOID FileInformation,
-					     ULONG Length,
-					     FILE_INFORMATION_CLASS FileInformationClass,
-					     BOOLEAN ReturnSingleEntry,
-					     PUNICODE_STRING FileName,
-					     BOOLEAN RestartScan);
+WINAPI NTSTATUS NtQueryDirectoryFile(HANDLE FileHandle,
+				     HANDLE Event,
+				     PIO_APC_ROUTINE ApcRoutine,
+				     PVOID ApcContext,
+				     PIO_STATUS_BLOCK IoStatusBlock,
+				     PVOID FileInformation,
+				     ULONG Length,
+				     FILE_INFORMATION_CLASS FileInformationClass,
+				     BOOLEAN ReturnSingleEntry,
+				     PUNICODE_STRING FileName,
+				     BOOLEAN RestartScan);
 
 static void
 delete_directory_tree_recursive(HANDLE cur_dir, UNICODE_STRING *name)
@@ -1045,7 +1045,7 @@ static const operation_func operation_table[] = {
 };
 
 #ifdef _WIN32
-extern int wmain(int argc, wchar_t **argv);
+int wmain(int argc, wchar_t **argv);
 #define main wmain
 #endif
 

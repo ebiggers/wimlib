@@ -73,25 +73,25 @@ struct scan_params {
 
 /* scan.c */
 
-extern int
+int
 do_scan_progress(struct scan_params *params, int status,
 		 const struct wim_inode *inode);
 
-extern int
+int
 mangle_pat(tchar *pat, const tchar *path, unsigned long line_no);
 
-extern int
+int
 read_capture_config(const tchar *config_file, const void *buf,
 		    size_t bufsize, struct capture_config *config);
 
-extern void
+void
 destroy_capture_config(struct capture_config *config);
 
-extern bool
+bool
 match_pattern_list(const tchar *path, const struct string_list *list,
 		   int match_flags);
 
-extern int
+int
 try_exclude(const struct scan_params *params);
 
 typedef int (*scan_tree_t)(struct wim_dentry **, const tchar *,
@@ -99,28 +99,28 @@ typedef int (*scan_tree_t)(struct wim_dentry **, const tchar *,
 
 #ifdef WITH_NTFS_3G
 /* ntfs-3g_capture.c */
-extern int
+int
 ntfs_3g_build_dentry_tree(struct wim_dentry **root_ret,
 			  const tchar *device, struct scan_params *params);
 #endif
 
 #ifdef _WIN32
 /* win32_capture.c */
-extern int
+int
 win32_build_dentry_tree(struct wim_dentry **root_ret,
 			const tchar *root_disk_path,
 			struct scan_params *params);
 #define platform_default_scan_tree win32_build_dentry_tree
 #else
 /* unix_capture.c */
-extern int
+int
 unix_build_dentry_tree(struct wim_dentry **root_ret,
 		       const tchar *root_disk_path, struct scan_params *params);
 #define platform_default_scan_tree unix_build_dentry_tree
 #endif
 
 #ifdef ENABLE_TEST_SUPPORT
-extern int
+int
 generate_dentry_tree(struct wim_dentry **root_ret,
 		     const tchar *root_disk_path, struct scan_params *params);
 #endif
@@ -134,21 +134,21 @@ report_scan_error(struct scan_params *params, int error_code)
 			    params->cur_path);
 }
 
-extern bool
+bool
 should_ignore_filename(const tchar *name, int name_nchars);
 
-extern void
+void
 attach_scanned_tree(struct wim_dentry *parent, struct wim_dentry *child,
 		    struct blob_table *blob_table);
 
-extern int
+int
 pathbuf_init(struct scan_params *params, const tchar *root_path);
 
-extern const tchar *
+const tchar *
 pathbuf_append_name(struct scan_params *params, const tchar *name,
 		    size_t name_nchars, size_t *orig_path_nchars_ret);
 
-extern void
+void
 pathbuf_truncate(struct scan_params *params, size_t nchars);
 
 #endif /* _WIMLIB_SCAN_H */

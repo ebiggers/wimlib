@@ -119,20 +119,20 @@ zero_reshdr(struct wim_reshdr *reshdr)
 	memset(reshdr, 0, sizeof(struct wim_reshdr));
 }
 
-extern void
+void
 wim_reshdr_to_desc(const struct wim_reshdr *reshdr, WIMStruct *wim,
 		   struct wim_resource_descriptor *rdesc);
 
-extern void
+void
 wim_reshdr_to_desc_and_blob(const struct wim_reshdr *reshdr, WIMStruct *wim,
 			    struct wim_resource_descriptor *rdesc,
 			    struct blob_descriptor *blob);
 
-extern void
+void
 get_wim_reshdr(const struct wim_reshdr_disk *disk_reshdr,
 	       struct wim_reshdr *reshdr);
 
-extern void
+void
 put_wim_reshdr(const struct wim_reshdr *reshdr,
 	       struct wim_reshdr_disk *disk_reshdr);
 
@@ -171,25 +171,25 @@ get_chunk_entry_size(u64 res_size, bool is_alt)
 
 /* Functions to read blobs  */
 
-extern int
+int
 read_partial_wim_blob_into_buf(const struct blob_descriptor *blob,
 			       u64 offset, size_t size, void *buf);
 
-extern int
+int
 read_blob_into_buf(const struct blob_descriptor *blob, void *buf);
 
-extern int
+int
 read_blob_into_alloc_buf(const struct blob_descriptor *blob, void **buf_ret);
 
-extern int
+int
 wim_reshdr_to_data(const struct wim_reshdr *reshdr, WIMStruct *wim,
 		   void **buf_ret);
 
-extern int
+int
 wim_reshdr_to_hash(const struct wim_reshdr *reshdr, WIMStruct *wim,
 		   u8 hash[SHA1_HASH_SIZE]);
 
-extern int
+int
 skip_wim_resource(const struct wim_resource_descriptor *rdesc);
 
 /*
@@ -275,37 +275,37 @@ call_end_blob(struct blob_descriptor *blob, int status,
 #define BLOB_LIST_ALREADY_SORTED	0x4
 #define RECOVER_DATA			0x8
 
-extern int
+int
 read_blob_list(struct list_head *blob_list, size_t list_head_offset,
 	       const struct read_blob_callbacks *cbs, int flags);
 
-extern int
+int
 read_blob_with_cbs(struct blob_descriptor *blob,
 		   const struct read_blob_callbacks *cbs, bool recover_data);
 
-extern int
+int
 read_blob_with_sha1(struct blob_descriptor *blob,
 		    const struct read_blob_callbacks *cbs, bool recover_data);
 
-extern int
+int
 extract_blob_prefix_to_fd(struct blob_descriptor *blob, u64 size,
 			  struct filedes *fd);
 
-extern int
+int
 extract_blob_to_fd(struct blob_descriptor *blob, struct filedes *fd,
 		   bool recover_data);
 
 /* Miscellaneous blob functions.  */
 
-extern int
+int
 sha1_blob(struct blob_descriptor *blob);
 
 /* Functions to read/write metadata resources.  */
 
-extern int
+int
 read_metadata_resource(struct wim_image_metadata *imd);
 
-extern int
+int
 write_metadata_resource(WIMStruct *wim, int image, int write_resource_flags);
 
 /* Definitions specific to pipable WIM resources.  */

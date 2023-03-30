@@ -150,16 +150,16 @@ can_unload_image(const struct wim_image_metadata *imd)
 #define image_for_each_unhashed_blob_safe(blob, tmp, imd) \
 	list_for_each_entry_safe(blob, tmp, &(imd)->unhashed_blobs, unhashed_list)
 
-extern void
+void
 put_image_metadata(struct wim_image_metadata *imd);
 
-extern int
+int
 append_image_metadata(WIMStruct *wim, struct wim_image_metadata *imd);
 
-extern struct wim_image_metadata *
+struct wim_image_metadata *
 new_empty_image_metadata(void);
 
-extern struct wim_image_metadata *
+struct wim_image_metadata *
 new_unloaded_image_metadata(struct blob_descriptor *metadata_blob);
 
 #endif /* _WIMLIB_METADATA_H */

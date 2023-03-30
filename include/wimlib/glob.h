@@ -14,12 +14,12 @@ typedef struct {
 } glob_t;
 
 /* WARNING: this is a reduced functionality replacement */
-extern int
+int
 win32_wglob(const wchar_t *pattern, int flags,
 	    int (*errfunc)(const wchar_t *epath, int eerrno),
 	    glob_t *pglob);
 
-extern void globfree(glob_t *pglob);
+void globfree(glob_t *pglob);
 
 #define	GLOB_ERR	0x1 /* Return on read errors.  */
 #define	GLOB_NOSORT	0x2 /* Don't sort the names.  */

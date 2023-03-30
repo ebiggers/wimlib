@@ -71,7 +71,7 @@ avl_get_parent(const struct avl_tree_node *node)
 }
 
 /* (Internal use only)  */
-extern void
+void
 avl_tree_rebalance_after_insert(struct avl_tree_node **root_ptr,
 				struct avl_tree_node *inserted);
 
@@ -253,27 +253,27 @@ avl_tree_insert(struct avl_tree_node **root_ptr,
 
 /* Removes an item from the specified AVL tree.
  * See implementation for details.  */
-extern void
+void
 avl_tree_remove(struct avl_tree_node **root_ptr, struct avl_tree_node *node);
 
 /* Nonrecursive AVL tree traversal functions  */
 
-extern struct avl_tree_node *
+struct avl_tree_node *
 avl_tree_first_in_order(const struct avl_tree_node *root);
 
-extern struct avl_tree_node *
+struct avl_tree_node *
 avl_tree_last_in_order(const struct avl_tree_node *root);
 
-extern struct avl_tree_node *
+struct avl_tree_node *
 avl_tree_next_in_order(const struct avl_tree_node *node);
 
-extern struct avl_tree_node *
+struct avl_tree_node *
 avl_tree_prev_in_order(const struct avl_tree_node *node);
 
-extern struct avl_tree_node *
+struct avl_tree_node *
 avl_tree_first_in_postorder(const struct avl_tree_node *root);
 
-extern struct avl_tree_node *
+struct avl_tree_node *
 avl_tree_next_in_postorder(const struct avl_tree_node *prev,
 			   const struct avl_tree_node *prev_parent);
 

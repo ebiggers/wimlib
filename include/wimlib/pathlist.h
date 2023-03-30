@@ -3,7 +3,7 @@
 
 #include "wimlib/types.h"
 
-extern int
+int
 read_path_list_file(const tchar *listfile,
 		    tchar ***paths_ret, size_t *num_paths_ret,
 		    void **mem_ret);

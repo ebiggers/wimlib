@@ -17,14 +17,14 @@ struct woption {
 #define required_argument 1
 #define optional_argument 2
 
-extern int
+int
 wgetopt (int argc, wchar_t *const *argv, const wchar_t *optstring);
 
-extern int
+int
 wgetopt_long(int argc, wchar_t * const *argv, const wchar_t *options,
 	     const struct woption *long_options, int *opt_index);
 
-extern int
+int
 wgetopt_long_only(int argc, wchar_t *const *argv, const wchar_t *options,
 		  const struct woption *long_options, int *opt_index);
 

@@ -42,33 +42,33 @@
  * Memory allocation
  *******************/
 
-extern void *
+void *
 wimlib_malloc(size_t size);
 
-extern void
+void
 wimlib_free_memory(void *p);
 
-extern void *
+void *
 wimlib_realloc(void *ptr, size_t size);
 
-extern void *
+void *
 wimlib_calloc(size_t nmemb, size_t size);
 
-extern char *
+char *
 wimlib_strdup(const char *str);
 
 #ifdef _WIN32
-extern wchar_t *
+wchar_t *
 wimlib_wcsdup(const wchar_t *str);
 #endif
 
-extern void *
+void *
 wimlib_aligned_malloc(size_t size, size_t alignment);
 
-extern void
+void
 wimlib_aligned_free(void *ptr);
 
-extern void *
+void *
 memdup(const void *mem, size_t size);
 
 #define MALLOC		wimlib_malloc
@@ -85,7 +85,7 @@ memdup(const void *mem, size_t size);
  *******************/
 
 #ifndef HAVE_MEMPCPY
-extern void *
+void *
 mempcpy(void *dst, const void *src, size_t n);
 #endif
 
@@ -93,10 +93,10 @@ mempcpy(void *dst, const void *src, size_t n);
  * Random number generation
  **************************/
 
-extern void
+void
 get_random_bytes(void *p, size_t n);
 
-extern void
+void
 get_random_alnum_chars(tchar *p, size_t n);
 
 /************************

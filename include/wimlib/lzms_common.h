@@ -19,7 +19,7 @@ extern const u8 lzms_extra_offset_bits[LZMS_MAX_NUM_OFFSET_SYMS];
 extern const u32 lzms_length_slot_base[LZMS_NUM_LENGTH_SYMS + 1];
 extern const u8 lzms_extra_length_bits[LZMS_NUM_LENGTH_SYMS];
 
-extern unsigned
+unsigned
 lzms_get_slot(u32 value, const u32 slot_base_tab[], unsigned num_slots);
 
 /* Return the offset slot for the specified offset  */
@@ -36,7 +36,7 @@ lzms_get_length_slot(u32 length)
 	return lzms_get_slot(length, lzms_length_slot_base, LZMS_NUM_LENGTH_SYMS);
 }
 
-extern unsigned
+unsigned
 lzms_get_num_offset_slots(size_t uncompressed_size);
 
 
@@ -67,7 +67,7 @@ struct lzms_probabilites {
 					       [LZMS_NUM_DELTA_REP_PROBS];
 };
 
-extern void
+void
 lzms_init_probabilities(struct lzms_probabilites *probs);
 
 /* Given a decoded or encoded bit, update the probability entry.  */
@@ -130,14 +130,14 @@ lzms_get_probability(const struct lzms_probability_entry *prob_entry)
 	return prob;
 }
 
-extern void
+void
 lzms_init_symbol_frequencies(u32 freqs[], unsigned num_syms);
 
-extern void
+void
 lzms_dilute_symbol_frequencies(u32 freqs[], unsigned num_syms);
 
 /* Pre/post-processing  */
-extern void
+void
 lzms_x86_filter(u8 data[], s32 size, s32 last_target_usages[], bool undo);
 
 #endif /* _LZMS_COMMON_H */

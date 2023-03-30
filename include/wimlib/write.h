@@ -31,9 +31,9 @@
 	WIMLIB_WRITE_FLAG_UNSAFE_COMPACT)
 
 #if defined(HAVE_SYS_FILE_H) && defined(HAVE_FLOCK)
-extern int
+int
 lock_wim_for_append(WIMStruct *wim);
-extern void
+void
 unlock_wim_for_append(WIMStruct *wim);
 #else
 static inline int

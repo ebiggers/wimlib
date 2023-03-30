@@ -14,26 +14,26 @@ struct filedes {
 	off_t offset;
 };
 
-extern int
+int
 full_read(struct filedes *fd, void *buf, size_t n);
 
-extern int
+int
 full_pread(struct filedes *fd, void *buf, size_t nbyte, off_t offset);
 
-extern int
+int
 full_write(struct filedes *fd, const void *buf, size_t n);
 
-extern int
+int
 full_pwrite(struct filedes *fd, const void *buf, size_t count, off_t offset);
 
 #ifndef _WIN32
 #  define O_BINARY 0
 #endif
 
-extern off_t
+off_t
 filedes_seek(struct filedes *fd, off_t offset);
 
-extern bool
+bool
 filedes_is_seekable(struct filedes *fd);
 
 static inline void filedes_init(struct filedes *fd, int raw_fd)

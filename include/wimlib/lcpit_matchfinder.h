@@ -52,24 +52,24 @@ struct lz_match {
 	u32 offset;
 };
 
-extern u64
+u64
 lcpit_matchfinder_get_needed_memory(size_t max_bufsize);
 
-extern bool
+bool
 lcpit_matchfinder_init(struct lcpit_matchfinder *mf, size_t max_bufsize,
 		       u32 min_match_len, u32 nice_match_len);
 
-extern void
+void
 lcpit_matchfinder_load_buffer(struct lcpit_matchfinder *mf, const u8 *T, u32 n);
 
-extern u32
+u32
 lcpit_matchfinder_get_matches(struct lcpit_matchfinder *mf,
                               struct lz_match *matches);
 
-extern void
+void
 lcpit_matchfinder_skip_bytes(struct lcpit_matchfinder *mf, u32 count);
 
-extern void
+void
 lcpit_matchfinder_destroy(struct lcpit_matchfinder *mf);
 
 #endif /* _LCPIT_MATCHFINDER_H */

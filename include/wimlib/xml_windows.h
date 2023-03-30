@@ -3,7 +3,7 @@
 
 #include "wimlib/types.h"
 
-extern int
+int
 set_windows_specific_info(WIMStruct *wim);
 
 #endif /* _WIMLIB_XML_WINDOWS_H */

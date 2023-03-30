@@ -6,13 +6,13 @@
 #include <inttypes.h>
 #include <wchar.h>
 
-extern wchar_t *
+wchar_t *
 win32_mbs_to_wcs(const char *mbs, size_t mbs_nbytes, size_t *num_wchars_ret);
 
-extern void
+void
 win32_print_security_descriptor(const uint8_t *sd, size_t size);
 
-extern void
+void
 set_fd_to_binary_mode(int fd);
 
 #include "wgetopt.h"

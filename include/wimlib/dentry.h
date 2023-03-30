@@ -123,10 +123,10 @@ will_extract_dentry(const struct wim_dentry *dentry)
 	return dentry->d_extraction_list_node.next != NULL;
 }
 
-extern size_t
+size_t
 dentry_out_total_length(const struct wim_dentry *dentry);
 
-extern int
+int
 for_dentry_in_tree(struct wim_dentry *root,
 		   int (*visitor)(struct wim_dentry *, void *), void *args);
 
@@ -162,10 +162,10 @@ for_dentry_in_tree(struct wim_dentry *root,
 #define dentry_any_child(parent) \
 	inode_any_child((parent)->d_inode)
 
-extern struct wim_dentry *
+struct wim_dentry *
 dentry_get_first_ci_match(struct wim_dentry *dentry);
 
-extern struct wim_dentry *
+struct wim_dentry *
 dentry_get_next_ci_match(struct wim_dentry *dentry,
 			 struct wim_dentry *ci_match);
 
@@ -176,75 +176,75 @@ dentry_get_next_ci_match(struct wim_dentry *dentry,
 	     (ci_match);						\
 	     (ci_match) = dentry_get_next_ci_match((dentry), (ci_match)))
 
-extern void
+void
 calculate_subdir_offsets(struct wim_dentry *root, u64 *subdir_offset_p);
 
-extern int
+int
 dentry_set_name(struct wim_dentry *dentry, const tchar *name);
 
-extern int
+int
 dentry_set_name_utf16le(struct wim_dentry *dentry, const utf16lechar *name,
 			size_t name_nbytes);
 
-extern struct wim_dentry *
+struct wim_dentry *
 get_dentry(WIMStruct *wim, const tchar *path, CASE_SENSITIVITY_TYPE case_type);
 
-extern struct wim_dentry *
+struct wim_dentry *
 get_dentry_child_with_name(const struct wim_dentry *dentry, const tchar *name,
 			   CASE_SENSITIVITY_TYPE case_type);
 
-extern struct wim_dentry *
+struct wim_dentry *
 get_dentry_child_with_utf16le_name(const struct wim_dentry *dentry,
 				   const utf16lechar *name,
 				   size_t name_nbytes,
 				   CASE_SENSITIVITY_TYPE case_type);
 
-extern struct wim_dentry *
+struct wim_dentry *
 get_parent_dentry(WIMStruct *wim, const tchar *path,
 		  CASE_SENSITIVITY_TYPE case_type);
 
-extern int
+int
 calculate_dentry_full_path(struct wim_dentry *dentry);
 
-extern tchar *
+tchar *
 dentry_full_path(struct wim_dentry *dentry);
 
-extern int
+int
 new_dentry_with_new_inode(const tchar *name, bool set_timestamps,
 			  struct wim_dentry **dentry_ret);
 
-extern int
+int
 new_dentry_with_existing_inode(const tchar *name, struct wim_inode *inode,
 			       struct wim_dentry **dentry_ret);
 
-extern int
+int
 new_filler_directory(struct wim_dentry **dentry_ret);
 
-extern void
+void
 free_dentry(struct wim_dentry *dentry);
 
-extern void
+void
 free_dentry_tree(struct wim_dentry *root, struct blob_table *blob_table);
 
-extern void
+void
 unlink_dentry(struct wim_dentry *dentry);
 
-extern struct wim_dentry *
+struct wim_dentry *
 dentry_add_child(struct wim_dentry *parent, struct wim_dentry *child);
 
 struct update_command_journal;
 
-extern int
+int
 rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to,
 		CASE_SENSITIVITY_TYPE case_type,
 		struct update_command_journal *j);
 
 
-extern int
+int
 read_dentry_tree(const u8 *buf, size_t buf_len,
 		 u64 root_offset, struct wim_dentry **root_ret);
 
-extern u8 *
+u8 *
 write_dentry_tree(struct wim_dentry *root, u8 *p);
 
 static inline bool

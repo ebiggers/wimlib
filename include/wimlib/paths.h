@@ -10,13 +10,13 @@ path_basename(const tchar *path);
 const tchar *
 path_basename_with_len(const tchar *path, size_t len);
 
-extern const tchar *
+const tchar *
 path_stream_name(const tchar *path);
 
-extern void
+void
 do_canonicalize_path(const tchar *in, tchar *out);
 
-extern tchar *
+tchar *
 canonicalize_wim_path(const tchar *wim_path);
 
 /* is_any_path_separator() - characters treated as path separators in WIM path

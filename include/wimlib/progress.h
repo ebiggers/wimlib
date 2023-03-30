@@ -30,7 +30,7 @@ call_progress(wimlib_progress_func_t progfunc,
 	return 0;
 }
 
-extern int
+int
 report_error(wimlib_progress_func_t progfunc,
 	     void *progctx, int error_code, const tchar *path);
 

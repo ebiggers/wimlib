@@ -13,19 +13,19 @@ dummy_tprintf(const tchar *format, ...)
 	return 0;
 }
 
-extern void
+void
 wimlib_error(const tchar *format, ...)
 	_format_attribute(printf, 1, 2) _cold_attribute;
 
-extern void
+void
 wimlib_error_with_errno(const tchar *format, ...)
 		_format_attribute(printf, 1, 2) _cold_attribute;
 
-extern void
+void
 wimlib_warning(const tchar *format, ...)
 		_format_attribute(printf, 1, 2) _cold_attribute;
 
-extern void
+void
 wimlib_warning_with_errno(const tchar *format, ...)
 		_format_attribute(printf, 1, 2) _cold_attribute;
 #  define ERROR(format, ...)			wimlib_error(T(format), ## __VA_ARGS__)
@@ -35,7 +35,7 @@ wimlib_warning_with_errno(const tchar *format, ...)
 extern bool wimlib_print_errors;
 extern FILE *wimlib_error_file;
 
-extern void
+void
 print_byte_field(const u8 *field, size_t len, FILE *out);
 
 #endif /* _WIMLIB_ERROR_H */

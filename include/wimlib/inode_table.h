@@ -28,22 +28,22 @@ hash_inode(const struct wim_inode_table *table, u64 ino, u64 devno)
 	return (hash_u64(ino) + devno) & (table->capacity - 1);
 }
 
-extern int
+int
 init_inode_table(struct wim_inode_table *table, size_t capacity);
 
-extern int
+int
 inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
 		       u64 ino, u64 devno, bool noshare,
 		       struct wim_dentry **dentry_ret);
 
-extern void
+void
 enlarge_inode_table(struct wim_inode_table *table);
 
-extern void
+void
 inode_table_prepare_inode_list(struct wim_inode_table *table,
 			       struct hlist_head *head);
 
-extern void
+void
 destroy_inode_table(struct wim_inode_table *table);
 
 #endif /* _WIMLIB_INODE_TABLE_H  */

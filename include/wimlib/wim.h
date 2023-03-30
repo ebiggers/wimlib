@@ -188,47 +188,47 @@ static inline bool wim_is_pipable(const WIMStruct *wim)
 	return (wim->hdr.magic == PWM_MAGIC);
 }
 
-extern void
+void
 wim_decrement_refcnt(WIMStruct *wim);
 
-extern bool
+bool
 wim_has_solid_resources(const WIMStruct *wim);
 
-extern int
+int
 read_wim_header(WIMStruct *wim, struct wim_header *hdr);
 
-extern int
+int
 write_wim_header(const struct wim_header *hdr, struct filedes *out_fd,
 		 off_t offset);
 
-extern int
+int
 write_wim_header_flags(u32 hdr_flags, struct filedes *out_fd);
 
-extern int
+int
 select_wim_image(WIMStruct *wim, int image);
 
-extern void
+void
 deselect_current_wim_image(WIMStruct *wim);
 
-extern int
+int
 for_image(WIMStruct *wim, int image, int (*visitor)(WIMStruct *));
 
-extern int
+int
 wim_checksum_unhashed_blobs(WIMStruct *wim);
 
-extern int
+int
 delete_wim_image(WIMStruct *wim, int image);
 
 /* Internal open flags (pass to open_wim_as_WIMStruct(), not wimlib_open_wim())
  */
 #define WIMLIB_OPEN_FLAG_FROM_PIPE	0x80000000
 
-extern int
+int
 open_wim_as_WIMStruct(const void *wim_filename_or_fd, int open_flags,
 		      WIMStruct **wim_ret,
 		      wimlib_progress_func_t progfunc, void *progctx);
 
-extern int
+int
 can_modify_wim(WIMStruct *wim);
 
 #endif /* _WIMLIB_WIM_H */

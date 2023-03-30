@@ -94,7 +94,7 @@ extract_progress(struct apply_ctx *ctx, enum wimlib_progress_msg msg)
 	return call_progress(ctx->progfunc, msg, &ctx->progress, ctx->progctx);
 }
 
-extern int
+int
 do_file_extract_progress(struct apply_ctx *ctx, enum wimlib_progress_msg msg);
 
 #define COUNT_PER_FILE_PROGRESS 256
@@ -108,10 +108,10 @@ maybe_do_file_progress(struct apply_ctx *ctx, enum wimlib_progress_msg msg)
 	return 0;
 }
 
-extern int
+int
 start_file_structure_phase(struct apply_ctx *ctx, u64 end_file_count);
 
-extern int
+int
 start_file_metadata_phase(struct apply_ctx *ctx, u64 end_file_count);
 
 /* Report that a file was created, prior to blob extraction.  */
@@ -128,10 +128,10 @@ report_file_metadata_applied(struct apply_ctx *ctx)
 	return maybe_do_file_progress(ctx, WIMLIB_PROGRESS_MSG_EXTRACT_METADATA);
 }
 
-extern int
+int
 end_file_structure_phase(struct apply_ctx *ctx);
 
-extern int
+int
 end_file_metadata_phase(struct apply_ctx *ctx);
 
 static inline int
@@ -140,7 +140,7 @@ report_apply_error(struct apply_ctx *ctx, int error_code, const tchar *path)
 	return report_error(ctx->progfunc, ctx->progctx, error_code, path);
 }
 
-extern bool
+bool
 detect_sparse_region(const void *data, size_t size, size_t *len_ret);
 
 static inline bool
@@ -163,7 +163,7 @@ maybe_detect_sparse_region(const void *data, size_t size, size_t *len_ret,
 	     dentry != NULL;						\
 	     dentry = dentry->d_next_extraction_alias)
 
-extern int
+int
 extract_blob_list(struct apply_ctx *ctx, const struct read_blob_callbacks *cbs);
 
 /*

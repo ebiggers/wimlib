@@ -3,7 +3,7 @@
 
 #include "wimlib/types.h"
 
-extern void
+void
 divsufsort(const u8 *T, u32 *SA, u32 n, u32 *tmp);
 
 #define DIVSUFSORT_TMP_LEN (256 + (256 * 256))

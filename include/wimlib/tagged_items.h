@@ -20,11 +20,11 @@ struct wim_inode;
  */
 #define TAG_WIMLIB_LINUX_XATTRS		0x337DD874
 
-extern void *
+void *
 inode_get_tagged_item(const struct wim_inode *inode, u32 tag, u32 min_len,
 		      u32 *actual_len_ret);
 
-extern bool
+bool
 inode_set_tagged_item(struct wim_inode *inode, u32 tag,
 		      const void *data, u32 len);
 

@@ -9,11 +9,11 @@
 
 /* String conversion functions */
 
-extern int
+int
 utf8_to_utf16le(const char *in, size_t in_nbytes,
 		utf16lechar **out_ret, size_t *out_nbytes_ret);
 
-extern int
+int
 utf16le_to_utf8(const utf16lechar *in, size_t in_nbytes,
 		char **out_ret, size_t *out_nbytes_ret);
 
@@ -121,28 +121,28 @@ utf16le_put_tstr(const tchar *s)
 
 extern u16 upcase[65536];
 
-extern void
+void
 init_upcase(void);
 
-extern int
+int
 cmp_utf16le_strings(const utf16lechar *s1, size_t n1,
 		    const utf16lechar *s2, size_t n2,
 		    bool ignore_case);
 
-extern int
+int
 cmp_utf16le_strings_z(const utf16lechar *s1, const utf16lechar *s2,
 		      bool ignore_case);
 
-extern utf16lechar *
+utf16lechar *
 utf16le_dupz(const void *s, size_t size);
 
-extern utf16lechar *
+utf16lechar *
 utf16le_dup(const utf16lechar *s);
 
-extern size_t
+size_t
 utf16le_len_bytes(const utf16lechar *s);
 
-extern size_t
+size_t
 utf16le_len_chars(const utf16lechar *s);
 
 #endif /* _WIMLIB_ENCODING_H */

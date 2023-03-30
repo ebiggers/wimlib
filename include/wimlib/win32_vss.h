@@ -14,7 +14,7 @@ struct vss_snapshot {
 	size_t refcnt;
 };
 
-extern void
+void
 vss_delete_snapshot(struct vss_snapshot *snapshot);
 
 /* Acquire a reference to the specified VSS snapshot.  */
@@ -35,11 +35,11 @@ vss_put_snapshot(struct vss_snapshot *snapshot)
 		vss_delete_snapshot(snapshot);
 }
 
-extern int
+int
 vss_create_snapshot(const wchar_t *source, UNICODE_STRING *vss_path_ret,
 		    struct vss_snapshot **snapshot_ret);
 
-extern void
+void
 vss_global_cleanup(void);
 
 #endif /* _WIMLIB_WIN32_VSS_H */

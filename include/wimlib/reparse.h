@@ -86,25 +86,25 @@ link_is_relative_symlink(const struct link_reparse_point *link)
 	       (link->symlink_flags & SYMBOLIC_LINK_RELATIVE);
 }
 
-extern void
+void
 complete_reparse_point(struct reparse_buffer_disk *rpbuf,
 		       const struct wim_inode *inode, u16 blob_size);
 
-extern int
+int
 parse_link_reparse_point(const struct reparse_buffer_disk *rpbuf, u16 rpbuflen,
 			 struct link_reparse_point *link);
 
-extern int
+int
 make_link_reparse_point(const struct link_reparse_point *link,
 			struct reparse_buffer_disk *rpbuf, u16 *rpbuflen_ret);
 
 #ifndef _WIN32
-extern int
+int
 wim_inode_readlink(const struct wim_inode *inode, char *buf, size_t bufsize,
 		   const struct blob_descriptor *blob,
 		   const char *altroot, size_t altroot_len);
 
-extern int
+int
 wim_inode_set_symlink(struct wim_inode *inode, const char *target,
 		      struct blob_table *blob_table);
 #endif

@@ -19,10 +19,10 @@ struct wim_dentry;
  */
 #define MATCH_ANCESTORS		0x02
 
-extern bool
+bool
 match_path(const tchar *path, const tchar *pattern, int match_flags);
 
-extern int
+int
 expand_path_pattern(struct wim_dentry *root, const tchar *pattern,
 		    int (*consume_dentry)(struct wim_dentry *, void *),
 		    void *ctx);

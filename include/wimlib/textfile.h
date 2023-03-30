@@ -27,7 +27,7 @@ struct text_file_section {
 #define LOAD_TEXT_FILE_NO_WARNINGS   0x00000002
 #define LOAD_TEXT_FILE_ALLOW_STDIN   0x00000004
 
-extern int
+int
 load_text_file(const tchar *path, const void *buf, size_t bufsize,
 	       void **mem_ret,
 	       const struct text_file_section *pos_sections,

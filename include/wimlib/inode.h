@@ -264,7 +264,7 @@ struct wim_inode_extra {
 #define FILE_ATTRIBUTE_ENCRYPTED           0x00004000
 #define FILE_ATTRIBUTE_VIRTUAL             0x00010000
 
-extern struct wim_inode *
+struct wim_inode *
 new_inode(struct wim_dentry *dentry, bool set_timestamps);
 
 /* Iterate through each alias of the specified inode.  */
@@ -280,14 +280,14 @@ new_inode(struct wim_dentry *dentry, bool set_timestamps);
 #define inode_any_full_path(inode) \
 	dentry_full_path(inode_any_dentry(inode))
 
-extern void
+void
 d_associate(struct wim_dentry *dentry, struct wim_inode *inode);
 
-extern void
+void
 d_disassociate(struct wim_dentry *dentry);
 
 #ifdef WITH_FUSE
-extern void
+void
 inode_dec_num_opened_fds(struct wim_inode *inode);
 #endif
 
@@ -330,11 +330,11 @@ inode_has_security_descriptor(const struct wim_inode *inode)
 	return inode->i_security_id >= 0;
 }
 
-extern struct wim_inode_stream *
+struct wim_inode_stream *
 inode_get_stream(const struct wim_inode *inode, int stream_type,
 		 const utf16lechar *stream_name);
 
-extern struct wim_inode_stream *
+struct wim_inode_stream *
 inode_get_unnamed_stream(const struct wim_inode *inode, int stream_type);
 
 static inline struct wim_inode_stream *
@@ -343,29 +343,29 @@ inode_get_unnamed_data_stream(const struct wim_inode *inode)
 	return inode_get_unnamed_stream(inode, STREAM_TYPE_DATA);
 }
 
-extern struct wim_inode_stream *
+struct wim_inode_stream *
 inode_add_stream(struct wim_inode *inode, int stream_type,
 		 const utf16lechar *stream_name, struct blob_descriptor *blob);
 
-extern void
+void
 inode_replace_stream_blob(struct wim_inode *inode,
 			  struct wim_inode_stream *strm,
 			  struct blob_descriptor *new_blob,
 			  struct blob_table *blob_table);
 
-extern bool
+bool
 inode_replace_stream_data(struct wim_inode *inode,
 			  struct wim_inode_stream *strm,
 			  const void *data, size_t size,
 			  struct blob_table *blob_table);
 
-extern bool
+bool
 inode_add_stream_with_data(struct wim_inode *inode,
 			   int stream_type, const utf16lechar *stream_name,
 			   const void *data, size_t size,
 			   struct blob_table *blob_table);
 
-extern void
+void
 inode_remove_stream(struct wim_inode *inode, struct wim_inode_stream *strm,
 		    struct blob_table *blob_table);
 
@@ -394,40 +394,40 @@ stream_is_named_data_stream(const struct wim_inode_stream *strm)
 	return strm->stream_type == STREAM_TYPE_DATA && stream_is_named(strm);
 }
 
-extern bool
+bool
 inode_has_named_data_stream(const struct wim_inode *inode);
 
-extern int
+int
 inode_resolve_streams(struct wim_inode *inode, struct blob_table *table,
 		      bool force);
 
-extern int
+int
 blob_not_found_error(const struct wim_inode *inode, const u8 *hash);
 
-extern struct blob_descriptor *
+struct blob_descriptor *
 stream_blob(const struct wim_inode_stream *strm, const struct blob_table *table);
 
-extern struct blob_descriptor *
+struct blob_descriptor *
 inode_get_blob_for_unnamed_data_stream(const struct wim_inode *inode,
 				       const struct blob_table *blob_table);
 
-extern struct blob_descriptor *
+struct blob_descriptor *
 inode_get_blob_for_unnamed_data_stream_resolved(const struct wim_inode *inode);
 
-extern const u8 *
+const u8 *
 stream_hash(const struct wim_inode_stream *strm);
 
-extern const u8 *
+const u8 *
 inode_get_hash_of_unnamed_data_stream(const struct wim_inode *inode);
 
-extern void
+void
 inode_ref_blobs(struct wim_inode *inode);
 
-extern void
+void
 inode_unref_blobs(struct wim_inode *inode, struct blob_table *blob_table);
 
 /* inode_fixup.c  */
-extern int
+int
 dentry_tree_fix_inodes(struct wim_dentry *root, struct hlist_head *inode_list);
 
 #endif /* _WIMLIB_INODE_H  */

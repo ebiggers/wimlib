@@ -136,28 +136,28 @@ extern NTSTATUS (WINAPI *func_RtlCreateSystemVolumeInformationFolder)
 
 /* Other utility functions */
 
-extern int
+int
 win32_path_to_nt_path(const wchar_t *win32_path, UNICODE_STRING *nt_path);
 
-extern int
+int
 win32_get_drive_path(const wchar_t *file_path, wchar_t drive_path[7]);
 
-extern bool
+bool
 win32_try_to_attach_wof(const wchar_t *drive);
 
-extern void
+void
 win32_warning(DWORD err, const wchar_t *format, ...) _cold_attribute;
 
-extern void
+void
 win32_error(DWORD err, const wchar_t *format, ...) _cold_attribute;
 
-extern void
+void
 winnt_warning(NTSTATUS status, const wchar_t *format, ...) _cold_attribute;
 
-extern void
+void
 winnt_error(NTSTATUS status, const wchar_t *format, ...) _cold_attribute;
 
-extern NTSTATUS
+NTSTATUS
 winnt_fsctl(HANDLE h, u32 code, const void *in, u32 in_size,
 	    void *out, u32 out_size_avail, u32 *actual_out_size_ret);
 

@@ -16,25 +16,25 @@ enum hive_status {
 	HIVE_ITERATION_STOPPED,
 };
 
-extern enum hive_status
+enum hive_status
 hive_validate(const void *hive_mem, size_t hive_size);
 
-extern enum hive_status
+enum hive_status
 hive_get_string(const struct regf *regf, const tchar *key_name,
 		const tchar *value_name, tchar **value_ret);
 
-extern enum hive_status
+enum hive_status
 hive_get_number(const struct regf *regf, const tchar *key_name,
 		const tchar *value_name, s64 *value_ret);
 
-extern enum hive_status
+enum hive_status
 hive_list_subkeys(const struct regf *regf, const tchar *key_name,
 		  tchar ***subkeys_ret);
 
-extern void
+void
 hive_free_subkeys_list(tchar **subkeys);
 
-extern const char *
+const char *
 hive_status_to_string(enum hive_status status);
 
 #endif /* _WIMLIB_REGISTRY_H */

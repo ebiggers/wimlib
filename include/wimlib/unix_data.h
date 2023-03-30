@@ -12,10 +12,10 @@ struct wimlib_unix_data {
 
 struct wim_inode;
 
-extern bool
+bool
 inode_has_unix_data(const struct wim_inode *inode);
 
-extern bool
+bool
 inode_get_unix_data(const struct wim_inode *inode,
 		    struct wimlib_unix_data *unix_data);
 
@@ -26,7 +26,7 @@ inode_get_unix_data(const struct wim_inode *inode,
 
 #define UNIX_DATA_ALL	0xF
 
-extern bool
+bool
 inode_set_unix_data(struct wim_inode *inode,
 		    struct wimlib_unix_data *unix_data, int which);
 

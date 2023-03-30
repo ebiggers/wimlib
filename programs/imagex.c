@@ -4708,7 +4708,7 @@ usage_all(FILE *fp)
 }
 
 #ifdef _WIN32
-extern int wmain(int argc, wchar_t **argv);
+int wmain(int argc, wchar_t **argv);
 #define main wmain
 #endif
 

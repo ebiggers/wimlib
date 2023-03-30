@@ -35,34 +35,34 @@ struct wim_security_data {
 	u8 **descriptors;
 };
 
-extern void
+void
 rollback_new_security_descriptors(struct wim_sd_set *sd_set);
 
-extern void
+void
 destroy_sd_set(struct wim_sd_set *sd_set);
 
-extern s32
+s32
 sd_set_add_sd(struct wim_sd_set *sd_set, const char descriptor[],
 	      size_t size);
 
-extern int
+int
 init_sd_set(struct wim_sd_set *sd_set, struct wim_security_data *sd);
 
-extern struct wim_security_data *
+struct wim_security_data *
 new_wim_security_data(void);
 
-extern int
+int
 read_wim_security_data(const u8 *buf, size_t buf_len,
 		       struct wim_security_data **sd_ret);
 
-extern u8 *
+u8 *
 write_wim_security_data(const struct wim_security_data * restrict sd,
 			u8 * restrict p);
 
-extern void
+void
 print_wim_security_data(const struct wim_security_data *sd);
 
-extern void
+void
 free_wim_security_data(struct wim_security_data *sd);
 
 #endif /* _WIMLIB_SECURITY_H */

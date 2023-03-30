@@ -42,22 +42,22 @@ struct sha1_ctx {
 	u8 buffer[SHA1_BLOCK_SIZE];
 };
 
-extern void
+void
 sha1_init(struct sha1_ctx *ctx);
 
-extern void
+void
 sha1_update(struct sha1_ctx *ctx, const void *data, size_t len);
 
-extern void
+void
 sha1_final(struct sha1_ctx *ctx, u8 hash[SHA1_HASH_SIZE]);
 
-extern void
+void
 sha1(const void *data, size_t len, u8 hash[SHA1_HASH_SIZE]);
 
 extern const u8 zero_hash[SHA1_HASH_SIZE];
 
 #define SHA1_HASH_STRING_LEN	(2 * SHA1_HASH_SIZE + 1)
-extern void
+void
 sprint_hash(const u8 hash[SHA1_HASH_SIZE], tchar strbuf[SHA1_HASH_STRING_LEN]);
 
 static inline void
