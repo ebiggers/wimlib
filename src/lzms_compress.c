@@ -169,7 +169,7 @@ struct lzms_item {
 #define DELTA_SOURCE_POWER_SHIFT	28
 #define DELTA_SOURCE_RAW_OFFSET_MASK	(((u32)1 << DELTA_SOURCE_POWER_SHIFT) - 1)
 
-static _unused_attribute void
+static void __attribute__((unused))
 check_that_powers_fit_in_bitfield(void)
 {
 	STATIC_ASSERT(LZMS_NUM_DELTA_POWER_SYMS <= (1 << (31 - DELTA_SOURCE_POWER_SHIFT)));
@@ -975,7 +975,7 @@ static const u32 lzms_bit_costs[LZMS_PROBABILITY_DENOMINATOR + 1] = {
 	1
 };
 
-static _unused_attribute void
+static void __attribute__((unused))
 check_cost_shift(void)
 {
 	/* lzms_bit_costs is hard-coded to the current COST_SHIFT.  */

@@ -90,10 +90,6 @@
 			__attribute__((format(type, format_str, format_start)))
 #endif
 
-/* Hint that the annotated function is intentionally not used.  This might be
- * the case if the function contains only static assertions.  */
-#define _unused_attribute	__attribute__((unused))
-
 /* Endianness definitions.  Either CPU_IS_BIG_ENDIAN() or CPU_IS_LITTLE_ENDIAN()
  * evaluates to 1.  The other evaluates to 0.  Note that newer gcc supports
  * __BYTE_ORDER__ for easily determining the endianness; older gcc doesn't.  In
