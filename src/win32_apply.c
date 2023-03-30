@@ -1480,7 +1480,7 @@ retry:
 	if (unlikely(!NT_SUCCESS(status))) {
 		winnt_error(status, L"Can't open \"%ls\" for deletion "
 			    "(perms=%x, flags=%x)",
-			    current_path(ctx), perms, flags);
+			    current_path(ctx), (u32)perms, (u32)flags);
 		return WIMLIB_ERR_OPEN;
 	}
 

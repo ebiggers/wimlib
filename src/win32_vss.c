@@ -356,47 +356,55 @@ request_vss_snapshot(IVssBackupComponents *vss, wchar_t *volume,
 
 	res = vss->vtable->InitializeForBackup(vss, NULL);
 	if (FAILED(res)) {
-		ERROR("IVssBackupComponents.InitializeForBackup() error: %x", res);
+		ERROR("IVssBackupComponents.InitializeForBackup() error: %x",
+		      (u32)res);
 		return false;
 	}
 
 	res = vss->vtable->SetBackupState(vss, FALSE, TRUE, VSS_BT_COPY, FALSE);
 	if (FAILED(res)) {
-		ERROR("IVssBackupComponents.SetBackupState() error: %x", res);
+		ERROR("IVssBackupComponents.SetBackupState() error: %x",
+		      (u32)res);
 		return false;
 	}
 
 	res = vss->vtable->StartSnapshotSet(vss, snapshot_id);
 	if (FAILED(res)) {
-		ERROR("IVssBackupComponents.StartSnapshotSet() error: %x", res);
+		ERROR("IVssBackupComponents.StartSnapshotSet() error: %x",
+		      (u32)res);
 		return false;
 	}
 
 	res = vss->vtable->AddToSnapshotSet(vss, volume, (GUID){}, snapshot_id);
 	if (FAILED(res)) {
-		ERROR("IVssBackupComponents.AddToSnapshotSet() error: %x", res);
+		ERROR("IVssBackupComponents.AddToSnapshotSet() error: %x",
+		      (u32)res);
 		return false;
 	}
 
 	res = vss->vtable->PrepareForBackup(vss, &async);
 	if (FAILED(res)) {
-		ERROR("IVssBackupComponents.PrepareForBackup() error: %x", res);
+		ERROR("IVssBackupComponents.PrepareForBackup() error: %x",
+		      (u32)res);
 		return false;
 	}
 	res = wait_and_release(async);
 	if (FAILED(res)) {
-		ERROR("IVssAsync.Wait() error while preparing for backup: %x", res);
+		ERROR("IVssAsync.Wait() error while preparing for backup: %x",
+		      (u32)res);
 		return false;
 	}
 
 	res = vss->vtable->DoSnapshotSet(vss, &async);
 	if (FAILED(res)) {
-		ERROR("IVssBackupComponents.DoSnapshotSet() error: %x", res);
+		ERROR("IVssBackupComponents.DoSnapshotSet() error: %x",
+		      (u32)res);
 		return false;
 	}
 	res = wait_and_release(async);
 	if (FAILED(res)) {
-		ERROR("IVssAsync.Wait() error while doing snapshot set: %x", res);
+		ERROR("IVssAsync.Wait() error while doing snapshot set: %x",
+		      (u32)res);
 		return false;
 	}
 
@@ -456,7 +464,7 @@ vss_create_snapshot(const wchar_t *source, UNICODE_STRING *vss_path_ret,
 
 	res = (*func_CreateVssBackupComponentsInternal)(&vss);
 	if (FAILED(res)) {
-		ERROR("CreateVssBackupComponents error: %x", res);
+		ERROR("CreateVssBackupComponents error: %x", (u32)res);
 		goto vss_err;
 	}
 
@@ -467,7 +475,8 @@ vss_create_snapshot(const wchar_t *source, UNICODE_STRING *vss_path_ret,
 
 	res = vss->vtable->GetSnapshotProperties(vss, snapshot_id, &snapshot->props);
 	if (FAILED(res)) {
-		ERROR("IVssBackupComponents.GetSnapshotProperties() error: %x", res);
+		ERROR("IVssBackupComponents.GetSnapshotProperties() error: %x",
+		      (u32)res);
 		goto vss_err;
 	}
 
