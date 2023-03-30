@@ -123,7 +123,8 @@
 
 /* UNALIGNED_ACCESS_IS_FAST should be defined to 1 if unaligned memory accesses
  * can be performed efficiently on the target platform.  */
-#if defined(__x86_64__) || defined(__i386__) || defined(__ARM_FEATURE_UNALIGNED)
+#if defined(__x86_64__) || defined(__i386__) || \
+	defined(__ARM_FEATURE_UNALIGNED) || defined(__powerpc64__)
 #  define UNALIGNED_ACCESS_IS_FAST 1
 #else
 #  define UNALIGNED_ACCESS_IS_FAST 0
