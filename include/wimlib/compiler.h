@@ -153,21 +153,6 @@
 #endif
 #define SWAP(a, b)	swap((a), (b))
 
-/* (Optional) Efficiently swap the bytes of a 16-bit integer.  */
-#if GCC_PREREQ(4, 8) || __has_builtin(__builtin_bswap16)
-#  define compiler_bswap16 __builtin_bswap16
-#endif
-
-/* (Optional) Efficiently swap the bytes of a 32-bit integer.  */
-#if GCC_PREREQ(4, 3) || __has_builtin(__builtin_bswap32)
-#  define compiler_bswap32 __builtin_bswap32
-#endif
-
-/* (Optional) Efficiently swap the bytes of a 64-bit integer.  */
-#if GCC_PREREQ(4, 3) || __has_builtin(__builtin_bswap64)
-#  define compiler_bswap64 __builtin_bswap64
-#endif
-
 /* Optional definitions for checking with 'sparse'.  */
 #ifdef __CHECKER__
 #  define _bitwise_attr	__attribute__((bitwise))

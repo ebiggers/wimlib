@@ -64,8 +64,8 @@
 
 static forceinline u16 do_bswap16(u16 n)
 {
-#ifdef compiler_bswap16
-	return compiler_bswap16(n);
+#if GCC_PREREQ(4, 8) || __has_builtin(__builtin_bswap16)
+	return __builtin_bswap16(n);
 #else
 	return bswap16_const(n);
 #endif
@@ -73,8 +73,8 @@ static forceinline u16 do_bswap16(u16 n)
 
 static forceinline u32 do_bswap32(u32 n)
 {
-#ifdef compiler_bswap32
-	return compiler_bswap32(n);
+#if GCC_PREREQ(4, 3) || __has_builtin(__builtin_bswap32)
+	return __builtin_bswap32(n);
 #else
 	return bswap32_const(n);
 #endif
@@ -82,8 +82,8 @@ static forceinline u32 do_bswap32(u32 n)
 
 static forceinline u64 do_bswap64(u64 n)
 {
-#ifdef compiler_bswap64
-	return compiler_bswap64(n);
+#if GCC_PREREQ(4, 3) || __has_builtin(__builtin_bswap64)
+	return __builtin_bswap64(n);
 #else
 	return bswap64_const(n);
 #endif
