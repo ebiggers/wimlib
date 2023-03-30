@@ -77,10 +77,6 @@
  * struct itself may be misaligned.  */
 #define _packed_attribute	__attribute__((packed))
 
-/* Declare that the annotated variable, or variables of the annotated type, are
- * to be aligned on n-byte boundaries.  */
-#define _aligned_attribute(n)	__attribute__((aligned(n)))
-
 /* Declare that pointers to the annotated type may alias other pointers.  */
 #define _may_alias_attribute	__attribute__((may_alias))
 

@@ -198,7 +198,7 @@ struct lzms_adaptive_state {
 	u8 lz_rep_states[LZMS_NUM_LZ_REP_DECISIONS];
 	u8 delta_state;
 	u8 delta_rep_states[LZMS_NUM_DELTA_REP_DECISIONS];
-} _aligned_attribute(64);
+} __attribute__((aligned(64)));
 
 /*
  * This structure represents a byte position in the preprocessed input data and
@@ -251,7 +251,7 @@ struct lzms_optimum_node {
 	 * maintained per-position and are only updated occasionally.
 	 */
 	struct lzms_adaptive_state state;
-} _aligned_attribute(64);
+} __attribute__((aligned(64)));
 
 /* The main compressor structure  */
 struct lzms_compressor {

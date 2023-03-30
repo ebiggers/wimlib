@@ -84,7 +84,7 @@ struct xpress_decompressor {
 	};
 	DECODE_TABLE_WORKING_SPACE(working_space, XPRESS_NUM_SYMBOLS,
 				   XPRESS_MAX_CODEWORD_LEN);
-} _aligned_attribute(DECODE_TABLE_ALIGNMENT);
+} __attribute__((aligned(DECODE_TABLE_ALIGNMENT)));
 
 static int
 xpress_decompress(const void *restrict compressed_data, size_t compressed_size,

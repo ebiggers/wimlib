@@ -48,7 +48,7 @@ struct tagged_item_header {
 	u8 data[0];
 
 	/* then zero-padded to an 8-byte boundary */
-} _aligned_attribute(8);
+} __attribute__((aligned(8)));
 
 /*
  * Retrieve from @inode the first metadata item that is tagged with @tag and

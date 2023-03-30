@@ -62,7 +62,7 @@
 int
 read_wim_header(WIMStruct *wim, struct wim_header *hdr)
 {
-	struct wim_header_disk disk_hdr _aligned_attribute(8);
+	struct wim_header_disk disk_hdr __attribute__((aligned(8)));
 	struct filedes *in_fd = &wim->in_fd;
 	const tchar *filename = wim->filename;
 	int ret;
@@ -170,7 +170,7 @@ int
 write_wim_header(const struct wim_header *hdr, struct filedes *out_fd,
 		 off_t offset)
 {
-	struct wim_header_disk disk_hdr _aligned_attribute(8);
+	struct wim_header_disk disk_hdr __attribute__((aligned(8)));
 	int ret;
 
 	disk_hdr.magic = cpu_to_le64(hdr->magic);

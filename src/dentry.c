@@ -194,7 +194,7 @@ struct wim_dentry_on_disk {
 	 * field) after 8-byte alignment, then the remaining space will be a
 	 * variable-length list of tagged metadata items.  See tagged_items.c
 	 * for more information.  */
-	/* u8 tagged_items[] _aligned_attribute(8); */
+	/* u8 tagged_items[] __attribute__((aligned(8))); */
 
 } _packed_attribute;
 	/* If num_extra_streams != 0, then there are that many extra stream

@@ -569,7 +569,7 @@ set_random_metadata(struct wim_inode *inode, struct generation_context *ctx)
 
 	/* Security descriptor  */
 	if (randbool()) {
-		char desc[8192] _aligned_attribute(8);
+		char desc[8192] __attribute__((aligned(8)));
 		size_t size;
 
 		size = generate_random_security_descriptor(desc, ctx);

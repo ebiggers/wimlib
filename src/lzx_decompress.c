@@ -115,7 +115,7 @@ struct lzx_decompressor {
 	 * bits of aligned offset blocks */
 	u8 extra_offset_bits_minus_aligned[LZX_MAX_OFFSET_SLOTS];
 
-} _aligned_attribute(DECODE_TABLE_ALIGNMENT);
+} __attribute__((aligned(DECODE_TABLE_ALIGNMENT)));
 
 /* Read a Huffman-encoded symbol using the precode. */
 static forceinline unsigned

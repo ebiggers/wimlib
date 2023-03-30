@@ -1244,7 +1244,7 @@ remove_conflicting_short_name(const struct wim_dentry *dentry, struct win32_appl
 	HANDLE h;
 	size_t bufsize = offsetof(FILE_NAME_INFORMATION, FileName) +
 			 (13 * sizeof(wchar_t));
-	u8 buf[bufsize] _aligned_attribute(8);
+	u8 buf[bufsize] __attribute__((aligned(8)));
 	bool retried = false;
 	FILE_NAME_INFORMATION *info = (FILE_NAME_INFORMATION *)buf;
 
@@ -1326,7 +1326,7 @@ set_short_name(HANDLE h, const struct wim_dentry *dentry,
 	size_t bufsize = offsetof(FILE_NAME_INFORMATION, FileName) +
 			 max(dentry->d_short_name_nbytes, sizeof(wchar_t)) +
 			 sizeof(wchar_t);
-	u8 buf[bufsize] _aligned_attribute(8);
+	u8 buf[bufsize] __attribute__((aligned(8)));
 	FILE_NAME_INFORMATION *info = (FILE_NAME_INFORMATION *)buf;
 	NTSTATUS status;
 	bool tried_to_remove_existing = false;
@@ -1634,7 +1634,7 @@ create_empty_streams(const struct wim_dentry *dentry,
 		if (strm->stream_type == STREAM_TYPE_REPARSE_POINT &&
 		    ctx->common.supported_features.reparse_points)
 		{
-			u8 buf[REPARSE_DATA_OFFSET] _aligned_attribute(8);
+			u8 buf[REPARSE_DATA_OFFSET] __attribute__((aligned(8)));
 			struct reparse_buffer_disk *rpbuf =
 				(struct reparse_buffer_disk *)buf;
 			complete_reparse_point(rpbuf, inode, 0);
@@ -1843,7 +1843,7 @@ create_link(HANDLE h, const struct wim_dentry *dentry,
 
 		size_t bufsize = offsetof(FILE_LINK_INFORMATION, FileName) +
 				 ctx->pathbuf.Length + sizeof(wchar_t);
-		u8 buf[bufsize] _aligned_attribute(8);
+		u8 buf[bufsize] __attribute__((aligned(8)));
 		FILE_LINK_INFORMATION *info = (FILE_LINK_INFORMATION *)buf;
 		NTSTATUS status;
 
@@ -2832,7 +2832,7 @@ set_xattrs(HANDLE h, const struct wim_inode *inode, struct win32_apply_ctx *ctx)
 	u32 len;
 	const struct wim_xattr_entry *entry;
 	size_t bufsize = 0;
-	u8 _buf[1024] _aligned_attribute(4);
+	u8 _buf[1024] __attribute__((aligned(4)));
 	u8 *buf = _buf;
 	FILE_FULL_EA_INFORMATION *ea, *ea_prev;
 	NTSTATUS status;

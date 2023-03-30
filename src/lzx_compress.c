@@ -287,7 +287,7 @@ struct lzx_sequence {
 	u32 adjusted_offset_and_mainsym;
 #define SEQ_MAINSYM_BITS	10
 #define SEQ_MAINSYM_MASK	(((u32)1 << SEQ_MAINSYM_BITS) - 1)
-} _aligned_attribute(8);
+} __attribute__((aligned(8)));
 
 /*
  * This structure represents a byte position in the input buffer and a node in
@@ -333,7 +333,7 @@ struct lzx_optimum_node {
 #  define OPTIMUM_GAP_MATCH 0x80000000
 #endif
 
-} _aligned_attribute(8);
+} __attribute__((aligned(8)));
 
 /* The cost model for near-optimal parsing */
 struct lzx_costs {
@@ -1315,7 +1315,7 @@ lzx_should_end_block(struct lzx_block_split_stats *stats)
  */
 struct lzx_lru_queue {
 	u64 R;
-} _aligned_attribute(8);
+} __attribute__((aligned(8)));
 
 #define LZX_QUEUE_OFFSET_SHIFT	21
 #define LZX_QUEUE_OFFSET_MASK	(((u64)1 << LZX_QUEUE_OFFSET_SHIFT) - 1)

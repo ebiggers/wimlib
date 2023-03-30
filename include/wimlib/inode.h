@@ -229,7 +229,7 @@ struct wim_inode {
 /* Optional extra data for a WIM inode  */
 struct wim_inode_extra {
 	size_t size;	/* Size of the extra data in bytes  */
-	u8 data[] _aligned_attribute(8); /* The extra data  */
+	u8 data[] __attribute__((aligned(8))); /* The extra data  */
 };
 
 /*
