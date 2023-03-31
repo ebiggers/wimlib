@@ -127,10 +127,11 @@ jobs:
     strategy:
       matrix:
         include:
-        - { msystem: mingw32, cc_pkg: mingw-w64-i686-gcc }
-        - { msystem: mingw64, cc_pkg: mingw-w64-x86_64-gcc }
-        - { msystem: clang32, cc_pkg: mingw-w64-clang-i686-clang }
-        - { msystem: clang64, cc_pkg: mingw-w64-clang-x86_64-clang }
+        - { msystem: MINGW32, cc_pkg: mingw-w64-i686-gcc }
+        - { msystem: MINGW64, cc_pkg: mingw-w64-x86_64-gcc }
+        - { msystem: CLANG32, cc_pkg: mingw-w64-clang-i686-clang }
+        - { msystem: CLANG64, cc_pkg: mingw-w64-clang-x86_64-clang }
+        - { msystem: CLANGARM64, options: --install-prerequisites }
     defaults:
       run:
         shell: msys2 {0}
@@ -148,7 +149,7 @@ jobs:
           make
           ${{matrix.cc_pkg}}
           pkgconf
-    - run: CFLAGS="$DEF_CFLAGS" ./tools/make-windows-release
+    - run: CFLAGS="$DEF_CFLAGS" ./tools/make-windows-release ${{matrix.options}}
 
   fuzz-with-libFuzzer:
     name: Fuzz with libFuzzer (${{matrix.target}} ${{matrix.sanitizer}})
