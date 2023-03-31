@@ -548,7 +548,7 @@ parse_element(const tchar **pp, struct xml_node *parent, int depth,
 	CHECK(*p == '<');
 	p++;
 	name_start = p;
-	while (!is_whitespace(*p) && *p != '>' && *p != '\0')
+	while (!is_whitespace(*p) && *p != '>' && *p != '/' && *p != '\0')
 		p++;
 	name_len = p - name_start;
 	CHECK(name_len > 0);
