@@ -12,6 +12,7 @@ Version 1.14.0-BETA1:
 	from 'make-windows-release') have been improved to make it easier to
 	build wimlib on Windows.  The instructions now use MSYS2 (instead of
 	Cygwin as they did before), and both gcc and clang are supported.
+	Windows ARM64 builds are now supported (experimentally) as well.
 
 	Removed support for Windows XP.
 
