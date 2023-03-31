@@ -109,10 +109,8 @@ After that, open any MSYS2 shell again and run the following commands:
 Note: By default the git repository will be on the "master" branch, which is the
 latest development snapshot.  Optionally, you can check out a specific version,
 e.g. 'cd wimlib && git checkout v1.14.0'.  For old versions, please refer to the
-documentation for that version, as things may have changed.  Also, it is
-possible to use a release tarball (e.g. wimlib-1.14.0.tar.gz) instead of the git
-repository; however, the windows-build.sh script will not be available in that
-case and you will need to handle more things yourself.
+documentation for that version, as things may have changed.  It is also possible
+to use a release tarball (e.g. wimlib-1.14.0.tar.gz) instead of the git repo.
 
 Finally, to actually do a build, close the MSYS2 shell you have open, then open
 one of the following from the Start menu:
