@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# This script prepares a Windows binary distribution of wimlib.
+# This script builds wimlib for Windows.  It supports both MSYS2 and Linux.
 
 set -e -u
 

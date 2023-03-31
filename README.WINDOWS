@@ -111,8 +111,8 @@ latest development snapshot.  Optionally, you can check out a specific version,
 e.g. 'cd wimlib && git checkout v1.14.0'.  For old versions, please refer to the
 documentation for that version, as things may have changed.  Also, it is
 possible to use a release tarball (e.g. wimlib-1.14.0.tar.gz) instead of the git
-repository; however, the make-windows-release script will not be available in
-that case and you will need to handle more things yourself.
+repository; however, the windows-build.sh script will not be available in that
+case and you will need to handle more things yourself.
 
 Finally, to actually do a build, close the MSYS2 shell you have open, then open
 one of the following from the Start menu:
@@ -126,7 +126,7 @@ one of the following from the Start menu:
 (If unsure, use "MSYS2 MINGW64".)  Then run the following commands:
 
     cd wimlib
-    tools/make-windows-release --install-prerequisites
+    tools/windows-build.sh --install-prerequisites
 
 The script will automatically download and install the packages needed to build
 wimlib in the chosen MSYS2 environment, then build wimlib.  The output will be

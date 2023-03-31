@@ -151,7 +151,7 @@ jobs:
           make
           ${{matrix.cc_pkg}}
           pkgconf
-    - run: CFLAGS="$DEF_CFLAGS" ./tools/make-windows-release ${{matrix.options}}
+    - run: CFLAGS="$DEF_CFLAGS" ./tools/windows-build.sh ${{matrix.options}}
     - uses: actions/upload-artifact@v3
       with:
         name: windows-${{matrix.msystem}}-bin

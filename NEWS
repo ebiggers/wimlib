@@ -8,10 +8,10 @@ Version 1.14.0-BETA1:
 	Fixed a bug in 'wimsplit' where it didn't accept part sizes of 4 GiB or
 	larger on Windows and on 32-bit platforms.
 
-	The README.WINDOWS file and the tools/make-windows-release script have
-	been improved to make it easier to build wimlib on Windows.  The
-	instructions now use MSYS2 (instead of Cygwin as they did before), and
-	both gcc and clang are supported.
+	The README.WINDOWS file and the tools/windows-build.sh script (renamed
+	from 'make-windows-release') have been improved to make it easier to
+	build wimlib on Windows.  The instructions now use MSYS2 (instead of
+	Cygwin as they did before), and both gcc and clang are supported.
 
 	Removed support for Windows XP.
 

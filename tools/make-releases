@@ -17,5 +17,5 @@ libdeflate-gunzip $gzfile
 libdeflate-gzip -12 $tarfile
 
 for arch in i686 x86_64; do
-	./tools/make-windows-release --arch=$arch --include-docs --zip
+	./tools/windows-build.sh --arch=$arch --include-docs --zip
 done
