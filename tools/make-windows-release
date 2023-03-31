@@ -8,49 +8,18 @@ SCRIPTNAME="$0"
 TOPDIR=$(dirname "$(dirname "$(realpath "$0")")")
 cd "$TOPDIR" # Top-level directory of the git repo
 
-MSYSTEM=${MSYSTEM:-}
-if [ -z "$MSYSTEM" ]; then
-	ARCH=x86_64
-else
-	case "$MSYSTEM" in
-	MINGW32)
-		ARCH=i686
-		CC_PKG=mingw-w64-i686-gcc
-		;;
-	MINGW64)
-		ARCH=x86_64
-		CC_PKG=mingw-w64-x86_64-gcc
-		;;
-	CLANG32)
-		ARCH=i686
-		CC_PKG=mingw-w64-clang-i686-clang
-		;;
-	CLANG64)
-		ARCH=x86_64
-		CC_PKG=mingw-w64-clang-x86_64-clang
-		;;
-	CLANGARM64)
-		ARCH=aarch64
-		CC_PKG=mingw-w64-clang-aarch64-clang
-		;;
-	*)
-		echo 1>&2 "Unsupported MSYS2 environment: $MSYSTEM.  This script supports"
-		echo 1>&2 "MINGW32, MINGW64, CLANG32, CLANG64, and CLANGARM64."
-		echo 1>&2 "See https://www.msys2.org/docs/environments/"
-		exit 1
-	esac
-fi
+# Global variables, read-only after parse_options has run
+ARCH=
+DESTDIR=
+EXTRA_CONFIGURE_ARGS=
 INCLUDE_DOCS=false
 INSTALL_MSYS2_PACKAGES=false
+MAKE="make -j$(getconf _NPROCESSORS_ONLN)"
+MSYSTEM=${MSYSTEM:-}
 SKIP_CONFIGURE=false
+VERSION=$(tools/get-version-number)
 ZIP=false
-
-longopts="help"
-longopts+=",arch:"
-longopts+=",include-docs"
-longopts+=",install-msys2-packages"
-longopts+=",skip-configure"
-longopts+=",zip"
+ZIPFILE=
 
 usage()
 {
@@ -74,71 +43,106 @@ Options:
 EOF
 }
 
-if ! options=$(getopt -o "" -l "$longopts" -- "$@"); then
-	usage 1>&2
-	exit 1
-fi
-eval set -- "$options"
-while true; do
-	case "$1" in
-	--help)
-		usage
-		exit 0
-		;;
-	--arch)
-		ARCH=$2
-		shift
-		;;
-	--include-docs)
-		INCLUDE_DOCS=true
-		;;
-	--install-msys2-packages)
-		if [ -z "$MSYSTEM" ]; then
-			echo 1>&2 "--install-msys2-packages is not allowed outside MSYS2."
+parse_options()
+{
+	if [ -z "$MSYSTEM" ]; then
+		ARCH=x86_64
+	else
+		case "$MSYSTEM" in
+		MINGW32)
+			ARCH=i686
+			CC_PKG=mingw-w64-i686-gcc
+			;;
+		MINGW64)
+			ARCH=x86_64
+			CC_PKG=mingw-w64-x86_64-gcc
+			;;
+		CLANG32)
+			ARCH=i686
+			CC_PKG=mingw-w64-clang-i686-clang
+			;;
+		CLANG64)
+			ARCH=x86_64
+			CC_PKG=mingw-w64-clang-x86_64-clang
+			;;
+		CLANGARM64)
+			ARCH=aarch64
+			CC_PKG=mingw-w64-clang-aarch64-clang
+			;;
+		*)
+			echo 1>&2 "Unsupported MSYS2 environment: $MSYSTEM.  This script supports"
+			echo 1>&2 "MINGW32, MINGW64, CLANG32, CLANG64, and CLANGARM64."
+			echo 1>&2 "See https://www.msys2.org/docs/environments/"
 			exit 1
-		fi
-		INSTALL_MSYS2_PACKAGES=true
-		;;
-	--skip-configure)
-		SKIP_CONFIGURE=true
-		;;
-	--zip)
-		ZIP=true
-		;;
-	--)
+		esac
+	fi
+
+	local longopts="help"
+	longopts+=",arch:"
+	longopts+=",include-docs"
+	longopts+=",install-msys2-packages"
+	longopts+=",skip-configure"
+	longopts+=",zip"
+
+	local options
+	if ! options=$(getopt -o "" -l "$longopts" -- "$@"); then
+		usage 1>&2
+		exit 1
+	fi
+	eval set -- "$options"
+	while true; do
+		case "$1" in
+		--help)
+			usage
+			exit 0
+			;;
+		--arch)
+			ARCH=$2
+			shift
+			;;
+		--include-docs)
+			INCLUDE_DOCS=true
+			;;
+		--install-msys2-packages)
+			if [ -z "$MSYSTEM" ]; then
+				echo 1>&2 "--install-msys2-packages is not allowed outside MSYS2."
+				exit 1
+			fi
+			INSTALL_MSYS2_PACKAGES=true
+			;;
+		--skip-configure)
+			SKIP_CONFIGURE=true
+			;;
+		--zip)
+			ZIP=true
+			;;
+		--)
+			shift
+			break
+			;;
+		*)
+			echo 1>&2 "Invalid option '$1'"
+			usage 1>&2
+			exit 1
+			;;
+		esac
 		shift
-		break
+	done
+	case "$ARCH" in
+	i686|x86_64|aarch64)
 		;;
 	*)
-		echo 1>&2 "Invalid option '$1'"
-		usage 1>&2
+		echo 1>&2 "Unknown ARCH: $ARCH.  Please specify a supported architecture with --arch"
 		exit 1
 		;;
 	esac
-	shift
-done
+	DESTDIR=wimlib-${VERSION}-windows-${ARCH}-bin
+	ZIPFILE=$DESTDIR.zip
+	EXTRA_CONFIGURE_ARGS=("$@")
+}
 
-EXTRA_CONFIGURE_ARGS=("$@")
-
-case "$ARCH" in
-i686|x86_64|aarch64)
-	;;
-*)
-	echo 1>&2 "Unknown ARCH: $ARCH.  Please specify a supported architecture with --arch"
-	exit 1
-	;;
-esac
-
-VERSION=$(tools/get-version-number)
-DESTDIR=wimlib-${VERSION}-windows-${ARCH}-bin
-ZIPFILE=$DESTDIR.zip
-MAKE="make -j$(getconf _NPROCESSORS_ONLN)"
-
-rm -rf "$DESTDIR" "$ZIPFILE"
-mkdir "$DESTDIR"
-
-# Install the required MSYS2 packages if requested.
-if $INSTALL_MSYS2_PACKAGES; then
+install_msys2_packages()
+{
 	echo "Installing the MSYS2 $MSYSTEM packages needed to build wimlib..."
 	pacman -Syu --noconfirm --needed \
 		autoconf \
@@ -149,18 +153,18 @@ if $INSTALL_MSYS2_PACKAGES; then
 		"$CC_PKG" \
 		pkgconf
 	echo "Done installing the MSYS2 $MSYSTEM packages needed to build wimlib."
-fi
+}
 
-# Bootstrap the repository if not already done.
-if [ ! -e configure ]; then
+bootstrap_repository()
+{
 	echo "Bootstrapping the wimlib repository..."
 	./bootstrap
-fi
+}
 
-# Configure wimlib.
-if ! [ -e config.log ] || ! $SKIP_CONFIGURE; then
+configure_wimlib()
+{
 	echo "Configuring wimlib..."
-	configure_args=("--host=${ARCH}-w64-mingw32")
+	local configure_args=("--host=${ARCH}-w64-mingw32")
 	configure_args+=("--disable-static")
 	# -static-libgcc is needed with gcc.  It should go in the CFLAGS, but
 	# libtool strips it, so it must go directly in CC instead.  See
@@ -171,43 +175,54 @@ if ! [ -e config.log ] || ! $SKIP_CONFIGURE; then
 	configure_args+=("${EXTRA_CONFIGURE_ARGS[@]}")
 	./configure "${configure_args[@]}"
 	$MAKE clean
-fi
+}
 
-echo "Building wimlib..."
-$MAKE
+build_wimlib()
+{
+	echo "Building wimlib..."
+	$MAKE
+}
 
-echo "Installing binaries..."
-cp .libs/*.{dll,exe} "$DESTDIR"
-strip "$DESTDIR"/*.{dll,exe}
+list_imagex_commands()
+{
+	for cmd in ./doc/man1/wim*.1; do
+		local cmd=${cmd##*/}
+		cmd=${cmd%.1}
+		case "$cmd" in
+		wimlib-imagex|wimmount|wimmountrw|wimunmount)
+			;;
+		*)
+			echo "$cmd"
+			;;
+		esac
+	done
+}
 
-echo "Installing NEWS, README, and licenses..."
-cp NEWS README* COPYING* "$DESTDIR"
-sed -n '/^#/q; s/^[\/\* ]*//; p' src/divsufsort.c > "$DESTDIR"/COPYING.libdivsufsort-lite
-if ! grep -q 'Copyright' "$DESTDIR"/COPYING.libdivsufsort-lite; then
-	echo 1>&2 "ERROR: failed to extract libdivsufsort-lite license text"
-	exit 1
-fi
-cd "$DESTDIR"
-for fil in NEWS README* COPYING*; do
-	sed < "$fil" > "${fil}".txt -e 's/$/\r/g'
-	rm "$fil"
-done
-cd ..
+install_binaries()
+{
+	echo "Installing binaries..."
+	cp .libs/*.{dll,exe} "$DESTDIR"
+	strip "$DESTDIR"/*.{dll,exe}
+}
 
-IMAGEX_CMDS=()
-for cmd in ./doc/man1/wim*.1; do
-	cmd=${cmd##*/}
-	cmd=${cmd%.1}
-	case "$cmd" in
-	wimlib-imagex|wimmount|wimmountrw|wimunmount)
-		;;
-	*)
-		IMAGEX_CMDS+=("$cmd")
-		;;
-	esac
-done
+install_text_files()
+{
+	echo "Installing NEWS, README, and licenses..."
+	cp NEWS README* COPYING* "$DESTDIR"
+	sed -n '/^#/q; s/^[\/\* ]*//; p' src/divsufsort.c > "$DESTDIR"/COPYING.libdivsufsort-lite
+	if ! grep -q 'Copyright' "$DESTDIR"/COPYING.libdivsufsort-lite; then
+		echo 1>&2 "ERROR: failed to extract libdivsufsort-lite license text"
+		exit 1
+	fi
+	cd "$DESTDIR"
+	for fil in NEWS README* COPYING*; do
+		sed < "$fil" > "${fil}".txt -e 's/$/\r/g'
+		rm "$fil"
+	done
+	cd ..
+}
 
-function gen_pdf_from_man_page()
+gen_pdf_from_man_page()
 {
 	local cmd=$1
 	local pdf=${DESTDIR}/doc/${cmd}.pdf
@@ -216,34 +231,66 @@ function gen_pdf_from_man_page()
 	MANPATH="./doc" man -t "$cmd" | ps2pdf - "$pdf"
 }
 
-if $INCLUDE_DOCS; then
-	echo "Installing manual pages..."
+install_pdf_docs()
+{
+	echo "Installing PDF manual pages..."
 	mkdir "$DESTDIR"/doc
-	for cmd in "${IMAGEX_CMDS[@]}"; do
+	for cmd in $(list_imagex_commands); do
 		gen_pdf_from_man_page "$cmd"
 	done
 	gen_pdf_from_man_page wimlib-imagex
-fi
+}
 
-echo "Installing wim*.cmd files..."
-for cmd in "${IMAGEX_CMDS[@]}"; do
-	sed 's/$/\r/g' > "${DESTDIR}/${cmd}.cmd" <<- EOF
-		@echo off
-		"%~dp0\\wimlib-imagex" ${cmd#wim} %*
-	EOF
-	chmod +x "${DESTDIR}/${cmd}.cmd"
-done
+install_cmd_aliases()
+{
+	echo "Installing wim*.cmd files..."
+	for cmd in $(list_imagex_commands); do
+		sed 's/$/\r/g' > "${DESTDIR}/${cmd}.cmd" <<- EOF
+			@echo off
+			"%~dp0\\wimlib-imagex" ${cmd#wim} %*
+		EOF
+		chmod +x "${DESTDIR}/${cmd}.cmd"
+	done
+}
 
-echo "Installing development files..."
-mkdir "$DESTDIR"/devel
-cp .libs/libwim.dll.a "$DESTDIR"/devel/libwim.lib
-cp include/wimlib.h "$DESTDIR"/devel/
+install_development_files()
+{
+	echo "Installing development files..."
+	mkdir "$DESTDIR"/devel
+	cp .libs/libwim.dll.a "$DESTDIR"/devel/libwim.lib
+	cp include/wimlib.h "$DESTDIR"/devel/
+}
 
-if $ZIP; then
+create_zip_file()
+{
 	echo "Creating zip file..."
 	cd "$DESTDIR"
 	7z -mx9 a ../"$ZIPFILE" . > /dev/null
 	cd ..
+}
+
+parse_options "$@"
+rm -rf -- "$DESTDIR" "$ZIPFILE"
+mkdir -- "$DESTDIR"
+if $INSTALL_MSYS2_PACKAGES; then
+	install_msys2_packages
+fi
+if [ ! -e configure ]; then
+	bootstrap_repository
+fi
+if [ ! -e config.log ] || ! $SKIP_CONFIGURE; then
+	configure_wimlib
+fi
+build_wimlib
+install_binaries
+install_text_files
+if $INCLUDE_DOCS; then
+	install_pdf_docs
+fi
+install_cmd_aliases
+install_development_files
+if $ZIP; then
+	create_zip_file
 	echo "Success!  Output is in $ZIPFILE"
 else
 	echo "Success!  Output is in $DESTDIR"
