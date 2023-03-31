@@ -137,6 +137,8 @@ jobs:
         shell: msys2 {0}
     steps:
     - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0  # Need tags for tools/get-version-number
     - uses: msys2/setup-msys2@v2
       with:
         msystem: ${{matrix.msystem}}
@@ -150,6 +152,10 @@ jobs:
           ${{matrix.cc_pkg}}
           pkgconf
     - run: CFLAGS="$DEF_CFLAGS" ./tools/make-windows-release ${{matrix.options}}
+    - uses: actions/upload-artifact@v3
+      with:
+        name: windows-${{matrix.msystem}}-bin
+        path: wimlib-*-bin
 
   fuzz-with-libFuzzer:
     name: Fuzz with libFuzzer (${{matrix.target}} ${{matrix.sanitizer}})
