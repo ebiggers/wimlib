@@ -121,16 +121,16 @@ one of the following from the Start menu:
   * "MSYS2 CLANG64" - for x86_64 binaries, built with clang
   * "MSYS2 MINGW32" - for i686 binaries, built with gcc
   * "MSYS2 CLANG32" - for i686 binaries, built with clang
-  * "MSYS2 CLANGARM64" - for ARM64 binaries (EXPERIMENTAL, needs Windows ARM64)
+  * "MSYS2 CLANGARM64" - for ARM64 binaries (EXPERIMENTAL)
 
 (If unsure, use "MSYS2 MINGW64".)  Then run the following commands:
 
     cd wimlib
-    tools/make-windows-release --install-msys2-packages
+    tools/make-windows-release --install-prerequisites
 
-The script will automatically download and install the MSYS2 packages needed to
-build wimlib in the chosen MSYS2 environment, then build wimlib.  The output
-will be in a folder named similarly to "wimlib-1.14.0-windows-x86_64-bin".  Note
-that your "home" folder within MSYS2 is C:\msys64\home\%USERNAME% by default.
+The script will automatically download and install the packages needed to build
+wimlib in the chosen MSYS2 environment, then build wimlib.  The output will be
+in a folder named similarly to "wimlib-1.14.0-windows-x86_64-bin".  Note that
+your "home" folder within MSYS2 is C:\msys64\home\%USERNAME% by default.
 Therefore, the full path to the output folder will be similar to
 C:\msys64\home\%USERNAME%\wimlib\wimlib-1.14.0-windows-x86_64-bin.

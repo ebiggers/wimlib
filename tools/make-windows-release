@@ -13,13 +13,19 @@ ARCH=
 DESTDIR=
 EXTRA_CONFIGURE_ARGS=
 INCLUDE_DOCS=false
-INSTALL_MSYS2_PACKAGES=false
+INSTALL_PREREQUISITES=false
 MAKE="make -j$(getconf _NPROCESSORS_ONLN)"
 MSYSTEM=${MSYSTEM:-}
 SKIP_CONFIGURE=false
 VERSION=$(tools/get-version-number)
 ZIP=false
 ZIPFILE=
+
+PREBUILT_LLVM_MINGW_ENABLED=false
+PREBUILT_LLVM_MINGW_URL=https://github.com/mstorsjo/llvm-mingw/releases/download/20230320/llvm-mingw-20230320-msvcrt-x86_64.zip
+PREBUILT_LLVM_MINGW_ZIP=$(basename "$PREBUILT_LLVM_MINGW_URL")
+PREBUILT_LLVM_MINGW=${PREBUILT_LLVM_MINGW_ZIP%.zip}
+PREBUILT_LLVM_MINGW_BIN="/$PREBUILT_LLVM_MINGW/bin"
 
 usage()
 {
@@ -31,9 +37,12 @@ Options:
 
   --include-docs            Build and install the PDF manual pages.
 
-  --install-msys2-packages  Install the MSYS2 packages needed to build wimlib.
-                            You can omit this if you have already done this for
-                            the same MSYS2 environment.
+  --install-prerequisites   Install the prerequisite packages needed to build
+                            wimlib.  This is only supported in MSYS2.  You can
+                            omit this if you have already done this for the same
+                            MSYS2 environment.  This option normally only
+                            installs MSYS2 packages, but for ARM64 cross-builds
+                            it also installs a separate prebuilt toolchain.
 
   --skip-configure          Skip running the configure script again.  You can
                             use this to save time in incremental builds if you
@@ -67,7 +76,14 @@ parse_options()
 			;;
 		CLANGARM64)
 			ARCH=aarch64
-			CC_PKG=mingw-w64-clang-aarch64-clang
+			# MSYS2 doesn't yet support cross-compiling for ARM64,
+			# so use a separate prebuilt toolchain for that case.
+			if [ "$(uname -m)" = x86_64 ]; then
+				PREBUILT_LLVM_MINGW_ENABLED=true
+				export PATH="$PREBUILT_LLVM_MINGW_BIN:$PATH"
+			else
+				CC_PKG=mingw-w64-clang-aarch64-clang
+			fi
 			;;
 		*)
 			echo 1>&2 "Unsupported MSYS2 environment: $MSYSTEM.  This script supports"
@@ -80,7 +96,7 @@ parse_options()
 	local longopts="help"
 	longopts+=",arch:"
 	longopts+=",include-docs"
-	longopts+=",install-msys2-packages"
+	longopts+=",install-prerequisites"
 	longopts+=",skip-configure"
 	longopts+=",zip"
 
@@ -103,12 +119,12 @@ parse_options()
 		--include-docs)
 			INCLUDE_DOCS=true
 			;;
-		--install-msys2-packages)
+		--install-prerequisites)
 			if [ -z "$MSYSTEM" ]; then
-				echo 1>&2 "--install-msys2-packages is not allowed outside MSYS2."
+				echo 1>&2 "--install-prerequisites is only supported in MSYS2."
 				exit 1
 			fi
-			INSTALL_MSYS2_PACKAGES=true
+			INSTALL_PREREQUISITES=true
 			;;
 		--skip-configure)
 			SKIP_CONFIGURE=true
@@ -141,18 +157,39 @@ parse_options()
 	EXTRA_CONFIGURE_ARGS=("$@")
 }
 
-install_msys2_packages()
+install_prebuilt_llvm_mingw()
+{
+	if [ -e "$PREBUILT_LLVM_MINGW_BIN" ]; then
+		echo "Prebuilt $PREBUILT_LLVM_MINGW is already installed"
+		return
+	fi
+	echo "Downloading $PREBUILT_LLVM_MINGW_ZIP..."
+	wget "$PREBUILT_LLVM_MINGW_URL" -O "/$PREBUILT_LLVM_MINGW_ZIP"
+	echo "Unzipping $PREBUILT_LLVM_MINGW_ZIP..."
+	unzip "/$PREBUILT_LLVM_MINGW_ZIP" -d /
+	if [ ! -e "$PREBUILT_LLVM_MINGW_BIN" ]; then
+		echo 1>&2 "$PREBUILT_LLVM_MINGW_BIN not found after unzip"
+		exit 1
+	fi
+	echo "Done installing prebuilt toolchain $PREBUILT_LLVM_MINGW"
+}
+
+install_prerequisites()
 {
 	echo "Installing the MSYS2 $MSYSTEM packages needed to build wimlib..."
-	pacman -Syu --noconfirm --needed \
-		autoconf \
-		automake \
-		git \
-		libtool \
-		make \
-		"$CC_PKG" \
-		pkgconf
+	local packages=(autoconf automake git libtool make pkgconf)
+	if "$PREBUILT_LLVM_MINGW_ENABLED"; then
+		echo "Will use prebuilt toolchain instead of MSYS2 one"
+		packages+=(wget unzip)
+	else
+		packages+=("$CC_PKG")
+	fi
+	pacman -Syu --noconfirm --needed "${packages[@]}"
 	echo "Done installing the MSYS2 $MSYSTEM packages needed to build wimlib."
+
+	if $PREBUILT_LLVM_MINGW_ENABLED; then
+		install_prebuilt_llvm_mingw
+	fi
 }
 
 bootstrap_repository()
@@ -169,8 +206,12 @@ configure_wimlib()
 	# -static-libgcc is needed with gcc.  It should go in the CFLAGS, but
 	# libtool strips it, so it must go directly in CC instead.  See
 	# http://www.gnu.org/software/libtool/manual/libtool.html#Stripped-link-flags
-	if "${ARCH}-w64-mingw32-cc" --version | grep -q '(GCC)'; then
-		configure_args+=("CC=${ARCH}-w64-mingw32-cc -static-libgcc")
+	local cc="${ARCH}-w64-mingw32-cc"
+	if ! type -P "$cc" &>/dev/null; then
+		cc="${ARCH}-w64-mingw32-gcc"
+	fi
+	if "$cc" --version | grep -q '(GCC)'; then
+		configure_args+=("CC=$cc -static-libgcc")
 	fi
 	configure_args+=("${EXTRA_CONFIGURE_ARGS[@]}")
 	./configure "${configure_args[@]}"
@@ -272,8 +313,8 @@ create_zip_file()
 parse_options "$@"
 rm -rf -- "$DESTDIR" "$ZIPFILE"
 mkdir -- "$DESTDIR"
-if $INSTALL_MSYS2_PACKAGES; then
-	install_msys2_packages
+if $INSTALL_PREREQUISITES; then
+	install_prerequisites
 fi
 if [ ! -e configure ]; then
 	bootstrap_repository
