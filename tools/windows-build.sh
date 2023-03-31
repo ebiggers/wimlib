@@ -210,6 +210,13 @@ configure_wimlib()
 	if ! type -P "$cc" &>/dev/null; then
 		cc="${ARCH}-w64-mingw32-gcc"
 	fi
+	if ! type -P "$cc" &>/dev/null; then
+		echo 1>&2 "ERROR: $cc not found!"
+		if [ -n "$MSYSTEM" ]; then
+			echo 1>&2 "Consider using --install-prerequisites"
+		fi
+		exit 1
+	fi
 	if "$cc" --version | grep -q '(GCC)'; then
 		configure_args+=("CC=$cc -static-libgcc")
 	fi
