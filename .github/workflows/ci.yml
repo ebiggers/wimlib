@@ -102,6 +102,18 @@ jobs:
         name: ubsan-test-logs
         path: tests/*.log
 
+  run-shellcheck:
+    name: Run shellcheck
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y shellcheck
+    - name: Run shellcheck
+      run: shellcheck tools/*.sh tools/*/*.sh
+
   macos-build-and-test:
     name: Build and test on macOS
     runs-on: macos-latest
