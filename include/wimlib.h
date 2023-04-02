@@ -30,9 +30,8 @@
  * @subsection Windows
  *
  * Download the Windows binary distribution with the appropriate architecture
- * (i686 or x86_64 --- also called "x86" and "amd64" respectively) from
- * https://wimlib.net.  Link your program with libwim-15.dll.  If needed by your
- * programming language or development environment, the import library
+ * from https://wimlib.net.  Link your program with libwim-15.dll.  If needed by
+ * your programming language or development environment, the import library
  * libwim.lib and C/C++ header wimlib.h can be found in the directory "devel" in
  * the ZIP file.
  *
