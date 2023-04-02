@@ -247,8 +247,7 @@ file format:
   files and provides features previously only available in Microsoft's
   implementation, such as the ability to mount WIMs read-write as well as
   read-only, the ability to create compressed WIMs, the correct handling of
-  security descriptors and hard links, support for LZMS compression, and support
-  for solid archives.
+  security descriptors and hard links, and support for LZMS compression.
 
 - [`ImagePyX`](https://github.com/maxpat78/ImagePyX) is a Python program that
   provides some capabilities of `wimlib-imagex`, with the help of external
