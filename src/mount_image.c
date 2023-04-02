@@ -1517,7 +1517,6 @@ wimfs_listxattr(const char *path, char *list, size_t size)
 	const struct wimfs_context *ctx = wimfs_get_context();
 	const struct wim_inode *inode;
 	char *p = list;
-	char *end = list + size;
 	int total_size = 0;
 
 	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_STREAM_INTERFACE_XATTR))
@@ -1553,7 +1552,7 @@ wimfs_listxattr(const char *path, char *list, size_t size)
 
 		total_size += stream_name_mbs_nbytes + 6;
 		if (size) {
-			if (end - p < stream_name_mbs_nbytes + 6) {
+			if (list + size - p < stream_name_mbs_nbytes + 6) {
 				FREE(stream_name_mbs);
 				return -ERANGE;
 			}
