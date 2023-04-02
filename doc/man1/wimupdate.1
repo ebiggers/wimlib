@@ -163,6 +163,13 @@ Compact the WIM archive in-place and append any new data, eliminating "holes".
 This is efficient, but in general this option should \fInot\fR be used because a
 failed or interrupted compaction will corrupt the WIM archive.  For more
 information, see the documentation for this option in \fBwimoptimize\fR(1).
+.TP
+\fB--ref\fR="\fIGLOB\fR"
+File glob of WIM(s) on which the delta WIM is based.  Updating split WIMs is not
+allowed, but updating delta WIMs is allowed.  When updating a delta WIM, the
+WIM(s) on which the delta WIM is based should be specified using this option.
+(It isn't a hard requirement, but it's needed for data deduplication to work
+fully and for the TOTALBYTES statistic to be correctly updated.)
 .SH NOTES
 \fBwimupdate\fR can be viewed as redundant with \fBwimmountrw\fR, since a WIM
 image can also be updated by mounting it read-write.  However, \fBwimupdate\fR

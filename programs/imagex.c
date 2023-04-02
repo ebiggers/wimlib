@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2012-2023 Eric Biggers
+ * Copyright 2012-2023 Eric Biggers
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -416,14 +416,14 @@ static const struct option unmount_options[] = {
 static const struct option update_options[] = {
 	/* Careful: some of the options here set the defaults for update
 	 * commands, but the flags given to an actual update command (and not to
-	 * `imagex update' itself are also handled in
-	 * update_command_add_option().  */
+	 * wimupdate itself) are also handled in update_command_add_option(). */
 	{T("threads"),     required_argument, NULL, IMAGEX_THREADS_OPTION},
 	{T("check"),       no_argument,       NULL, IMAGEX_CHECK_OPTION},
 	{T("include-integrity"), no_argument, NULL, IMAGEX_INCLUDE_INTEGRITY_OPTION},
 	{T("rebuild"),     no_argument,       NULL, IMAGEX_REBUILD_OPTION},
 	{T("command"),     required_argument, NULL, IMAGEX_COMMAND_OPTION},
 	{T("wimboot-config"), required_argument, NULL, IMAGEX_WIMBOOT_CONFIG_OPTION},
+	{T("ref"),	   required_argument, NULL, IMAGEX_REF_OPTION},
 
 	/* Default delete options */
 	{T("force"),       no_argument,       NULL, IMAGEX_FORCE_OPTION},
@@ -1529,7 +1529,7 @@ update_command_add_option(int op, const tchar *option,
 	return recognized;
 }
 
-/* How many nonoption arguments each `imagex update' command expects */
+/* How many nonoption arguments each wimupdate command expects */
 static const unsigned update_command_num_nonoptions[] = {
 	[WIMLIB_UPDATE_OP_ADD] = 2,
 	[WIMLIB_UPDATE_OP_DELETE] = 1,
@@ -1561,7 +1561,7 @@ update_command_add_nonoption(int op, const tchar *nonoption,
 }
 
 /*
- * Parse a command passed on stdin to `imagex update'.
+ * Parse a command passed on stdin to wimupdate.
  *
  * @line:	Text of the command.
  * @len:	Length of the line, including a null terminator
@@ -4145,6 +4145,7 @@ imagex_update(int argc, tchar **argv, int cmd)
 				WIMLIB_ADD_FLAG_WINCONFIG;
 	int default_delete_flags = 0;
 	unsigned num_threads = 0;
+	STRING_LIST(refglobs);
 	int c;
 	tchar *cmd_file_contents;
 	size_t cmd_file_nchars;
@@ -4187,6 +4188,13 @@ imagex_update(int argc, tchar **argv, int cmd)
 			break;
 		case IMAGEX_WIMBOOT_CONFIG_OPTION:
 			wimboot_config = optarg;
+			break;
+		case IMAGEX_REF_OPTION:
+			ret = string_list_append(&refglobs, optarg);
+			if (ret)
+				goto out;
+			/* assume delta WIM */
+			write_flags |= WIMLIB_WRITE_FLAG_SKIP_EXTERNAL_WIMS;
 			break;
 		/* Default delete options */
 		case IMAGEX_FORCE_OPTION:
@@ -4238,7 +4246,7 @@ imagex_update(int argc, tchar **argv, int cmd)
 	ret = wimlib_open_wim_with_progress(wimfile, open_flags, &wim,
 					    imagex_progress_func, NULL);
 	if (ret)
-		goto out_free_command_str;
+		goto out;
 
 	if (argc >= 2) {
 		/* Image explicitly specified.  */
@@ -4261,6 +4269,10 @@ imagex_update(int argc, tchar **argv, int cmd)
 		}
 		image = 1;
 	}
+
+	ret = wim_reference_globs(wim, &refglobs, open_flags);
+	if (ret)
+		goto out_wimlib_free;
 
 	/* Read update commands from standard input, or the command string if
 	 * specified.  */
@@ -4341,15 +4353,16 @@ out_free_cmd_file_contents:
 	free(cmd_file_contents);
 out_wimlib_free:
 	wimlib_free(wim);
-out_free_command_str:
+out:
 	free(command_str);
+	string_list_destroy(&refglobs);
 	return ret;
 
 out_usage:
 	usage(CMD_UPDATE, stderr);
 out_err:
 	ret = -1;
-	goto out_free_command_str;
+	goto out;
 }
 
 /* Verify a WIM file.  */
@@ -4612,7 +4625,7 @@ version(void)
 	static const tchar * const fmt =
 	T(
 "wimlib-imagex " PACKAGE_VERSION " (using wimlib %"TS")\n"
-"Copyright (C) 2012-2023 Eric Biggers\n"
+"Copyright 2012-2023 Eric Biggers\n"
 "License GPLv3+; GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.\n"
 "This is free software: you are free to change and redistribute it.\n"
 "There is NO WARRANTY, to the extent permitted by law.\n"

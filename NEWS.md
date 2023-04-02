@@ -20,6 +20,9 @@
 - Fixed a bug in `wimsplit` where it didn't accept part sizes of 4 GiB or larger
   on Windows and on 32-bit platforms.
 
+- `wimupdate` now supports the `--ref` option.  It should be specified when
+  updating a delta WIM to avoid two minor issues.
+
 - Removed support for Windows XP.
 
 - Added a GitHub Actions workflow that tests wimlib.
