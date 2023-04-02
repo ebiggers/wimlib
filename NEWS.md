@@ -1,23 +1,28 @@
 # wimlib release notes
 
-## Version 1.14.0-BETA2
+## Version 1.14.0-BETA3
 
 - Removed libxml2 and libcrypto (OpenSSL) as dependencies of wimlib.  Also
   removed winpthreads as a dependency of wimlib on Windows.
 
-- The README.WINDOWS file and the `windows-build.sh` script (renamed from
-  `make-windows-release`) have been improved to make it easier to build wimlib
-  on Windows.  The instructions now use MSYS2 (instead of Cygwin as they did
-  before), and both gcc and clang are supported.  Windows ARM64 builds are now
-  supported (experimentally) as well.
+- Upgraded the support for mounting WIM images on Linux from fuse2 to fuse3.
+  fuse2 is no longer supported.
 
-- Improved the performance of the Windows binaries on CPUs that have SHA-1
-  instructions.
+- Converted the README, README.WINDOWS, and NEWS files to Markdown.
+
+- Simplified the process of building wimlib for Windows.  See README.WINDOWS for
+  the updated instructions, which use MSYS2 instead of Cygwin.  Windows ARM64
+  builds are now supported (experimentally) as well.
+
+- Improved performance on CPUs that have SHA-1 instructions in cases where
+  wimlib wasn't using OpenSSL, e.g. the Windows binaries.
 
 - Fixed a bug in `wimsplit` where it didn't accept part sizes of 4 GiB or larger
   on Windows and on 32-bit platforms.
 
 - Removed support for Windows XP.
+
+- Added a GitHub Actions workflow that tests wimlib.
 
 ## Version 1.13.6
 
