@@ -21,7 +21,7 @@ tmpdir="$(mktemp -d)"
 tmpfile="$(mktemp)"
 tmpfile2="$(mktemp)"
 
-trap "rm -rf \"$tmpdir\" \"$tmpfile\" \"$tmpfile2\"" EXIT
+trap 'rm -rf "$tmpdir" "$tmpfile" "$tmpfile2"' EXIT
 
 do_test() {
 	rm -rf "$tmpdir"

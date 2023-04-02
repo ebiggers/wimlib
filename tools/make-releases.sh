@@ -11,10 +11,10 @@ autoreconf -i -f # make sure the version number gets updated
 ./configure && $MAKE distcheck
 
 # Recompress with libdeflate
-gzfile=$(ls wimlib-*.tar.gz | tail -1)
+gzfile=$(find . -name 'wimlib-*.tar.gz' | tail -1)
 tarfile=${gzfile%.gz}
-libdeflate-gunzip $gzfile
-libdeflate-gzip -12 $tarfile
+libdeflate-gunzip "$gzfile"
+libdeflate-gzip -12 "$tarfile"
 
 for arch in i686 x86_64; do
 	./tools/windows-build.sh --arch=$arch --include-docs --zip
