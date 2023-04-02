@@ -9,7 +9,7 @@ set -e -u
 
 usage()
 {
-	echo 1>&1 "Usage: $0 windows-CLANGARM64-bin.zip"
+	echo 1>&2 "Usage: $0 windows-CLANGARM64-bin.zip"
 	exit 1
 }
 

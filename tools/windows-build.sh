@@ -10,6 +10,7 @@ cd "$TOPDIR" # Top-level directory of the git repo
 
 # Global variables, read-only after parse_options has run
 ARCH=
+CC_PKG=
 DESTDIR=
 EXTRA_CONFIGURE_ARGS=
 INCLUDE_DOCS=false
@@ -54,44 +55,43 @@ EOF
 
 parse_options()
 {
-	if [ -z "$MSYSTEM" ]; then
+	case "$MSYSTEM" in
+	"")
 		ARCH=x86_64
-	else
-		case "$MSYSTEM" in
-		MINGW32)
-			ARCH=i686
-			CC_PKG=mingw-w64-i686-gcc
-			;;
-		MINGW64)
-			ARCH=x86_64
-			CC_PKG=mingw-w64-x86_64-gcc
-			;;
-		CLANG32)
-			ARCH=i686
-			CC_PKG=mingw-w64-clang-i686-clang
-			;;
-		CLANG64)
-			ARCH=x86_64
-			CC_PKG=mingw-w64-clang-x86_64-clang
-			;;
-		CLANGARM64)
-			ARCH=aarch64
-			# MSYS2 doesn't yet support cross-compiling for ARM64,
-			# so use a separate prebuilt toolchain for that case.
-			if [ "$(uname -m)" = x86_64 ]; then
-				PREBUILT_LLVM_MINGW_ENABLED=true
-				export PATH="$PREBUILT_LLVM_MINGW_BIN:$PATH"
-			else
-				CC_PKG=mingw-w64-clang-aarch64-clang
-			fi
-			;;
-		*)
-			echo 1>&2 "Unsupported MSYS2 environment: $MSYSTEM.  This script supports"
-			echo 1>&2 "MINGW32, MINGW64, CLANG32, CLANG64, and CLANGARM64."
-			echo 1>&2 "See https://www.msys2.org/docs/environments/"
-			exit 1
-		esac
-	fi
+		;;
+	MINGW32)
+		ARCH=i686
+		CC_PKG=mingw-w64-i686-gcc
+		;;
+	MINGW64)
+		ARCH=x86_64
+		CC_PKG=mingw-w64-x86_64-gcc
+		;;
+	CLANG32)
+		ARCH=i686
+		CC_PKG=mingw-w64-clang-i686-clang
+		;;
+	CLANG64)
+		ARCH=x86_64
+		CC_PKG=mingw-w64-clang-x86_64-clang
+		;;
+	CLANGARM64)
+		ARCH=aarch64
+		# MSYS2 doesn't yet support cross-compiling for ARM64, so use a
+		# separate prebuilt toolchain for that case.
+		if [ "$(uname -m)" = x86_64 ]; then
+			PREBUILT_LLVM_MINGW_ENABLED=true
+			export PATH="$PREBUILT_LLVM_MINGW_BIN:$PATH"
+		else
+			CC_PKG=mingw-w64-clang-aarch64-clang
+		fi
+		;;
+	*)
+		echo 1>&2 "Unsupported MSYS2 environment: $MSYSTEM.  This script supports"
+		echo 1>&2 "MINGW32, MINGW64, CLANG32, CLANG64, and CLANGARM64."
+		echo 1>&2 "See https://www.msys2.org/docs/environments/"
+		exit 1
+	esac
 
 	local longopts="help"
 	longopts+=",arch:"
@@ -205,7 +205,7 @@ configure_wimlib()
 	configure_args+=("--disable-static")
 	# -static-libgcc is needed with gcc.  It should go in the CFLAGS, but
 	# libtool strips it, so it must go directly in CC instead.  See
-	# http://www.gnu.org/software/libtool/manual/libtool.html#Stripped-link-flags
+	# https://www.gnu.org/software/libtool/manual/libtool.html#Stripped-link-flags
 	local cc="${ARCH}-w64-mingw32-cc"
 	if ! type -P "$cc" &>/dev/null; then
 		cc="${ARCH}-w64-mingw32-gcc"
