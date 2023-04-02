@@ -21,9 +21,9 @@ newyear=$(date +%Y)
 
 newver="${newmajor}.${newminor}.${newpatch}"
 pat='This is wimlib version [^[:space:]]\+ ([^[:space:]]\+ [^[:space:]]\+)'
-sed -i "s/$pat/This is wimlib version $newver ($newmonth $newyear)/" README
+sed -i "s/$pat/This is wimlib version $newver ($newmonth $newyear)/" README.md
 
-sed -i "s/$oldver/$newver/" tools/get-version-number.sh README.WINDOWS
+sed -i "s/$oldver/$newver/" tools/get-version-number.sh README.WINDOWS.md
 
 sed -i -e 's/\(#define WIMLIB_MAJOR_VERSION[[:space:]]\+\)[[:digit:]]\+/\1'"$newmajor"'/' \
        -e 's/\(#define WIMLIB_MINOR_VERSION[[:space:]]\+\)[[:digit:]]\+/\1'"$newminor"'/' \

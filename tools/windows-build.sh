@@ -256,15 +256,15 @@ install_binaries()
 install_text_files()
 {
 	echo "Installing NEWS, README, and licenses..."
-	cp NEWS README* COPYING* "$DESTDIR"
+	cp NEWS* README* COPYING* "$DESTDIR"
 	sed -n '/^#/q; s/^[\/\* ]*//; p' src/divsufsort.c > "$DESTDIR"/COPYING.libdivsufsort-lite
 	if ! grep -q 'Copyright' "$DESTDIR"/COPYING.libdivsufsort-lite; then
 		echo 1>&2 "ERROR: failed to extract libdivsufsort-lite license text"
 		exit 1
 	fi
 	cd "$DESTDIR"
-	for fil in NEWS README* COPYING*; do
-		sed < "$fil" > "${fil}".txt -e 's/$/\r/g'
+	for fil in NEWS* README* COPYING*; do
+		sed < "$fil" > "${fil%.md}".txt -e 's/$/\r/g'
 		rm "$fil"
 	done
 	cd ..
