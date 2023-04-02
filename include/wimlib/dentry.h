@@ -236,7 +236,7 @@ struct update_command_journal;
 
 int
 rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to,
-		CASE_SENSITIVITY_TYPE case_type,
+		CASE_SENSITIVITY_TYPE case_type, bool noreplace,
 		struct update_command_journal *j);
 
 

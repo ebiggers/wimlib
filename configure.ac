@@ -139,7 +139,7 @@ AM_CONDITIONAL([WITH_NTFS_3G], [test "$WITH_NTFS_3G" = "yes"])
 AC_MSG_CHECKING([whether to include support for mounting WIMs])
 AC_ARG_WITH([fuse],
 	    [AS_HELP_STRING([--without-fuse],
-			    [build without libfuse.  This will disable the
+			    [build without libfuse3.  This will disable the
 			     ability to mount WIM images.])],
 	    [WITH_FUSE=$withval],
 	    [WITH_FUSE=$WITH_FUSE_DEFAULT])
@@ -147,10 +147,10 @@ AC_MSG_RESULT([$WITH_FUSE])
 
 if test "$WITH_FUSE" = "yes"; then
 
-	PKG_CHECK_MODULES([LIBFUSE], [fuse], [],
-		[AC_MSG_ERROR([Cannot find libfuse!
-		Without libfuse, wimlib cannot include support for mounting WIM
-		images.  Either install libfuse, or configure --without-fuse to
+	PKG_CHECK_MODULES([LIBFUSE], [fuse3], [],
+		[AC_MSG_ERROR([Cannot find libfuse3!
+		Without libfuse3, wimlib cannot include support for mounting WIM
+		images.  Either install libfuse3, or configure --without-fuse to
 		disable this feature.])])
 	PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES fuse"
 	AC_DEFINE([WITH_FUSE], [1], [Define to 1 if using FUSE support])

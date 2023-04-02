@@ -958,7 +958,7 @@ is_ancestor(const struct wim_dentry *d1, const struct wim_dentry *d2)
  */
 int
 rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to,
-		CASE_SENSITIVITY_TYPE case_type,
+		CASE_SENSITIVITY_TYPE case_type, bool noreplace,
 		struct update_command_journal *j)
 {
 	struct wim_dentry *src;
@@ -977,6 +977,9 @@ rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to,
 
 	if (dst) {
 		/* Destination file exists */
+
+		if (noreplace)
+			return -EEXIST;
 
 		if (src == dst) /* Same file */
 			return 0;
@@ -1045,7 +1048,7 @@ execute_rename_command(struct update_command_journal *j,
 
 	ret = rename_wim_path(wim, rename_cmd->rename.wim_source_path,
 			      rename_cmd->rename.wim_target_path,
-			      WIMLIB_CASE_PLATFORM_DEFAULT, j);
+			      WIMLIB_CASE_PLATFORM_DEFAULT, false, j);
 	if (ret) {
 		ret = -ret;
 		errno = ret;

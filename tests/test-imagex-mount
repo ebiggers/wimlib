@@ -26,7 +26,7 @@ imagex_unmount() {
 }
 
 cleanup() {
-	fusermount -u $TEST_SUBDIR/tmp.mnt &> /dev/null || true
+	fusermount3 -u $TEST_SUBDIR/tmp.mnt &> /dev/null || true
 	rm -rf $TEST_SUBDIR
 }
 

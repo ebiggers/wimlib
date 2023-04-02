@@ -122,14 +122,14 @@ with it, when building for a UNIX-like system from source.  If you have
 downloaded the Windows binary distribution of wimlib and wimlib-imagex then all
 dependencies were already included and this section is irrelevant.
 
-* libfuse (optional but recommended)
-	Unless configured --without-fuse, wimlib requires a non-ancient version
-	of libfuse.  Most Linux distributions already include this, but make
-	sure you have the libfuse package installed, and also libfuse-dev if
-	your distribution distributes header files separately.  FUSE also
-	requires a kernel module.  If the kernel module is available it should
-	automatically be loaded if you try to mount a WIM image.  For more
-	information, see https://github.com/libfuse/libfuse/.
+* libfuse3 (optional but recommended)
+	Unless configured --without-fuse, wimlib requires libfuse3, for the
+	support for mounting WIM images.  Most Linux distributions already
+	include this, but make sure you have the fuse3 package installed, and
+	also libfuse3-dev if your distribution distributes development files
+	separately.  FUSE also requires a kernel module.  If the kernel module
+	is available it should automatically be loaded if you try to mount a WIM
+	image.  For more information, see https://github.com/libfuse/libfuse/.
 
 * libntfs-3g (optional but recommended)
 	Unless configured --without-ntfs-3g, wimlib requires the library and

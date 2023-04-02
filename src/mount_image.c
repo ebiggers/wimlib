@@ -8,7 +8,7 @@
  */
 
 /*
- * Copyright (C) 2012-2016 Eric Biggers
+ * Copyright 2012-2023 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -37,7 +37,7 @@
 #  error "FUSE mount not supported on Windows!  Please configure --without-fuse"
 #endif
 
-#define FUSE_USE_VERSION 26
+#define FUSE_USE_VERSION 30
 
 #include <sys/types.h> /* sometimes required before <sys/xattr.h> */
 #include <sys/xattr.h>
@@ -219,10 +219,7 @@ flags_writable(int open_flags)
 static mode_t
 fuse_mask_mode(mode_t mode, const struct fuse_context *fuse_ctx)
 {
-#if FUSE_MAJOR_VERSION > 2 || (FUSE_MAJOR_VERSION == 2 && FUSE_MINOR_VERSION >= 8)
-	mode &= ~fuse_ctx->umask;
-#endif
-	return mode;
+	return mode & ~fuse_ctx->umask;
 }
 
 /*
@@ -647,6 +644,31 @@ touch_parent(struct wim_dentry *dentry)
 }
 
 /*
+ * Update inode metadata after a regular file's contents have changed:
+ *
+ * - Update the timestamps
+ * - Clear the setuid and setgid bits
+ */
+static void
+file_contents_changed(struct wim_inode *inode)
+{
+	struct wimlib_unix_data unix_data;
+	bool ok;
+
+	touch_inode(inode);
+
+	if (inode_get_unix_data(inode, &unix_data)) {
+		unix_data.mode &= ~(S_ISUID | S_ISGID);
+		ok = inode_set_unix_data(inode, &unix_data, UNIX_DATA_MODE);
+		/*
+		 * This cannot fail because no memory allocation should have
+		 * been required, as the UNIX data already exists.
+		 */
+		wimlib_assert(ok);
+	} /* Else, set[ug]id can't be set, so there's nothing to do. */
+}
+
+/*
  * Create a new file in the staging directory for a read-write mounted image.
  *
  * On success, returns the file descriptor for the new staging file, opened for
@@ -798,6 +820,8 @@ extract_blob_to_staging_dir(struct wim_inode *inode,
 	prepare_unhashed_blob(new_blob, inode, strm->stream_id,
 			      &wim_get_current_image_metadata(ctx->wim)->unhashed_blobs);
 	inode_replace_stream_blob(inode, strm, new_blob, ctx->wim->blob_table);
+	if (size < blob_size(old_blob))
+		file_contents_changed(inode);
 	return 0;
 
 out_revert_fd_changes:
@@ -1196,8 +1220,66 @@ out:
 	return ret;
 }
 
+static void *
+wimfs_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
+{
+	/*
+	 * Cache positive name lookups indefinitely, since names can only be
+	 * added, removed, or modified through the mounted filesystem itself.
+	 */
+	cfg->entry_timeout = 1000000000;
+
+	/*
+	 * Cache negative name lookups indefinitely, since names can only be
+	 * added, removed, or modified through the mounted filesystem itself.
+	 */
+	cfg->negative_timeout = 1000000000;
+
+	/*
+	 * Don't cache file/directory attributes.  This is needed as a
+	 * workaround for the fact that when caching attributes, the high level
+	 * interface to libfuse considers a file which has several hard-linked
+	 * names as several different files.  (Otherwise, we could cache our
+	 * file/directory attributes indefinitely, since they can only be
+	 * changed through the mounted filesystem itself.)
+	 */
+	cfg->attr_timeout = 0;
+
+	/*
+	 * If an open file is unlinked, unlink it for real rather than renaming
+	 * it to a hidden file.  Our code supports this; an unlinked inode is
+	 * retained until all its file descriptors have been closed.
+	 */
+	cfg->hard_remove = 1;
+
+	/*
+	 * Make FUSE use the inode numbers we provide.  We want this, because we
+	 * have inodes and will number them ourselves.
+	 */
+	cfg->use_ino = 1;
+
+	/*
+	 * Cache the contents of files.  This will speed up repeated access to
+	 * files on a mounted WIM image, since they won't need to be
+	 * decompressed repeatedly.  This option is valid because data in the
+	 * WIM image should never be changed externally.  (Although, if someone
+	 * really wanted to they could modify the WIM file or mess with the
+	 * staging directory; but then they're asking for trouble.)
+	 */
+	cfg->kernel_cache = 1;
+
+	/*
+	 * We keep track of file descriptor structures (struct wimfs_fd), so
+	 * there is no need to have the file path provided on operations such as
+	 * read().
+	 */
+	cfg->nullpath_ok = 1;
+
+	return wimfs_get_context();
+}
+
 static int
-wimfs_chmod(const char *path, mode_t mask)
+wimfs_chmod(const char *path, mode_t mask, struct fuse_file_info *fi)
 {
 	const struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_inode *inode;
@@ -1206,10 +1288,13 @@ wimfs_chmod(const char *path, mode_t mask)
 	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA))
 		return -EOPNOTSUPP;
 
-	inode = wim_pathname_to_inode(ctx->wim, path);
-	if (!inode)
-		return -errno;
-
+	if (fi) {
+		inode = WIMFS_FD(fi)->f_inode;
+	} else {
+		inode = wim_pathname_to_inode(ctx->wim, path);
+		if (!inode)
+			return -errno;
+	}
 	unix_data.uid = ctx->owner_uid;
 	unix_data.gid = ctx->owner_gid;
 	unix_data.mode = mask;
@@ -1222,7 +1307,7 @@ wimfs_chmod(const char *path, mode_t mask)
 }
 
 static int
-wimfs_chown(const char *path, uid_t uid, gid_t gid)
+wimfs_chown(const char *path, uid_t uid, gid_t gid, struct fuse_file_info *fi)
 {
 	const struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_inode *inode;
@@ -1232,9 +1317,13 @@ wimfs_chown(const char *path, uid_t uid, gid_t gid)
 	if (!(ctx->mount_flags & WIMLIB_MOUNT_FLAG_UNIX_DATA))
 		return -EOPNOTSUPP;
 
-	inode = wim_pathname_to_inode(ctx->wim, path);
-	if (!inode)
-		return -errno;
+	if (fi) {
+		inode = WIMFS_FD(fi)->f_inode;
+	} else {
+		inode = wim_pathname_to_inode(ctx->wim, path);
+		if (!inode)
+			return -errno;
+	}
 
 	which = 0;
 
@@ -1260,38 +1349,32 @@ wimfs_chown(const char *path, uid_t uid, gid_t gid)
 }
 
 static int
-wimfs_fgetattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi)
-{
-	struct wimfs_fd *fd = WIMFS_FD(fi);
-	return inode_to_stbuf(fd->f_inode, fd->f_blob, stbuf);
-}
-
-static int
-wimfs_ftruncate(const char *path, off_t size, struct fuse_file_info *fi)
-{
-	struct wimfs_fd *fd = WIMFS_FD(fi);
-	if (ftruncate(fd->f_staging_fd.fd, size))
-		return -errno;
-	touch_inode(fd->f_inode);
-	fd->f_blob->size = size;
-	return 0;
-}
-
-static int
-wimfs_getattr(const char *path, struct stat *stbuf)
+wimfs_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi)
 {
 	const struct wimfs_context *ctx = wimfs_get_context();
-	struct wim_dentry *dentry;
-	struct wim_inode_stream *strm;
+	const struct wim_inode *inode;
+	const struct blob_descriptor *blob;
 	int ret;
 
-	ret = wim_pathname_to_stream(ctx, path, LOOKUP_FLAG_DIRECTORY_OK,
-				     &dentry, &strm);
-	if (ret)
-		return ret;
+	if (fi) {
+		const struct wimfs_fd *fd = WIMFS_FD(fi);
 
-	return inode_to_stbuf(dentry->d_inode,
-			      stream_blob_resolved(strm), stbuf);
+		inode = fd->f_inode;
+		blob = fd->f_blob;
+	} else {
+		struct wim_dentry *dentry;
+		struct wim_inode_stream *strm;
+
+		ret = wim_pathname_to_stream(ctx, path,
+					     LOOKUP_FLAG_DIRECTORY_OK,
+					     &dentry, &strm);
+		if (ret)
+			return ret;
+		inode = dentry->d_inode;
+		blob = stream_blob_resolved(strm);
+	}
+
+	return inode_to_stbuf(inode, blob, stbuf);
 }
 
 static int
@@ -1605,12 +1688,17 @@ wimfs_open(const char *path, struct fuse_file_info *fi)
 		int raw_fd;
 
 		raw_fd = openat(blob->staging_dir_fd, blob->staging_file_name,
-				(fi->flags & O_ACCMODE) | O_NOFOLLOW);
+				(fi->flags & (O_ACCMODE | O_TRUNC)) |
+				O_NOFOLLOW);
 		if (raw_fd < 0) {
 			close_wimfs_fd(fd);
 			return -errno;
 		}
 		filedes_init(&fd->f_staging_fd, raw_fd);
+		if (fi->flags & O_TRUNC) {
+			blob->size = 0;
+			file_contents_changed(inode);
+		}
 	}
 	fi->fh = (uintptr_t)fd;
 	return 0;
@@ -1686,7 +1774,8 @@ wimfs_read(const char *path, char *buf, size_t size,
 
 static int
 wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
-	      off_t offset, struct fuse_file_info *fi)
+	      off_t offset, struct fuse_file_info *fi,
+	      enum fuse_readdir_flags flags)
 {
 	struct wimfs_fd *fd = WIMFS_FD(fi);
 	const struct wim_inode *inode;
@@ -1695,10 +1784,10 @@ wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 	inode = fd->f_inode;
 
-	ret = filler(buf, ".", NULL, 0);
+	ret = filler(buf, ".", NULL, 0, 0);
 	if (ret)
 		return ret;
-	ret = filler(buf, "..", NULL, 0);
+	ret = filler(buf, "..", NULL, 0, 0);
 	if (ret)
 		return ret;
 
@@ -1710,7 +1799,7 @@ wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 				    &name, &name_nbytes))
 			return -errno;
 
-		ret = filler(buf, name, NULL, 0);
+		ret = filler(buf, name, NULL, 0, 0);
 		FREE(name);
 		if (ret)
 			return ret;
@@ -1779,10 +1868,13 @@ wimfs_removexattr(const char *path, const char *name)
 }
 
 static int
-wimfs_rename(const char *from, const char *to)
+wimfs_rename(const char *from, const char *to, unsigned int flags)
 {
+	if (flags & RENAME_EXCHANGE)
+		return -EINVAL;
 	return rename_wim_path(wimfs_get_WIMStruct(), from, to,
-			       WIMLIB_CASE_SENSITIVE, NULL);
+			       WIMLIB_CASE_SENSITIVE,
+			       (flags & RENAME_NOREPLACE), NULL);
 }
 
 static int
@@ -1913,14 +2005,32 @@ wimfs_symlink(const char *to, const char *from)
 }
 
 static int
-wimfs_truncate(const char *path, off_t size)
+do_truncate(int staging_fd, off_t size,
+	    struct wim_inode *inode, struct blob_descriptor *blob)
+{
+	if (ftruncate(staging_fd, size))
+		return -errno;
+	file_contents_changed(inode);
+	blob->size = size;
+	return 0;
+}
+
+static int
+wimfs_truncate(const char *path, off_t size, struct fuse_file_info *fi)
 {
 	const struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_dentry *dentry;
 	struct wim_inode_stream *strm;
 	struct blob_descriptor *blob;
 	int ret;
-	int fd;
+	int staging_fd;
+
+	if (fi) {
+		struct wimfs_fd *fd = WIMFS_FD(fi);
+
+		return do_truncate(fd->f_staging_fd.fd, size, fd->f_inode,
+				   fd->f_blob);
+	}
 
 	ret = wim_pathname_to_stream(ctx, path, 0, &dentry, &strm);
 	if (ret)
@@ -1937,16 +2047,14 @@ wimfs_truncate(const char *path, off_t size)
 	}
 
 	/* Truncate the staging file.  */
-	fd = openat(blob->staging_dir_fd, blob->staging_file_name,
-		    O_WRONLY | O_NOFOLLOW);
-	if (fd < 0)
+	staging_fd = openat(blob->staging_dir_fd, blob->staging_file_name,
+			    O_WRONLY | O_NOFOLLOW);
+	if (staging_fd < 0)
 		return -errno;
-	ret = ftruncate(fd, size);
-	if (close(fd) || ret)
-		return -errno;
-	blob->size = size;
-	touch_inode(dentry->d_inode);
-	return 0;
+	ret = do_truncate(staging_fd, size, dentry->d_inode, blob);
+	if (close(staging_fd) && !ret)
+		ret = -errno;
+	return ret;
 }
 
 static int
@@ -1971,21 +2079,24 @@ wimfs_unlink(const char *path)
 	return 0;
 }
 
-#ifdef HAVE_UTIMENSAT
 /*
  * Change the timestamp on a file dentry.
  *
  * Note that alternate data streams do not have their own timestamps.
  */
 static int
-wimfs_utimens(const char *path, const struct timespec tv[2])
+wimfs_utimens(const char *path, const struct timespec tv[2],
+	      struct fuse_file_info *fi)
 {
-	WIMStruct *wim = wimfs_get_WIMStruct();
 	struct wim_inode *inode;
 
-	inode = wim_pathname_to_inode(wim, path);
-	if (!inode)
-		return -errno;
+	if (fi) {
+		inode = WIMFS_FD(fi)->f_inode;
+	} else {
+		inode = wim_pathname_to_inode(wimfs_get_WIMStruct(), path);
+		if (!inode)
+			return -errno;
+	}
 
 	if (tv[0].tv_nsec != UTIME_OMIT) {
 		if (tv[0].tv_nsec == UTIME_NOW)
@@ -2001,22 +2112,6 @@ wimfs_utimens(const char *path, const struct timespec tv[2])
 	}
 	return 0;
 }
-#else /* HAVE_UTIMENSAT */
-static int
-wimfs_utime(const char *path, struct utimbuf *times)
-{
-	WIMStruct *wim = wimfs_get_WIMStruct();
-	struct wim_inode *inode;
-
-	inode = wim_pathname_to_inode(wim, path);
-	if (!inode)
-		return -errno;
-
-	inode->i_last_access_time = time_t_to_wim_timestamp(times->actime);
-	inode->i_last_write_time = time_t_to_wim_timestamp(times->modtime);
-	return 0;
-}
-#endif /* !HAVE_UTIMENSAT */
 
 static int
 wimfs_write(const char *path, const char *buf, size_t size,
@@ -2032,15 +2127,14 @@ wimfs_write(const char *path, const char *buf, size_t size,
 	if (offset + size > fd->f_blob->size)
 		fd->f_blob->size = offset + size;
 
-	touch_inode(fd->f_inode);
+	file_contents_changed(fd->f_inode);
 	return ret;
 }
 
 static const struct fuse_operations wimfs_operations = {
+	.init	     = wimfs_init,
 	.chmod       = wimfs_chmod,
 	.chown       = wimfs_chown,
-	.fgetattr    = wimfs_fgetattr,
-	.ftruncate   = wimfs_ftruncate,
 	.getattr     = wimfs_getattr,
 	.getxattr    = wimfs_getxattr,
 	.link        = wimfs_link,
@@ -2061,23 +2155,9 @@ static const struct fuse_operations wimfs_operations = {
 	.symlink     = wimfs_symlink,
 	.truncate    = wimfs_truncate,
 	.unlink      = wimfs_unlink,
-#ifdef HAVE_UTIMENSAT
 	.utimens     = wimfs_utimens,
-#else
-	.utime       = wimfs_utime,
-#endif
 	.write       = wimfs_write,
 
-	/* We keep track of file descriptor structures (struct wimfs_fd), so
-	 * there is no need to have the file path provided on operations such as
-	 * read().  */
-#if FUSE_MAJOR_VERSION > 2 || (FUSE_MAJOR_VERSION == 2 && FUSE_MINOR_VERSION >= 8)
-	.flag_nullpath_ok = 1,
-#endif
-#if FUSE_MAJOR_VERSION > 2 || (FUSE_MAJOR_VERSION == 2 && FUSE_MINOR_VERSION >= 9)
-	.flag_nopath = 1,
-	.flag_utime_omit_ok = 1,
-#endif
 };
 
 /* API function documented in wimlib.h  */
@@ -2195,61 +2275,15 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	/*
 	 * Build the FUSE mount options:
 	 *
-	 * use_ino
-	 *	FUSE will use the inode numbers we provide.  We want this,
-	 *	because we have inodes and will number them ourselves.
-	 *
 	 * subtype=wimfs
 	 *	Name for our filesystem (main type is "fuse").
-	 *
-	 * hard_remove
-	 *	If an open file is unlinked, unlink it for real rather than
-	 *	renaming it to a hidden file.  Our code supports this; an
-	 *	unlinked inode is retained until all its file descriptors have
-	 *	been closed.
 	 *
 	 * default_permissions
 	 *	FUSE will perform permission checking.  Useful when
 	 *	WIMLIB_MOUNT_FLAG_UNIX_DATA is provided and the WIM image
 	 *	contains the UNIX permissions for each file.
-	 *
-	 * kernel_cache
-	 *	Cache the contents of files.  This will speed up repeated access
-	 *	to files on a mounted WIM image, since they won't need to be
-	 *	decompressed repeatedly.  This option is valid because data in
-	 *	the WIM image should never be changed externally.  (Although, if
-	 *	someone really wanted to they could modify the WIM file or mess
-	 *	with the staging directory; but then they're asking for
-	 *	trouble.)
-	 *
-	 * entry_timeout=1000000000
-	 *	Cache positive name lookups indefinitely, since names can only
-	 *	be added, removed, or modified through the mounted filesystem
-	 *	itself.
-	 *
-	 * negative_timeout=1000000000
-	 *	Cache negative name lookups indefinitely, since names can only
-	 *	be added, removed, or modified through the mounted filesystem
-	 *	itself.
-	 *
-	 * attr_timeout=0
-	 *	Don't cache file/directory attributes.  This is needed as a
-	 *	workaround for the fact that when caching attributes, the high
-	 *	level interface to libfuse considers a file which has several
-	 *	hard-linked names as several different files.  (Otherwise, we
-	 *	could cache our file/directory attributes indefinitely, since
-	 *	they can only be changed through the mounted filesystem itself.)
 	 */
-	char optstring[256] =
-		"use_ino"
-		",subtype=wimfs"
-		",hard_remove"
-		",default_permissions"
-		",kernel_cache"
-		",entry_timeout=1000000000"
-		",negative_timeout=1000000000"
-		",attr_timeout=0"
-		;
+	char optstring[128] = "subtype=wimfs,default_permissions";
 	fuse_argv[fuse_argc++] = "-o";
 	fuse_argv[fuse_argc++] = optstring;
 	if (!(mount_flags & WIMLIB_MOUNT_FLAG_READWRITE))

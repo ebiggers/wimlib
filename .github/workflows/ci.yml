@@ -2,7 +2,7 @@ name: CI
 on: [pull_request, push]
 env:
   DEF_CFLAGS: -O2 -g -Wall -Werror
-  DEPENDENCIES: autoconf automake libtool pkgconf libfuse-dev ntfs-3g-dev ntfs-3g
+  DEPENDENCIES: autoconf automake libtool pkgconf libfuse3-dev fuse3 ntfs-3g-dev ntfs-3g
 
 jobs:
   gcc-build-and-test:
