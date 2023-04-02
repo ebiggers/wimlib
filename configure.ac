@@ -10,6 +10,7 @@ AM_SILENT_RULES([yes])
 AC_C_BIGENDIAN
 m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
 LT_INIT
+PKG_PROG_PKG_CONFIG
 
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_FILES([Makefile] [doc/Doxyfile] [wimlib.pc])
