@@ -18,7 +18,7 @@ INSTALL_PREREQUISITES=false
 MAKE="make -j$(getconf _NPROCESSORS_ONLN)"
 MSYSTEM=${MSYSTEM:-}
 SKIP_CONFIGURE=false
-VERSION=$(tools/get-version-number)
+VERSION=$(tools/get-version-number.sh)
 ZIP=false
 ZIPFILE=
 

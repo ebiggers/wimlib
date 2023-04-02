@@ -20,7 +20,7 @@ AM_LDFLAGS	= $(PLATFORM_LDFLAGS)
 EXTRA_DIST	= README README.WINDOWS				\
 		  COPYING COPYING.GPLv3	COPYING.LGPLv3		\
 		  examples					\
-		  tools/get-version-number tools/windows-build.sh
+		  tools/get-version-number.sh tools/windows-build.sh
 
 ##############################################################################
 #				Library					     #
