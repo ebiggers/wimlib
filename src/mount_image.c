@@ -820,7 +820,7 @@ extract_blob_to_staging_dir(struct wim_inode *inode,
 	prepare_unhashed_blob(new_blob, inode, strm->stream_id,
 			      &wim_get_current_image_metadata(ctx->wim)->unhashed_blobs);
 	inode_replace_stream_blob(inode, strm, new_blob, ctx->wim->blob_table);
-	if (size < blob_size(old_blob))
+	if (size != blob_size(old_blob))
 		file_contents_changed(inode);
 	return 0;
 
