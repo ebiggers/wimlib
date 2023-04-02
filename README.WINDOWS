@@ -85,7 +85,7 @@ other front-ends or applications.  Currently there is no official graphical user
 interface available for wimlib or wimlib-imagex.  However, an unofficial
 Windows-only graphical user interface that provides a thin wrapper around
 wimlib-imagex can be downloaded at
-http://reboot.pro/files/file/485-wimlib-imagex-command-line-compiler/.
+https://reboot.pro/files/file/588-wimlib-clc/.
 
                               BUILDING FROM SOURCE
 

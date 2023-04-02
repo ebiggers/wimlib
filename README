@@ -129,7 +129,7 @@ dependencies were already included and this section is irrelevant.
 	your distribution distributes header files separately.  FUSE also
 	requires a kernel module.  If the kernel module is available it should
 	automatically be loaded if you try to mount a WIM image.  For more
-	information see http://fuse.sourceforge.net/.
+	information, see https://github.com/libfuse/libfuse/.
 
 * libntfs-3g (optional but recommended)
 	Unless configured --without-ntfs-3g, wimlib requires the library and
@@ -144,10 +144,10 @@ dependencies were already included and this section is irrelevant.
 	depending on what options are given to it.  Depending on your Linux
 	distribution, you may already have these programs installed, or they may
 	be in the software repository.  Making an ISO filesystem requires
-	`mkisofs' from `cdrkit' (http://www.cdrkit.org).  Making a disk image
-	requires `mtools' (http://www.gnu.org/software/mtools) and `syslinux'
-	(http://www.syslinux.org).  Retrieving files from the Windows Automated
-	Installation Kit requires `cabextract' (http://www.cabextract.org.uk).
+	`mkisofs' from `cdrkit' (https://www.cdrkit.org).  Making a disk image
+	requires `mtools' (https://www.gnu.org/software/mtools) and `syslinux'
+	(https://www.syslinux.org).  Retrieving files from the Windows Automated
+	Installation Kit requires `cabextract' (https://www.cabextract.org.uk).
 
                                  CONFIGURATION
 
@@ -211,8 +211,8 @@ science papers.
 
 The code in ntfs-3g_apply.c and ntfs-3g_capture.c uses the NTFS-3G library,
 which is a library for reading and writing to NTFS filesystems (the filesystem
-used by recent versions of Windows).  See
-http://www.tuxera.com/community/open-source-ntfs-3g/ for more information.
+used by recent versions of Windows).  For more information about NTFS-3G, see
+https://github.com/tuxera/ntfs-3g/.
 
 A limited number of other free programs can handle some parts of the WIM
 file format:
@@ -230,16 +230,16 @@ file format:
 
 If you are looking for an archive format that provides features similar to WIM
 but was designed primarily for UNIX, you may want to consider SquashFS
-(http://squashfs.sourceforge.net/).  However, you may find that wimlib works
-surprisingly well on UNIX.  It will store hard links and symbolic links, and it
-supports storing standard UNIX file permissions (owners, groups, and modes);
-special files such as device nodes and FIFOs; and extended attributes.
-Actually, I use it to back up my own files on Linux!
+(https://docs.kernel.org/filesystems/squashfs.html).  However, you may find that
+wimlib works surprisingly well on UNIX.  It will store hard links and symbolic
+links, and it supports storing standard UNIX file permissions (owners, groups,
+and modes); special files such as device nodes and FIFOs; and extended
+attributes.  Actually, I use it to back up my own files on Linux!
 
                                     HISTORY
 
 wimlib was originally a project started by Carl Thijssen for use on Linux in the
-Ultimate Deployment Appliance (http://www.ultimatedeployment.org/).  Since then
+Ultimate Deployment Appliance (https://www.ultimatedeployment.org/).  Since then
 the code has been entirely rewritten and improved (main author: Eric Biggers).
 Windows support has been available since version 1.3.0 (March 2013).  A list of
 version-to-version changes can be found in the NEWS file.

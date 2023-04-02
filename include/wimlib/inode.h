@@ -234,7 +234,7 @@ struct wim_inode_extra {
 
 /*
  * The available reparse tags are documented at
- * http://msdn.microsoft.com/en-us/library/dd541667(v=prot.10).aspx.
+ * https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/c8e77b37-3909-4fe6-a4ea-2b9d423b1ee4
  * Here we only define the ones of interest to us.
  */
 #define WIM_IO_REPARSE_TAG_MOUNT_POINT		0xA0000003

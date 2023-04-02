@@ -217,7 +217,7 @@ image from a WIM file available on a HTTP server to an NTFS volume on /dev/sda1,
 run something like:
 .PP
 .RS
-wget -O - http://myserver/mywim.wim | wimapply - 1 /dev/sda1
+wget -O - https://myserver/mywim.wim | wimapply - 1 /dev/sda1
 .RE
 .PP
 Pipable WIMs may also be split into multiple parts, just like normal WIMs.  To

@@ -2,7 +2,7 @@
  * mount_image.c
  *
  * This file implements mounting of WIM images using FUSE
- * (Filesystem in Userspace).  See http://fuse.sourceforge.net/.
+ * (Filesystem in Userspace).  See https://github.com/libfuse/libfuse
  *
  * Currently it is only expected to work on Linux.
  */
@@ -21,7 +21,7 @@
  * details.
  *
  * You should have received a copy of the GNU Lesser General Public License
- * along with this file; if not, see http://www.gnu.org/licenses/.
+ * along with this file; if not, see https://www.gnu.org/licenses/.
  */
 
 #ifdef HAVE_CONFIG_H
