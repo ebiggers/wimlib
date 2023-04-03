@@ -3857,6 +3857,7 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 	int solid_ctype = WIMLIB_COMPRESSION_TYPE_INVALID;
 	int ret;
 	WIMStruct *wim;
+	struct wimlib_wim_info info;
 	const tchar *wimfile;
 	off_t old_size;
 	off_t new_size;
@@ -3900,6 +3901,9 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 		case IMAGEX_SOLID_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_SOLID;
 			write_flags |= WIMLIB_WRITE_FLAG_RECOMPRESS;
+			/* Reset the non-solid compression type to LZMS. */
+			if (compression_type == WIMLIB_COMPRESSION_TYPE_INVALID)
+				compression_type = WIMLIB_COMPRESSION_TYPE_LZMS;
 			break;
 		case IMAGEX_NO_SOLID_SORT_OPTION:
 			write_flags |= WIMLIB_WRITE_FLAG_NO_SOLID_SORT;
@@ -3935,11 +3939,18 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 	if (ret)
 		goto out;
 
-	if (compression_type != WIMLIB_COMPRESSION_TYPE_INVALID) {
+	wimlib_get_wim_info(wim, &info);
+
+	if (compression_type != WIMLIB_COMPRESSION_TYPE_INVALID &&
+	    compression_type != info.compression_type) {
 		/* Change compression type.  */
 		ret = wimlib_set_output_compression_type(wim, compression_type);
 		if (ret)
 			goto out_wimlib_free;
+
+		/* Reset the chunk size. */
+		if (chunk_size == UINT32_MAX)
+			chunk_size = 0;
 	}
 
 	if (chunk_size != UINT32_MAX) {

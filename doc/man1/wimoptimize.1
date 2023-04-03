@@ -124,6 +124,14 @@ wimoptimize install.wim --solid
 .br
 mv install.wim install.esd
 .RE
+.PP
+Turn 'install.esd' back into 'install.wim':
+.RS
+.PP
+wimoptimize install.wim --compress=LZX
+.br
+mv install.esd install.wim
+.RE
 .SH SEE ALSO
 .BR wimlib-imagex (1)
 .BR wimexport (1)

@@ -23,6 +23,13 @@
 - `wimupdate` now supports the `--ref` option.  It should be specified when
   updating a delta WIM to avoid two minor issues.
 
+- `wimoptimize` now has better default behavior when converting to and from
+  solid archives, i.e. WIM <=> ESD.  It now is consistent with `wimcapture` and
+  `wimexport`.  For WIM => ESD, `wimoptimize --solid` now works.  Before, the
+  needed command was `wimoptimize --solid --compress=LZMS --chunk-size=128K`.
+  For ESD => WIM, `wimoptimize --compress=LZX` now works.  Before, the needed
+  command was `wimoptimize --compress=LZX --chunk-size=32K`.
+
 - Removed support for Windows XP.
 
 - Added a GitHub Actions workflow that tests wimlib.
