@@ -13,6 +13,10 @@
 #define WIMLIB_CMP_FLAG_UNIX_MODE	0x00000001
 #define WIMLIB_CMP_FLAG_NTFS_3G_MODE	0x00000002
 #define WIMLIB_CMP_FLAG_WINDOWS_MODE	0x00000004
+#define WIMLIB_CMP_FLAG_EXT4		0x00000008
+
+WIMLIBAPI void
+wimlib_seed_random(u64 seed);
 
 WIMLIBAPI int
 wimlib_compare_images(WIMStruct *wim1, int image1,

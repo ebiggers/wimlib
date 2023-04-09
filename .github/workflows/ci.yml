@@ -202,3 +202,52 @@ jobs:
       run: |
         tools/libFuzzer/fuzz.sh --time=120 ${{matrix.sanitizer}} \
             ${{matrix.target}}
+
+  fuzz-with-wlfuzz-linux:
+    name: Fuzz with wlfuzz (Linux, ${{matrix.sanitizer}})
+    strategy:
+      matrix:
+        include:
+        - sanitizer: none
+          cflags:
+        - sanitizer: ASAN
+          cflags: -fsanitize=address -fno-sanitize-recover=address
+        - sanitizer: UBSAN
+          cflags: -fsanitize=undefined -fno-sanitize-recover=undefined
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang $DEPENDENCIES
+    - run: ./bootstrap
+    - run: ./configure --enable-test-support CC=clang CFLAGS="$DEF_CFLAGS ${{matrix.cflags}}"
+    - run: make -j8 tests/wlfuzz
+    - run: TMPDIR=$PWD/tmp.wlfuzz tests/wlfuzz 120
+
+  fuzz-with-wlfuzz-windows:
+    name: Fuzz with wlfuzz (Windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0  # Need tags for tools/get-version-number.sh
+    - uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >
+          autoconf
+          automake
+          git
+          libtool
+          make
+          mingw-w64-x86_64-gcc
+          pkgconf
+    - run: CFLAGS="$DEF_CFLAGS" ./tools/windows-build.sh -- --enable-test-support
+    - run: make tests/wlfuzz.exe
+    - run: TMPDIR=$PWD/tmp.wlfuzz tests/wlfuzz 120

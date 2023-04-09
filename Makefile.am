@@ -189,6 +189,9 @@ endif
 if ENABLE_TEST_SUPPORT
 libwim_la_SOURCES += src/test_support.c		\
 		     include/wimlib/test_support.h
+if !WINDOWS_NATIVE_BUILD
+PLATFORM_LIBS += -lm
+endif
 endif
 
 libwim_la_CFLAGS =		\

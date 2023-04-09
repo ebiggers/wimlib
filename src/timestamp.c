@@ -95,6 +95,7 @@ wim_timestamp_to_timespec(u64 timestamp)
 		.tv_nsec = (timestamp % TICKS_PER_SECOND) * NANOSECONDS_PER_TICK,
 	};
 }
+#endif /* !_WIN32 */
 
 /* UNIX timestamps to Windows NT timestamps  */
 
@@ -104,6 +105,7 @@ time_t_to_wim_timestamp(time_t t)
 	return ((u64)t + EPOCH_DISTANCE) * TICKS_PER_SECOND;
 }
 
+#ifndef _WIN32
 u64
 timeval_to_wim_timestamp(const struct timeval *tv)
 {
