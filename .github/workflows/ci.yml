@@ -178,9 +178,9 @@ jobs:
           sanitizer:
         - target: wim
           sanitizer: --asan --ubsan
-        - target: xml
+        - target: xmlproc
           sanitizer:
-        - target: xml
+        - target: xmlproc
           sanitizer: --asan --ubsan
         - target: xml_windows
           sanitizer: --asan --ubsan
