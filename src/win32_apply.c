@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2013-2021 Eric Biggers
+ * Copyright 2013-2023 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -1852,16 +1852,25 @@ create_link(HANDLE h, const struct wim_dentry *dentry,
 		info->FileNameLength = ctx->pathbuf.Length;
 		memcpy(info->FileName, ctx->pathbuf.Buffer, ctx->pathbuf.Length);
 		info->FileName[info->FileNameLength / 2] = L'\0';
+		/*
+		 * Note: the null terminator isn't actually necessary, but if
+		 * you don't add the extra character, you get
+		 * STATUS_INFO_LENGTH_MISMATCH when FileNameLength is 2.
+		 */
 
-		/* Note: the null terminator isn't actually necessary,
-		 * but if you don't add the extra character, you get
-		 * STATUS_INFO_LENGTH_MISMATCH when FileNameLength
-		 * happens to be 2  */
-
-		status = NtSetInformationFile(h, &ctx->iosb, info, bufsize,
-					      FileLinkInformation);
-		if (NT_SUCCESS(status))
-			return 0;
+		/*
+		 * When fuzzing with wlfuzz.exe, creating a hard link sometimes
+		 * fails with STATUS_ACCESS_DENIED.  However, it eventually
+		 * succeeds when re-attempted...
+		 */
+		int i = 0;
+		do {
+			status = NtSetInformationFile(h, &ctx->iosb, info,
+						      bufsize,
+						      FileLinkInformation);
+			if (NT_SUCCESS(status))
+				return 0;
+		} while (++i < 32);
 		winnt_error(status, L"Failed to create link \"%ls\"",
 			    current_path(ctx));
 		return WIMLIB_ERR_LINK;
