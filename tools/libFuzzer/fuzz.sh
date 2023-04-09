@@ -39,7 +39,7 @@ run_cmd()
 }
 
 EXTRA_SANITIZERS=
-EXTRA_FUZZER_ARGS=()
+EXTRA_FUZZER_ARGS=('-max_len=32768')
 INPUT=
 
 longopts_array=(
