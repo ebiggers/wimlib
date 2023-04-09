@@ -182,6 +182,8 @@ jobs:
           sanitizer:
         - target: xml
           sanitizer: --asan --ubsan
+        - target: xml_windows
+          sanitizer: --asan --ubsan
         - target: compress
           sanitizer:
         - target: compress
