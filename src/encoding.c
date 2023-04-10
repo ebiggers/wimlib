@@ -462,3 +462,22 @@ utf16le_len_chars(const utf16lechar *s)
 {
 	return utf16le_len_bytes(s) / sizeof(utf16lechar);
 }
+
+#ifdef ENABLE_TEST_SUPPORT
+
+#include "wimlib/test_support.h"
+
+WIMLIBAPI int
+wimlib_utf8_to_utf16le(const char *in, size_t in_nbytes,
+		       utf16lechar **out_ret, size_t *out_nbytes_ret)
+{
+	return utf8_to_utf16le(in, in_nbytes, out_ret, out_nbytes_ret);
+}
+
+WIMLIBAPI int
+wimlib_utf16le_to_utf8(const utf16lechar *in, size_t in_nbytes,
+		       char **out_ret, size_t *out_nbytes_ret)
+{
+	return utf16le_to_utf8(in, in_nbytes, out_ret, out_nbytes_ret);
+}
+#endif /* ENABLE_TEST_SUPPORT */

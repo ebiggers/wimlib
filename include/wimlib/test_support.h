@@ -25,6 +25,14 @@ wimlib_compare_images(WIMStruct *wim1, int image1,
 WIMLIBAPI int
 wimlib_parse_and_write_xml_doc(const tchar *in, tchar **out_ret);
 
+WIMLIBAPI int
+wimlib_utf8_to_utf16le(const char *in, size_t in_nbytes,
+		       utf16lechar **out_ret, size_t *out_nbytes_ret);
+
+WIMLIBAPI int
+wimlib_utf16le_to_utf8(const utf16lechar *in, size_t in_nbytes,
+		       char **out_ret, size_t *out_nbytes_ret);
+
 #endif /* ENABLE_TEST_SUPPORT */
 
 #endif /* _WIMLIB_TEST_SUPPORT_H */

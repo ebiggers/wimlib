@@ -202,6 +202,8 @@ jobs:
           sanitizer:
         - target: wim
           sanitizer: --asan --ubsan
+        - target: encoding
+          sanitizer: --asan --ubsan
         - target: xmlproc
           sanitizer:
         - target: xmlproc
