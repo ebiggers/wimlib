@@ -169,6 +169,30 @@ jobs:
         name: windows-${{matrix.msystem}}-bin
         path: wimlib-*-bin
 
+  win32-test-imagex-capture-and-apply:
+    name: Run win32-test-imagex-capture_and_apply.bat
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0  # Need tags for tools/get-version-number.sh
+    - uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >
+          autoconf
+          automake
+          git
+          libtool
+          make
+          mingw-w64-x86_64-gcc
+          pkgconf
+    - run: tests/win32-test-imagex-capture_and_apply.sh
+
   fuzz-with-libFuzzer:
     name: Fuzz with libFuzzer (${{matrix.target}} ${{matrix.sanitizer}})
     strategy:
