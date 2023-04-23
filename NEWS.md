@@ -1,6 +1,6 @@
 # wimlib release notes
 
-## Version 1.14.0-BETA3
+## Version 1.14.0
 
 - Removed libxml2 and libcrypto (OpenSSL) as dependencies of wimlib.  Also
   removed winpthreads as a dependency of wimlib on Windows.
