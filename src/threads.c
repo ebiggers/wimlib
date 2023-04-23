@@ -1,6 +1,6 @@
 /*
- * thread.c - Thread, mutex, and condition variable support.  Wraps around
- *	      pthreads or Windows native threads.
+ * threads.c - Thread, mutex, and condition variable support.  Wraps around
+ *             pthreads or Windows native threads.
  */
 
 /*
