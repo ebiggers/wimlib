@@ -54,11 +54,11 @@
 static inline void
 cpuid(u32 leaf, u32 subleaf, u32 *a, u32 *b, u32 *c, u32 *d)
 {
-	asm(".ifnc %%ebx, %1; mov  %%ebx, %1; .endif\n"
-	    "cpuid                                  \n"
-	    ".ifnc %%ebx, %1; xchg %%ebx, %1; .endif\n"
-	    : "=a" (*a), EBX_CONSTRAINT (*b), "=c" (*c), "=d" (*d)
-	    : "a" (leaf), "c" (subleaf));
+	asm volatile(".ifnc %%ebx, %1; mov  %%ebx, %1; .endif\n"
+		     "cpuid                                  \n"
+		     ".ifnc %%ebx, %1; xchg %%ebx, %1; .endif\n"
+		     : "=a" (*a), EBX_CONSTRAINT (*b), "=c" (*c), "=d" (*d)
+		     : "a" (leaf), "c" (subleaf));
 }
 
 /* Read an extended control register. */
@@ -70,8 +70,12 @@ read_xcr(u32 index)
 	/*
 	 * Execute the "xgetbv" instruction.  Old versions of binutils do not
 	 * recognize this instruction, so list the raw bytes instead.
+	 *
+	 * This must be 'volatile' to prevent this code from being moved out
+	 * from under the check for OSXSAVE.
 	 */
-	asm(".byte 0x0f, 0x01, 0xd0" : "=d" (d), "=a" (a) : "c" (index));
+	asm volatile(".byte 0x0f, 0x01, 0xd0" :
+		     "=d" (d), "=a" (a) : "c" (index));
 
 	return ((u64)d << 32) | a;
 }
