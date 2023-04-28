@@ -1,5 +1,9 @@
 # wimlib release notes
 
+## Version 1.14.1
+
+- Fixed a bug introduced in v1.14.0 where wimlib would crash on older CPUs.
+
 ## Version 1.14.0
 
 - Removed libxml2 and libcrypto (OpenSSL) as dependencies of wimlib.  Also
