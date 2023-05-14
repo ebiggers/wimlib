@@ -2421,7 +2421,7 @@ do_unmount_commit(const char *dir, int unmount_flags,
 		  wimlib_progress_func_t progfunc, void *progctx)
 {
 	struct wimfs_unmount_info unmount_info;
-	mqd_t mq;
+	mqd_t mq = (mqd_t)-1;
 	struct commit_progress_thread_args args;
 	struct thread commit_progress_tid;
 	int ret;
