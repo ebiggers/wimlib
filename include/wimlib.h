@@ -401,10 +401,23 @@
 #include <time.h>
 
 #ifdef BUILDING_WIMLIB
-#  ifdef _WIN32
-#    define WIMLIBAPI __declspec(dllexport)
+  /*
+   * On i386, gcc assumes that the stack is 16-byte aligned at function entry.
+   * However, some compilers (e.g. MSVC) and programming languages (e.g. Delphi)
+   * only guarantee 4-byte alignment when calling functions.  This is mainly an
+   * issue on Windows, but it can occur on Linux too.  Work around this ABI
+   * incompatibility by realigning the stack pointer when entering the library.
+   * This prevents crashes in SSE/AVX code.
+   */
+#  if defined(__GNUC__) && defined(__i386__)
+#    define WIMLIB_ALIGN_STACK  __attribute__((force_align_arg_pointer))
 #  else
-#    define WIMLIBAPI __attribute__((visibility("default")))
+#    define WIMLIB_ALIGN_STACK
+#  endif
+#  ifdef _WIN32
+#    define WIMLIBAPI __declspec(dllexport) WIMLIB_ALIGN_STACK
+#  else
+#    define WIMLIBAPI __attribute__((visibility("default"))) WIMLIB_ALIGN_STACK
 #  endif
 #else
 #  define WIMLIBAPI
