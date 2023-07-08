@@ -14,10 +14,11 @@ contains only one image.  You can use \fBwiminfo\fR(1) to list the images
 contained in \fIWIMFILE\fR.
 .PP
 The modifications to perform on the WIM image are specified as a sequence of
-commands, one per line, read in a text file from standard input.  It is
-recommended that standard input be redirected from a file (\fICMDFILE\fR), as
-shown above, rather than typing in commands interactively.  Alternatively, to
-specify a command directly on the command line, see the \fB--command\fR option.
+commands, one per line, read in a text file (UTF-8 or UTF-16LE encoded; plain
+ASCII is also fine) from standard input.  It is recommended that standard input
+be redirected from a file (\fICMDFILE\fR), as shown above, rather than typing in
+commands interactively.  Alternatively, to specify a command directly on the
+command line, see the \fB--command\fR option.
 .SH AVAILABLE COMMANDS
 This section documents the commands that may appear in the \fICMDFILE\fR
 described above.

@@ -2,12 +2,7 @@
 #define _IMAGEX_WIN32_H
 
 #include <stddef.h>
-#include <stdbool.h>
 #include <inttypes.h>
-#include <wchar.h>
-
-wchar_t *
-win32_mbs_to_wcs(const char *mbs, size_t mbs_nbytes, size_t *num_wchars_ret);
 
 void
 win32_print_security_descriptor(const uint8_t *sd, size_t size);

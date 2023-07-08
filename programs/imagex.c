@@ -968,152 +968,6 @@ parse_source_list(tchar **source_list_contents_p, size_t source_list_nchars,
 	return sources;
 }
 
-/* Reads the contents of a file into memory. */
-static char *
-file_get_contents(const tchar *filename, size_t *len_ret)
-{
-	struct stat stbuf;
-	void *buf = NULL;
-	size_t len;
-	FILE *fp;
-
-	if (tstat(filename, &stbuf) != 0) {
-		imagex_error_with_errno(T("Failed to stat the file \"%"TS"\""), filename);
-		goto out;
-	}
-	len = stbuf.st_size;
-
-	fp = tfopen(filename, T("rb"));
-	if (!fp) {
-		imagex_error_with_errno(T("Failed to open the file \"%"TS"\""), filename);
-		goto out;
-	}
-
-	buf = malloc(len ? len : 1);
-	if (!buf) {
-		imagex_error(T("Failed to allocate buffer of %zu bytes to hold "
-			       "contents of file \"%"TS"\""), len, filename);
-		goto out_fclose;
-	}
-	if (fread(buf, 1, len, fp) != len) {
-		imagex_error_with_errno(T("Failed to read %zu bytes from the "
-					  "file \"%"TS"\""), len, filename);
-		goto out_free_buf;
-	}
-	*len_ret = len;
-	goto out_fclose;
-out_free_buf:
-	free(buf);
-	buf = NULL;
-out_fclose:
-	fclose(fp);
-out:
-	return buf;
-}
-
-/* Read standard input until EOF and return the full contents in a malloc()ed
- * buffer and the number of bytes of data in @len_ret.  Returns NULL on read
- * error. */
-static char *
-stdin_get_contents(size_t *len_ret)
-{
-	/* stdin can, of course, be a pipe or other non-seekable file, so the
-	 * total length of the data cannot be pre-determined */
-	char *buf = NULL;
-	size_t newlen = 1024;
-	size_t pos = 0;
-	size_t inc = 1024;
-	for (;;) {
-		char *p = realloc(buf, newlen);
-		size_t bytes_read, bytes_to_read;
-		if (!p) {
-			imagex_error(T("out of memory while reading stdin"));
-			break;
-		}
-		buf = p;
-		bytes_to_read = newlen - pos;
-		bytes_read = fread(&buf[pos], 1, bytes_to_read, stdin);
-		pos += bytes_read;
-		if (bytes_read != bytes_to_read) {
-			if (feof(stdin)) {
-				*len_ret = pos;
-				return buf;
-			} else {
-				imagex_error_with_errno(T("error reading stdin"));
-				break;
-			}
-		}
-		newlen += inc;
-		inc *= 3;
-		inc /= 2;
-	}
-	free(buf);
-	return NULL;
-}
-
-
-static tchar *
-translate_text_to_tstr(char *text, size_t num_bytes, size_t *num_tchars_ret)
-{
-#ifndef _WIN32
-	/* On non-Windows, assume an ASCII-compatible encoding, such as UTF-8.
-	 * */
-	*num_tchars_ret = num_bytes;
-	return text;
-#else /* !_WIN32 */
-	/* On Windows, translate the text to UTF-16LE */
-	wchar_t *text_wstr;
-	size_t num_wchars;
-
-	if (num_bytes >= 2 &&
-	    (((unsigned char)text[0] == 0xff && (unsigned char)text[1] == 0xfe) ||
-	     ((unsigned char)text[0] <= 0x7f && (unsigned char)text[1] == 0x00)))
-	{
-		/* File begins with 0xfeff, the BOM for UTF-16LE, or it begins
-		 * with something that looks like an ASCII character encoded as
-		 * a UTF-16LE code unit.  Assume the file is encoded as
-		 * UTF-16LE.  This is not a 100% reliable check. */
-		num_wchars = num_bytes / 2;
-		text_wstr = (wchar_t*)text;
-	} else {
-		/* File does not look like UTF-16LE.  Assume it is encoded in
-		 * the current Windows code page.  I think these are always
-		 * ASCII-compatible, so any so-called "plain-text" (ASCII) files
-		 * should work as expected. */
-		text_wstr = win32_mbs_to_wcs(text,
-					     num_bytes,
-					     &num_wchars);
-		free(text);
-	}
-	*num_tchars_ret = num_wchars;
-	return text_wstr;
-#endif /* _WIN32 */
-}
-
-static tchar *
-file_get_text_contents(const tchar *filename, size_t *num_tchars_ret)
-{
-	char *contents;
-	size_t num_bytes;
-
-	contents = file_get_contents(filename, &num_bytes);
-	if (!contents)
-		return NULL;
-	return translate_text_to_tstr(contents, num_bytes, num_tchars_ret);
-}
-
-static tchar *
-stdin_get_text_contents(size_t *num_tchars_ret)
-{
-	char *contents;
-	size_t num_bytes;
-
-	contents = stdin_get_contents(&num_bytes);
-	if (!contents)
-		return NULL;
-	return translate_text_to_tstr(contents, num_bytes, num_tchars_ret);
-}
-
 #define TO_PERCENT(numerator, denominator) \
 	(((denominator) == 0) ? 0 : ((numerator) * 100 / (denominator)))
 
@@ -2202,13 +2056,8 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 
 	if (source_list) {
 		/* Set up capture sources in source list mode */
-		if (source[0] == T('-') && source[1] == T('\0')) {
-			source_list_contents = stdin_get_text_contents(&source_list_nchars);
-		} else {
-			source_list_contents = file_get_text_contents(source,
-								      &source_list_nchars);
-		}
-		if (!source_list_contents)
+		if (wimlib_load_text_file(source, &source_list_contents,
+					  &source_list_nchars) != 0)
 			goto out_err;
 
 		capture_sources = parse_source_list(&source_list_contents,
@@ -4300,8 +4149,8 @@ imagex_update(int argc, tchar **argv, int cmd)
 			tputs(T("Reading update commands from standard input..."));
 			recommend_man_page(CMD_UPDATE, stdout);
 		}
-		cmd_file_contents = stdin_get_text_contents(&cmd_file_nchars);
-		if (!cmd_file_contents) {
+		if (wimlib_load_text_file(NULL, &cmd_file_contents,
+					  &cmd_file_nchars) != 0) {
 			ret = -1;
 			goto out_wimlib_free;
 		}

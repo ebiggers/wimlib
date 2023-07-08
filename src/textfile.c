@@ -382,3 +382,23 @@ load_text_file(const tchar *path, const void *buf, size_t bufsize,
 	*mem_ret = tstr;
 	return 0;
 }
+
+/* API function documented in wimlib.h */
+WIMLIBAPI int
+wimlib_load_text_file(const tchar *path,
+		      tchar **tstr_ret, size_t *tstr_nchars_ret)
+{
+	void *buf;
+	size_t bufsize;
+	int ret;
+
+	if (path == NULL || (path[0] == '-' && path[1] == '\0'))
+		ret = stdin_get_contents(&buf, &bufsize);
+	else
+		ret = read_file_contents(path, &buf, &bufsize);
+	if (ret)
+		return ret;
+	ret = translate_text_buffer(buf, bufsize, tstr_ret, tstr_nchars_ret);
+	FREE(buf);
+	return ret;
+}

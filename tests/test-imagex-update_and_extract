@@ -120,6 +120,26 @@ do_apply
 [ ! -e out.dir/file ]
 
 prepare_empty_wim
+msg "Testing UTF-16LE-NOBOM command update file"
+echo -ne 'a\0d\0d\0 \0f\0i\0l\0e\0 \0/\0f\0i\0l\0e\0\n\0' \
+	| wimupdate test.wim
+do_apply
+../tree-cmp file out.dir/file
+
+prepare_empty_wim
+msg "Testing UTF-16LE-BOM command update file"
+echo -ne '\xff\xfea\0d\0d\0 \0f\0i\0l\0e\0 \0/\0f\0i\0l\0e\0\n\0' \
+	| wimupdate test.wim
+do_apply
+../tree-cmp file out.dir/file
+
+prepare_empty_wim
+msg "Testing UTF-8-BOM command update file"
+echo -ne '\xef\xbb\xbfadd file /file' | wimupdate test.wim
+do_apply
+../tree-cmp file out.dir/file
+
+prepare_empty_wim
 msg "Testing adding, then renaming file in WIM image in one command"
 wimupdate test.wim << EOF
 add file /file

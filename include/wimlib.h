@@ -3564,6 +3564,24 @@ wimlib_join_with_progress(const wimlib_tchar * const *swms,
 			  wimlib_progress_func_t progfunc,
 			  void *progctx);
 
+/**
+ * @ingroup G_general
+ *
+ * Load a UTF-8 or UTF-16LE encoded text file into memory.
+ *
+ * @param path
+ *	The path to the file, or NULL or "-" to use standard input.
+ * @param tstr_ret
+ *	On success, a buffer containing the file's text as a "wimlib_tchar"
+ *	string is returned here.  The buffer must be freed using free().
+ * @param tstr_nchars_ret
+ *	On success, the length of the text in "wimlib_tchar"s is returned here.
+ *
+ * @return 0 on success; a ::wimlib_error_code value on failure.
+ */
+WIMLIBAPI int
+wimlib_load_text_file(const wimlib_tchar *path,
+		      wimlib_tchar **tstr_ret, size_t *tstr_nchars_ret);
 
 /**
  * @ingroup G_mounting_wim_images
