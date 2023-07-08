@@ -1,5 +1,17 @@
 # wimlib release notes
 
+## Version 1.14.2-BETA1
+
+- Fixed a bug introduced in v1.14.0 where a crash would sometimes occur if a
+  Delphi application or Visual Studio compiled application called into the
+  32-bit x86 build of the library.
+
+- Commands passed to wimupdate on standard input are now interpreted as UTF-8 or
+  UTF-16LE (autodetected), just like wimcapture config files and wimextract path
+  list files.  Previously, on Windows the Windows code page was used instead of
+  UTF-8, which made it hard to specify non-ASCII file paths in wimupdate
+  commands.  The same change also applies to wimcapture source list files.
+
 ## Version 1.14.1
 
 - Fixed a bug introduced in v1.14.0 where wimlib would crash on older CPUs.
