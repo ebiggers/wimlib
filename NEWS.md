@@ -6,6 +6,12 @@
   Delphi application or Visual Studio compiled application called into the
   32-bit x86 build of the library.
 
+- Fixed an issue where some WIM images written by wimlib weren't accepted by
+  some MS software versions.  wimlib-written WIM images containing directory
+  reparse points (e.g. junctions) weren't accepted by some versions of the
+  Windows 8 setup wizard.  Also, recent versions of DISM had stopped accepting
+  wimlib-written WIM images containing directories with named data streams.
+
 - Commands passed to wimupdate on standard input are now interpreted as UTF-8 or
   UTF-16LE (autodetected), just like wimcapture config files and wimextract path
   list files.  Previously, on Windows the Windows code page was used instead of

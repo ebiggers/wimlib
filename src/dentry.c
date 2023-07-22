@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2012-2016 Eric Biggers
+ * Copyright 2012-2023 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -117,18 +117,12 @@ struct wim_dentry_on_disk {
 	le64 last_write_time;
 
 	/*
-	 * Usually this is the SHA-1 message digest of the file's "contents"
-	 * (the unnamed data stream).
-	 *
-	 * If the file has FILE_ATTRIBUTE_REPARSE_POINT set, then this is
-	 * instead usually the SHA-1 message digest of the uncompressed reparse
-	 * point data.
-	 *
-	 * However, there are some special rules that need to be applied to
-	 * interpret this field correctly when extra stream entries are present.
-	 * See the code for details.
+	 * Usually this is the SHA-1 message digest of the file's contents, or
+	 * all zeroes if the file is a directory or is empty.  However, special
+	 * rules apply if the file has FILE_ATTRIBUTE_REPARSE_POINT set or has
+	 * named data streams.  See assign_stream_types_unencrypted().
 	 */
-	u8 default_hash[SHA1_HASH_SIZE];
+	u8 main_hash[SHA1_HASH_SIZE];
 
 	/* Unknown field (maybe accidental padding)  */
 	le32 unknown_0x54;
@@ -354,6 +348,8 @@ dentry_out_total_length(const struct wim_dentry *dentry)
 {
 	const struct wim_inode *inode = dentry->d_inode;
 	size_t len;
+	unsigned num_unnamed_streams = 0;
+	bool have_named_data_stream = false;
 
 	len = dentry_min_len_with_names(dentry->d_name_nbytes,
 					dentry->d_short_name_nbytes);
@@ -362,36 +358,31 @@ dentry_out_total_length(const struct wim_dentry *dentry)
 	if (inode->i_extra)
 		len += ALIGN(inode->i_extra->size, 8);
 
-	if (!(inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED)) {
-		/*
-		 * Extra stream entries:
-		 *
-		 * - Use one extra stream entry for each named data stream
-		 * - Use one extra stream entry for the unnamed data stream when there is either:
-		 *	- a reparse point stream
-		 *	- at least one named data stream (for Windows PE bug workaround)
-		 * - Use one extra stream entry for the reparse point stream if there is one
-		 */
-		bool have_named_data_stream = false;
-		bool have_reparse_point_stream = false;
+	/*
+	 * Calculate the total length of the extra stream entries that will be
+	 * written.  To match DISM, some odd rules need to be followed here.
+	 * See write_dentry_streams() for explanation.  Keep this in sync with
+	 * write_dentry_streams()!
+	 */
+	if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED) {
+		num_unnamed_streams++;
+	} else {
 		for (unsigned i = 0; i < inode->i_num_streams; i++) {
 			const struct wim_inode_stream *strm = &inode->i_streams[i];
+
 			if (stream_is_named_data_stream(strm)) {
 				len += stream_out_total_length(strm);
 				have_named_data_stream = true;
-			} else if (strm->stream_type == STREAM_TYPE_REPARSE_POINT) {
-				wimlib_assert(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT);
-				have_reparse_point_stream = true;
 			}
 		}
-
-		if (have_named_data_stream || have_reparse_point_stream) {
-			if (have_reparse_point_stream)
-				len += ALIGN(sizeof(struct wim_extra_stream_entry_on_disk), 8);
-			len += ALIGN(sizeof(struct wim_extra_stream_entry_on_disk), 8);
-		}
+		if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)
+			num_unnamed_streams++;
+		if (!(inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY))
+			num_unnamed_streams++;
 	}
-
+	if (num_unnamed_streams > 1 || have_named_data_stream)
+		len += num_unnamed_streams *
+		       ALIGN(sizeof(struct wim_extra_stream_entry_on_disk), 8);
 	return len;
 }
 
@@ -1162,55 +1153,65 @@ assign_stream_types_encrypted(struct wim_inode *inode)
 /*
  * Set the type of each stream for an unencrypted file.
  *
- * There will be an unnamed data stream, a reparse point stream, or both an
- * unnamed data stream and a reparse point stream.  In addition, there may be
- * named data streams.
+ * To specify the streams of each file, the WIM provides a main_hash and an
+ * optional list of "extra stream entries".  Each extra stream entry is a
+ * (name, hash) pair where the name is optional.  Hashes can be the special
+ * value of zero_hash, which means the stream is empty (zero-length).
  *
- * NOTE: if the file has a reparse point stream or at least one named data
- * stream, then WIMGAPI puts *all* streams in the extra stream entries and
- * leaves the default stream hash zeroed.  wimlib now does the same.  However,
- * for input we still support the default hash field being used, since wimlib
- * used to use it and MS software is somewhat accepting of it as well.
+ * While extra stream entries with names always refer to "named data streams",
+ * the main hash and any extra unnamed hashes can be hard to interpret.  This is
+ * because the WIM file format unfortunately doesn't make it very clear which is
+ * the unnamed data stream (i.e. standard file contents) and which is the
+ * reparse stream.  The way this ambiguity is resolved (based on what MS
+ * software seems to do) is by (1) a file can have at most one unnamed data
+ * stream and at most one reparse stream, (2) a reparse stream is present if and
+ * only if the file has FILE_ATTRIBUTE_REPARSE_POINT, and (3) the reparse
+ * stream, if present, is stored before the unnamed data stream if present
+ * (considering main_hash to come before any extra hashes).  Note: directories
+ * need not have an unnamed data stream stored, even with a zero hash, as
+ * "unnamed data stream" isn't meaningful for a directory in the first place.
+ *
+ * With those rules in mind, one would expect that the first unnamed stream
+ * would use main_hash, and the second (if present) would use an extra stream
+ * entry.  However, there is another quirk that we must be compatible with:
+ * sometimes main_hash isn't used and only extra stream entries are used.  To
+ * handle this, we ignore main_hash if it is zero and there is at least one
+ * unnamed extra stream entry.  This works correctly as long as a zero main_hash
+ * and an unnamed extra stream entry is never used to represent an empty reparse
+ * stream and an unnamed data stream.  (It's not, as the reparse stream always
+ * goes in the extra stream entries in this case.  See write_dentry_streams().)
  */
 static void
 assign_stream_types_unencrypted(struct wim_inode *inode)
 {
-	bool found_reparse_point_stream = false;
+	bool found_reparse_stream = false;
 	bool found_unnamed_data_stream = false;
-	struct wim_inode_stream *unnamed_stream_with_zero_hash = NULL;
 
 	for (unsigned i = 0; i < inode->i_num_streams; i++) {
 		struct wim_inode_stream *strm = &inode->i_streams[i];
 
 		if (stream_is_named(strm)) {
-			/* Named data stream  */
+			/* Named extra stream entry */
 			strm->stream_type = STREAM_TYPE_DATA;
 		} else if (i != 0 || !is_zero_hash(strm->_stream_hash)) {
-			/* Unnamed stream in the extra stream entries, OR the
-			 * default stream in the dentry provided that it has a
-			 * nonzero hash.  */
+			/* Unnamed extra stream entry or a nonzero main_hash */
 			if ((inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
-			    !found_reparse_point_stream) {
-				found_reparse_point_stream = true;
+			    !found_reparse_stream) {
+				found_reparse_stream = true;
 				strm->stream_type = STREAM_TYPE_REPARSE_POINT;
 			} else if (!found_unnamed_data_stream) {
 				found_unnamed_data_stream = true;
 				strm->stream_type = STREAM_TYPE_DATA;
-			}
-		} else if (!unnamed_stream_with_zero_hash) {
-			unnamed_stream_with_zero_hash = strm;
-		}
+			} /* Else, too many unnamed streams were found. */
+
+		} /* Else, it's a zero main_hash. */
 	}
 
-	if (unnamed_stream_with_zero_hash) {
-		int type = STREAM_TYPE_UNKNOWN;
-		if ((inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
-		    !found_reparse_point_stream) {
-			type = STREAM_TYPE_REPARSE_POINT;
-		} else if (!found_unnamed_data_stream) {
-			type = STREAM_TYPE_DATA;
-		}
-		unnamed_stream_with_zero_hash->stream_type = type;
+	/* If needed, use the zero main_hash. */
+	if (!found_reparse_stream && !found_unnamed_data_stream) {
+		inode->i_streams[0].stream_type =
+			(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT) ?
+			STREAM_TYPE_REPARSE_POINT : STREAM_TYPE_DATA;
 	}
 }
 
@@ -1219,7 +1220,7 @@ assign_stream_types_unencrypted(struct wim_inode *inode)
  */
 static int
 setup_inode_streams(const u8 *p, const u8 *end, struct wim_inode *inode,
-		    unsigned num_extra_streams, const u8 *default_hash,
+		    unsigned num_extra_streams, const u8 *main_hash,
 		    u64 *offset_p)
 {
 	const u8 *orig_p = p;
@@ -1233,13 +1234,13 @@ setup_inode_streams(const u8 *p, const u8 *end, struct wim_inode *inode,
 			return WIMLIB_ERR_NOMEM;
 	}
 
-	/* Use the default hash field for the first stream  */
+	/* Use main_hash for the first stream. */
 	inode->i_streams[0].stream_name = (utf16lechar *)NO_STREAM_NAME;
-	copy_hash(inode->i_streams[0]._stream_hash, default_hash);
+	copy_hash(inode->i_streams[0]._stream_hash, main_hash);
 	inode->i_streams[0].stream_type = STREAM_TYPE_UNKNOWN;
 	inode->i_streams[0].stream_id = 0;
 
-	/* Read the extra stream entries  */
+	/* Read the extra stream entries. */
 	for (unsigned i = 1; i < inode->i_num_streams; i++) {
 		struct wim_inode_stream *strm;
 		const struct wim_extra_stream_entry_on_disk *disk_strm;
@@ -1452,7 +1453,7 @@ read_dentry(const u8 * restrict buf, size_t buf_len,
 				  &buf[buf_len],
 				  inode,
 				  le16_to_cpu(disk_dentry->num_extra_streams),
-				  disk_dentry->default_hash,
+				  disk_dentry->main_hash,
 				  &offset);
 	if (ret)
 		goto err_free_dentry;
@@ -1680,6 +1681,105 @@ write_extra_stream_entry(u8 * restrict p, const utf16lechar * restrict name,
 }
 
 /*
+ * Write the stream references for a WIM dentry.  To be compatible with DISM, we
+ * follow the below rules:
+ *
+ * 1. If the file has FILE_ATTRIBUTE_ENCRYPTED, then only the EFSRPC_RAW_DATA
+ *    stream is stored.  Otherwise, the streams that are stored are:
+ *    - Reparse stream if the file has FILE_ATTRIBUTE_REPARSE_POINT
+ *    - Unnamed data stream if the file doesn't have FILE_ATTRIBUTE_DIRECTORY
+ *    - Named data streams
+ *
+ * 2. If only one stream is being stored and it is the EFSRPC_RAW_DATA, unnamed
+ *    data, or reparse stream, then its hash goes in main_hash, and no extra
+ *    stream entries are stored.  Otherwise, *all* streams go in the extra
+ *    stream entries, and main_hash is left zeroed!
+ *
+ * 3. If both the reparse stream and unnamed data stream are being stored, then
+ *    the reparse stream comes first.
+ *
+ * 4. The unnamed stream(s) come before the named stream(s).  (Actually, DISM
+ *    puts the named streams between the first and second unnamed streams, but
+ *    this is incompatible with itself...  Tested with DISM 10.0.20348.681.)
+ *
+ * wimlib v1.14.1 and earlier behaved slightly differently for directories.
+ * First, wimlib always put the hash of the reparse stream in an extra stream
+ * entry, never in main_hash.  This difference vs. DISM went unnoticed for a
+ * long time, but eventually it was found that it broke the Windows 8 setup
+ * wizard.  Second, when a directory had any extra streams, wimlib created an
+ * extra stream entry to represent the (empty) unnamed data stream.  However,
+ * DISM now rejects that (though I think it used to accept it).  There isn't
+ * really any such thing as "unnamed data stream" for a directory.
+ *
+ * Keep this in sync with dentry_out_total_length()!
+ */
+static u8 *
+write_dentry_streams(const struct wim_inode *inode,
+		     struct wim_dentry_on_disk *disk_dentry, u8 *p)
+{
+	const u8 *unnamed_data_stream_hash = zero_hash;
+	const u8 *reparse_stream_hash = zero_hash;
+	const u8 *efsrpc_stream_hash = zero_hash;
+	const u8 *unnamed_stream_hashes[2] = { zero_hash };
+	unsigned num_unnamed_streams = 0;
+	unsigned num_named_streams = 0;
+
+	for (unsigned i = 0; i < inode->i_num_streams; i++) {
+		const struct wim_inode_stream *strm = &inode->i_streams[i];
+
+		switch (strm->stream_type) {
+		case STREAM_TYPE_DATA:
+			if (stream_is_named(strm))
+				num_named_streams++;
+			else
+				unnamed_data_stream_hash = stream_hash(strm);
+			break;
+		case STREAM_TYPE_REPARSE_POINT:
+			reparse_stream_hash = stream_hash(strm);
+			break;
+		case STREAM_TYPE_EFSRPC_RAW_DATA:
+			efsrpc_stream_hash = stream_hash(strm);
+			break;
+		}
+	}
+
+	if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED) {
+		unnamed_stream_hashes[num_unnamed_streams++] = efsrpc_stream_hash;
+		num_named_streams = 0;
+	} else {
+		if (inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)
+			unnamed_stream_hashes[num_unnamed_streams++] = reparse_stream_hash;
+		if (!(inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY))
+			unnamed_stream_hashes[num_unnamed_streams++] = unnamed_data_stream_hash;
+	}
+
+	if (num_unnamed_streams <= 1 && num_named_streams == 0) {
+		/* No extra stream entries are needed. */
+		copy_hash(disk_dentry->main_hash, unnamed_stream_hashes[0]);
+		disk_dentry->num_extra_streams = 0;
+		return p;
+	}
+
+	/* Else, all streams go in extra stream entries. */
+	copy_hash(disk_dentry->main_hash, zero_hash);
+	wimlib_assert(num_unnamed_streams + num_named_streams <= 0xFFFF);
+	disk_dentry->num_extra_streams = cpu_to_le16(num_unnamed_streams +
+						     num_named_streams);
+	for (unsigned i = 0; i < num_unnamed_streams; i++)
+		p = write_extra_stream_entry(p, NO_STREAM_NAME,
+					     unnamed_stream_hashes[i]);
+	for (unsigned i = 0; i < inode->i_num_streams; i++) {
+		const struct wim_inode_stream *strm = &inode->i_streams[i];
+
+		if (stream_is_named_data_stream(strm)) {
+			p = write_extra_stream_entry(p, strm->stream_name,
+						     stream_hash(strm));
+		}
+	}
+	return p;
+}
+
+/*
  * Write a WIM dentry to an output buffer.
  *
  * This includes any extra stream entries that may follow the dentry itself.
@@ -1752,77 +1852,11 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 
 	disk_dentry->length = cpu_to_le64(p - orig_p);
 
-	/* Streams  */
-
-	if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED)) {
-		const struct wim_inode_stream *efs_strm;
-		const u8 *efs_hash;
-
-		efs_strm = inode_get_unnamed_stream(inode, STREAM_TYPE_EFSRPC_RAW_DATA);
-		efs_hash = efs_strm ? stream_hash(efs_strm) : zero_hash;
-		copy_hash(disk_dentry->default_hash, efs_hash);
-		disk_dentry->num_extra_streams = cpu_to_le16(0);
-	} else {
-		/*
-		 * Extra stream entries:
-		 *
-		 * - Use one extra stream entry for each named data stream
-		 * - Use one extra stream entry for the unnamed data stream when there is either:
-		 *	- a reparse point stream
-		 *	- at least one named data stream (for Windows PE bug workaround)
-		 * - Use one extra stream entry for the reparse point stream if there is one
-		 */
-		bool have_named_data_stream = false;
-		bool have_reparse_point_stream = false;
-		const u8 *unnamed_data_stream_hash = zero_hash;
-		const u8 *reparse_point_hash;
-		for (unsigned i = 0; i < inode->i_num_streams; i++) {
-			const struct wim_inode_stream *strm = &inode->i_streams[i];
-			if (strm->stream_type == STREAM_TYPE_DATA) {
-				if (stream_is_named(strm))
-					have_named_data_stream = true;
-				else
-					unnamed_data_stream_hash = stream_hash(strm);
-			} else if (strm->stream_type == STREAM_TYPE_REPARSE_POINT) {
-				have_reparse_point_stream = true;
-				reparse_point_hash = stream_hash(strm);
-			}
-		}
-
-		if (unlikely(have_reparse_point_stream || have_named_data_stream)) {
-
-			unsigned num_extra_streams = 0;
-
-			copy_hash(disk_dentry->default_hash, zero_hash);
-
-			if (have_reparse_point_stream) {
-				p = write_extra_stream_entry(p, NO_STREAM_NAME,
-							     reparse_point_hash);
-				num_extra_streams++;
-			}
-
-			p = write_extra_stream_entry(p, NO_STREAM_NAME,
-						     unnamed_data_stream_hash);
-			num_extra_streams++;
-
-			for (unsigned i = 0; i < inode->i_num_streams; i++) {
-				const struct wim_inode_stream *strm = &inode->i_streams[i];
-				if (stream_is_named_data_stream(strm)) {
-					p = write_extra_stream_entry(p, strm->stream_name,
-								     stream_hash(strm));
-					num_extra_streams++;
-				}
-			}
-			wimlib_assert(num_extra_streams <= 0xFFFF);
-
-			disk_dentry->num_extra_streams = cpu_to_le16(num_extra_streams);
-		} else {
-			copy_hash(disk_dentry->default_hash, unnamed_data_stream_hash);
-			disk_dentry->num_extra_streams = cpu_to_le16(0);
-		}
-	}
-
-	return p;
+	/*
+	 * Set disk_dentry->main_hash and disk_dentry->num_extra_streams,
+	 * and write any extra stream entries that are needed.
+	 */
+	return write_dentry_streams(inode, disk_dentry, p);
 }
 
 static int
