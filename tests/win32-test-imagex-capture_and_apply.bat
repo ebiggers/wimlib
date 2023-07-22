@@ -289,26 +289,22 @@ call :do_test
 call :msg "directory with empty alternate data stream"
 md subdir
 type nul > subdir:ads
-REM Use skip_dism_apply=1 due to DISM bug
-call :do_test_with_params 1 0
+call :do_test
 
 call :msg "root directory with alternate data stream"
 echo 1 > ..\in.dir:ads
-REM Use skip_dism_apply=1 due to DISM bug
-call :do_test_with_params 1 0
+call :do_test
 
 call :msg "root directory with empty alternate data stream"
 type nul > ..\in.dir:ads
-REM Use skip_dism_apply=1 due to DISM bug
-call :do_test_with_params 1 0
+call :do_test
 
 call :msg "subdirectory with alternate data streams"
 md subdir
 echo 1 > subdir:1
 echo 2 > subdir:2
 echo 2 > subdir:2again
-REM Use skip_dism_apply=1 due to DISM bug
-call :do_test_with_params 1 0
+call :do_test
 
 call :msg "subdirectories and files with alternate data streams"
 md subdir
@@ -321,16 +317,14 @@ echo 1 > helloagain:1
 echo 8 > helloagain:8
 echo 1 > 1
 type nul > helloagain:dummy
-REM Use skip_dism_apply=1 due to DISM bug
-call :do_test_with_params 1 0
+call :do_test
 
 call :msg "symbolic link and hard link, to file with alternate data streams"
 echo 1 > 1
 echo test > .\1:test
 mklink symlink 1 > nul
 mklink /h hardlink 1 > nul
-REM Use skip_dism_apply=1 due to DISM bug
-call :do_test_with_params 1 0
+call :do_test
 
 call :msg "compressed file with alternate data streams"
 echo 1 > 1
@@ -373,8 +367,7 @@ call :msg "readonly directory with named data stream"
 md subdir
 echo foo > subdir:ads
 attrib +r subdir
-REM Use skip_dism_apply=1 due to DISM bug
-call :do_test_with_params 1 0
+call :do_test
 
 call :msg "encrypted file"
 echo "hello" > encrypted
