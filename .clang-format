@@ -1,0 +1,34 @@
+BasedOnStyle: LLVM
+AllowShortFunctionsOnASingleLine: false
+AllowShortIfStatementsOnASingleLine: false
+AlignConsecutiveMacros: Consecutive
+AlwaysBreakAfterReturnType: All
+BreakBeforeBraces: Linux
+Cpp11BracedListStyle: false
+ForEachMacros:
+  - 'avl_tree_for_each_in_order'
+  - 'avl_tree_for_each_in_postorder'
+  - 'avl_tree_for_each_in_reverse_order'
+  - 'dentry_for_each_ci_match'
+  - 'for_dentry_child'
+  - 'for_dentry_child_postorder'
+  - 'for_inode_child'
+  - 'for_inode_child_postorder'
+  - 'hlist_for_each_entry'
+  - 'hlist_for_each_entry_safe'
+  - 'image_for_each_inode'
+  - 'image_for_each_inode_safe'
+  - 'image_for_each_unhashed_blob'
+  - 'image_for_each_unhashed_blob_safe'
+  - 'inode_for_each_dentry'
+  - 'inode_for_each_extraction_alias'
+  - 'list_for_each'
+  - 'list_for_each_entry'
+  - 'list_for_each_entry_reverse'
+  - 'list_for_each_entry_safe'
+  - 'xml_node_for_each_child'
+IncludeBlocks: Preserve
+IndentCaseLabels: false
+IndentWidth: 8
+SpaceBeforeParens: ControlStatementsExceptControlMacros
+UseTab: Always
