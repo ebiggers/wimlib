@@ -1,6 +1,6 @@
 # wimlib release notes
 
-## Version 1.14.2-BETA1
+## Version 1.14.2-BETA2
 
 - Fixed a bug introduced in v1.14.0 where a crash would sometimes occur if a
   Delphi application or Visual Studio compiled application called into the
