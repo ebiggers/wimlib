@@ -176,16 +176,14 @@ call :do_test
 call :msg "reparse point with unnamed data stream"
 echo "test" > file
 %SET_REPARSE_POINT% file
-REM Use skip_dism_apply=1 due to DISM bug
-call :do_test_with_params 1 0
+call :do_test
 
 call :msg "reparse point with unnamed data stream and named data streams"
 echo "test" > file
 echo 11 > file:a
 echo 1 > file:aa
 %SET_REPARSE_POINT% file
-REM Use skip_dism_apply=1 due to DISM bug
-call :do_test_with_params 1 0
+call :do_test
 
 call :msg "empty reparse point"
 type nul > file
@@ -202,8 +200,7 @@ echo hello > file
 echo hello > file:ads1
 type nul > file:ads2
 %SET_REPARSE_POINT% file 0
-REM Use skip_dism_apply=1 due to DISM bug
-call :do_test_with_params 1 0
+call :do_test
 
 call :msg "maximum length reparse point"
 type nul > file
