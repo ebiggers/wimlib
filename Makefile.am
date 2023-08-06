@@ -201,7 +201,7 @@ libwim_la_CFLAGS =		\
 	$(LIBNTFS_3G_CFLAGS)	\
 	$(LIBFUSE_CFLAGS)
 
-libwim_la_LDFLAGS = $(AM_LDFLAGS) -version-info 38:0:23
+libwim_la_LDFLAGS = $(AM_LDFLAGS) -version-info 39:0:24
 
 libwim_la_LIBADD =		\
 	$(PTHREAD_LIBS)		\

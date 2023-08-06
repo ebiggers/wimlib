@@ -1,6 +1,6 @@
 # Introduction
 
-This is wimlib version 1.14.2-BETA2 (July 2023).  wimlib is a C library for
+This is wimlib version 1.14.2 (August 2023).  wimlib is a C library for
 creating, modifying, extracting, and mounting files in the Windows Imaging
 Format (WIM files).  wimlib and its command-line frontend `wimlib-imagex`
 provide a free and cross-platform alternative to Microsoft's WIMGAPI, ImageX,

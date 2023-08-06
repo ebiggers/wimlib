@@ -107,9 +107,9 @@ After that, open any MSYS2 shell again and run the following commands:
 
 Note: By default the git repository will be on the `master` branch, which is the
 latest development snapshot.  Optionally, you can check out a specific version,
-e.g. `cd wimlib && git checkout v1.14.1`.  For old versions, please refer to the
+e.g. `cd wimlib && git checkout v1.14.2`.  For old versions, please refer to the
 documentation for that version, as things may have changed.  It is also possible
-to use a release tarball (e.g. `wimlib-1.14.1.tar.gz`) instead of the git repo.
+to use a release tarball (e.g. `wimlib-1.14.2.tar.gz`) instead of the git repo.
 
 Finally, to actually do a build, close the MSYS2 shell you have open, then open
 one of the following from the Start menu:
@@ -127,7 +127,7 @@ one of the following from the Start menu:
 
 The script will automatically download and install the packages needed to build
 wimlib in the chosen MSYS2 environment, then build wimlib.  The output will be
-in a folder named similarly to `wimlib-1.14.1-windows-x86_64-bin`.  Note that
+in a folder named similarly to `wimlib-1.14.2-windows-x86_64-bin`.  Note that
 your "home" folder within MSYS2 is `C:\msys64\home\%USERNAME%` by default.
 Therefore, the full path to the output folder will be similar to
-`C:\msys64\home\%USERNAME%\wimlib\wimlib-1.14.1-windows-x86_64-bin`.
+`C:\msys64\home\%USERNAME%\wimlib\wimlib-1.14.2-windows-x86_64-bin`.
