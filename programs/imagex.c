@@ -3876,7 +3876,7 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 	if (old_size == -1)
 		tputs(T("Unknown"));
 	else
-		tprintf(T("%"PRIu64" KiB\n"), old_size >> 10);
+		tprintf(T("%"PRIu64" KiB\n"), ((unsigned long long)old_size) >> 10);
 
 	ret = wimlib_overwrite(wim, write_flags, num_threads);
 	if (ret) {
@@ -3889,7 +3889,7 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 	if (new_size == -1)
 		tputs(T("Unknown"));
 	else
-		tprintf(T("%"PRIu64" KiB\n"), new_size >> 10);
+		tprintf(T("%"PRIu64" KiB\n"), ((unsigned long long)new_size) >> 10);
 
 	tfputs(T("Space saved: "), stdout);
 	if (new_size != -1 && old_size != -1) {
