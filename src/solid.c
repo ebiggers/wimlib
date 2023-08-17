@@ -114,7 +114,7 @@ blob_set_solid_sort_name_from_inode(struct blob_descriptor *blob,
 		return;
 
 	/* If this file has multiple names, choose the shortest one.  */
-	inode_for_each_dentry(dentry, inode) {
+	inode_for_each_dentry(dentry, inode, struct wim_dentry) {
 		if (dentry->d_name_nbytes < best_name_nbytes) {
 			best_name = dentry->d_name;
 			best_name_nbytes = dentry->d_name_nbytes;
@@ -143,7 +143,7 @@ dentry_fill_in_solid_sort_names(struct wim_dentry *dentry, void *_blob_table)
 		return 0;
 	head = &blob_table->table[load_size_t_unaligned(hash) %
 				  blob_table->capacity];
-	hlist_for_each_entry(blob, head, hash_list_2) {
+	hlist_for_each_entry(blob, head, hash_list_2, struct blob_descriptor) {
 		if (hashes_equal(hash, blob->hash)) {
 			blob_set_solid_sort_name_from_inode(blob, inode);
 			break;
@@ -171,7 +171,7 @@ sort_blob_list_for_solid_compression(struct list_head *blob_list)
 	int ret;
 
 	/* Count the number of blobs to be written.  */
-	list_for_each_entry(blob, blob_list, write_blobs_list)
+	list_for_each_entry(blob, blob_list, write_blobs_list,struct blob_descriptor)
 		num_blobs++;
 
 	/* Allocate a temporary hash table for mapping blob hash => blob  */
@@ -187,7 +187,7 @@ sort_blob_list_for_solid_compression(struct list_head *blob_list)
 	 * - If it's in non-solid WIM resource, then save the WIMStruct.
 	 * - If it's in a file on disk, then set its sort name from that.
 	 */
-	list_for_each_entry(blob, blob_list, write_blobs_list) {
+	list_for_each_entry(blob, blob_list, write_blobs_list,struct blob_descriptor) {
 		blob->solid_sort_name = NULL;
 		blob->solid_sort_name_nbytes = 0;
 		switch (blob->blob_location) {
@@ -235,7 +235,7 @@ sort_blob_list_for_solid_compression(struct list_head *blob_list)
 			     cmp_blobs_by_solid_sort_name);
 
 out:
-	list_for_each_entry(blob, blob_list, write_blobs_list)
+	list_for_each_entry(blob, blob_list, write_blobs_list,struct blob_descriptor)
 		FREE(blob->solid_sort_name);
 	FREE(blob_table.table);
 	return ret;

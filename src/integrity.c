@@ -47,6 +47,9 @@
 #define INTEGRITY_MIN_CHUNK_SIZE 4096
 #define INTEGRITY_MAX_CHUNK_SIZE 134217728
 
+#ifdef _MSC_VER
+#pragma pack(push,1)
+#endif
 struct integrity_table {
 	u32 size;
 	u32 num_entries;
@@ -54,6 +57,9 @@ struct integrity_table {
 	u8  sha1sums[][20];
 } __attribute__((packed));
 
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 static int
 calculate_chunk_sha1(struct filedes *in_fd, size_t this_chunk_size,
 		     off_t offset, u8 sha1_md[])

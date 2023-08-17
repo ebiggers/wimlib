@@ -501,7 +501,7 @@ do_pread_or_pwrite(int fd, void *buf, size_t count, off_t offset,
 
 	memset(&overlapped, 0, sizeof(overlapped));
 	overlapped.Offset = offset;
-	overlapped.OffsetHigh = offset >> 32;
+	overlapped.OffsetHigh = (unsigned long long)offset >> 32;
 
 	/* Do the read or write at the specified offset */
 	count = min(count, MAX_IO_AMOUNT);
@@ -754,7 +754,7 @@ get_random_bytes(void *p, size_t n)
 			wimlib_assert(0);
 			count = 0;
 		}
-		p += count;
+		POINTER_FIX()p += count;
 		n -= count;
 	}
 }

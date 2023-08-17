@@ -43,8 +43,11 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#ifdef _MSC_VER
+#include "msvc/unistd.h"
+#else
 #include <unistd.h>
-
+#endif
 #include "wimlib/apply.h"
 #include "wimlib/assert.h"
 #include "wimlib/blob_table.h"
@@ -188,19 +191,19 @@ bool
 detect_sparse_region(const void *data, size_t size, size_t *len_ret)
 {
 	const void *p = data;
-	const void * const end = data + size;
+	const void * const end = POINTER_FIX()data + size;
 	size_t len = 0;
 	bool zeroes = false;
 
 	while (p != end) {
-		size_t n = min(end - p, SPARSE_UNIT);
+		size_t n = min(POINTER_FIX()end - POINTER_FIX()p, SPARSE_UNIT);
 		bool z = is_all_zeroes(p, n);
 
 		if (len != 0 && z != zeroes)
 			break;
 		zeroes = z;
 		len += n;
-		p += n;
+		POINTER_FIX()p += n;
 	}
 
 	*len_ret = len;
@@ -782,7 +785,7 @@ destroy_dentry_list(struct list_head *dentry_list)
 	struct wim_dentry *dentry, *tmp;
 	struct wim_inode *inode;
 
-	list_for_each_entry_safe(dentry, tmp, dentry_list, d_extraction_list_node) {
+	list_for_each_entry_safe(dentry, tmp, dentry_list, d_extraction_list_node,struct wim_dentry) {
 		inode = dentry->d_inode;
 		dentry_reset_extraction_list_node(dentry);
 		inode->i_visited = 0;
@@ -799,7 +802,7 @@ destroy_blob_list(struct list_head *blob_list)
 {
 	struct blob_descriptor *blob;
 
-	list_for_each_entry(blob, blob_list, extraction_list)
+	list_for_each_entry(blob, blob_list, extraction_list,struct blob_descriptor)
 		if (blob->out_refcnt > ARRAY_LEN(blob->inline_blob_extraction_targets))
 			FREE(blob->blob_extraction_targets);
 }
@@ -820,7 +823,38 @@ file_name_valid(utf16lechar *name, size_t num_chars, bool fix)
 	for (i = 0; i < num_chars; i++) {
 		switch (le16_to_cpu(name[i])) {
 	#ifdef _WIN32
-		case '\x01'...'\x1F':
+
+		case '\x01':
+		case '\x02':
+		case '\x03':
+		case '\x04':
+		case '\x05':
+		case '\x06':
+		case '\x07':
+		case '\x08':
+		case '\x09':
+		case '\x0A':
+		case '\x0B':
+		case '\x0C':
+		case '\x0D':
+		case '\x0E':
+		case '\x0F':
+		case '\x10':
+		case '\x11':
+		case '\x12':
+		case '\x13':
+		case '\x14':
+		case '\x15':
+		case '\x16':
+		case '\x17':
+		case '\x18':
+		case '\x19':
+		case '\x1A':
+		case '\x1B':
+		case '\x1C':
+		case '\x1D':
+		case '\x1E':
+		case '\x1F':
 		case '\\':
 		case ':':
 		case '*':
@@ -911,7 +945,7 @@ dentry_calculate_extraction_name(struct wim_dentry *dentry,
 
 out_replace:
 	{
-		utf16lechar utf16_name_copy[dentry->d_name_nbytes / 2];
+		smart_array(utf16lechar,utf16_name_copy,dentry->d_name_nbytes / 2);
 
 		memcpy(utf16_name_copy, dentry->d_name, dentry->d_name_nbytes);
 		file_name_valid(utf16_name_copy, dentry->d_name_nbytes / 2, true);
@@ -928,7 +962,7 @@ out_replace:
 		tchar_nchars /= sizeof(tchar);
 
 		size_t fixed_name_num_chars = tchar_nchars;
-		tchar fixed_name[tchar_nchars + 50];
+		smart_array(tchar,fixed_name,tchar_nchars + 50);
 
 		tmemcpy(fixed_name, tchar_name, tchar_nchars);
 		fixed_name_num_chars += tsprintf(fixed_name + tchar_nchars,
@@ -1033,7 +1067,7 @@ dentry_list_resolve_streams(struct list_head *dentry_list,
 	struct wim_dentry *dentry;
 	int ret;
 
-	list_for_each_entry(dentry, dentry_list, d_extraction_list_node) {
+	list_for_each_entry(dentry, dentry_list, d_extraction_list_node,struct wim_dentry) {
 		ret = dentry_resolve_streams(dentry,
 					     ctx->extract_flags,
 					     ctx->wim->blob_table);
@@ -1201,12 +1235,12 @@ dentry_list_ref_streams(struct list_head *dentry_list, struct apply_ctx *ctx)
 	struct wim_dentry *dentry;
 	int ret;
 
-	list_for_each_entry(dentry, dentry_list, d_extraction_list_node) {
+	list_for_each_entry(dentry, dentry_list, d_extraction_list_node,struct wim_dentry) {
 		ret = dentry_ref_streams(dentry, ctx);
 		if (ret)
 			return ret;
 	}
-	list_for_each_entry(dentry, dentry_list, d_extraction_list_node)
+	list_for_each_entry(dentry, dentry_list, d_extraction_list_node,struct wim_dentry)
 		dentry->d_inode->i_visited = 0;
 	return 0;
 }
@@ -1216,10 +1250,10 @@ dentry_list_build_inode_alias_lists(struct list_head *dentry_list)
 {
 	struct wim_dentry *dentry;
 
-	list_for_each_entry(dentry, dentry_list, d_extraction_list_node)
+	list_for_each_entry(dentry, dentry_list, d_extraction_list_node,struct wim_dentry)
 		dentry->d_inode->i_first_extraction_alias = NULL;
 
-	list_for_each_entry(dentry, dentry_list, d_extraction_list_node) {
+	list_for_each_entry(dentry, dentry_list, d_extraction_list_node,struct wim_dentry) {
 		dentry->d_next_extraction_alias = dentry->d_inode->i_first_extraction_alias;
 		dentry->d_inode->i_first_extraction_alias = dentry;
 	}
@@ -1292,10 +1326,10 @@ dentry_list_get_features(struct list_head *dentry_list,
 {
 	struct wim_dentry *dentry;
 
-	list_for_each_entry(dentry, dentry_list, d_extraction_list_node)
+	list_for_each_entry(dentry, dentry_list, d_extraction_list_node,struct wim_dentry)
 		dentry_tally_features(dentry, features);
 
-	list_for_each_entry(dentry, dentry_list, d_extraction_list_node)
+	list_for_each_entry(dentry, dentry_list, d_extraction_list_node,struct wim_dentry)
 		dentry->d_inode->i_visited = 0;
 }
 
@@ -1895,7 +1929,7 @@ static int
 extract_all_images(WIMStruct *wim, const tchar *target, int extract_flags)
 {
 	size_t output_path_len = tstrlen(target);
-	tchar buf[output_path_len + 1 + 128 + 1];
+	smart_array(tchar,buf,output_path_len + 1 + 128 + 1);
 	int ret;
 	int image;
 	const tchar *image_name;

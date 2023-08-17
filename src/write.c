@@ -35,7 +35,11 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#ifdef _MSC_VER
+#include "msvc/unistd.h"
+#else
 #include <unistd.h>
+#endif
 
 #include "wimlib/alloca.h"
 #include "wimlib/assert.h"
@@ -226,7 +230,7 @@ can_raw_copy(const struct blob_descriptor *blob, int write_resource_flags,
 		struct blob_descriptor *res_blob;
 		u64 write_size = 0;
 
-		list_for_each_entry(res_blob, &rdesc->blob_list, rdesc_node)
+		list_for_each_entry(res_blob, &rdesc->blob_list, rdesc_node, struct blob_descriptor)
 			if (res_blob->will_be_in_output_wim)
 				write_size += res_blob->size;
 
@@ -1125,7 +1129,7 @@ compute_blob_list_stats(struct list_head *blob_list,
 	WIMStruct *prev_wim_part = NULL;
 	const struct wim_resource_descriptor *prev_rdesc = NULL;
 
-	list_for_each_entry(blob, blob_list, write_blobs_list) {
+	list_for_each_entry(blob, blob_list, write_blobs_list, struct blob_descriptor) {
 		num_blobs++;
 		total_bytes += blob->size;
 		if (blob->blob_location == BLOB_IN_WIM) {
@@ -1177,11 +1181,11 @@ find_raw_copy_blobs(struct list_head *blob_list, int write_resource_flags,
 	INIT_LIST_HEAD(raw_copy_blobs);
 
 	/* Initialize temporary raw_copy_ok flag.  */
-	list_for_each_entry(blob, blob_list, write_blobs_list)
+	list_for_each_entry(blob, blob_list, write_blobs_list, struct blob_descriptor)
 		if (blob->blob_location == BLOB_IN_WIM)
 			blob->rdesc->raw_copy_ok = 0;
 
-	list_for_each_entry_safe(blob, tmp, blob_list, write_blobs_list) {
+	list_for_each_entry_safe(blob, tmp, blob_list, write_blobs_list, struct blob_descriptor) {
 		if (can_raw_copy(blob, write_resource_flags,
 				 out_ctype, out_chunk_size))
 		{
@@ -1262,7 +1266,7 @@ write_raw_copy_resource(struct wim_resource_descriptor *in_rdesc,
 			return WIMLIB_ERR_WRITE;
 	}
 
-	list_for_each_entry(blob, &in_rdesc->blob_list, rdesc_node) {
+	list_for_each_entry(blob, &in_rdesc->blob_list, rdesc_node, struct blob_descriptor) {
 		if (blob->will_be_in_output_wim) {
 			blob_set_out_reshdr_for_reuse(blob);
 			if (in_rdesc->flags & WIM_RESHDR_FLAG_SOLID)
@@ -1285,10 +1289,10 @@ write_raw_copy_resources(struct list_head *raw_copy_blobs,
 	struct blob_descriptor *blob;
 	int ret;
 
-	list_for_each_entry(blob, raw_copy_blobs, write_blobs_list)
+	list_for_each_entry(blob, raw_copy_blobs, write_blobs_list, struct blob_descriptor)
 		blob->rdesc->raw_copy_ok = 1;
 
-	list_for_each_entry(blob, raw_copy_blobs, write_blobs_list) {
+	list_for_each_entry(blob, raw_copy_blobs, write_blobs_list, struct blob_descriptor) {
 		u64 compressed_size = 0;
 
 		if (blob->rdesc->raw_copy_ok) {
@@ -1339,7 +1343,7 @@ validate_blob_list(struct list_head *blob_list)
 {
 	struct blob_descriptor *blob;
 
-	list_for_each_entry(blob, blob_list, write_blobs_list) {
+	list_for_each_entry(blob, blob_list, write_blobs_list, struct blob_descriptor) {
 		wimlib_assert(blob->will_be_in_output_wim);
 		wimlib_assert(blob->size != 0);
 	}
@@ -1350,7 +1354,7 @@ init_done_with_file_info(struct list_head *blob_list)
 {
 	struct blob_descriptor *blob;
 
-	list_for_each_entry(blob, blob_list, write_blobs_list) {
+	list_for_each_entry(blob, blob_list, write_blobs_list, struct blob_descriptor) {
 		if (blob_is_in_file(blob)) {
 			blob->file_inode->i_num_remaining_streams = 0;
 			blob->may_send_done_with_file = 1;
@@ -1359,7 +1363,7 @@ init_done_with_file_info(struct list_head *blob_list)
 		}
 	}
 
-	list_for_each_entry(blob, blob_list, write_blobs_list)
+	list_for_each_entry(blob, blob_list, write_blobs_list, struct blob_descriptor)
 		if (blob->may_send_done_with_file)
 			blob->file_inode->i_num_remaining_streams++;
 }
@@ -1636,7 +1640,7 @@ write_blob_list(struct list_head *blob_list,
 			goto out_destroy_context;
 
 		offset_in_res = 0;
-		list_for_each_entry(blob, &ctx.blobs_in_solid_resource, write_blobs_list) {
+		list_for_each_entry(blob, &ctx.blobs_in_solid_resource, write_blobs_list, struct blob_descriptor) {
 			blob->out_reshdr.size_in_wim = blob->size;
 			blob->out_reshdr.flags = reshdr_flags_for_blob(blob) |
 						 WIM_RESHDR_FLAG_SOLID;
@@ -1785,7 +1789,7 @@ blob_size_table_insert(struct blob_descriptor *blob, void *_tab)
 
 	pos = hash_u64(blob->size) % tab->capacity;
 	blob->unique_size = 1;
-	hlist_for_each_entry(same_size_blob, &tab->array[pos], hash_list_2) {
+	hlist_for_each_entry(same_size_blob, &tab->array[pos], hash_list_2, struct blob_descriptor) {
 		if (same_size_blob->size == blob->size) {
 			blob->unique_size = 0;
 			same_size_blob->unique_size = 0;
@@ -1867,11 +1871,11 @@ image_find_blobs_to_reference(WIMStruct *wim)
 
 	imd = wim_get_current_image_metadata(wim);
 
-	image_for_each_unhashed_blob(blob, imd)
+	image_for_each_unhashed_blob(blob, imd, struct blob_descriptor)
 		blob->will_be_in_output_wim = 0;
 
 	blob_list = wim->private;
-	image_for_each_inode(inode, imd) {
+	image_for_each_inode(inode, imd, struct wim_inode) {
 		ret = inode_find_blobs_to_reference(inode,
 						    wim->blob_table,
 						    blob_list);
@@ -1906,7 +1910,7 @@ prepare_unfiltered_list_of_blobs_in_output_wim(WIMStruct *wim,
 
 		for (i = 0; i < wim->hdr.image_count; i++) {
 			imd = wim->image_metadata[i];
-			image_for_each_unhashed_blob(blob, imd)
+			image_for_each_unhashed_blob(blob, imd, struct blob_descriptor)
 				fully_reference_blob_for_write(blob, blob_list_ret);
 		}
 	} else {
@@ -1960,7 +1964,7 @@ determine_blob_size_uniquity(struct list_head *blob_list,
 		for_blob_in_table(lt, insert_other_if_hard_filtered, &ctx);
 	}
 
-	list_for_each_entry(blob, blob_list, write_blobs_list)
+	list_for_each_entry(blob, blob_list, write_blobs_list, struct blob_descriptor)
 		blob_size_table_insert(blob, &tab);
 
 	destroy_blob_size_table(&tab);
@@ -1973,7 +1977,7 @@ filter_blob_list_for_write(struct list_head *blob_list,
 {
 	struct blob_descriptor *blob, *tmp;
 
-	list_for_each_entry_safe(blob, tmp, blob_list, write_blobs_list) {
+	list_for_each_entry_safe(blob, tmp, blob_list, write_blobs_list, struct blob_descriptor) {
 		int status = blob_filtered(blob, filter_ctx);
 
 		if (status == 0) {
@@ -2079,7 +2083,7 @@ prepare_blob_list_for_write(WIMStruct *wim, int image,
 		return ret;
 
 	INIT_LIST_HEAD(blob_table_list_ret);
-	list_for_each_entry(blob, blob_list_ret, write_blobs_list)
+	list_for_each_entry(blob, blob_list_ret, write_blobs_list, struct blob_descriptor)
 		list_add_tail(&blob->blob_table_list, blob_table_list_ret);
 
 	ret = determine_blob_size_uniquity(blob_list_ret, wim->blob_table,
@@ -2124,7 +2128,7 @@ write_file_data(WIMStruct *wim, int image, int write_flags,
 		blob_list = blob_list_override;
 		filter_ctx = NULL;
 		INIT_LIST_HEAD(blob_table_list_ret);
-		list_for_each_entry(blob, blob_list, write_blobs_list) {
+		list_for_each_entry(blob, blob_list, write_blobs_list, struct blob_descriptor) {
 			blob->out_refcnt = blob->refcnt;
 			blob->will_be_in_output_wim = 1;
 			blob->unique_size = 0;
@@ -2267,7 +2271,7 @@ write_blob_table(WIMStruct *wim, int image, int write_flags,
 	/* Set output resource metadata for blobs already present in WIM.  */
 	if (write_flags & WIMLIB_WRITE_FLAG_APPEND) {
 		struct blob_descriptor *blob;
-		list_for_each_entry(blob, blob_table_list, blob_table_list) {
+		list_for_each_entry(blob, blob_table_list, blob_table_list, struct blob_descriptor) {
 			if (blob->blob_location == BLOB_IN_WIM &&
 			    blob->rdesc->wim == wim)
 			{
@@ -3247,7 +3251,7 @@ overwrite_wim_via_tmpfile(WIMStruct *wim, int write_flags, unsigned num_threads)
 	/* Write the WIM to a temporary file in the same directory as the
 	 * original WIM. */
 	wim_name_len = tstrlen(wim->filename);
-	tchar tmpfile[wim_name_len + 10];
+	smart_array(tchar,tmpfile,wim_name_len + 10);
 	tmemcpy(tmpfile, wim->filename, wim_name_len);
 	get_random_alnum_chars(tmpfile + wim_name_len, 9);
 	tmpfile[wim_name_len + 9] = T('\0');

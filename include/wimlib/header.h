@@ -48,6 +48,9 @@
 		 ((u64)'\0' << 54))
 
 /* On-disk format of the WIM header.  */
+#ifdef _MSC_VER
+#pragma pack(push,1)
+#endif
 struct wim_header_disk {
 
 	/* +0x00: Magic characters WIM_MAGIC or PWM_MAGIC.  */
@@ -112,6 +115,9 @@ struct wim_header_disk {
 	/* +0xd0 (208)  */
 } __attribute__((packed));
 
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 /*
  * Arbitrarily limit the maximum number of images to 65535, to prevent huge
  * memory allocations when processing fuzzed files.  This can be increased if

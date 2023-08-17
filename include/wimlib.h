@@ -391,16 +391,19 @@
 #include <stdio.h>
 #include <stddef.h>
 #ifndef __cplusplus
-#  if defined(_MSC_VER) && _MSC_VER < 1800 /* VS pre-2013? */
+#  if defined(_MSC_VER)
+#include "msvc/unistd.h"
+#  if _MSC_VER < 1800 /* VS pre-2013? */
      typedef unsigned char bool;
 #  else
 #    include <stdbool.h>
+#  endif
 #  endif
 #endif
 #include <stdint.h>
 #include <time.h>
 
-#ifdef BUILDING_WIMLIB
+#if defined BUILDING_WIMLIB || defined LIBWIM_EXPORTS
   /*
    * On i386, gcc assumes that the stack is 16-byte aligned at function entry.
    * However, some compilers (e.g. MSVC) and programming languages (e.g. Delphi)
@@ -414,7 +417,7 @@
 #  else
 #    define WIMLIB_ALIGN_STACK
 #  endif
-#  ifdef _WIN32
+#if defined _WIN32 || defined LIBWIM_EXPORTS
 #    define WIMLIBAPI __declspec(dllexport) WIMLIB_ALIGN_STACK
 #  else
 #    define WIMLIBAPI __attribute__((visibility("default"))) WIMLIB_ALIGN_STACK

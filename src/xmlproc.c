@@ -130,7 +130,7 @@ xml_free_children(struct xml_node *parent)
 {
 	struct xml_node *child, *tmp;
 
-	list_for_each_entry_safe(child, tmp, &parent->children, sibling_link)
+	list_for_each_entry_safe(child, tmp, &parent->children, sibling_link, struct xml_node)
 		xml_free_node(child);
 }
 
@@ -156,7 +156,7 @@ xml_element_get_text(const struct xml_node *element)
 {
 	const struct xml_node *child;
 
-	xml_node_for_each_child(element, child)
+	xml_node_for_each_child(element, child, struct xml_node)
 		if (child->type == XML_TEXT_NODE)
 			return child->value;
 	return NULL;
@@ -215,7 +215,7 @@ xml_get_attrib(const struct xml_node *element, const tchar *name)
 {
 	struct xml_node *child;
 
-	xml_node_for_each_child(element, child) {
+	xml_node_for_each_child(element, child, struct xml_node) {
 		if (child->type == XML_ATTRIBUTE_NODE &&
 		    !tstrcmp(child->name, name))
 			return child;
@@ -247,7 +247,7 @@ xml_replace_child(struct xml_node *parent, struct xml_node *replacement)
 
 	xml_unlink_node(replacement); /* Shouldn't be needed, but be safe. */
 
-	xml_node_for_each_child(parent, child) {
+	xml_node_for_each_child(parent, child, struct xml_node) {
 		if (child->type == replacement->type &&
 		    !tstrcmp(child->name, replacement->name)) {
 			list_replace(&child->sibling_link,
@@ -271,7 +271,7 @@ xml_clone_tree(struct xml_node *orig)
 			orig->value, orig->value ? tstrlen(orig->value) : 0);
 	if (!clone)
 		return NULL;
-	xml_node_for_each_child(orig, orig_child) {
+	xml_node_for_each_child(orig, orig_child, struct xml_node) {
 		clone_child = xml_clone_tree(orig_child);
 		if (!clone_child)
 			goto oom;
@@ -708,7 +708,7 @@ xml_write_element(struct xml_node *element, struct xml_out_buf *buf)
 	/* Write the start tag. */
 	xml_puts(buf, T("<"));
 	xml_puts(buf, element->name);
-	xml_node_for_each_child(element, child) {
+	xml_node_for_each_child(element, child, struct xml_node) {
 		if (child->type == XML_ATTRIBUTE_NODE) {
 			xml_puts(buf, T(" "));
 			xml_puts(buf, child->name);
@@ -720,7 +720,7 @@ xml_write_element(struct xml_node *element, struct xml_out_buf *buf)
 	xml_puts(buf, T(">"));
 
 	/* Write the contents. */
-	xml_node_for_each_child(element, child) {
+	xml_node_for_each_child(element, child, struct xml_node) {
 		if (child->type == XML_TEXT_NODE)
 			xml_escape_and_puts(buf, child->value);
 		else if (child->type == XML_ELEMENT_NODE)

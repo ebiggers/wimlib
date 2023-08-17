@@ -27,7 +27,11 @@ typedef wchar_t tchar;
 #  define tstrcat	wcscat
 #  define tstrcpy	wcscpy
 #  define tprintf	wprintf
+#ifdef _MSC_VER
+#define tsprintf wsprintfW
+#else
 #  define tsprintf	swprintf
+#endif
 #  define tfprintf	fwprintf
 #  define tvfprintf	vfwprintf
 #  define tscanf	swscanf

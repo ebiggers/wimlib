@@ -733,7 +733,7 @@ start_wimboot_extraction(struct list_head *dentry_list, struct win32_apply_ctx *
 			"          means it is not intended to be used to back a Windows operating\n"
 			"          system.  Proceeding anyway.");
 
-	list_for_each_entry(dentry, dentry_list, d_extraction_list_node) {
+	list_for_each_entry(dentry, dentry_list, d_extraction_list_node, struct wim_dentry) {
 		struct blob_descriptor *blob;
 
 		ret = win32_will_back_from_wim(dentry, &ctx->common);
@@ -906,7 +906,7 @@ compute_path_max(struct list_head *dentry_list)
 	size_t max = 0;
 	const struct wim_dentry *dentry;
 
-	list_for_each_entry(dentry, dentry_list, d_extraction_list_node) {
+	list_for_each_entry(dentry, dentry_list, d_extraction_list_node, struct wim_dentry) {
 		size_t len;
 
 		len = dentry_extraction_path_length(dentry);
@@ -1242,9 +1242,14 @@ remove_conflicting_short_name(const struct wim_dentry *dentry, struct win32_appl
 	wchar_t *end;
 	NTSTATUS status;
 	HANDLE h;
-	size_t bufsize = offsetof(FILE_NAME_INFORMATION, FileName) +
-			 (13 * sizeof(wchar_t));
-	u8 buf[bufsize] __attribute__((aligned(8)));
+	size_t bufsize = offsetof(FILE_NAME_INFORMATION, FileName) + (13 * sizeof(wchar_t));
+#ifdef _MSC_VER
+#pragma pack(push, 8)
+#endif
+	smart_array(u8, buf, bufsize) __attribute__((aligned(8)));
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 	bool retried = false;
 	FILE_NAME_INFORMATION *info = (FILE_NAME_INFORMATION *)buf;
 
@@ -1326,7 +1331,13 @@ set_short_name(HANDLE h, const struct wim_dentry *dentry,
 	size_t bufsize = offsetof(FILE_NAME_INFORMATION, FileName) +
 			 max(dentry->d_short_name_nbytes, sizeof(wchar_t)) +
 			 sizeof(wchar_t);
-	u8 buf[bufsize] __attribute__((aligned(8)));
+#ifdef _MSC_VER
+#pragma pack(push, 8)
+#endif
+	smart_array(u8, buf, bufsize) __attribute__((aligned(8)));
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 	FILE_NAME_INFORMATION *info = (FILE_NAME_INFORMATION *)buf;
 	NTSTATUS status;
 	bool tried_to_remove_existing = false;
@@ -1632,9 +1643,14 @@ create_empty_streams(const struct wim_dentry *dentry,
 			continue;
 
 		if (strm->stream_type == STREAM_TYPE_REPARSE_POINT &&
-		    ctx->common.supported_features.reparse_points)
-		{
+		    ctx->common.supported_features.reparse_points) {
+#ifdef _MSC_VER
+#pragma pack(push, 8)
+#endif
 			u8 buf[REPARSE_DATA_OFFSET] __attribute__((aligned(8)));
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 			struct reparse_buffer_disk *rpbuf =
 				(struct reparse_buffer_disk *)buf;
 			complete_reparse_point(rpbuf, inode, 0);
@@ -1760,7 +1776,7 @@ create_directories(struct list_head *dentry_list,
 	const struct wim_dentry *dentry;
 	int ret;
 
-	list_for_each_entry(dentry, dentry_list, d_extraction_list_node) {
+	list_for_each_entry(dentry, dentry_list, d_extraction_list_node, struct wim_dentry) {
 
 		if (!(dentry->d_inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY))
 			continue;
@@ -1843,7 +1859,13 @@ create_link(HANDLE h, const struct wim_dentry *dentry,
 
 		size_t bufsize = offsetof(FILE_LINK_INFORMATION, FileName) +
 				 ctx->pathbuf.Length + sizeof(wchar_t);
-		u8 buf[bufsize] __attribute__((aligned(8)));
+#ifdef _MSC_VER
+#pragma pack(push, 8)
+#endif
+		smart_array(u8, buf, bufsize) __attribute__((aligned(8)));
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 		FILE_LINK_INFORMATION *info = (FILE_LINK_INFORMATION *)buf;
 		NTSTATUS status;
 
@@ -1952,7 +1974,7 @@ create_nondirectories(struct list_head *dentry_list, struct win32_apply_ctx *ctx
 	struct wim_inode *inode;
 	int ret;
 
-	list_for_each_entry(dentry, dentry_list, d_extraction_list_node) {
+	list_for_each_entry(dentry, dentry_list, d_extraction_list_node, struct wim_dentry) {
 		inode = dentry->d_inode;
 		if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
 			continue;
@@ -2205,7 +2227,7 @@ try_rpfix(struct reparse_buffer_disk *rpbuf, u16 *rpbuflen_p,
 
 	fixed_subst_name_nchars = target_ntpath_nchars + relpath_nchars;
 
-	wchar_t fixed_subst_name[fixed_subst_name_nchars];
+	smart_array(wchar_t,fixed_subst_name,fixed_subst_name_nchars);
 
 	wmemcpy(fixed_subst_name, ctx->target_ntpath.Buffer, target_ntpath_nchars);
 	wmemcpy(&fixed_subst_name[target_ntpath_nchars], relpath, relpath_nchars);
@@ -2370,18 +2392,18 @@ fail:
 static int
 pwrite_to_handle(HANDLE h, const void *data, size_t size, u64 offset)
 {
-	const void * const end = data + size;
+	const void * const end = POINTER_FIX()data + size;
 	const void *p;
 	IO_STATUS_BLOCK iosb;
 	NTSTATUS status;
 
-	for (p = data; p != end; p += iosb.Information,
+	for (p = data; p != end; POINTER_FIX()p += iosb.Information,
 				 offset += iosb.Information)
 	{
 		LARGE_INTEGER offs = { .QuadPart = offset };
 
 		status = NtWriteFile(h, NULL, NULL, NULL, &iosb,
-				     (void *)p, min(INT32_MAX, end - p),
+				     (void *)p, min(INT32_MAX, POINTER_FIX()end - POINTER_FIX()p),
 				     &offs, NULL);
 		if (!NT_SUCCESS(status)) {
 			winnt_error(status,
@@ -2398,7 +2420,7 @@ win32_extract_chunk(const struct blob_descriptor *blob, u64 offset,
 		    const void *chunk, size_t size, void *_ctx)
 {
 	struct win32_apply_ctx *ctx = _ctx;
-	const void * const end = chunk + size;
+	const void * const end = POINTER_FIX()chunk + size;
 	const void *p;
 	bool zeroes;
 	size_t len;
@@ -2409,8 +2431,8 @@ win32_extract_chunk(const struct blob_descriptor *blob, u64 offset,
 	 * For sparse streams, only write nonzero regions.  This lets the
 	 * filesystem use holes to represent zero regions.
 	 */
-	for (p = chunk; p != end; p += len, offset += len) {
-		zeroes = maybe_detect_sparse_region(p, end - p, &len,
+	for (p = chunk; p != end; POINTER_FIX()p += len, offset += len) {
+		zeroes = maybe_detect_sparse_region(p, POINTER_FIX()end - POINTER_FIX()p, &len,
 						    ctx->any_sparse_streams);
 		for (i = 0; i < ctx->num_open_handles; i++) {
 			if (!zeroes || !ctx->is_sparse_stream[i]) {
@@ -2754,7 +2776,7 @@ win32_end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
 		/* Reparse data  */
 		memcpy(ctx->rpbuf.rpdata, ctx->data_buffer, blob->size);
 
-		list_for_each_entry(dentry, &ctx->reparse_dentries, d_tmp_list) {
+		list_for_each_entry(dentry, &ctx->reparse_dentries, d_tmp_list, struct wim_dentry) {
 
 			/* Reparse point header  */
 			complete_reparse_point(&ctx->rpbuf, dentry->d_inode,
@@ -2771,7 +2793,7 @@ win32_end_extract_blob(struct blob_descriptor *blob, int status, void *_ctx)
 
 	if (!list_empty(&ctx->encrypted_dentries)) {
 		ctx->encrypted_size = blob->size;
-		list_for_each_entry(dentry, &ctx->encrypted_dentries, d_tmp_list) {
+		list_for_each_entry(dentry, &ctx->encrypted_dentries, d_tmp_list, struct wim_dentry) {
 			ret = extract_encrypted_file(dentry, ctx);
 			ret = check_apply_error(dentry, ctx, ret);
 			if (ret)
@@ -2841,7 +2863,13 @@ set_xattrs(HANDLE h, const struct wim_inode *inode, struct win32_apply_ctx *ctx)
 	u32 len;
 	const struct wim_xattr_entry *entry;
 	size_t bufsize = 0;
+#ifdef _MSC_VER
+#pragma pack(push, 4)
+#endif
 	u8 _buf[1024] __attribute__((aligned(4)));
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 	u8 *buf = _buf;
 	FILE_FULL_EA_INFORMATION *ea, *ea_prev;
 	NTSTATUS status;
@@ -2853,12 +2881,12 @@ set_xattrs(HANDLE h, const struct wim_inode *inode, struct win32_apply_ctx *ctx)
 	entries = inode_get_xattrs(inode, &len);
 	if (likely(entries == NULL || len == 0))  /* No extended attributes? */
 		return 0;
-	entries_end = entries + len;
+	entries_end = POINTER_FIX()entries + len;
 
 	entry = entries;
 	for (entry = entries; (void *)entry < entries_end;
 	     entry = xattr_entry_next(entry)) {
-		if (!valid_xattr_entry(entry, entries_end - (void *)entry)) {
+		if (!valid_xattr_entry(entry, POINTER_FIX()entries_end - POINTER_FIX()(void *)entry)) {
 			ERROR("\"%"TS"\": extended attribute is corrupt or unsupported",
 			      inode_any_full_path(inode));
 			return WIMLIB_ERR_INVALID_XATTR;
@@ -3198,7 +3226,7 @@ apply_metadata(struct list_head *dentry_list, struct win32_apply_ctx *ctx)
 	/* We go in reverse so that metadata is set on all a directory's
 	 * children before the directory itself.  This avoids any potential
 	 * problems with attributes, timestamps, or security descriptors.  */
-	list_for_each_entry_reverse(dentry, dentry_list, d_extraction_list_node)
+	list_for_each_entry_reverse(dentry, dentry_list, d_extraction_list_node, struct wim_dentry)
 	{
 		ret = apply_metadata_to_file(dentry, ctx);
 		ret = check_apply_error(dentry, ctx, ret);

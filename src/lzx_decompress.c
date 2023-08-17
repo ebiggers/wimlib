@@ -70,6 +70,9 @@
 
 #define LZX_READ_LENS_MAX_OVERRUN 50
 
+#ifdef _MSC_VER
+#pragma pack(push, DECODE_TABLE_ALIGNMENT)
+#endif
 struct lzx_decompressor {
 
 	DECODE_TABLE(maincode_decode_table, LZX_MAINCODE_MAX_NUM_SYMBOLS,
@@ -117,6 +120,9 @@ struct lzx_decompressor {
 
 } __attribute__((aligned(DECODE_TABLE_ALIGNMENT)));
 
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 /* Read a Huffman-encoded symbol using the precode. */
 static forceinline unsigned
 read_presym(const struct lzx_decompressor *d, struct input_bitstream *is)

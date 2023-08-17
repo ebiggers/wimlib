@@ -8,7 +8,10 @@
 #ifdef _WIN32
 
 #include "wimlib/types.h"
-
+#ifdef _MSC_VER
+#include "msvc/unistd.h"
+#else
+#endif
 struct blob_descriptor;
 struct consume_chunk_callback;
 struct windows_file;

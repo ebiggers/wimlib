@@ -24,8 +24,12 @@
 #endif
 
 #include <errno.h>
-#include <unistd.h>
 
+#ifdef _MSC_VER
+#include"msvc/unistd.h"
+#else
+#include<unistd.h>
+#endif
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
 #include "wimlib/util.h"
@@ -61,7 +65,7 @@ full_read(struct filedes *fd, void *buf, size_t count)
 				continue;
 			return WIMLIB_ERR_READ;
 		}
-		buf += ret;
+		POINTER_FIX()buf += ret;
 		count -= ret;
 		fd->offset += ret;
 	}
@@ -86,7 +90,7 @@ pipe_read(struct filedes *fd, void *buf, size_t count, off_t offset)
 	/* Manually seek to the requested position.  */
 	while (fd->offset != offset) {
 		size_t bytes_to_read = min(offset - fd->offset, BUFFER_SIZE);
-		u8 dummy[bytes_to_read];
+		smart_array(u8,dummy,bytes_to_read);
 
 		ret = full_read(fd, dummy, bytes_to_read);
 		if (ret)
@@ -131,7 +135,7 @@ full_pread(struct filedes *fd, void *buf, size_t count, off_t offset)
 			}
 			return WIMLIB_ERR_READ;
 		}
-		buf += ret;
+		POINTER_FIX() buf += ret;
 		count -= ret;
 		offset += ret;
 	}
@@ -159,7 +163,7 @@ full_write(struct filedes *fd, const void *buf, size_t count)
 				continue;
 			return WIMLIB_ERR_WRITE;
 		}
-		buf += ret;
+		POINTER_FIX() buf += ret;
 		count -= ret;
 		fd->offset += ret;
 	}
@@ -185,7 +189,7 @@ full_pwrite(struct filedes *fd, const void *buf, size_t count, off_t offset)
 				continue;
 			return WIMLIB_ERR_WRITE;
 		}
-		buf += ret;
+		POINTER_FIX() buf += ret;
 		count -= ret;
 		offset += ret;
 	}

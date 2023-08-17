@@ -27,7 +27,11 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#ifdef _MSC_VER
+#include "msvc/unistd.h"
+#else
 #include <unistd.h>
+#endif
 
 #include "wimlib/alloca.h"
 #include "wimlib/assert.h"
@@ -1384,7 +1388,7 @@ int
 sha1_blob(struct blob_descriptor *blob)
 {
 	static const struct read_blob_callbacks cbs = {
-	};
+	EMPTY};
 	return read_blob_with_sha1(blob, &cbs, false);
 }
 
