@@ -131,16 +131,26 @@ if ! test "`wiminfo dir.wim | grep '^Boot Index' | awk '{print $3}'`" = "0"; the
 fi
 rm -rf dir.wim tmp
 
+name_desc_test() {
+	local name=$1
+	local desc=$2
+	if ! wimcapture dir dir.wim "$name" "$desc"; then
+		error "Failed to capture WIM with specified name and description"
+	fi
+	if ! test "`wiminfo dir.wim | grep Name | awk '{print $2}'`" = "$name"; then
+		error "WIM name not set correctly"
+	fi
+	if ! test "`wiminfo dir.wim | grep Description | awk '{print $2}'`" = "$desc"; then
+		error "WIM description not set correctly"
+	fi
+}
+
 echo "Testing capture of WIM with name and description"
-if ! wimcapture dir dir.wim "myname" "mydesc"; then
-	error "Failed to capture WIM with specified name and description"
-fi
-if ! test "`wiminfo dir.wim | grep Name | awk '{print $2}'`" = "myname"; then
-	error "WIM name not set correctly"
-fi
-if ! test "`wiminfo dir.wim | grep Description | awk '{print $2}'`" = "mydesc"; then
-	error "WIM name not set correctly"
-fi
+name_desc_test "myname" "mydesc"
+
+echo "Testing capture of WIM with non-ASCII name and description"
+name_desc_test "áéíóú" "¿?"
+
 echo "Testing printing WIM lookup table"
 if ! wiminfo --lookup-table dir.wim > /dev/null; then
 	error "Failed to print WIM lookup table"

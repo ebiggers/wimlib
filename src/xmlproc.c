@@ -341,7 +341,8 @@ bool
 xml_legal_value(const tchar *p)
 {
 	for (; *p; p++) {
-		if (*p < 0x20 && !is_whitespace(*p))
+		/* Careful: tchar can be signed. */
+		if (*p > 0 && *p < 0x20 && !is_whitespace(*p))
 			return false;
 	}
 	return true;

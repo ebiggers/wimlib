@@ -1,5 +1,11 @@
 # wimlib release notes
 
+## Version 1.14.3-BETA1
+
+- Fixed a bug introduced in v1.14.0 where non-ASCII characters stopped being
+  accepted in image names and descriptions.  This bug only affected UNIX-like
+  systems that use `signed char`, e.g. x86 Linux systems.
+
 ## Version 1.14.2
 
 - Fixed a bug introduced in v1.14.0 where a crash would sometimes occur if a
