@@ -103,7 +103,7 @@ Then, open any MSYS2 shell and run the following command:
 After that, open any MSYS2 shell again and run the following commands:
 
     pacman -Syu --noconfirm git
-    git clone git://wimlib.net/wimlib
+    git clone https://wimlib.net/git/wimlib
 
 Note: By default the git repository will be on the `master` branch, which is the
 latest development snapshot.  Optionally, you can check out a specific version,
