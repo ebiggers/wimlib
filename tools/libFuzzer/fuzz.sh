@@ -18,6 +18,7 @@ Fuzz wimlib with LLVM's libFuzzer.
 Options:
    --asan          Enable AddressSanitizer
    --input=INPUT   Test a single input file only
+   --max-len=LEN   Maximum length of generated inputs (default: $MAX_LEN)
    --msan          Enable MemorySanitizer
    --time=SECONDS  Stop after the given time has passed
    --ubsan         Enable UndefinedBehaviorSanitizer
@@ -39,13 +40,15 @@ run_cmd()
 }
 
 EXTRA_SANITIZERS=
-EXTRA_FUZZER_ARGS=('-max_len=32768')
+EXTRA_FUZZER_ARGS=()
 INPUT=
+MAX_LEN=32768
 
 longopts_array=(
 asan
 help
 input:
+max-len:
 msan
 time:
 ubsan
@@ -70,12 +73,16 @@ while true; do
 		INPUT=$2
 		shift
 		;;
-	--time)
-		EXTRA_FUZZER_ARGS+=("-max_total_time=$2")
+	--max-len)
+		MAX_LEN=$2
 		shift
 		;;
 	--msan)
 		EXTRA_SANITIZERS+=",memory"
+		;;
+	--time)
+		EXTRA_FUZZER_ARGS+=("-max_total_time=$2")
+		shift
 		;;
 	--ubsan)
 		EXTRA_SANITIZERS+=",undefined"
@@ -91,6 +98,7 @@ while true; do
 	esac
 	shift
 done
+EXTRA_FUZZER_ARGS+=("-max_len=$MAX_LEN")
 
 if (( $# != 1 )); then
 	echo 1>&2 "No fuzz target specified!"
