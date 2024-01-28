@@ -848,7 +848,7 @@ winnt_recurse_directory(HANDLE h,
 	const size_t bufsize = 8192;
 	IO_STATUS_BLOCK iosb;
 	NTSTATUS status;
-	int ret;
+	int ret=0;
 
 	buf = MALLOC(bufsize);
 	if (!buf)

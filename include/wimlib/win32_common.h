@@ -161,7 +161,7 @@ winnt_error(NTSTATUS status, const wchar_t *format, ...);
 NTSTATUS
 winnt_fsctl(HANDLE h, u32 code, const void *in, u32 in_size,
 	    void *out, u32 out_size_avail, u32 *actual_out_size_ret);
-#ifdef _MSC_VER
+#ifdef WIN32
 #pragma region win32_typedefs
 #define DEVICE_TYPE DWORD
 
@@ -1005,6 +1005,157 @@ winnt_fsctl(HANDLE h, u32 code, const void *in, u32 in_size,
 	CTL_CODE(IOCTL_DISK_BASE, 0x0017, METHOD_BUFFERED, FILE_READ_ACCESS)
 #define IOCTL_DISK_GET_DRIVE_GEOMETRY_EX                                       \
 	CTL_CODE(IOCTL_DISK_BASE, 0x0028, METHOD_BUFFERED, FILE_ANY_ACCESS)
+typedef struct _FILE_OBJECTID_BUFFER {
+
+	u8 ObjectId[16];
+
+	union {
+		struct {
+			u8 BirthVolumeId[16];
+			u8 BirthObjectId[16];
+			u8 DomainId[16];
+		};
+		u8 ExtendedInfo[48];
+	};
+
+} FILE_OBJECTID_BUFFER, *PFILE_OBJECTID_BUFFER;
+typedef struct {
+
+	LARGE_INTEGER StartingVcn;
+
+} STARTING_VCN_INPUT_BUFFER, *PSTARTING_VCN_INPUT_BUFFER;
+
+typedef enum _PARTITION_STYLE {
+	PARTITION_STYLE_MBR,
+	PARTITION_STYLE_GPT,
+	PARTITION_STYLE_RAW
+} PARTITION_STYLE;
+typedef struct _PARTITION_INFORMATION_MBR {
+
+	BYTE PartitionType;
+
+	BOOLEAN BootIndicator;
+
+	BOOLEAN RecognizedPartition;
+
+	DWORD HiddenSectors;
+
+#if (NTDDI_VERSION >= NTDDI_WINBLUE) /* ABRACADABRA_THRESHOLD */
+	GUID PartitionId;
+#endif
+
+} PARTITION_INFORMATION_MBR, *PPARTITION_INFORMATION_MBR;
+typedef struct _PARTITION_INFORMATION_GPT {
+
+	GUID PartitionType; // Partition type. See table 16-3.
+
+	GUID PartitionId; // Unique GUID for this partition.
+
+	DWORD64 Attributes; // See table 16-4.
+
+	WCHAR Name[36]; // Partition Name in Unicode.
+
+} PARTITION_INFORMATION_GPT, *PPARTITION_INFORMATION_GPT;
+typedef struct _PARTITION_INFORMATION_EX {
+
+	PARTITION_STYLE PartitionStyle;
+
+	LARGE_INTEGER StartingOffset;
+
+	LARGE_INTEGER PartitionLength;
+
+	DWORD PartitionNumber;
+
+	BOOLEAN RewritePartition;
+
+#if (NTDDI_VERSION >= NTDDI_WIN10_RS3) /* ABRACADABRA_WIN10_RS3 */
+	BOOLEAN IsServicePartition;
+#endif
+
+	union {
+
+		PARTITION_INFORMATION_MBR Mbr;
+
+		PARTITION_INFORMATION_GPT Gpt;
+	};
+
+} PARTITION_INFORMATION_EX, *PPARTITION_INFORMATION_EX;
+typedef struct _DRIVE_LAYOUT_INFORMATION_GPT {
+
+	GUID DiskId;
+
+	LARGE_INTEGER StartingUsableOffset;
+
+	LARGE_INTEGER UsableLength;
+
+	DWORD MaxPartitionCount;
+
+} DRIVE_LAYOUT_INFORMATION_GPT, *PDRIVE_LAYOUT_INFORMATION_GPT;
+
+typedef struct _DRIVE_LAYOUT_INFORMATION_MBR {
+
+	DWORD Signature;
+
+#if (NTDDI_VERSION >= NTDDI_WIN10_RS1) /* ABRACADABRA_WIN10_RS1 */
+	DWORD CheckSum;
+#endif
+
+} DRIVE_LAYOUT_INFORMATION_MBR, *PDRIVE_LAYOUT_INFORMATION_MBR;
+typedef struct _DRIVE_LAYOUT_INFORMATION_EX {
+
+	DWORD PartitionStyle;
+
+	DWORD PartitionCount;
+
+	union {
+
+		DRIVE_LAYOUT_INFORMATION_MBR Mbr;
+
+		DRIVE_LAYOUT_INFORMATION_GPT Gpt;
+	};
+
+	PARTITION_INFORMATION_EX PartitionEntry[1];
+
+} DRIVE_LAYOUT_INFORMATION_EX, *PDRIVE_LAYOUT_INFORMATION_EX;
+typedef struct _DISK_EXTENT {
+
+	//
+	// Specifies the storage device number of
+	// the disk on which this extent resides.
+	//
+	DWORD DiskNumber;
+
+	//
+	// Specifies the offset and length of this
+	// extent relative to the beginning of the
+	// disk.
+	//
+	LARGE_INTEGER StartingOffset;
+	LARGE_INTEGER ExtentLength;
+
+} DISK_EXTENT, *PDISK_EXTENT;
+typedef struct _VOLUME_DISK_EXTENTS {
+
+	//
+	// Specifies one or more contiguous range
+	// of sectors that make up this volume.
+	//
+	DWORD NumberOfDiskExtents;
+	DISK_EXTENT Extents[ANYSIZE_ARRAY];
+
+} VOLUME_DISK_EXTENTS, *PVOLUME_DISK_EXTENTS;
+#endif
+typedef struct RETRIEVAL_POINTERS_BUFFER {
+
+	DWORD ExtentCount;
+	LARGE_INTEGER StartingVcn;
+	struct {
+		LARGE_INTEGER NextVcn;
+		LARGE_INTEGER Lcn;
+	} Extents[1];
+
+} RETRIEVAL_POINTERS_BUFFER, *PRETRIEVAL_POINTERS_BUFFER;
+#ifdef _MSC_VER
 typedef struct _FILE_BASIC_INFORMATION {
 	LARGE_INTEGER CreationTime;
 	LARGE_INTEGER LastAccessTime;
@@ -1222,158 +1373,7 @@ typedef struct _FILE_FS_ATTRIBUTE_INFORMATION {
 	WCHAR FileSystemName[1];
 } FILE_FS_ATTRIBUTE_INFORMATION, *PFILE_FS_ATTRIBUTE_INFORMATION;
 
-typedef struct _FILE_OBJECTID_BUFFER {
 
-	u8 ObjectId[16];
-
-	union {
-		struct {
-			u8 BirthVolumeId[16];
-			u8 BirthObjectId[16];
-			u8 DomainId[16];
-		};
-		u8 ExtendedInfo[48];
-	};
-
-} FILE_OBJECTID_BUFFER, *PFILE_OBJECTID_BUFFER;
-typedef struct RETRIEVAL_POINTERS_BUFFER {
-
-	DWORD ExtentCount;
-	LARGE_INTEGER StartingVcn;
-	struct {
-		LARGE_INTEGER NextVcn;
-		LARGE_INTEGER Lcn;
-	} Extents[1];
-
-} RETRIEVAL_POINTERS_BUFFER, *PRETRIEVAL_POINTERS_BUFFER;
-
-typedef struct {
-
-	LARGE_INTEGER StartingVcn;
-
-} STARTING_VCN_INPUT_BUFFER, *PSTARTING_VCN_INPUT_BUFFER;
-
-typedef enum _PARTITION_STYLE {
-	PARTITION_STYLE_MBR,
-	PARTITION_STYLE_GPT,
-	PARTITION_STYLE_RAW
-} PARTITION_STYLE;
-typedef struct _PARTITION_INFORMATION_MBR {
-
-	BYTE PartitionType;
-
-	BOOLEAN BootIndicator;
-
-	BOOLEAN RecognizedPartition;
-
-	DWORD HiddenSectors;
-
-#if (NTDDI_VERSION >= NTDDI_WINBLUE) /* ABRACADABRA_THRESHOLD */
-	GUID PartitionId;
-#endif
-
-} PARTITION_INFORMATION_MBR, *PPARTITION_INFORMATION_MBR;
-typedef struct _PARTITION_INFORMATION_GPT {
-
-	GUID PartitionType; // Partition type. See table 16-3.
-
-	GUID PartitionId; // Unique GUID for this partition.
-
-	DWORD64 Attributes; // See table 16-4.
-
-	WCHAR Name[36]; // Partition Name in Unicode.
-
-} PARTITION_INFORMATION_GPT, *PPARTITION_INFORMATION_GPT;
-typedef struct _PARTITION_INFORMATION_EX {
-
-	PARTITION_STYLE PartitionStyle;
-
-	LARGE_INTEGER StartingOffset;
-
-	LARGE_INTEGER PartitionLength;
-
-	DWORD PartitionNumber;
-
-	BOOLEAN RewritePartition;
-
-#if (NTDDI_VERSION >= NTDDI_WIN10_RS3) /* ABRACADABRA_WIN10_RS3 */
-	BOOLEAN IsServicePartition;
-#endif
-
-	union {
-
-		PARTITION_INFORMATION_MBR Mbr;
-
-		PARTITION_INFORMATION_GPT Gpt;
-
-	} ;
-
-} PARTITION_INFORMATION_EX, *PPARTITION_INFORMATION_EX;
-typedef struct _DRIVE_LAYOUT_INFORMATION_GPT {
-
-	GUID DiskId;
-
-	LARGE_INTEGER StartingUsableOffset;
-
-	LARGE_INTEGER UsableLength;
-
-	DWORD MaxPartitionCount;
-
-} DRIVE_LAYOUT_INFORMATION_GPT, *PDRIVE_LAYOUT_INFORMATION_GPT;
-
-typedef struct _DRIVE_LAYOUT_INFORMATION_MBR {
-
-	DWORD Signature;
-
-#if (NTDDI_VERSION >= NTDDI_WIN10_RS1) /* ABRACADABRA_WIN10_RS1 */
-	DWORD CheckSum;
-#endif
-
-} DRIVE_LAYOUT_INFORMATION_MBR, *PDRIVE_LAYOUT_INFORMATION_MBR;
-typedef struct _DRIVE_LAYOUT_INFORMATION_EX {
-
-	DWORD PartitionStyle;
-
-	DWORD PartitionCount;
-
-	union {
-
-		DRIVE_LAYOUT_INFORMATION_MBR Mbr;
-
-		DRIVE_LAYOUT_INFORMATION_GPT Gpt;
-
-	};
-
-	PARTITION_INFORMATION_EX PartitionEntry[1];
-
-} DRIVE_LAYOUT_INFORMATION_EX, *PDRIVE_LAYOUT_INFORMATION_EX;
-typedef struct _DISK_EXTENT {
-
-	//
-	// Specifies the storage device number of
-	// the disk on which this extent resides.
-	//
-	DWORD DiskNumber;
-
-	//
-	// Specifies the offset and length of this
-	// extent relative to the beginning of the
-	// disk.
-	//
-	LARGE_INTEGER StartingOffset;
-	LARGE_INTEGER ExtentLength;
-
-} DISK_EXTENT, *PDISK_EXTENT;
-typedef struct _VOLUME_DISK_EXTENTS {
-
-	//
-	// Specifies one or more contiguous range
-	// of sectors that make up this volume.
-	//
-	DWORD NumberOfDiskExtents;
-	DISK_EXTENT Extents[ANYSIZE_ARRAY];
-
-} VOLUME_DISK_EXTENTS, *PVOLUME_DISK_EXTENTS;
 #pragma endregion
 NTSTATUS __stdcall NtFsControlFile(HANDLE FileHandle, HANDLE Event,
 				   PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,

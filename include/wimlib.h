@@ -391,14 +391,10 @@
 #include <stdio.h>
 #include <stddef.h>
 #ifndef __cplusplus
-#  if defined(_MSC_VER)
+#if defined(_MSC_VER)
 #include "msvc/unistd.h"
-#  if _MSC_VER < 1800 /* VS pre-2013? */
-     typedef unsigned char bool;
-#  else
-#    include <stdbool.h>
-#  endif
-#  endif
+#endif
+# include <stdbool.h>
 #endif
 #include <stdint.h>
 #include <time.h>

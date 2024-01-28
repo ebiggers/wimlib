@@ -808,7 +808,7 @@ do_metadata_not_found_warning(const tchar *wimfile,
 static off_t
 file_get_size(const tchar *filename)
 {
-	struct stat st;
+	struct _stat st;
 	if (tstat(filename, &st) == 0)
 		return st.st_size;
 	else
@@ -2029,7 +2029,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		imagex_output_to_stderr();
 		set_fd_to_binary_mode(wim_fd);
 	} else {
-		struct stat stbuf;
+		struct _stat stbuf;
 
 		/* Check for 'wimappend --create' acting as wimcapture */
 		if (create && tstat(wimfile, &stbuf) != 0 && errno == ENOENT) {
@@ -2847,7 +2847,7 @@ imagex_export(int argc, tchar **argv, int cmd)
 	WIMStruct *dest_wim;
 	int ret;
 	int image;
-	struct stat stbuf;
+	struct _stat stbuf;
 	bool wim_is_new;
 	STRING_LIST(refglobs);
 	unsigned num_threads = 0;

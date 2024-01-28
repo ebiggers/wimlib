@@ -228,7 +228,7 @@ list_splice_tail(struct list_head *list, struct list_head *head)
 #define list_prev_entry(pos, member,type)                                           \
 	list_entry((pos)->member.prev, type, member)
 #else
-#define list_prev_entry(pos, member) \
+#define list_prev_entry(pos, member, type) \
 	list_entry((pos)->member.prev, typeof(*(pos)), member)
 #endif
 
@@ -254,7 +254,7 @@ list_splice_tail(struct list_head *list, struct list_head *head)
 #define list_for_each_entry(pos, head, member,type)				\
 	for (pos = list_first_entry(head, typeof(*pos), member);	\
 	     &pos->member != (head);					\
-	     pos = list_next_entry(pos, member))
+	     pos = list_next_entry(pos, member, type))
 #endif
 /**
  * list_for_each_entry_reverse - iterate backwards over list of given type.
@@ -372,7 +372,7 @@ hlist_add_head(struct hlist_node *n, struct hlist_head *h)
 					 member))
 #else
 
-#define hlist_for_each_entry(pos, head, member)				\
+#define hlist_for_each_entry(pos, head, member, type)				\
 	for (pos = hlist_entry_safe((head)->first, typeof(*(pos)), member);\
 	     pos;							\
 	     pos = hlist_entry_safe((pos)->member.next, typeof(*(pos)), member))
@@ -387,7 +387,7 @@ hlist_add_head(struct hlist_node *n, struct hlist_head *h)
 #ifdef _MSC_VER
 #define hlist_for_each_entry_safe(pos, n, head, member, type)                  \
 	for (pos = hlist_entry_safe((head)->first, type, member);      \
-	     (unsigned long long)pos && (unsigned long long)(n = pos->member.next);                                                   \
+	     (unsigned long long)pos && ((unsigned long long)(n = pos->member.next) || 1 );                                                   \
 	     pos = hlist_entry_safe(n, type, member))
 #else
 #define hlist_for_each_entry_safe(pos, n, head, member,type) 		\
