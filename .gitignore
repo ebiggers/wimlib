@@ -3,7 +3,7 @@
 .deps
 .dirstamp
 .libs
-
+*.vs
 /Makefile
 /Makefile.in
 /aclocal.m4

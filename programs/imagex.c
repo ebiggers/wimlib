@@ -58,6 +58,7 @@
 #define S_ISCHR(m)  (((m)&S_IFMT) == S_IFCHR)
 #define S_ISBLK(m)  (((m)&S_IFMT) == S_IFBLK)
 #define S_ISFIFO(m) (((m)&S_IFMT) == S_IFIFO)
+#ifndef LIBWIM_STATIC
 #if defined _M_AMD64
 #ifdef _DEBUG
 #pragma comment(lib, "../x64/Debug/libwim.lib")
@@ -66,9 +67,9 @@
 #endif
 #elif defined _M_IX86
 #ifdef _DEBUG
-#pragma comment(lib, "../Debug/libwim.lib")
+#pragma comment(lib, "../x86/Debug/libwim.lib")
 #else
-#pragma comment(lib, "../Release/libwim.lib")
+#pragma comment(lib, "../x86/Release/libwim.lib")
 #endif
 #elif defined _M_ARM
 #ifdef _DEBUG
@@ -81,6 +82,33 @@
 #pragma comment(lib, "../ARM64/Debug/libwim.lib")
 #else
 #pragma comment(lib, "../ARM64/Release/libwim.lib")
+#endif
+#endif
+#else
+#if defined _M_AMD64
+#ifdef _DEBUG
+#pragma comment(lib, "../x64/Debug Static/libwim.lib")
+#else
+#pragma comment(lib, "../x64/Release Static/libwim.lib")
+#endif
+#elif defined _M_IX86
+#ifdef _DEBUG
+#pragma comment(lib, "../x86/Debug Static/libwim.lib")
+#else
+#pragma comment(lib, "../x86/Release Static/libwim.lib")
+#endif
+#elif defined _M_ARM
+#ifdef _DEBUG
+#pragma comment(lib, "../ARM/Debug Static/libwim.lib")
+#else
+#pragma comment(lib, "../ARM/Release Static/libwim.lib")
+#endif
+#elif defined _M_ARM64
+#ifdef _DEBUG
+#pragma comment(lib, "../ARM64/Debug Static/libwim.lib")
+#else
+#pragma comment(lib, "../ARM64/Release Static/libwim.lib")
+#endif
 #endif
 #endif
 #else

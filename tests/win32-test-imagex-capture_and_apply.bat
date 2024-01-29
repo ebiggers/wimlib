@@ -521,6 +521,10 @@ REM
 cd ..
 del test.wim
 rd /s /q in.dir
+echo @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+echo            TEST SUCCEEDED!!!!!!!
+echo @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+pause
 exit /b 0
 
 :do_test
@@ -578,4 +582,5 @@ goto :eof
 echo @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 echo            TEST FAILED!!!!!!!
 echo @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+pause
 exit %errorlevel%

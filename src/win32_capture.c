@@ -1122,7 +1122,7 @@ winnt_try_rpfix(struct reparse_buffer_disk *rpbuf, u16 *rpbuflen_p,
 	memcpy(tmp + ARRAY_LEN(prefix), rel_target, rel_target_nbytes);
 
 	link.substitute_name = tmp;
-	link.substitute_name_nbytes = sizeof(tmp);
+	link.substitute_name_nbytes = (sizeof(prefix) + rel_target_nbytes);
 
 	link.print_name = link.substitute_name + num_unprintable_chars;
 	link.print_name_nbytes = link.substitute_name_nbytes -
