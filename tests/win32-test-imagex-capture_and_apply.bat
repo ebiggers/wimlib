@@ -379,7 +379,12 @@ echo "hello" > encrypted1
 echo "hello" > encrypted2
 cipher /e encrypted1 > nul
 cipher /e encrypted2 > nul
-call :do_test
+REM ARM dism is faulty here
+if /i "%PROCESSOR_ARCHITECTURE%"=="ARM" (
+ call :do_test_with_params 1 1
+) else (
+  call :do_test
+)
 
 call :msg "encrypted directory"
 md subdir
@@ -458,7 +463,13 @@ fsutil sparse setrange mostly_sparse 0 1000000
 echo hello >> mostly_sparse
 type sparse >> mostly_sparse
 fsutil sparse setrange mostly_sparse 1000100 2000000
-call :do_test
+REM ARM dism cannot handle sparse files
+if /i "%PROCESSOR_ARCHITECTURE%"=="ARM" (
+ call :do_test_with_params 1 1
+) else (
+  call :do_test
+)
+
 
 call :msg "sparse and compressed files"
 fsutil file createnew sparse 1000000 > nul
@@ -479,7 +490,12 @@ compact /c compressed_first > nul
 type sparse >> compressed_first
 fsutil sparse setflag compressed_first
 fsutil sparse setrange compressed_first 0 500000
-call :do_test
+REM ARM dism cannot handle sparse files
+if /i "%PROCESSOR_ARCHITECTURE%"=="ARM" (
+ call :do_test_with_params 1 1
+) else (
+  call :do_test
+)
 
 :rpfix_tests
 
