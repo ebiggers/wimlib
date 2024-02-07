@@ -217,7 +217,7 @@ configure_wimlib()
 		fi
 		exit 1
 	fi
-	if "$cc" --version | grep -q '(GCC)'; then
+	if ! "$cc" --version | grep -q -i 'clang'; then
 		configure_args+=("CC=$cc -static-libgcc")
 	fi
 	configure_args+=("${EXTRA_CONFIGURE_ARGS[@]}")
