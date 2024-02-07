@@ -665,7 +665,8 @@ static void
 xml_write(struct xml_out_buf *buf, const tchar *str, size_t len)
 {
 	if (buf->count + len + 1 > buf->capacity) {
-		size_t new_capacity = max(buf->capacity * 2, 4096);
+		size_t new_capacity = max3(buf->count + len + 1,
+					   buf->capacity * 2, 4096);
 		tchar *new_buf = REALLOC(buf->buf,
 					 new_capacity * sizeof(str[0]));
 		if (!new_buf) {

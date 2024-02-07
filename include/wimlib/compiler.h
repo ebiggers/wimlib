@@ -122,6 +122,10 @@
 #undef MAX
 #define MAX(a, b)	max((a), (b))
 
+/* Get the maximum of three variables, without multiple evaluation.  */
+#undef max3
+#define max3(a, b, c)	max(max((a), (b)), (c))
+
 /* Swap the values of two variables, without multiple evaluation.  */
 #ifndef swap
 #  define swap(a, b) ({ typeof(a) _a = (a); (a) = (b); (b) = _a; })
