@@ -379,7 +379,10 @@ echo "hello" > encrypted1
 echo "hello" > encrypted2
 cipher /e encrypted1 > nul
 cipher /e encrypted2 > nul
-call :do_test
+REM Use skip_dism_cmp=1 due to DISM bug where it fails to preserve short names:
+REM DIFFERENCE: in.dir\encrypted1 and out.dir\encrypted1 do not have the same short name (ENCRYP~1 vs. ENCRYP~2)
+REM DIFFERENCE: in.dir\encrypted2 and out.dir\encrypted2 do not have the same short name (ENCRYP~2 vs. ENCRYP~1)
+call :do_test_with_params 0 1
 
 call :msg "encrypted directory"
 md subdir
