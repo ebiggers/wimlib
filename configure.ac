@@ -128,7 +128,9 @@ if test "$WITH_NTFS_3G" = "yes"; then
 		 NTFS volume while preserving NTFS-specific data such as
 		 security descriptors and named data streams.  Either install
 		 libntfs-3g, or configure --without-ntfs-3g to disable this
-		 feature.])])
+		 feature.  If your operating system packages development files
+		 separately, the package you need to install may be called
+		 ntfs-3g-dev, ntfs-3g-devel, or similar.])])
 	PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES libntfs-3g"
 	AC_DEFINE([WITH_NTFS_3G], [1], [Define to 1 if using NTFS-3G support])
 fi
@@ -151,7 +153,9 @@ if test "$WITH_FUSE" = "yes"; then
 		[AC_MSG_ERROR([Cannot find libfuse3!
 		Without libfuse3, wimlib cannot include support for mounting WIM
 		images.  Either install libfuse3, or configure --without-fuse to
-		disable this feature.])])
+		disable this feature.  If your operating system packages
+		development files separately, the package you need to install
+		may be called libfuse3-dev, fuse-devel, or similar.])])
 	PKGCONFIG_PRIVATE_REQUIRES="$PKGCONFIG_PRIVATE_REQUIRES fuse"
 	AC_DEFINE([WITH_FUSE], [1], [Define to 1 if using FUSE support])
 
