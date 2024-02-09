@@ -11,13 +11,15 @@ For the release notes, see the [NEWS file](NEWS.md).
 # Table of Contents
 
 - [Installation](#installation)
+  - [Windows](#windows)
+  - [UNIX-like systems](#unix-like-systems)
+    - [Installing distro package](#installing-distro-package)
+    - [Building from source](#building-from-source)
 - [WIM files](#wim-files)
 - [ImageX implementation](#imagex-implementation)
 - [Compression](#compression)
 - [NTFS support](#ntfs-support)
 - [Windows PE](#windows-pe)
-- [Dependencies](#dependencies)
-- [Configuration](#configuration)
 - [Portability](#portability)
 - [References](#references)
 - [History](#history)
@@ -25,16 +27,75 @@ For the release notes, see the [NEWS file](NEWS.md).
 
 # Installation
 
-To install wimlib and `wimlib-imagex` on UNIX-like systems, you can compile from
-source (e.g. `./configure && make && sudo make install`).  Alternatively, check
-if a package has already been prepared for your operating system.
+## Windows
 
 To install wimlib and `wimlib-imagex` on Windows, just download and extract the
-ZIP file containing the latest binaries.  For more details, see
-[README.WINDOWS.md](README.WINDOWS.md).
+ZIP file containing the latest binaries.  All official releases are available
+from [wimlib.net](https://wimlib.net).
 
-All official wimlib releases are available from
-[wimlib.net](https://wimlib.net).
+For more details, including directions for how to build from source on Windows
+if desired, see [README.WINDOWS.md](README.WINDOWS.md).
+
+## UNIX-like systems
+
+### Installing distro package
+
+To install wimlib and `wimlib-imagex` on UNIX-like systems, first consider just
+installing the package provided by your operating system, if there is one.
+
+For example, on Ubuntu and other Debian based systems, run:
+
+    sudo apt install wimtools
+
+On Fedora and other Red Hat based systems, run:
+
+    sudo dnf install wimlib-utils
+
+On Arch Linux, run:
+
+    sudo pacman -S wimlib
+
+### Building from source
+
+To build from source instead, first install the development files for libfuse3
+and libntfs-3g, if they're available for your operating system.  For example, on
+Ubuntu, run:
+
+    sudo apt install libfuse3-dev ntfs-3g-dev
+
+Then, if you're building from the git repository instead of from a release
+tarball, install additional build dependencies and run the bootstrap script:
+
+    sudo apt install autoconf automake libtool pkgconf
+    ./bootstrap
+
+Finally, configure, build, and install the software:
+
+    ./configure
+    make
+    sudo make install
+
+In addition to the standard options, the configure script accepts the following
+options:
+
+- `--without-fuse`:  Disables support for mounting WIM images.  The `wimmount`,
+  `wimmountrw`, and `wimunmount` commands won't work.  This removes the
+  dependency on libfuse3.
+
+- `--without-ntfs-3g`:  Disables support for capturing or applying WIM images
+  directly from/to NTFS volumes.  This removes the dependency on libntfs-3g.
+
+The `mkwinpeimg` shell script also has some optional dependencies that you can
+choose to install:
+
+- `cdrkit` (for making ISO filesystems)
+- `mtools` (for making disk images)
+- `syslinux` (for making disk images)
+- `cabextract` (for extracting files from the Windows Automated Installation Kit)
+
+Mounting WIM images also requires the FUSE kernel module.  When you try to mount
+a WIM image, the FUSE kernel module should be automatically loaded.  Mounting
+WIM images is only supported on Linux.
 
 # WIM files
 
@@ -134,67 +195,6 @@ Installation Kit (WAIK), which is free to download from Microsoft.
 A shell script `mkwinpeimg` is provided with wimlib on UNIX-like systems to
 simplify the process of creating and customizing a bootable Windows PE image,
 sourcing the needed files from the Windows installation media or from the WAIK.
-
-# Dependencies
-
-This section documents the dependencies of wimlib and the programs distributed
-with it, when building for a UNIX-like system from source.  If you have
-downloaded the Windows binary distribution of wimlib and `wimlib-imagex` then
-all dependencies were already included and this section is irrelevant.
-
-- `libfuse3` (optional but recommended)
-
-  Unless configured `--without-fuse`, wimlib requires `libfuse3`, for mounting
-  WIM images using [FUSE](https://github.com/libfuse/libfuse).  Most Linux
-  distributions already include this, but make sure you have the `fuse3` package
-  installed, and also `libfuse3-dev` if your distribution distributes
-  development files separately.  FUSE also requires a kernel module.  If the
-  kernel module is available it should automatically be loaded if you try to
-  mount a WIM image.
-
-- `libntfs-3g` (optional but recommended)
-
-  Unless configured `--without-ntfs-3g`, wimlib requires the library and headers
-  for libntfs-3g to be installed.  The minimum required version is 2011-4-12,
-  but newer versions contain important bug fixes.
-
-- `cdrkit` (optional)
-- `mtools` (optional)
-- `syslinux` (optional)
-- `cabextract` (optional)
-
-  The `mkwinpeimg` shell script will look for several other programs depending
-  on what options are given to it.  Depending on your Linux distribution, you
-  may already have these programs installed, or they may be in the software
-  repository.  Making an ISO filesystem requires `mkisofs` from
-  [`cdrkit`](https://www.cdrkit.org).  Making a disk image requires
-  [`mtools`](https://www.gnu.org/software/mtools) and
-  [`syslinux`](https://www.syslinux.org).  Retrieving files from the Windows
-  Automated Installation Kit requires
-  [`cabextract`](https://www.cabextract.org.uk).
-
-# Configuration
-
-This section documents the most important options that may be passed to the
-"configure" script when building from source:
-
-- `--without-ntfs-3g`
-
-  If libntfs-3g is not available or is not version 2011-4-12 or later, wimlib
-  can be built without it, in which case it will not be possible to capture or
-  apply WIM images directly from/to NTFS volumes.
-
-  The default is `--with-ntfs-3g` when building for any UNIX-like system, and
-  `--without-ntfs-3g` when building for Windows.
-
-- `--without-fuse`
-
-  The `--without-fuse` option disables support for mounting WIM images.  This
-  removes dependencies on libfuse and librt.  The `wimmount`, `wimmountrw`, and
-  `wimunmount` commands will not work.
-
-  The default is `--with-fuse` when building for Linux, and `--without-fuse`
-  otherwise.
 
 # Portability
 
