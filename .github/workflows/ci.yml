@@ -9,7 +9,7 @@ jobs:
     name: Build and test with gcc
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Install dependencies
       run: |
         sudo apt-get update
@@ -19,7 +19,7 @@ jobs:
     - run: make -j8 check V=1
     - run: make -j8 install V=1 DESTDIR=$PWD/installdir
     - run: make -j8 uninstall V=1 DESTDIR=$PWD/installdir
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       if: failure()
       with:
         name: gcc-test-logs
@@ -29,7 +29,7 @@ jobs:
     name: Build and test with clang
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Install dependencies
       run: |
         sudo apt-get update
@@ -39,7 +39,7 @@ jobs:
     - run: make -j8 check V=1
     - run: make -j8 install V=1 DESTDIR=$PWD/installdir
     - run: make -j8 uninstall V=1 DESTDIR=$PWD/installdir
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       if: failure()
       with:
         name: clang-test-logs
@@ -49,7 +49,7 @@ jobs:
     name: Build and test with gcc -m32
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Install dependencies
       run: |
         sudo dpkg --add-architecture i386
@@ -60,7 +60,7 @@ jobs:
     - run: make -j8 check V=1
     - run: make -j8 install V=1 DESTDIR=$PWD/installdir
     - run: make -j8 uninstall V=1 DESTDIR=$PWD/installdir
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       if: failure()
       with:
         name: i386-test-logs
@@ -70,7 +70,7 @@ jobs:
     name: Build and test with ASAN enabled
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Install dependencies
       run: |
         sudo apt-get update
@@ -78,7 +78,7 @@ jobs:
     - run: ./bootstrap
     - run: ./configure CC=clang CFLAGS="$DEF_CFLAGS -fsanitize=address -fno-sanitize-recover=address"
     - run: make -j8 check V=1
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       if: failure()
       with:
         name: asan-test-logs
@@ -88,7 +88,7 @@ jobs:
     name: Build and test with UBSAN enabled
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Install dependencies
       run: |
         sudo apt-get update
@@ -96,7 +96,7 @@ jobs:
     - run: ./bootstrap
     - run: ./configure CC=clang CFLAGS="$DEF_CFLAGS -fsanitize=undefined -fno-sanitize-recover=undefined"
     - run: make -j8 check V=1
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       if: failure()
       with:
         name: ubsan-test-logs
@@ -106,7 +106,7 @@ jobs:
     name: Run shellcheck
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Install dependencies
       run: |
         sudo apt-get update
@@ -118,7 +118,7 @@ jobs:
     name: Build and test on macOS
     runs-on: macos-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Install dependencies
       run: |
         brew install autoconf automake libtool pkg-config
@@ -127,7 +127,7 @@ jobs:
     - run: make -j8 check V=1
     - run: make -j8 install DESTDIR=$PWD/installdir
     - run: make -j8 uninstall DESTDIR=$PWD/installdir
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       if: failure()
       with:
         name: macos-test-logs
@@ -148,7 +148,7 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0  # Need tags for tools/get-version-number.sh
     - uses: msys2/setup-msys2@v2
@@ -164,7 +164,7 @@ jobs:
           ${{matrix.cc_pkg}}
           pkgconf
     - run: CFLAGS="$DEF_CFLAGS" ./tools/windows-build.sh ${{matrix.options}}
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: windows-${{matrix.msystem}}-bin
         path: wimlib-*-bin
@@ -176,7 +176,7 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0  # Need tags for tools/get-version-number.sh
     - uses: msys2/setup-msys2@v2
@@ -220,7 +220,7 @@ jobs:
           sanitizer: --asan --ubsan
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Install dependencies
       run: |
         sudo apt-get update
@@ -244,7 +244,7 @@ jobs:
           cflags: -fsanitize=undefined -fno-sanitize-recover=undefined
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Install dependencies
       run: |
         sudo apt-get update
@@ -261,7 +261,7 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0  # Need tags for tools/get-version-number.sh
     - uses: msys2/setup-msys2@v2
