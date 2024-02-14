@@ -536,7 +536,7 @@ set_default_language(struct windows_info_ctx *ctx, const struct regf *regf)
 		const char *language_name = language_id_to_name(language_id);
 		if (language_name) {
 			size_t len = strlen(language_name);
-			tchar tstr[len + 1];
+			smart_array(tchar,tstr,len + 1);
 			for (size_t i = 0; i <= len; i++)
 				tstr[i] = language_name[i];
 			set_string_property(ctx, T("WINDOWS/LANGUAGES/DEFAULT"),

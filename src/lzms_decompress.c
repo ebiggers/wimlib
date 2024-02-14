@@ -721,7 +721,7 @@ lzms_decompress(const void * const restrict in, const size_t in_nbytes,
 {
 	struct lzms_decompressor *d = _d;
 	u8 *out_next = out;
-	u8 * const out_end = out + out_nbytes;
+	u8 * const out_end = POINTER_FIX()out + out_nbytes;
 	struct lzms_range_decoder rd;
 	struct lzms_input_bitstream is;
 
@@ -742,8 +742,8 @@ lzms_decompress(const void * const restrict in, const size_t in_nbytes,
 	u32 match_state = 0;
 	u32 lz_state = 0;
 	u32 delta_state = 0;
-	u32 lz_rep_states[LZMS_NUM_LZ_REP_DECISIONS] = {};
-	u32 delta_rep_states[LZMS_NUM_DELTA_REP_DECISIONS] = {};
+	u32 lz_rep_states[LZMS_NUM_LZ_REP_DECISIONS] = {EMPTY};
+	u32 delta_rep_states[LZMS_NUM_DELTA_REP_DECISIONS] = {EMPTY};
 
 	/*
 	 * Requirements on the compressed data:

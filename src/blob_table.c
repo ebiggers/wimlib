@@ -31,8 +31,11 @@
 
 #include <stdlib.h>
 #include <string.h>
+#ifdef _MSC_VER
+#include "msvc/unistd.h" /* for unlink()  */
+#else
 #include <unistd.h> /* for unlink()  */
-
+#endif
 #include "wimlib/assert.h"
 #include "wimlib/bitops.h"
 #include "wimlib/blob_table.h"
@@ -325,7 +328,7 @@ enlarge_blob_table(struct blob_table *table)
 	table->mask = new_capacity - 1;
 
 	for (i = 0; i < old_capacity; i++)
-		hlist_for_each_entry_safe(blob, tmp, &old_array[i], hash_list)
+		hlist_for_each_entry_safe(blob, tmp, &old_array[i], hash_list,struct blob_descriptor)
 			blob_table_insert_raw(table, blob);
 	FREE(old_array);
 }
@@ -359,7 +362,7 @@ lookup_blob(const struct blob_table *table, const u8 *hash)
 	struct blob_descriptor *blob;
 
 	i = load_size_t_unaligned(hash) & table->mask;
-	hlist_for_each_entry(blob, &table->array[i], hash_list)
+	hlist_for_each_entry(blob, &table->array[i], hash_list,struct blob_descriptor)
 		if (hashes_equal(hash, blob->hash))
 			return blob;
 	return NULL;
@@ -377,7 +380,7 @@ for_blob_in_table(struct blob_table *table,
 
 	for (size_t i = 0; i <= table->mask; i++) {
 		hlist_for_each_entry_safe(blob, tmp, &table->array[i],
-					  hash_list)
+					  hash_list, struct blob_descriptor)
 		{
 			ret = visitor(blob, arg);
 			if (ret)
@@ -570,6 +573,9 @@ for_blob_in_table_sorted_by_sequential_order(struct blob_table *table,
  * Note: if the WIM file contains solid resource(s), then this structure is
  * sometimes overloaded to describe a "resource" rather than a "blob".  See the
  * code for details.  */
+#ifdef _MSC_VER
+#pragma pack(push, 1)
+#endif
 struct blob_descriptor_disk {
 
 	/* Size, offset, and flags of the blob.  */
@@ -586,7 +592,9 @@ struct blob_descriptor_disk {
 	 * zeroes if this blob is of zero length.  */
 	u8 hash[SHA1_HASH_SIZE];
 } __attribute__((packed));
-
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 /* Given a nonempty run of consecutive blob descriptors with the SOLID flag set,
  * count how many specify resources (as opposed to blobs within those
  * resources).
@@ -786,7 +794,7 @@ validate_resource(struct wim_resource_descriptor *rdesc)
 	 */
 	expected_next_offset = 0;
 	out_of_order = false;
-	list_for_each_entry(blob, &rdesc->blob_list, rdesc_node) {
+	list_for_each_entry(blob, &rdesc->blob_list, rdesc_node,struct blob_descriptor) {
 		if (blob->offset_in_res + blob->size < blob->size ||
 		    blob->offset_in_res + blob->size > rdesc->uncompressed_size)
 			goto invalid_due_to_overflow;
@@ -809,7 +817,7 @@ validate_resource(struct wim_resource_descriptor *rdesc)
 			return ret;
 
 		expected_next_offset = 0;
-		list_for_each_entry(blob, &rdesc->blob_list, rdesc_node) {
+		list_for_each_entry(blob, &rdesc->blob_list, rdesc_node,struct blob_descriptor) {
 			if (blob->offset_in_res >= expected_next_offset)
 				expected_next_offset = blob->offset_in_res + blob->size;
 			else
@@ -1154,7 +1162,7 @@ write_blob_table_from_blob_list(struct list_head *blob_list,
 	u64 logical_offset;
 
 	table_size = 0;
-	list_for_each_entry(blob, blob_list, blob_table_list) {
+	list_for_each_entry(blob, blob_list, blob_table_list,struct blob_descriptor) {
 		table_size += sizeof(struct blob_descriptor_disk);
 
 		if (blob->out_reshdr.flags & WIM_RESHDR_FLAG_SOLID &&
@@ -1176,7 +1184,7 @@ write_blob_table_from_blob_list(struct list_head *blob_list,
 	prev_res_offset_in_wim = ~0ULL;
 	prev_uncompressed_size = 0;
 	logical_offset = 0;
-	list_for_each_entry(blob, blob_list, blob_table_list) {
+	list_for_each_entry(blob, blob_list, blob_table_list,struct blob_descriptor) {
 		if (blob->out_reshdr.flags & WIM_RESHDR_FLAG_SOLID) {
 			struct wim_reshdr tmp_reshdr;
 
@@ -1400,7 +1408,7 @@ wimlib_iterate_lookup_table(WIMStruct *wim, int flags,
 			ret = do_iterate_blob(imd->metadata_blob, &ctx);
 			if (ret)
 				return ret;
-			image_for_each_unhashed_blob(blob, imd) {
+			image_for_each_unhashed_blob(blob, imd,struct blob_descriptor) {
 				ret = do_iterate_blob(blob, &ctx);
 				if (ret)
 					return ret;

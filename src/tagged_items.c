@@ -36,6 +36,9 @@
  * Header that begins each tagged metadata item associated with a file in a WIM
  * metadata resource
  */
+#ifdef _MSC_VER
+#pragma pack(push, 8)
+#endif
 struct tagged_item_header {
 
 	/* identifies the type of metadata item (see TAG_* constants) */
@@ -50,6 +53,9 @@ struct tagged_item_header {
 	/* then zero-padded to an 8-byte boundary */
 } __attribute__((aligned(8)));
 
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 /*
  * Retrieve from @inode the first metadata item that is tagged with @tag and
  * contains at least @min_len bytes of data.  If found, return a pointer to the

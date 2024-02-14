@@ -80,7 +80,7 @@ verify_file_data_present(struct wim_image_metadata *imd,
 	struct wim_inode *inode;
 	int ret;
 
-	image_for_each_inode(inode, imd) {
+	image_for_each_inode(inode, imd, struct wim_inode) {
 		ret = inode_resolve_streams(inode, blob_table, false);
 		if (ret)
 			return ret;
@@ -153,7 +153,7 @@ wimlib_verify_wim(WIMStruct *wim, int verify_flags)
 	memset(&progress, 0, sizeof(progress));
 
 	progress.verify_streams.wimfile = wim->filename;
-	list_for_each_entry(blob, &blob_list, extraction_list) {
+	list_for_each_entry(blob, &blob_list, extraction_list, struct blob_descriptor) {
 		progress.verify_streams.total_streams++;
 		progress.verify_streams.total_bytes += blob->size;
 	}

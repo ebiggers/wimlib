@@ -23,7 +23,9 @@
 #include "wgetopt.h"
 #include <stdlib.h>
 #include <stdio.h>
-
+#ifdef _MSC_VER
+#pragma warning(disable:4996)
+#endif
 /* For communication from `getopt' to the caller.
    When `getopt' finds an option that takes an argument,
    the argument value is returned here.

@@ -35,6 +35,9 @@
  * conflicts with the same types being defined in the libntfs-3g headers.  */
 
 /* Windows NT security descriptor, in self-relative format  */
+#ifdef _MSC_VER
+#pragma pack(push, 4)
+#endif
 typedef struct {
 	/* Security descriptor revision; should be 1  */
 	u8 revision;
@@ -59,7 +62,9 @@ typedef struct {
 	 * descriptor, or 0 if no DACL is present  */
 	le32 dacl_offset;
 } __attribute__((packed)) wimlib_SECURITY_DESCRIPTOR_RELATIVE;
-
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 #define wimlib_SE_OWNER_DEFAULTED		0x0001
 #define wimlib_SE_GROUP_DEFAULTED		0x0002
 #define wimlib_SE_DACL_PRESENT			0x0004

@@ -400,17 +400,22 @@ read_huffsym(struct input_bitstream *is, const u16 decode_table[],
  * structure, then the outer structure must be allocated on a
  * DECODE_TABLE_ALIGNMENT-byte aligned boundary as well.
  */
+#ifdef _MSC_VER
+#pragma pack(push, 16)
+#endif
 #define DECODE_TABLE(name, num_syms, table_bits, max_codeword_len) \
 	u16 name[DECODE_TABLE_SIZE((num_syms), (table_bits), \
 				   (max_codeword_len))]	\
 		__attribute__((aligned(DECODE_TABLE_ALIGNMENT)))
-
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 /*
  * Declare the temporary "working_space" array needed for building the decode
  * table for a Huffman code.
  */
 #define DECODE_TABLE_WORKING_SPACE(name, num_syms, max_codeword_len)	\
-	u16 name[2 * ((max_codeword_len) + 1)  + (num_syms)];
+	u16 name[2 * ((max_codeword_len) + 1)  + (num_syms)]
 
 int
 make_huffman_decode_table(u16 decode_table[], unsigned num_syms,
