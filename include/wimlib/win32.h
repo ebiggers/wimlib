@@ -47,7 +47,7 @@ int
 win32_rename_replacement(const tchar *oldpath, const tchar *newpath);
 
 int
-win32_truncate_replacement(const tchar *path, off_t size);
+win32_truncate_replacement(const tchar *path, uint64_t size);
 
 int
 win32_strerror_r_replacement(int errnum, tchar *buf, size_t buflen);
@@ -62,10 +62,10 @@ ssize_t
 win32_write(int fd, const void *buf, size_t count);
 
 ssize_t
-win32_pread(int fd, void *buf, size_t count, off_t offset);
+win32_pread(int fd, void *buf, size_t count, uint64_t offset);
 
 ssize_t
-win32_pwrite(int fd, const void *buf, size_t count, off_t offset);
+win32_pwrite(int fd, const void *buf, size_t count, uint64_t offset);
 
 #endif /* _WIN32 */
 

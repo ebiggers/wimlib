@@ -726,13 +726,13 @@ retry:
 static int
 extract_blob_to_staging_dir(struct wim_inode *inode,
 			    struct wim_inode_stream *strm,
-			    off_t size, const struct wimfs_context *ctx)
+			    uint64_t size, const struct wimfs_context *ctx)
 {
 	struct blob_descriptor *old_blob;
 	struct blob_descriptor *new_blob;
 	char *staging_file_name;
 	int staging_fd;
-	off_t extract_size;
+	uint64_t extract_size;
 	int result;
 	int ret;
 
@@ -1729,7 +1729,7 @@ wimfs_opendir(const char *path, struct fuse_file_info *fi)
 
 static int
 wimfs_read(const char *path, char *buf, size_t size,
-	   off_t offset, struct fuse_file_info *fi)
+	   uint64_t offset, struct fuse_file_info *fi)
 {
 	struct wimfs_fd *fd = WIMFS_FD(fi);
 	const struct blob_descriptor *blob;
@@ -1773,7 +1773,7 @@ wimfs_read(const char *path, char *buf, size_t size,
 
 static int
 wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
-	      off_t offset, struct fuse_file_info *fi,
+	      uint64_t offset, struct fuse_file_info *fi,
 	      enum fuse_readdir_flags flags)
 {
 	struct wimfs_fd *fd = WIMFS_FD(fi);
@@ -2004,7 +2004,7 @@ wimfs_symlink(const char *to, const char *from)
 }
 
 static int
-do_truncate(int staging_fd, off_t size,
+do_truncate(int staging_fd, uint64_t size,
 	    struct wim_inode *inode, struct blob_descriptor *blob)
 {
 	if (ftruncate(staging_fd, size))
@@ -2015,7 +2015,7 @@ do_truncate(int staging_fd, off_t size,
 }
 
 static int
-wimfs_truncate(const char *path, off_t size, struct fuse_file_info *fi)
+wimfs_truncate(const char *path, uint64_t size, struct fuse_file_info *fi)
 {
 	const struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_dentry *dentry;
@@ -2114,7 +2114,7 @@ wimfs_utimens(const char *path, const struct timespec tv[2],
 
 static int
 wimfs_write(const char *path, const char *buf, size_t size,
-	    off_t offset, struct fuse_file_info *fi)
+	    uint64_t offset, struct fuse_file_info *fi)
 {
 	struct wimfs_fd *fd = WIMFS_FD(fi);
 	ssize_t ret;

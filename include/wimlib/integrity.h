@@ -19,8 +19,8 @@ read_integrity_table(WIMStruct *wim, u64 num_checked_bytes,
 
 int
 write_integrity_table(WIMStruct *wim,
-		      off_t new_blob_table_end,
-		      off_t old_blob_table_end,
+		      uint64_t new_blob_table_end,
+		      uint64_t old_blob_table_end,
 		      struct integrity_table *old_table);
 
 int

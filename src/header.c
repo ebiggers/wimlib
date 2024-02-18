@@ -178,7 +178,7 @@ read_error:
  * header.  */
 int
 write_wim_header(const struct wim_header *hdr, struct filedes *out_fd,
-		 off_t offset)
+		 uint64_t offset)
 {
 #ifdef _MSC_VER
 #pragma pack(push, 8)

@@ -2331,9 +2331,9 @@ finish_write(WIMStruct *wim, int image, int write_flags,
 	     struct list_head *blob_table_list)
 {
 	int write_resource_flags;
-	off_t old_blob_table_end = 0;
+	uint64_t old_blob_table_end = 0;
 	struct integrity_table *old_integrity_table = NULL;
-	off_t new_blob_table_end;
+	uint64_t new_blob_table_end;
 	u64 xml_totalbytes;
 	int ret;
 
@@ -2932,7 +2932,7 @@ static int
 check_resource_offset(struct blob_descriptor *blob, void *_wim)
 {
 	const WIMStruct *wim = _wim;
-	off_t end_offset = *(const off_t*)wim->private;
+	uint64_t end_offset = *(const uint64_t*)wim->private;
 
 	if (blob->blob_location == BLOB_IN_WIM &&
 	    blob->rdesc->wim == wim &&
@@ -2945,7 +2945,7 @@ check_resource_offset(struct blob_descriptor *blob, void *_wim)
  * integrity table if present)--- otherwise we can't safely append to the WIM
  * file and we return WIMLIB_ERR_RESOURCE_ORDER.  */
 static int
-check_resource_offsets(WIMStruct *wim, off_t end_offset)
+check_resource_offsets(WIMStruct *wim, uint64_t end_offset)
 {
 	int ret;
 	unsigned i;
@@ -3050,7 +3050,7 @@ static int
 overwrite_wim_inplace(WIMStruct *wim, int write_flags, unsigned num_threads)
 {
 	int ret;
-	off_t old_wim_end;
+	uint64_t old_wim_end;
 	struct list_head blob_list;
 	struct list_head blob_table_list;
 	struct filter_context filter_ctx;

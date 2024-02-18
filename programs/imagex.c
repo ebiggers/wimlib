@@ -833,14 +833,14 @@ do_metadata_not_found_warning(const tchar *wimfile,
 
 /* Returns the size of a file given its name, or -1 if the file does not exist
  * or its size cannot be determined.  */
-static off_t
+static uint64_t
 file_get_size(const tchar *filename)
 {
 	struct _stat st;
 	if (tstat(filename, &st) == 0)
 		return st.st_size;
 	else
-		return (off_t)-1;
+		return (uint64_t)-1;
 }
 
 enum {
@@ -3788,8 +3788,8 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 	WIMStruct *wim;
 	struct wimlib_wim_info info;
 	const tchar *wimfile;
-	off_t old_size;
-	off_t new_size;
+	uint64_t old_size;
+	uint64_t new_size;
 	unsigned num_threads = 0;
 
 	for_opt(c, optimize_options) {

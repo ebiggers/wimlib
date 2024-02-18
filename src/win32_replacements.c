@@ -471,7 +471,7 @@ err_set_errno:
 #define MAX_IO_AMOUNT 1048576
 
 static int
-do_pread_or_pwrite(int fd, void *buf, size_t count, off_t offset,
+do_pread_or_pwrite(int fd, void *buf, size_t count, uint64_t offset,
 		   bool is_pwrite)
 {
 	HANDLE h;
@@ -513,7 +513,7 @@ do_pread_or_pwrite(int fd, void *buf, size_t count, off_t offset,
 	if (!bret) {
 		err = GetLastError();
 		win32_error(err, L"Failed to %s %zu bytes at offset %"PRIu64,
-			    (is_pwrite ? "write" : "read"), count, offset);
+			    (is_pwrite ? L"write" : L"read"), count, offset);
 		goto error;
 	}
 
@@ -539,7 +539,7 @@ error:
  * offset, so it is not safe to use with readers/writers on the same file
  * descriptor.  */
 ssize_t
-win32_pread(int fd, void *buf, size_t count, off_t offset)
+win32_pread(int fd, void *buf, size_t count, uint64_t offset)
 {
 	return do_pread_or_pwrite(fd, buf, count, offset, false);
 }
@@ -548,7 +548,7 @@ win32_pread(int fd, void *buf, size_t count, off_t offset)
  * offset, so it is not safe to use with readers/writers on the same file
  * descriptor. */
 ssize_t
-win32_pwrite(int fd, const void *buf, size_t count, off_t offset)
+win32_pwrite(int fd, const void *buf, size_t count, uint64_t offset)
 {
 	return do_pread_or_pwrite(fd, (void*)buf, count, offset, true);
 }

@@ -73,7 +73,7 @@ full_read(struct filedes *fd, void *buf, size_t count)
 }
 
 static int
-pipe_read(struct filedes *fd, void *buf, size_t count, off_t offset)
+pipe_read(struct filedes *fd, void *buf, size_t count, uint64_t offset)
 {
 	int ret;
 
@@ -115,7 +115,7 @@ pipe_read(struct filedes *fd, void *buf, size_t count, off_t offset)
  *	WIMLIB_ERR_RESOURCE_ORDER		(errno set to ESPIPE)
  */
 int
-full_pread(struct filedes *fd, void *buf, size_t count, off_t offset)
+full_pread(struct filedes *fd, void *buf, size_t count, uint64_t offset)
 {
 	if (fd->is_pipe)
 		goto is_pipe;
@@ -180,7 +180,7 @@ full_write(struct filedes *fd, const void *buf, size_t count)
  *	WIMLIB_ERR_WRITE	(errno set)
  */
 int
-full_pwrite(struct filedes *fd, const void *buf, size_t count, off_t offset)
+full_pwrite(struct filedes *fd, const void *buf, size_t count, uint64_t offset)
 {
 	while (count) {
 		ssize_t ret = pwrite(fd->fd, buf, count, offset);
@@ -196,7 +196,7 @@ full_pwrite(struct filedes *fd, const void *buf, size_t count, off_t offset)
 	return 0;
 }
 
-off_t filedes_seek(struct filedes *fd, off_t offset)
+uint64_t filedes_seek(struct filedes *fd, uint64_t offset)
 {
 	if (fd->is_pipe) {
 		errno = ESPIPE;
