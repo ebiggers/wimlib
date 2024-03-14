@@ -1,5 +1,14 @@
 # wimlib release notes
 
+## Version 1.14.4
+
+- Fixed potential crash when writing WIM XML data, introduced in v1.14.0.
+
+- Improved some documentation.
+
+- Fixed the Windows build script to avoid an unnecessary DLL dependency when
+  building with MSYS2 MINGW32 or MSYS2 MINGW64.
+
 ## Version 1.14.3
 
 - Fixed a bug introduced in v1.14.0 where non-ASCII characters stopped being
