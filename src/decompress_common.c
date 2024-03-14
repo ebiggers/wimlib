@@ -263,7 +263,7 @@ make_huffman_decode_table(u16 decode_table[], unsigned num_syms,
 			unsigned n = stores_per_loop;
 			do {
 				*(u16 *)entry_ptr = v;
-				entry_ptr += sizeof(v);
+				POINTER_FIX() entry_ptr += sizeof(v);
 			} while (--n);
 		}
 	}

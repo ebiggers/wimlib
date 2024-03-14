@@ -39,7 +39,7 @@ fix_security_ids(struct wim_image_metadata *imd, const u32 num_entries)
 	struct wim_inode *inode;
 	unsigned long invalid_count = 0;
 
-	image_for_each_inode(inode, imd) {
+	image_for_each_inode(inode, imd,struct wim_inode) {
 		if ((u32)inode->i_security_id >= num_entries) {
 			if (inode->i_security_id >= 0)
 				invalid_count++;

@@ -219,6 +219,9 @@ typedef struct _WIM_PROVIDER_UPDATE_OVERLAY_INPUT {
  * WOF, although they document the structures which must be passed into the
  * ioctls, which are often similar.
  */
+#ifdef _MSC_VER
+#pragma pack(push, 4)
+#endif
 struct wim_provider_rpdata {
 	/* Set to 2.  Uncertain meaning.  */
 	le32 version;
@@ -249,7 +252,9 @@ struct wim_provider_rpdata {
 	/* Byte offset of the file's unnamed data stream in the WIM.  */
 	le64 unnamed_data_stream_offset_in_wim;
 } __attribute__((packed));
-
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 /* WIM-specific information about a WIM data source  */
 struct WimOverlay_dat_entry_1 {
 

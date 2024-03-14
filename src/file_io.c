@@ -24,8 +24,12 @@
 #endif
 
 #include <errno.h>
-#include <unistd.h>
 
+#ifdef _MSC_VER
+#include"msvc/unistd.h"
+#else
+#include<unistd.h>
+#endif
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
 #include "wimlib/util.h"
@@ -61,7 +65,7 @@ full_read(struct filedes *fd, void *buf, size_t count)
 				continue;
 			return WIMLIB_ERR_READ;
 		}
-		buf += ret;
+		POINTER_FIX()buf += ret;
 		count -= ret;
 		fd->offset += ret;
 	}
@@ -69,7 +73,7 @@ full_read(struct filedes *fd, void *buf, size_t count)
 }
 
 static int
-pipe_read(struct filedes *fd, void *buf, size_t count, off_t offset)
+pipe_read(struct filedes *fd, void *buf, size_t count, uint64_t offset)
 {
 	int ret;
 
@@ -86,7 +90,7 @@ pipe_read(struct filedes *fd, void *buf, size_t count, off_t offset)
 	/* Manually seek to the requested position.  */
 	while (fd->offset != offset) {
 		size_t bytes_to_read = min(offset - fd->offset, BUFFER_SIZE);
-		u8 dummy[bytes_to_read];
+		smart_array(u8,dummy,bytes_to_read);
 
 		ret = full_read(fd, dummy, bytes_to_read);
 		if (ret)
@@ -111,7 +115,7 @@ pipe_read(struct filedes *fd, void *buf, size_t count, off_t offset)
  *	WIMLIB_ERR_RESOURCE_ORDER		(errno set to ESPIPE)
  */
 int
-full_pread(struct filedes *fd, void *buf, size_t count, off_t offset)
+full_pread(struct filedes *fd, void *buf, size_t count, uint64_t offset)
 {
 	if (fd->is_pipe)
 		goto is_pipe;
@@ -131,7 +135,7 @@ full_pread(struct filedes *fd, void *buf, size_t count, off_t offset)
 			}
 			return WIMLIB_ERR_READ;
 		}
-		buf += ret;
+		POINTER_FIX() buf += ret;
 		count -= ret;
 		offset += ret;
 	}
@@ -159,7 +163,7 @@ full_write(struct filedes *fd, const void *buf, size_t count)
 				continue;
 			return WIMLIB_ERR_WRITE;
 		}
-		buf += ret;
+		POINTER_FIX() buf += ret;
 		count -= ret;
 		fd->offset += ret;
 	}
@@ -176,7 +180,7 @@ full_write(struct filedes *fd, const void *buf, size_t count)
  *	WIMLIB_ERR_WRITE	(errno set)
  */
 int
-full_pwrite(struct filedes *fd, const void *buf, size_t count, off_t offset)
+full_pwrite(struct filedes *fd, const void *buf, size_t count, uint64_t offset)
 {
 	while (count) {
 		ssize_t ret = pwrite(fd->fd, buf, count, offset);
@@ -185,14 +189,14 @@ full_pwrite(struct filedes *fd, const void *buf, size_t count, off_t offset)
 				continue;
 			return WIMLIB_ERR_WRITE;
 		}
-		buf += ret;
+		POINTER_FIX() buf += ret;
 		count -= ret;
 		offset += ret;
 	}
 	return 0;
 }
 
-off_t filedes_seek(struct filedes *fd, off_t offset)
+uint64_t filedes_seek(struct filedes *fd, uint64_t offset)
 {
 	if (fd->is_pipe) {
 		errno = ESPIPE;

@@ -94,7 +94,7 @@ xml_element_get_timestamp(const struct xml_node *element)
 	u64 timestamp = 0;
 	const struct xml_node *child;
 
-	xml_node_for_each_child(element, child) {
+	xml_node_for_each_child(element, child, struct xml_node) {
 		if (xml_node_is_element(child, T("HIGHPART")))
 			timestamp |= xml_element_get_number(child, 16) << 32;
 		else if (xml_node_is_element(child, T("LOWPART")))
@@ -173,7 +173,7 @@ do_xml_path_walk(struct xml_node *element, const tchar *path, bool create,
 		 struct xml_node **result_ret)
 {
 	size_t n = tstrlen(path) + 1;
-	tchar buf[n];
+	smart_array(tchar,buf,n);
 	tchar *p;
 	tchar c;
 
@@ -212,7 +212,7 @@ do_xml_path_walk(struct xml_node *element, const tchar *path, bool create,
 		*p = '\0';
 
 		/* Look for a matching child.  */
-		xml_node_for_each_child(element, child)
+		xml_node_for_each_child(element, child, struct xml_node)
 			if (xml_node_is_element(child, name) && !--index)
 				goto next_step;
 
@@ -482,7 +482,7 @@ xml_update_image_info(WIMStruct *wim, int image)
 	struct xml_node *hardlinkbytes_node;
 	struct xml_node *lastmodificationtime_node;
 
-	image_for_each_inode(inode, imd) {
+	image_for_each_inode(inode, imd, struct wim_inode) {
 		if (inode_is_directory(inode))
 			dir_count += inode->i_nlink;
 		else
@@ -726,7 +726,7 @@ print_windows_info(struct xml_node *image_node)
 		struct xml_node *lang_node;
 
 		tprintf(T("Languages:              "));
-		xml_node_for_each_child(langs_node, lang_node) {
+		xml_node_for_each_child(langs_node, lang_node,struct xml_node) {
 			if (!xml_node_is_element(lang_node, T("LANGUAGE")))
 				continue;
 			text = xml_element_get_text(lang_node);
@@ -843,7 +843,7 @@ setup_images(struct wim_xml_info *info, struct xml_node *root)
 	int max_index = 0;
 	int ret;
 
-	xml_node_for_each_child(root, child) {
+	xml_node_for_each_child(root, child, struct xml_node) {
 		if (!xml_node_is_element(child, T("IMAGE")))
 			continue;
 		index = image_element_get_index(child);
@@ -858,7 +858,7 @@ setup_images(struct wim_xml_info *info, struct xml_node *root)
 	info->images = CALLOC(info->image_count, sizeof(info->images[0]));
 	if (unlikely(!info->images))
 		goto err;
-	xml_node_for_each_child(root, child) {
+	xml_node_for_each_child(root, child, struct xml_node) {
 		if (!xml_node_is_element(child, T("IMAGE")))
 			continue;
 		index = image_element_get_index(child);
@@ -1049,7 +1049,7 @@ write_wim_xml_data(WIMStruct *wim, int image, u64 total_bytes,
 	struct wim_xml_info *info = wim->xml_info;
 	int ret;
 	struct xml_node *orig_totalbytes_element;
-	struct xml_out_buf buf = {};
+	struct xml_out_buf buf = {EMPTY};
 	const utf16lechar *raw_doc;
 	size_t raw_doc_size;
 

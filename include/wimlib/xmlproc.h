@@ -22,8 +22,8 @@ struct xml_node {
 };
 
 /* Iterate through the children of an xml_node.  Does nothing if passed NULL. */
-#define xml_node_for_each_child(parent, child) \
-	if (parent) list_for_each_entry(child, &(parent)->children, sibling_link)
+#define xml_node_for_each_child(parent, child,type) \
+	if (parent) list_for_each_entry(child, &(parent)->children, sibling_link,type)
 
 static inline bool
 xml_node_is_element(const struct xml_node *node, const tchar *name)

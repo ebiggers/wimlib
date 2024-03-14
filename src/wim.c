@@ -27,7 +27,11 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#ifdef _MSC_VER
+#include "msvc/unistd.h"
+#else
 #include <unistd.h>
+#endif
 
 #include "wimlib.h"
 #include "wimlib/assert.h"
@@ -221,7 +225,7 @@ put_image_metadata(struct wim_image_metadata *imd)
 		return;
 	wimlib_assert(imd->selected_refcnt == 0);
 	unload_image_metadata(imd);
-	list_for_each_entry_safe(blob, tmp, &imd->unhashed_blobs, unhashed_list)
+	list_for_each_entry_safe(blob, tmp, &imd->unhashed_blobs, unhashed_list, struct blob_descriptor)
 		free_blob_descriptor(blob);
 	free_blob_descriptor(imd->metadata_blob);
 	FREE(imd);
@@ -848,7 +852,7 @@ wim_checksum_unhashed_blobs(WIMStruct *wim)
 	for (int i = 0; i < wim->hdr.image_count; i++) {
 		struct blob_descriptor *blob, *tmp;
 		struct wim_image_metadata *imd = wim->image_metadata[i];
-		image_for_each_unhashed_blob_safe(blob, tmp, imd) {
+		image_for_each_unhashed_blob_safe(blob, tmp, imd, struct blob_descriptor) {
 			struct blob_descriptor *new_blob;
 			ret = hash_unhashed_blob(blob, wim->blob_table, &new_blob);
 			if (ret)

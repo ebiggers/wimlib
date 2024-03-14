@@ -47,6 +47,9 @@
 #define INTEGRITY_MIN_CHUNK_SIZE 4096
 #define INTEGRITY_MAX_CHUNK_SIZE 134217728
 
+#ifdef _MSC_VER
+#pragma pack(push,1)
+#endif
 struct integrity_table {
 	u32 size;
 	u32 num_entries;
@@ -54,9 +57,12 @@ struct integrity_table {
 	u8  sha1sums[][20];
 } __attribute__((packed));
 
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 static int
 calculate_chunk_sha1(struct filedes *in_fd, size_t this_chunk_size,
-		     off_t offset, u8 sha1_md[])
+		     uint64_t offset, u8 sha1_md[])
 {
 	u8 buf[BUFFER_SIZE];
 	struct sha1_ctx ctx;
@@ -172,9 +178,9 @@ read_integrity_table(WIMStruct *wim, u64 num_checked_bytes,
  */
 static int
 calculate_integrity_table(struct filedes *in_fd,
-			  off_t new_check_end,
+			  uint64_t new_check_end,
 			  const struct integrity_table *old_table,
-			  off_t old_check_end,
+			  uint64_t old_check_end,
 			  struct integrity_table **integrity_table_ret,
 			  wimlib_progress_func_t progfunc,
 			  void *progctx)
@@ -295,8 +301,8 @@ out_free_new_table:
  */
 int
 write_integrity_table(WIMStruct *wim,
-		      off_t new_blob_table_end,
-		      off_t old_blob_table_end,
+		      uint64_t new_blob_table_end,
+		      uint64_t old_blob_table_end,
 		      struct integrity_table *old_table)
 {
 	struct integrity_table *new_table;

@@ -27,7 +27,6 @@
 #  include "config.h"
 #endif
 
-#include "wimlib/win32_common.h"
 
 #include "wimlib/assert.h"
 #include "wimlib/blob_table.h"
@@ -43,6 +42,10 @@
 #include "wimlib/wof.h"
 #include "wimlib/xattr.h"
 
+#include "wimlib/win32_common.h"
+#ifndef ERROR
+#define ERROR(format, ...) wimlib_error(T(format), ##__VA_ARGS__)
+#endif
 struct winnt_scan_ctx {
 	struct scan_params *params;
 	bool is_ntfs;
@@ -330,7 +333,13 @@ read_winnt_stream_prefix(const struct windows_file *file,
 	};
 	HANDLE h;
 	NTSTATUS status;
+#ifdef _MSC_VER
+#pragma pack(push, 8)
+#endif
 	u8 buf[BUFFER_SIZE] __attribute__((aligned(8)));
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 	u64 bytes_remaining;
 	int ret;
 
@@ -512,7 +521,13 @@ winnt_get_short_name(HANDLE h, struct wim_dentry *dentry)
 	 * course has to create its own handle.  */
 	NTSTATUS status;
 	IO_STATUS_BLOCK iosb;
+#ifdef _MSC_VER
+#pragma pack(push, 8)
+#endif
 	u8 buf[128] __attribute__((aligned(8)));
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 	const FILE_NAME_INFORMATION *info;
 
 	status = NtQueryInformationFile(h, &iosb, buf, sizeof(buf),
@@ -537,7 +552,13 @@ winnt_load_security_descriptor(HANDLE h, struct wim_inode *inode,
 			       struct winnt_scan_ctx *ctx)
 {
 	SECURITY_INFORMATION requestedInformation;
+#ifdef _MSC_VER
+#pragma pack(push, 8)
+#endif
 	u8 _buf[4096] __attribute__((aligned(8)));
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 	u8 *buf;
 	ULONG bufsize;
 	ULONG len_needed;
@@ -705,7 +726,13 @@ winnt_load_xattrs(HANDLE h, struct wim_inode *inode,
 {
 	IO_STATUS_BLOCK iosb;
 	NTSTATUS status;
+#ifdef _MSC_VER
+#pragma pack(push, 4)
+#endif
 	u8 _buf[1024] __attribute__((aligned(4)));
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 	u8 *buf = _buf;
 	const FILE_FULL_EA_INFORMATION *ea;
 	struct wim_xattr_entry *entry;
@@ -821,7 +848,7 @@ winnt_recurse_directory(HANDLE h,
 	const size_t bufsize = 8192;
 	IO_STATUS_BLOCK iosb;
 	NTSTATUS status;
-	int ret;
+	int ret=0;
 
 	buf = MALLOC(bufsize);
 	if (!buf)
@@ -1013,7 +1040,7 @@ winnt_rpfix_progress(struct scan_params *params,
 		     const struct link_reparse_point *link, int scan_status)
 {
 	size_t print_name_nchars = link->print_name_nbytes / sizeof(wchar_t);
-	wchar_t print_name0[print_name_nchars + 1];
+	smart_array(wchar_t,print_name0,print_name_nchars + 1);
 
 	wmemcpy(print_name0, link->print_name, print_name_nchars);
 	print_name0[print_name_nchars] = L'\0';
@@ -1089,13 +1116,13 @@ winnt_try_rpfix(struct reparse_buffer_disk *rpbuf, u16 *rpbuflen_p,
 		link.substitute_name_nbytes - ((const u8 *)rel_target -
 					       (const u8 *)link.substitute_name);
 
-	wchar_t tmp[(sizeof(prefix) + rel_target_nbytes) / sizeof(wchar_t)];
+	smart_array(wchar_t,tmp,(sizeof(prefix) + rel_target_nbytes) / sizeof(wchar_t));
 
 	memcpy(tmp, prefix, sizeof(prefix));
 	memcpy(tmp + ARRAY_LEN(prefix), rel_target, rel_target_nbytes);
 
 	link.substitute_name = tmp;
-	link.substitute_name_nbytes = sizeof(tmp);
+	link.substitute_name_nbytes = (sizeof(prefix) + rel_target_nbytes);
 
 	link.print_name = link.substitute_name + num_unprintable_chars;
 	link.print_name_nbytes = link.substitute_name_nbytes -
@@ -1331,7 +1358,13 @@ winnt_scan_data_streams(HANDLE h, struct wim_inode *inode, u64 file_size,
 			struct winnt_scan_ctx *ctx)
 {
 	int ret;
+#ifdef _MSC_VER
+#pragma pack(push, 8)
+#endif
 	u8 _buf[4096] __attribute__((aligned(8)));
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 	u8 *buf;
 	size_t bufsize;
 	IO_STATUS_BLOCK iosb;
@@ -1654,8 +1687,14 @@ get_file_info(HANDLE h, struct file_info *info)
 static void
 get_volume_information(HANDLE h, struct winnt_scan_ctx *ctx)
 {
+#ifdef _MSC_VER
+#pragma pack(push, 8)
+#endif
 	u8 _attr_info[sizeof(FILE_FS_ATTRIBUTE_INFORMATION) + 128]
-		__attribute__((aligned(8)));
+	    __attribute__((aligned(8)));
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 	FILE_FS_ATTRIBUTE_INFORMATION *attr_info = (void *)_attr_info;
 	FILE_FS_VOLUME_INFORMATION vol_info;
 	struct file_info file_info;
@@ -2137,13 +2176,13 @@ struct ntfs_inode_map {
 #define NTFS_INODE(node)				\
 	avl_tree_entry((node), struct ntfs_inode, index_node)
 
-#define SKIP_ALIGNED(p, size)	((void *)(p) + ALIGN((size), 8))
+#define SKIP_ALIGNED(p, size)	(void*)(POINTER_FIX()(void *)(p) + ALIGN((size), 8))
 
 /* Get a pointer to the first dentry of the inode.  */
 #define FIRST_DENTRY(ni) SKIP_ALIGNED((ni), sizeof(struct ntfs_inode))
 
 /* Get a pointer to the first stream of the inode.  */
-#define FIRST_STREAM(ni) ((const void *)ni + ni->first_stream_offset)
+#define FIRST_STREAM(ni) (const void*)(POINTER_FIX()(const void *)ni + ni->first_stream_offset)
 
 /* Advance to the next dentry of the inode.  */
 #define NEXT_DENTRY(nd)	 SKIP_ALIGNED((nd), sizeof(struct ntfs_dentry) +   \
@@ -2227,7 +2266,7 @@ validate_names_and_compute_total_length(const FILE_LAYOUT_ENTRY *file,
 					size_t *total_length_ret)
 {
 	const FILE_LAYOUT_NAME_ENTRY *name =
-		(const void *)file + file->FirstNameOffset;
+		POINTER_FIX()(const void *)file + file->FirstNameOffset;
 	size_t total = 0;
 	size_t num_long_names = 0;
 
@@ -2251,7 +2290,7 @@ validate_names_and_compute_total_length(const FILE_LAYOUT_ENTRY *file,
 		}
 		if (name->NextNameOffset == 0)
 			break;
-		name = (const void *)name + name->NextNameOffset;
+		name = POINTER_FIX()(const void *) name + name->NextNameOffset;
 	}
 
 	if (unlikely(num_long_names == 0)) {
@@ -2320,7 +2359,7 @@ validate_streams_and_compute_total_length(const FILE_LAYOUT_ENTRY *file,
 					  u32 *special_streams_ret)
 {
 	const STREAM_LAYOUT_ENTRY *stream =
-		(const void *)file + file->FirstStreamOffset;
+	    POINTER_FIX()(const void *) file + file->FirstStreamOffset;
 	size_t total = 0;
 	u32 special_streams = 0;
 
@@ -2352,7 +2391,7 @@ validate_streams_and_compute_total_length(const FILE_LAYOUT_ENTRY *file,
 		}
 		if (stream->NextStreamOffset == 0)
 			break;
-		stream = (const void *)stream + stream->NextStreamOffset;
+		stream = POINTER_FIX()(const void *)stream + stream->NextStreamOffset;
 	}
 
 	*total_length_ret = total;
@@ -2365,7 +2404,7 @@ load_name_information(const FILE_LAYOUT_ENTRY *file, struct ntfs_inode *ni,
 		      void *p)
 {
 	const FILE_LAYOUT_NAME_ENTRY *name =
-		(const void *)file + file->FirstNameOffset;
+	    POINTER_FIX()(const void *) file + file->FirstNameOffset;
 	for (;;) {
 		struct ntfs_dentry *nd = p;
 		/* Note that a name may be just a short (DOS) name, just a long
@@ -2386,12 +2425,12 @@ load_name_information(const FILE_LAYOUT_ENTRY *file, struct ntfs_inode *ni,
 			nd->parent_ino = name->ParentFileReferenceNumber;
 			memcpy(nd->name, name->FileName, name->FileNameLength);
 			nd->name[name->FileNameLength / 2] = L'\0';
-			p += ALIGN(sizeof(struct ntfs_dentry) +
+			POINTER_FIX()p += ALIGN(sizeof(struct ntfs_dentry) +
 				   name->FileNameLength + sizeof(wchar_t), 8);
 		}
 		if (name->NextNameOffset == 0)
 			break;
-		name = (const void *)name + name->NextNameOffset;
+		name = POINTER_FIX()(const void *)name + name->NextNameOffset;
 	}
 	return p;
 }
@@ -2404,7 +2443,7 @@ load_starting_lcn(const STREAM_LAYOUT_ENTRY *stream)
 	if (stream->ExtentInformationOffset == 0)
 		return 0;
 
-	entry = (const void *)stream + stream->ExtentInformationOffset;
+	entry = POINTER_FIX()(const void *)stream + stream->ExtentInformationOffset;
 
 	if (!(entry->Flags & STREAM_EXTENT_ENTRY_AS_RETRIEVAL_POINTERS))
 		return 0;
@@ -2417,7 +2456,7 @@ load_stream_information(const FILE_LAYOUT_ENTRY *file, struct ntfs_inode *ni,
 			void *p)
 {
 	const STREAM_LAYOUT_ENTRY *stream =
-		(const void *)file + file->FirstStreamOffset;
+	    POINTER_FIX()(const void *) file + file->FirstStreamOffset;
 	const u32 first_stream_offset = (const u8 *)p - (const u8 *)ni;
 	for (;;) {
 		struct ntfs_stream *ns = p;
@@ -2432,12 +2471,12 @@ load_stream_information(const FILE_LAYOUT_ENTRY *file, struct ntfs_inode *ni,
 			ns->size = stream->EndOfFile;
 			wmemcpy(ns->name, name, name_nchars);
 			ns->name[name_nchars] = L'\0';
-			p += ALIGN(sizeof(struct ntfs_stream) +
+			POINTER_FIX()p += ALIGN(sizeof(struct ntfs_stream) +
 				   (name_nchars + 1) * sizeof(wchar_t), 8);
 		}
 		if (stream->NextStreamOffset == 0)
 			break;
-		stream = (const void *)stream + stream->NextStreamOffset;
+		stream = POINTER_FIX()(const void *)stream + stream->NextStreamOffset;
 	}
 	return p;
 }
@@ -2447,7 +2486,7 @@ static int
 load_one_file(const FILE_LAYOUT_ENTRY *file, struct ntfs_inode_map *inode_map)
 {
 	const FILE_LAYOUT_INFO_ENTRY *info =
-		(const void *)file + file->ExtraInfoOffset;
+		POINTER_FIX()(const void *)file + file->ExtraInfoOffset;
 	size_t inode_size;
 	struct ntfs_inode *ni;
 	size_t n;
@@ -2553,14 +2592,14 @@ load_files_from_mft(const wchar_t *path, struct ntfs_inode_map *inode_map)
 						       out, outsize, NULL)))
 		{
 			const FILE_LAYOUT_ENTRY *file =
-				(const void *)out + out->FirstFileOffset;
+				POINTER_FIX()(const void *)out + out->FirstFileOffset;
 			for (;;) {
 				ret = load_one_file(file, inode_map);
 				if (ret)
 					goto out;
 				if (file->NextFileOffset == 0)
 					break;
-				file = (const void *)file + file->NextFileOffset;
+				file = POINTER_FIX()(const void *)file + file->NextFileOffset;
 			}
 			in.Flags &= ~QUERY_FILE_LAYOUT_RESTART;
 		}
@@ -2895,7 +2934,7 @@ process_children:
 					&child,
 					nd->name,
 					nd->is_primary,
-					(void *)nd - nd->offset_from_inode,
+					POINTER_FIX()(void *)nd - nd->offset_from_inode,
 					ctx,
 					inode_map,
 					security_map);

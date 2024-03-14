@@ -233,7 +233,7 @@ wimlib_export_image(WIMStruct *src_wim,
 
 		/* Iterate through inodes in the source image and export their
 		 * blobs into the destination WIM.  */
-		image_for_each_inode(inode, src_imd) {
+		image_for_each_inode(inode, src_imd, struct wim_inode) {
 			ret = inode_export_blobs(inode,
 						 src_wim->blob_table,
 						 dest_wim->blob_table,
