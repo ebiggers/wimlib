@@ -74,6 +74,13 @@
 #  define ENOATTR ENODATA
 #endif
 
+#ifndef RENAME_NOREPLACE
+#  define RENAME_NOREPLACE	(1 << 0)
+#endif
+#ifndef RENAME_EXCHANGE
+#  define RENAME_EXCHANGE	(1 << 1)
+#endif
+
 #define WIMFS_MQUEUE_NAME_LEN 32
 
 #define WIMLIB_UNMOUNT_FLAG_SEND_PROGRESS 0x80000000
