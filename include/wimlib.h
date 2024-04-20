@@ -18,29 +18,6 @@
  * wimlib-imagex program, please see the manual pages and also the <a
  * href="https://wimlib.net/git/?p=wimlib;a=blob;f=README.md">README file</a>.
  *
- * @section sec_installing Installing
- *
- * @subsection UNIX
- *
- * Download the source code from https://wimlib.net.  Install the library by
- * running <c>configure && make && sudo make install</c>.  See the README for
- * information about configuration options.  To use wimlib in your program after
- * installing it, include wimlib.h and link your program with <c>-lwim</c>.
- *
- * @subsection Windows
- *
- * Download the Windows binary distribution with the appropriate architecture
- * from https://wimlib.net.  Link your program with libwim-15.dll.  If needed by
- * your programming language or development environment, the import library
- * libwim.lib and C/C++ header wimlib.h can be found in the directory "devel" in
- * the ZIP file.
- *
- * If you need to access the DLL from non-C/C++ programming languages, note that
- * the calling convention is "cdecl".
- *
- * If you want to build wimlib from source on Windows, see README.WINDOWS.  This
- * is only needed if you are making modifications to wimlib.
- *
  * @section sec_examples Examples
  *
  * Several examples are located in the "examples" directory of the source

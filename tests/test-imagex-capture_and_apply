@@ -9,7 +9,7 @@
 # Also, test if the capture configuration file works correctly.
 
 set -e
-cd tests
+cd "$(dirname "$0")"
 srcdir="${srcdir:-.}/.."
 srcdir="$(cd $srcdir; pwd)"
 . "$srcdir/tests/test_utils.sh"
@@ -17,7 +17,7 @@ srcdir="$(cd $srcdir; pwd)"
 TEST_SUBDIR=tmpdir_test-imagex-capture_and_apply
 
 do_tree_cmp() {
-	if ! ../tree-cmp in.dir out.dir; then
+	if ! tree_cmp in.dir out.dir; then
 		if [ -x /usr/bin/tree ]; then
 			echo "Dumping tree of applied image"
 			echo "(Note: compression type was $ctype)"

@@ -31,9 +31,14 @@ get_file_size()
 	fi
 }
 
+tree_cmp()
+{
+	../../build/tests/tree-cmp "$@"
+}
+
 wimlib_imagex()
 {
-	../../wimlib-imagex "$@"
+	../../build/programs/wimlib-imagex "$@"
 }
 
 wimappend()

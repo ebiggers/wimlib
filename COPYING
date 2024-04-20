@@ -24,4 +24,4 @@ GPL library must be licensed under the GPL as well, not (for example) the LGPL.
 Therefore, if your build of libwim links to libntfs-3g, then you can't choose
 the LGPL option.  You may choose the LGPL option for Windows builds of libwim,
 since they don't link to libntfs-3g.  Likewise, you may choose the LGPL option
-for UNIX builds of libwim that were built with './configure --without-ntfs-3g'.
+for UNIX builds of libwim that were built with -DWIMLIB_NTFS_3G_SUPPORT=0.

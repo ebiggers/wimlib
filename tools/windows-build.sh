@@ -12,12 +12,11 @@ cd "$TOPDIR" # Top-level directory of the git repo
 ARCH=
 CC_PKG=
 DESTDIR=
-EXTRA_CONFIGURE_ARGS=
+EXTRA_CMAKE_ARGS=()
 INCLUDE_DOCS=false
 INSTALL_PREREQUISITES=false
-MAKE="make -j$(getconf _NPROCESSORS_ONLN)"
 MSYSTEM=${MSYSTEM:-}
-SKIP_CONFIGURE=false
+INCREMENTAL=false
 VERSION=$(tools/get-version-number.sh)
 ZIP=false
 ZIPFILE=
@@ -31,12 +30,15 @@ PREBUILT_LLVM_MINGW_BIN="/$PREBUILT_LLVM_MINGW/bin"
 usage()
 {
 	cat << EOF
-Usage: $SCRIPTNAME [OPTION]... [EXTRA_CONFIGURE_ARG]...
+Usage: $SCRIPTNAME [OPTION]... [EXTRA_CMAKE_ARGS]...
 Options:
   --arch=ARCH               Specify the CPU architecture.  This is unnecessary
                             when using MSYS2.
 
   --include-docs            Build and install the PDF manual pages.
+
+  --incremental             Skip cleaning the build directory.  Only use this if
+                            you are sure you didn't change any option.
 
   --install-prerequisites   Install the prerequisite packages needed to build
                             wimlib.  This is only supported in MSYS2.  You can
@@ -44,10 +46,6 @@ Options:
                             MSYS2 environment.  This option normally only
                             installs MSYS2 packages, but for ARM64 cross-builds
                             it also installs a separate prebuilt toolchain.
-
-  --skip-configure          Skip running the configure script again.  You can
-                            use this to save time in incremental builds if you
-                            are sure you didn't change any options.
 
   --zip                     Zip the output files up into a zip file.
 EOF
@@ -96,8 +94,8 @@ parse_options()
 	local longopts="help"
 	longopts+=",arch:"
 	longopts+=",include-docs"
+	longopts+=",incremental"
 	longopts+=",install-prerequisites"
-	longopts+=",skip-configure"
 	longopts+=",zip"
 
 	local options
@@ -119,15 +117,15 @@ parse_options()
 		--include-docs)
 			INCLUDE_DOCS=true
 			;;
+		--incremental)
+			INCREMENTAL=true
+			;;
 		--install-prerequisites)
 			if [ -z "$MSYSTEM" ]; then
 				echo 1>&2 "--install-prerequisites is only supported in MSYS2."
 				exit 1
 			fi
 			INSTALL_PREREQUISITES=true
-			;;
-		--skip-configure)
-			SKIP_CONFIGURE=true
 			;;
 		--zip)
 			ZIP=true
@@ -154,7 +152,7 @@ parse_options()
 	esac
 	DESTDIR=wimlib-${VERSION}-windows-${ARCH}-bin
 	ZIPFILE=$DESTDIR.zip
-	EXTRA_CONFIGURE_ARGS=("$@")
+	EXTRA_CMAKE_ARGS+=("$@")
 }
 
 install_prebuilt_llvm_mingw()
@@ -177,7 +175,7 @@ install_prebuilt_llvm_mingw()
 install_prerequisites()
 {
 	echo "Installing the MSYS2 $MSYSTEM packages needed to build wimlib..."
-	local packages=(autoconf automake git libtool make pkgconf)
+	local packages=(cmake ninja git pkgconf)
 	if "$PREBUILT_LLVM_MINGW_ENABLED"; then
 		echo "Will use prebuilt toolchain instead of MSYS2 one"
 		packages+=(wget unzip)
@@ -192,43 +190,20 @@ install_prerequisites()
 	fi
 }
 
-bootstrap_repository()
-{
-	echo "Bootstrapping the wimlib repository..."
-	./bootstrap
-}
-
 configure_wimlib()
 {
 	echo "Configuring wimlib..."
-	local configure_args=("--host=${ARCH}-w64-mingw32")
-	configure_args+=("--disable-static")
-	# -static-libgcc is needed with gcc.  It should go in the CFLAGS, but
-	# libtool strips it, so it must go directly in CC instead.  See
-	# https://www.gnu.org/software/libtool/manual/libtool.html#Stripped-link-flags
-	local cc="${ARCH}-w64-mingw32-cc"
-	if ! type -P "$cc" &>/dev/null; then
-		cc="${ARCH}-w64-mingw32-gcc"
+	rm -rf build
+	if [ -z "$MSYSTEM" ]; then
+		EXTRA_CMAKE_ARGS+=("-DCMAKE_TOOLCHAIN_FILE=tools/toolchain-$ARCH-w64-mingw32.cmake")
 	fi
-	if ! type -P "$cc" &>/dev/null; then
-		echo 1>&2 "ERROR: $cc not found!"
-		if [ -n "$MSYSTEM" ]; then
-			echo 1>&2 "Consider using --install-prerequisites"
-		fi
-		exit 1
-	fi
-	if ! "$cc" --version | grep -q -i 'clang'; then
-		configure_args+=("CC=$cc -static-libgcc")
-	fi
-	configure_args+=("${EXTRA_CONFIGURE_ARGS[@]}")
-	./configure "${configure_args[@]}"
-	$MAKE clean
+	cmake -B build -G Ninja "${EXTRA_CMAKE_ARGS[@]}"
 }
 
 build_wimlib()
 {
 	echo "Building wimlib..."
-	$MAKE
+	ninja -C build
 }
 
 list_imagex_commands()
@@ -249,7 +224,8 @@ list_imagex_commands()
 install_binaries()
 {
 	echo "Installing binaries..."
-	cp .libs/*.{dll,exe} "$DESTDIR"
+	cp build/libwim.dll "$DESTDIR"/libwim-15.dll
+	cp build/programs/wimlib-imagex.exe "$DESTDIR"/
 	strip "$DESTDIR"/*.{dll,exe}
 }
 
@@ -305,7 +281,7 @@ install_development_files()
 {
 	echo "Installing development files..."
 	mkdir "$DESTDIR"/devel
-	cp .libs/libwim.dll.a "$DESTDIR"/devel/libwim.lib
+	cp build/libwim.dll.a "$DESTDIR"/devel/libwim.lib
 	cp include/wimlib.h "$DESTDIR"/devel/
 }
 
@@ -323,10 +299,7 @@ mkdir -- "$DESTDIR"
 if $INSTALL_PREREQUISITES; then
 	install_prerequisites
 fi
-if [ ! -e configure ]; then
-	bootstrap_repository
-fi
-if [ ! -e config.log ] || ! $SKIP_CONFIGURE; then
+if ! $INCREMENTAL || [ ! -e build ]; then
 	configure_wimlib
 fi
 build_wimlib

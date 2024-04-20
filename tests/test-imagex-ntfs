@@ -9,7 +9,7 @@
 # remain mounted.
 
 set -e
-cd tests
+cd "$(dirname "$0")"
 srcdir="${srcdir:-.}/.."
 srcdir="$(cd $srcdir; pwd)"
 . "$srcdir/tests/test_utils.sh"
@@ -99,7 +99,7 @@ do_test() {
 	if [ -x /usr/bin/tree ]; then
 		tree in.mnt --inodes -F -s --noreport
 	fi
-	if ! ../tree-cmp in.mnt out.mnt NTFS; then
+	if ! tree_cmp in.mnt out.mnt NTFS; then
 		if [ -x /usr/bin/tree ]; then
 			echo "Dumping tree of applied image"
 			tree out.mnt --inodes -F -s --noreport

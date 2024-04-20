@@ -4,7 +4,7 @@
 # means tests every aspect of wimlib comprehensively.
 
 set -e
-cd tests
+cd "$(dirname "$0")"
 srcdir="${srcdir:-.}/.."
 srcdir="$(cd $srcdir; pwd)"
 . "$srcdir/tests/test_utils.sh"

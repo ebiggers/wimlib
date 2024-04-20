@@ -13,8 +13,9 @@
  * files are expected to be hard linked together in the other directory tree.
  */
 
-#include "config.h"
-
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
 
 #include <stdarg.h>
 #include <stdio.h>

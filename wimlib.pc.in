@@ -1,13 +1,13 @@
-prefix=@prefix@
-exec_prefix=@exec_prefix@
-libdir=@libdir@
-includedir=@includedir@
+prefix=@CMAKE_INSTALL_PREFIX@
+exec_prefix=${prefix}
+libdir=@CMAKE_PKGCONFIG_LIBDIR@
+includedir=@CMAKE_PKGCONFIG_INCLUDEDIR@
 
 Name: wimlib
 Description: Library to extract, create, modify, and mount Windows Imaging (WIM) files
 URL:  https://wimlib.net
-Version: @VERSION@
+Version: @PROJECT_VERSION@
 Libs: -L${libdir} -lwim
-Requires.private: @PKGCONFIG_PRIVATE_REQUIRES@
-Libs.private: @PKGCONFIG_PRIVATE_LIBS@
+Requires.private: @CMAKE_PKGCONFIG_PRIVATE_REQUIRES@
+Libs.private: @CMAKE_PKGCONFIG_PRIVATE_LIBS@
 Cflags: -I${includedir}

@@ -1232,7 +1232,7 @@ check_add_command(struct wimlib_update_command *cmd,
 #ifndef WITH_NTFS_3G
 	if (add_flags & WIMLIB_ADD_FLAG_NTFS) {
 		ERROR("NTFS-3G capture mode is unsupported because wimlib "
-		      "was compiled --without-ntfs-3g");
+		      "was compiled without NTFS-3G support enabled");
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 #endif

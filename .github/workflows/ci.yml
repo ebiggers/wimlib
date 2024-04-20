@@ -2,7 +2,7 @@ name: CI
 on: [pull_request, push]
 env:
   DEF_CFLAGS: -O2 -g -Wall -Werror
-  DEPENDENCIES: autoconf automake libtool pkgconf libfuse3-dev fuse3 ntfs-3g-dev ntfs-3g
+  DEPENDENCIES: cmake ninja-build pkgconf libfuse3-dev fuse3 ntfs-3g-dev ntfs-3g
 
 jobs:
   gcc-build-and-test:
@@ -14,16 +14,13 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y $DEPENDENCIES
-    - run: ./bootstrap
-    - run: ./configure CC=gcc CFLAGS="$DEF_CFLAGS"
-    - run: make -j8 check V=1
-    - run: make -j8 install V=1 DESTDIR=$PWD/installdir
-    - run: make -j8 uninstall V=1 DESTDIR=$PWD/installdir
-    - uses: actions/upload-artifact@v4
-      if: failure()
-      with:
-        name: gcc-test-logs
-        path: tests/*.log
+    - run: >
+        cmake -B build -G Ninja -DCMAKE_C_COMPILER=gcc
+        -DCMAKE_C_FLAGS="$DEF_CFLAGS"
+        -DWIMLIB_BUILD_TESTS=1
+    - run: cmake --build build --verbose
+    - run: DESTDIR=build/install cmake --install build --verbose
+    - run: ctest --test-dir build --output-on-failure
 
   clang-build-and-test:
     name: Build and test with clang
@@ -34,16 +31,13 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y clang $DEPENDENCIES
-    - run: ./bootstrap
-    - run: ./configure CC=clang CFLAGS="$DEF_CFLAGS"
-    - run: make -j8 check V=1
-    - run: make -j8 install V=1 DESTDIR=$PWD/installdir
-    - run: make -j8 uninstall V=1 DESTDIR=$PWD/installdir
-    - uses: actions/upload-artifact@v4
-      if: failure()
-      with:
-        name: clang-test-logs
-        path: tests/*.log
+    - run: >
+        cmake -B build -G Ninja -DCMAKE_C_COMPILER=clang
+        -DCMAKE_C_FLAGS="$DEF_CFLAGS"
+        -DWIMLIB_BUILD_TESTS=1
+    - run: cmake --build build --verbose
+    - run: DESTDIR=build/install cmake --install build --verbose
+    - run: ctest --test-dir build --output-on-failure
 
   i386-build-and-test:
     name: Build and test with gcc -m32
@@ -55,16 +49,14 @@ jobs:
         sudo dpkg --add-architecture i386
         sudo apt-get update
         sudo apt-get install -y gcc-multilib $DEPENDENCIES
-    - run: ./bootstrap
-    - run: ./configure CC=gcc CFLAGS="-m32 $DEF_CFLAGS" --without-fuse --without-ntfs-3g
-    - run: make -j8 check V=1
-    - run: make -j8 install V=1 DESTDIR=$PWD/installdir
-    - run: make -j8 uninstall V=1 DESTDIR=$PWD/installdir
-    - uses: actions/upload-artifact@v4
-      if: failure()
-      with:
-        name: i386-test-logs
-        path: tests/*.log
+    - run: >
+        cmake -B build -G Ninja -DCMAKE_C_COMPILER=gcc
+        -DCMAKE_C_FLAGS="$DEF_CFLAGS -m32"
+        -DWIMLIB_FUSE_SUPPORT=0 -DWIMLIB_NTFS_3G_SUPPORT=0
+        -DWIMLIB_BUILD_TESTS=1
+    - run: cmake --build build --verbose
+    - run: DESTDIR=build/install cmake --install build --verbose
+    - run: ctest --test-dir build --output-on-failure
 
   asan-build-and-test:
     name: Build and test with ASAN enabled
@@ -75,14 +67,12 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y clang $DEPENDENCIES
-    - run: ./bootstrap
-    - run: ./configure CC=clang CFLAGS="$DEF_CFLAGS -fsanitize=address -fno-sanitize-recover=address"
-    - run: make -j8 check V=1
-    - uses: actions/upload-artifact@v4
-      if: failure()
-      with:
-        name: asan-test-logs
-        path: tests/*.log
+    - run: >
+        cmake -B build -G Ninja -DCMAKE_C_COMPILER=clang
+        -DCMAKE_C_FLAGS="$DEF_CFLAGS -fsanitize=address -fno-sanitize-recover=address"
+        -DWIMLIB_BUILD_TESTS=1
+    - run: cmake --build build --verbose
+    - run: ctest --test-dir build --output-on-failure
 
   ubsan-build-and-test:
     name: Build and test with UBSAN enabled
@@ -93,14 +83,11 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y clang $DEPENDENCIES
-    - run: ./bootstrap
-    - run: ./configure CC=clang CFLAGS="$DEF_CFLAGS -fsanitize=undefined -fno-sanitize-recover=undefined"
-    - run: make -j8 check V=1
-    - uses: actions/upload-artifact@v4
-      if: failure()
-      with:
-        name: ubsan-test-logs
-        path: tests/*.log
+    - run: >
+        cmake -B build -G Ninja -DCMAKE_C_COMPILER=clang
+        -DCMAKE_C_FLAGS="$DEF_CFLAGS -fsanitize=undefined -fno-sanitize-recover=undefined"
+        -DWIMLIB_BUILD_TESTS=1
+    - run: ctest --test-dir build --output-on-failure
 
   run-shellcheck:
     name: Run shellcheck
@@ -121,17 +108,14 @@ jobs:
     - uses: actions/checkout@v4
     - name: Install dependencies
       run: |
-        brew install autoconf automake libtool pkg-config
-    - run: ./bootstrap
-    - run: ./configure CFLAGS="$DEF_CFLAGS" --without-fuse --without-ntfs-3g
-    - run: make -j8 check V=1
-    - run: make -j8 install DESTDIR=$PWD/installdir
-    - run: make -j8 uninstall DESTDIR=$PWD/installdir
-    - uses: actions/upload-artifact@v4
-      if: failure()
-      with:
-        name: macos-test-logs
-        path: tests/*.log
+        brew install cmake ninja pkg-config
+    - run: >
+        cmake -B build -G Ninja
+        -DCMAKE_C_FLAGS="$DEF_CFLAGS" -DWIMLIB_NTFS_3G_SUPPORT=0
+        -DWIMLIB_BUILD_TESTS=1
+    - run: cmake --build build --verbose
+    - run: DESTDIR=build/install cmake --install build --verbose
+    - run: ctest --test-dir build --output-on-failure
 
   windows-build:
     name: Build on Windows
@@ -139,11 +123,19 @@ jobs:
     strategy:
       matrix:
         include:
-        - { msystem: MINGW32, cc_pkg: mingw-w64-i686-gcc }
-        - { msystem: MINGW64, cc_pkg: mingw-w64-x86_64-gcc }
-        - { msystem: CLANG32, cc_pkg: mingw-w64-clang-i686-clang }
-        - { msystem: CLANG64, cc_pkg: mingw-w64-clang-x86_64-clang }
-        - { msystem: CLANGARM64, options: --install-prerequisites }
+        - { msystem: MINGW32, packages: mingw-w64-i686-gcc
+                                        mingw-w64-i686-cmake
+                                        mingw-w64-i686-ninja }
+        - { msystem: MINGW64, packages: mingw-w64-x86_64-gcc
+                                        mingw-w64-x86_64-cmake
+                                        mingw-w64-x86_64-ninja }
+        - { msystem: CLANG32, packages: mingw-w64-clang-i686-clang
+                                        mingw-w64-clang-i686-cmake
+                                        mingw-w64-clang-i686-ninja }
+        - { msystem: CLANG64, packages: mingw-w64-clang-x86_64-clang
+                                        mingw-w64-clang-x86_64-cmake
+                                        mingw-w64-clang-x86_64-ninja }
+        # - { msystem: CLANGARM64, options: --install-prerequisites }
     defaults:
       run:
         shell: msys2 {0}
@@ -156,13 +148,9 @@ jobs:
         msystem: ${{matrix.msystem}}
         update: true
         install: >
-          autoconf
-          automake
           git
-          libtool
-          make
-          ${{matrix.cc_pkg}}
           pkgconf
+          ${{matrix.packages}}
     - run: CFLAGS="$DEF_CFLAGS" ./tools/windows-build.sh ${{matrix.options}}
     - uses: actions/upload-artifact@v4
       with:
@@ -184,12 +172,10 @@ jobs:
         msystem: MINGW64
         update: true
         install: >
-          autoconf
-          automake
           git
-          libtool
-          make
+          mingw-w64-x86_64-cmake
           mingw-w64-x86_64-gcc
+          mingw-w64-x86_64-ninja
           pkgconf
     - run: tests/win32-test-imagex-capture_and_apply.sh
 
@@ -225,7 +211,6 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y clang $DEPENDENCIES
-    - run: ./bootstrap
     - name: Fuzz
       run: |
         tools/libFuzzer/fuzz.sh --time=120 ${{matrix.sanitizer}} \
@@ -249,10 +234,13 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y clang $DEPENDENCIES
-    - run: ./bootstrap
-    - run: ./configure --enable-test-support CC=clang CFLAGS="$DEF_CFLAGS ${{matrix.cflags}}"
-    - run: make -j8 tests/wlfuzz
-    - run: TMPDIR=$PWD/tmp.wlfuzz tests/wlfuzz 120
+    - run: >
+        cmake -B build -G Ninja -DCMAKE_C_COMPILER=clang
+        -DCMAKE_C_FLAGS="$DEF_CFLAGS ${{matrix.cflags}}"
+        -DWIMLIB_BUILD_TESTS=1
+        -DWIMLIB_FUZZ_TEST_SUPPORT=1
+    - run: cmake --build build --verbose
+    - run: TMPDIR=$PWD/tmp.wlfuzz build/tests/wlfuzz 120
 
   fuzz-with-wlfuzz-windows:
     name: Fuzz with wlfuzz (Windows)
@@ -269,13 +257,12 @@ jobs:
         msystem: MINGW64
         update: true
         install: >
-          autoconf
-          automake
           git
-          libtool
-          make
+          mingw-w64-x86_64-cmake
           mingw-w64-x86_64-gcc
+          mingw-w64-x86_64-ninja
           pkgconf
-    - run: CFLAGS="$DEF_CFLAGS" ./tools/windows-build.sh -- --enable-test-support
-    - run: make tests/wlfuzz.exe
-    - run: TMPDIR=$PWD/tmp.wlfuzz tests/wlfuzz 120
+    - run: >
+        CFLAGS="$DEF_CFLAGS" ./tools/windows-build.sh --
+        -DWIMLIB_FUZZ_TEST_SUPPORT=1 -DWIMLIB_BUILD_TESTS=1
+    - run: TMPDIR=$PWD/tmp.wlfuzz build/tests/wlfuzz 120

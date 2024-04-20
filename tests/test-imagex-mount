@@ -3,7 +3,7 @@
 # Test WIM mounting
 
 set -e
-cd tests
+cd "$(dirname "$0")"
 srcdir="${srcdir:-.}/.."
 srcdir="$(cd $srcdir; pwd)"
 . "$srcdir/tests/test_utils.sh"
@@ -190,7 +190,7 @@ rm -rf tmp.apply/*
 
 # Now do some tests using tar.
 do_tree_cmp() {
-	if ! ../tree-cmp $1 $2; then
+	if ! tree_cmp $1 $2; then
 		if [ -x /usr/bin/tree ]; then
 			echo "Dumping tree of applied image"
 			tree $2 --inodes -F -s --noreport

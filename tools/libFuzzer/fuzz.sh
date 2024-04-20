@@ -117,20 +117,24 @@ cflags+=" -fsanitize=fuzzer-no-link$EXTRA_SANITIZERS"
 if [ -n "$EXTRA_SANITIZERS" ]; then
 	cflags+=" -fno-sanitize-recover=${EXTRA_SANITIZERS#,}"
 fi
-if ! [ -e config.log ] || ! grep -q -- "'CFLAGS=$cflags'" config.log; then
-	run_cmd ./configure --enable-test-support --without-fuse --without-ntfs-3g \
-		CC=clang CFLAGS="$cflags"
-fi
-run_cmd make "-j$(getconf _NPROCESSORS_ONLN)"
+rm -rf build
+cmake -B build -G Ninja \
+	-DCMAKE_C_COMPILER=clang \
+	-DCMAKE_C_FLAGS="$cflags" \
+	-DBUILD_SHARED_LIBS=0 \
+	-DWIMLIB_FUZZ_TEST_SUPPORT=1 \
+	-DWIMLIB_FUSE_SUPPORT=0 \
+	-DWIMLIB_NTFS_3G_SUPPORT=0
+ninja -C build
 cd "$SCRIPTDIR"
 if [ -n "$INPUT" ]; then
 	run_cmd clang -g -O1 -fsanitize=fuzzer-no-link$EXTRA_SANITIZERS -Wall -Werror \
 		-I "$TOPDIR/include" "$TARGET/fuzz.c" test-one-input.c fault-injection.c \
-		"$TOPDIR/.libs/libwim.a" -o test-one-input
+		"$TOPDIR/build/libwim.a" -o test-one-input
 	run_cmd ./test-one-input "$INPUT"
 else
 	run_cmd clang -g -O1 -fsanitize=fuzzer$EXTRA_SANITIZERS -Wall -Werror \
 		-I "$TOPDIR/include" "$TARGET/fuzz.c" fault-injection.c \
-		"$TOPDIR/.libs/libwim.a" -o "$TARGET/fuzz"
+		"$TOPDIR/build/libwim.a" -o "$TARGET/fuzz"
 	run_cmd "$TARGET/fuzz" "${EXTRA_FUZZER_ARGS[@]}" "$TARGET/corpus"
 fi

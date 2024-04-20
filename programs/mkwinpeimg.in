@@ -20,7 +20,7 @@
 
 script_name="$(basename "$0")"
 PREFIX_REG="::"
-WIMLIB_VERSION=@VERSION@
+WIMLIB_VERSION=@PROJECT_VERSION@
 
 calc_columns () {
 	STAT_COL=80

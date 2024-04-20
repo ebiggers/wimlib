@@ -3,7 +3,7 @@
 # Test `wimupdate' and `wimextract'.
 
 set -e
-cd tests
+cd "$(dirname "$0")"
 srcdir="${srcdir:-.}/.."
 srcdir="$(cd $srcdir; pwd)"
 . "$srcdir/tests/test_utils.sh"
@@ -98,7 +98,7 @@ for flag in "" "--rebuild"; do
 add file /file
 EOF
 	do_apply
-	../tree-cmp file out.dir/file
+	tree_cmp file out.dir/file
 
 	msg "Testing deleting file from WIM image"
 	wimupdate test.wim << EOF
@@ -116,7 +116,7 @@ wimupdate test.wim << EOF
 rename file newname
 EOF
 do_apply
-../tree-cmp file out.dir/newname
+tree_cmp file out.dir/newname
 [ ! -e out.dir/file ]
 
 prepare_empty_wim
@@ -124,20 +124,20 @@ msg "Testing UTF-16LE-NOBOM command update file"
 echo -ne 'a\0d\0d\0 \0f\0i\0l\0e\0 \0/\0f\0i\0l\0e\0\n\0' \
 	| wimupdate test.wim
 do_apply
-../tree-cmp file out.dir/file
+tree_cmp file out.dir/file
 
 prepare_empty_wim
 msg "Testing UTF-16LE-BOM command update file"
 echo -ne '\xff\xfea\0d\0d\0 \0f\0i\0l\0e\0 \0/\0f\0i\0l\0e\0\n\0' \
 	| wimupdate test.wim
 do_apply
-../tree-cmp file out.dir/file
+tree_cmp file out.dir/file
 
 prepare_empty_wim
 msg "Testing UTF-8-BOM command update file"
 echo -ne '\xef\xbb\xbfadd file /file' | wimupdate test.wim
 do_apply
-../tree-cmp file out.dir/file
+tree_cmp file out.dir/file
 
 prepare_empty_wim
 msg "Testing adding, then renaming file in WIM image in one command"
@@ -146,7 +146,7 @@ add file /file
 rename /file /newname
 EOF
 do_apply
-../tree-cmp file out.dir/newname
+tree_cmp file out.dir/newname
 [ ! -e out.dir/file ]
 
 msg "Testing adding additional file to WIM image"
@@ -165,7 +165,7 @@ msg "Testing extracting file from WIM image"
 rm -rf out.dir
 mkdir out.dir
 wimextract test.wim 1 /file --dest-dir=out.dir
-../tree-cmp file out.dir/file
+tree_cmp file out.dir/file
 [ ! -e out.dir/1 ]
 
 msg "Testing extracting file from WIM image to stdout"
@@ -197,8 +197,8 @@ rm -rf out.dir
 mkdir out.dir
 wimextract test.wim 1 dir1 --dest-dir=out.dir
 wimextract test.wim 1 prefix/dir2 --dest-dir=out.dir
-../tree-cmp dir1 out.dir/dir1
-../tree-cmp dir2 out.dir/dir2
+tree_cmp dir1 out.dir/dir1
+tree_cmp dir2 out.dir/dir2
 
 msg "Testing adding files to WIM image"
 rm -rf in.dir
@@ -213,7 +213,7 @@ cp -a file in.dir/file
 rm -rf out.dir
 wimapply test.wim 2 out.dir
 touch -r in.dir out.dir
-../tree-cmp in.dir out.dir
+tree_cmp in.dir out.dir
 
 msg "Testing adding file with space in it"
 echo hello > "Some File"
@@ -223,7 +223,7 @@ wimupdate test.wim 1 << EOF
 EOF
 rm -rf out.dir
 wimapply test.wim 1 out.dir
-../tree-cmp "Some File" out.dir/"Some Destination"
+tree_cmp "Some File" out.dir/"Some Destination"
 
 msg "Testing path list extract"
 echo hello1 > hello1
@@ -241,8 +241,8 @@ hello2
 EOF
 rm -rf out.dir
 wimextract test.wim 1 @pathlist --dest-dir=out.dir
-../tree-cmp hello1 out.dir/hello1
-../tree-cmp hello2 out.dir/hello2
+tree_cmp hello1 out.dir/hello1
+tree_cmp hello2 out.dir/hello2
 [ ! -e out.dir/otherfile ]
 
 msg "Testing path list extract (stdin)"
@@ -251,8 +251,8 @@ wimextract test.wim 1 @- --dest-dir=out.dir << EOF
 hello1
 hello2
 EOF
-../tree-cmp hello1 out.dir/hello1
-../tree-cmp hello2 out.dir/hello2
+tree_cmp hello1 out.dir/hello1
+tree_cmp hello2 out.dir/hello2
 [ ! -e out.dir/otherfile ]
 
 msg "Testing path list extract (w/ wildcard)"
@@ -261,8 +261,8 @@ hello*
 EOF
 rm -rf out.dir
 wimextract test.wim 1 @pathlist --dest-dir=out.dir
-../tree-cmp hello1 out.dir/hello1
-../tree-cmp hello2 out.dir/hello2
+tree_cmp hello1 out.dir/hello1
+tree_cmp hello2 out.dir/hello2
 [ ! -e out.dir/otherfile ]
 
 cat > pathlist << EOF
@@ -287,9 +287,9 @@ cat > pathlist << EOF
 EOF
 rm -rf out.dir
 wimextract test.wim 1 @pathlist --dest-dir=out.dir
-../tree-cmp hello1 out.dir/hello1
-../tree-cmp hello2 out.dir/hello2
-../tree-cmp otherfile out.dir/otherfile
+tree_cmp hello1 out.dir/hello1
+tree_cmp hello2 out.dir/hello2
+tree_cmp otherfile out.dir/otherfile
 
 msg "Testing path list extract (subdir files)"
 prepare_empty_wim
@@ -303,8 +303,8 @@ cat > pathlist << EOF
 EOF
 rm -rf out.dir
 wimextract test.wim 1 @pathlist --dest-dir=out.dir
-../tree-cmp hello1 out.dir/topdir/subdir1/hello1
-../tree-cmp hello2 out.dir/topdir/subdir2/hello2
+tree_cmp hello1 out.dir/topdir/subdir1/hello1
+tree_cmp hello2 out.dir/topdir/subdir2/hello2
 [ ! -e out.dir/topdir/hello1 ]
 
 msg "Testing case insensitivity"
@@ -320,7 +320,7 @@ rm -rf out.dir
 ! WIMLIB_IMAGEX_IGNORE_CASE=0 wimextract test.wim 1 @pathlist --dest-dir=out.dir --no-wildcards
 WIMLIB_IMAGEX_IGNORE_CASE=1 wimextract test.wim 1 @pathlist --dest-dir=out.dir
 WIMLIB_IMAGEX_IGNORE_CASE=1 wimextract test.wim 1 @pathlist --dest-dir=out.dir --no-wildcards
-../tree-cmp hello1 out.dir/HELLO1
+tree_cmp hello1 out.dir/HELLO1
 [ ! -e out.dir/topdir/hello1 ]
 
 

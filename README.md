@@ -63,27 +63,19 @@ Ubuntu, run:
 
     sudo apt install libfuse3-dev ntfs-3g-dev
 
-Then, if you're building from the git repository instead of from a release
-tarball, install additional build dependencies and run the bootstrap script:
+Then, install additional build dependencies:
 
-    sudo apt install autoconf automake libtool pkgconf
-    ./bootstrap
+    sudo apt install cmake ninja-build pkgconf
 
 Finally, configure, build, and install the software:
 
-    ./configure
-    make
-    sudo make install
+    cmake -B build -G Ninja
+    cmake --build build --verbose
+    cmake --install build
 
-In addition to the standard options, the configure script accepts the following
-options:
-
-- `--without-fuse`:  Disables support for mounting WIM images.  The `wimmount`,
-  `wimmountrw`, and `wimunmount` commands won't work.  This removes the
-  dependency on libfuse3.
-
-- `--without-ntfs-3g`:  Disables support for capturing or applying WIM images
-  directly from/to NTFS volumes.  This removes the dependency on libntfs-3g.
+Besides the standard CMake build and installation options, there are some
+wimlib-specific build options.  See `CMakeLists.txt` for the list of these
+options.  To set an option, add `-DOPTION=VALUE` to the first `cmake` command.
 
 The `mkwinpeimg` shell script also has some optional dependencies that you can
 choose to install:

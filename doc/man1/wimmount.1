@@ -87,9 +87,9 @@ wimmount mywim.swm 1 dir --ref="mywim*.swm"
 .RE
 .PP
 .SH NOTES
-\fIAvailability\fR: Mounting WIM images is only supported on Linux-based systems.
-These commands will not work on other platforms.  Furthermore, the library
-cannot have been configured \fB--without-fuse\fR.
+\fIAvailability\fR: Mounting WIM images is only supported on Linux-based
+systems.  These commands will not work on other platforms.  Furthermore, the
+library must have been configured with FUSE support enabled.
 .PP
 \fIMultiple mounts\fR: You are free to mount many WIM images at the same time,
 provided that there are not two images mounted read-write from the same file at
