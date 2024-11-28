@@ -1004,8 +1004,8 @@ report_scan_progress(const struct wimlib_progress_info_scan *scan, bool done)
 		     last_scan_progress.num_dirs_scanned;
 	cur_count = scan->num_nondirs_scanned + scan->num_dirs_scanned;
 
-	if (done || prev_count == 0 || cur_count >= prev_count + 100 ||
-	    cur_count % 128 == 0)
+	if (done || prev_count == 0 || cur_count >= prev_count + 500 ||
+	    cur_count % 512 == 0)
 	{
 		unsigned unit_shift;
 		const tchar *unit_name;
