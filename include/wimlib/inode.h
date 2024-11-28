@@ -225,13 +225,17 @@ struct wim_inode {
 	struct wim_inode *i_corresponding;
 #endif
 };
-
+#ifdef _MSC_VER
+#pragma pack(push, 8)
+#endif
 /* Optional extra data for a WIM inode  */
 struct wim_inode_extra {
 	size_t size;	/* Size of the extra data in bytes  */
 	u8 data[] __attribute__((aligned(8))); /* The extra data  */
 };
-
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 /*
  * The available reparse tags are documented at
  * https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/c8e77b37-3909-4fe6-a4ea-2b9d423b1ee4
@@ -268,8 +272,9 @@ struct wim_inode *
 new_inode(struct wim_dentry *dentry, bool set_timestamps);
 
 /* Iterate through each alias of the specified inode.  */
-#define inode_for_each_dentry(dentry, inode) \
-	hlist_for_each_entry((dentry), &(inode)->i_alias_list, d_alias_node)
+
+#define inode_for_each_dentry(dentry, inode, type) \
+	hlist_for_each_entry((dentry), &(inode)->i_alias_list, d_alias_node, type)
 
 /* Return an alias of the specified inode.  */
 #define inode_any_dentry(inode) \

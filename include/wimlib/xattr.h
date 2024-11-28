@@ -57,7 +57,7 @@ xattr_entry_size(const struct wim_xattr_entry *entry)
 static inline struct wim_xattr_entry *
 xattr_entry_next(const struct wim_xattr_entry *entry)
 {
-	return (void *)entry + xattr_entry_size(entry);
+	return POINTER_FIX()(void *) entry + xattr_entry_size(entry);
 }
 
 static inline bool
@@ -80,6 +80,9 @@ valid_xattr_entry(const struct wim_xattr_entry *entry, size_t avail)
  * xattr support in both WIMGAPI and wimlib).  Now we use TAG_XATTRS for both
  * Windows and Linux xattrs.
  */
+#ifdef _MSC_VER
+#pragma pack(push, 4)
+#endif
 struct wimlib_xattr_entry_old {
 
 	/* length of xattr name in bytes, excluding a null terminator */
@@ -99,7 +102,9 @@ struct wimlib_xattr_entry_old {
 
 	/* then zero-padded to a 4-byte boundary */
 } __attribute__((aligned(4)));
-
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 static inline size_t
 old_xattr_entry_size(const struct wimlib_xattr_entry_old *entry)
 {
@@ -116,7 +121,7 @@ old_xattr_entry_size(const struct wimlib_xattr_entry_old *entry)
 static inline struct wimlib_xattr_entry_old *
 old_xattr_entry_next(const struct wimlib_xattr_entry_old *entry)
 {
-	return (void *)entry + old_xattr_entry_size(entry);
+	return POINTER_FIX()(void *) entry + old_xattr_entry_size(entry);
 }
 
 static inline bool

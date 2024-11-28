@@ -17,6 +17,9 @@ struct blob_table;
  * Note: we are not using __attribute__((packed)) for this structure, so only
  * cast to this if properly aligned!
  */
+#ifdef _MSC_VER
+#pragma pack(push, 4)
+#endif
 struct reparse_buffer_disk {
 	le32 rptag;
 	le16 rpdatalen;
@@ -45,6 +48,9 @@ struct reparse_buffer_disk {
 	};
 };
 
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 #define REPARSE_DATA_OFFSET ((unsigned)offsetof(struct reparse_buffer_disk, rpdata))
 
 #define REPARSE_DATA_MAX_SIZE (REPARSE_POINT_MAX_SIZE - REPARSE_DATA_OFFSET)

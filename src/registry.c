@@ -34,6 +34,9 @@
 #include "wimlib/util.h"
 
 /* Registry hive file header  */
+#ifdef _MSC_VER
+#pragma pack(push, 1)
+#endif
 struct regf {
 #define REGF_MAGIC		cpu_to_le32(0x66676572)	/* "regf" */
 	le32 magic;
@@ -107,6 +110,9 @@ struct value_list {
 	le32 vk_offsets[0];
 } __attribute__((packed));
 
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 /* VK cell - contains a value's data, or a reference to it  */
 struct vk {
 #define VK_MAGIC			cpu_to_le16(0x6B76)

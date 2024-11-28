@@ -28,8 +28,11 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
+#ifdef _MSC_VER
+#include "msvc/unistd.h"
+#else
 #include <unistd.h>
-
+#endif
 #include "wimlib.h"
 #include "wimlib/alloca.h"
 #include "wimlib/assert.h"
@@ -62,7 +65,14 @@
 int
 read_wim_header(WIMStruct *wim, struct wim_header *hdr)
 {
+
+#ifdef _MSC_VER
+#pragma pack(push, 8)
+#endif
 	struct wim_header_disk disk_hdr __attribute__((aligned(8)));
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 	struct filedes *in_fd = &wim->in_fd;
 	const tchar *filename = wim->filename;
 	int ret;
@@ -168,11 +178,17 @@ read_error:
  * header.  */
 int
 write_wim_header(const struct wim_header *hdr, struct filedes *out_fd,
-		 off_t offset)
+		 uint64_t offset)
 {
+#ifdef _MSC_VER
+#pragma pack(push, 8)
+#endif
 	struct wim_header_disk disk_hdr __attribute__((aligned(8)));
 	int ret;
 
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 	disk_hdr.magic = cpu_to_le64(hdr->magic);
 	disk_hdr.hdr_size = cpu_to_le32(sizeof(struct wim_header_disk));
 	disk_hdr.wim_version = cpu_to_le32(hdr->wim_version);

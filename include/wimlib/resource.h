@@ -58,6 +58,9 @@ struct wim_resource_descriptor {
 };
 
 /* On-disk version of a WIM resource header.  */
+#ifdef _MSC_VER
+#pragma pack(push, 1)
+#endif
 struct wim_reshdr_disk {
 	/* Size of the resource as it appears in the WIM file (possibly
 	 * compressed).  */
@@ -74,6 +77,9 @@ struct wim_reshdr_disk {
 	le64 uncompressed_size;
 } __attribute__((packed));
 
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 /* In-memory version of a WIM resource header (`struct wim_reshdr_disk').  */
 struct wim_reshdr {
 	u64 size_in_wim : 56;
@@ -138,6 +144,9 @@ put_wim_reshdr(const struct wim_reshdr *reshdr,
 
 /* Alternate chunk table format for resources with WIM_RESHDR_FLAG_SOLID set.
  */
+#ifdef _MSC_VER
+#pragma pack(push, 1)
+#endif
 struct alt_chunk_table_header_disk {
 	/* Uncompressed size of the resource in bytes.  */
 	le64 res_usize;
@@ -159,7 +168,9 @@ struct alt_chunk_table_header_disk {
 	/* This header is directly followed by a table of compressed sizes of
 	 * the chunks (4 bytes per entry).  */
 } __attribute__((packed));
-
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 static inline unsigned int
 get_chunk_entry_size(u64 res_size, bool is_alt)
 {
@@ -315,6 +326,9 @@ write_metadata_resource(WIMStruct *wim, int image, int write_resource_flags);
 #define PWM_BLOB_MAGIC 0x2b9b9ba2443db9d8ULL
 
 /* Header that precedes each blob in a pipable WIM.  */
+#ifdef _MSC_VER
+#pragma pack(push, 1)
+#endif
 struct pwm_blob_hdr {
 	le64 magic;			/* +0   */
 	le64 uncompressed_size;		/* +8   */
@@ -328,5 +342,7 @@ struct pwm_blob_hdr {
 struct pwm_chunk_hdr {
 	le32 compressed_size;
 } __attribute__((packed));
-
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 #endif /* _WIMLIB_RESOURCE_H */

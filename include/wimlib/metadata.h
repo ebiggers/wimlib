@@ -134,21 +134,21 @@ can_unload_image(const struct wim_image_metadata *imd)
 }
 
 /* Iterate over each inode in a WIM image  */
-#define image_for_each_inode(inode, imd) \
-	hlist_for_each_entry(inode, &(imd)->inode_list, i_hlist_node)
+#define image_for_each_inode(inode, imd, type) \
+	hlist_for_each_entry(inode, &(imd)->inode_list, i_hlist_node, type)
 
 /* Iterate over each inode in a WIM image (safe against inode removal)  */
-#define image_for_each_inode_safe(inode, tmp, imd) \
-	hlist_for_each_entry_safe(inode, tmp, &(imd)->inode_list, i_hlist_node)
+#define image_for_each_inode_safe(inode, tmp, imd, type) \
+	hlist_for_each_entry_safe(inode, tmp, &(imd)->inode_list, i_hlist_node, type)
 
 /* Iterate over each blob in a WIM image that has not yet been hashed */
-#define image_for_each_unhashed_blob(blob, imd) \
-	list_for_each_entry(blob, &(imd)->unhashed_blobs, unhashed_list)
+#define image_for_each_unhashed_blob(blob, imd, type) \
+	list_for_each_entry(blob, &(imd)->unhashed_blobs, unhashed_list, type)
 
 /* Iterate over each blob in a WIM image that has not yet been hashed (safe
  * against blob removal) */
-#define image_for_each_unhashed_blob_safe(blob, tmp, imd) \
-	list_for_each_entry_safe(blob, tmp, &(imd)->unhashed_blobs, unhashed_list)
+#define image_for_each_unhashed_blob_safe(blob, tmp, imd, type) \
+	list_for_each_entry_safe(blob, tmp, &(imd)->unhashed_blobs, unhashed_list, type)
 
 void
 put_image_metadata(struct wim_image_metadata *imd);

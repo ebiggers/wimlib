@@ -33,13 +33,93 @@
 #include <errno.h>
 
 #include <inttypes.h>
+#ifdef _MSC_VER
+#pragma warning(disable:4996)
+#include"msvc/unistd.h"
+#define PACKAGE_VERSION ""
+#define PACKAGE_BUGREPORT ""
+#define alloca		  _alloca
+#define gmtime_r(x, y)	  gmtime_s(y, x)
+#define S_IFMT		  00170000
+#define S_IFSOCK	  0140000
+#define S_IFLNK		  0120000
+#define S_IFREG		  0100000
+#define S_IFBLK		  0060000
+#define S_IFDIR		  0040000
+#define S_IFCHR		  0020000
+#define S_IFIFO		  0010000
+#define S_ISUID		  0004000
+#define S_ISGID		  0002000
+#define S_ISVTX		  0001000
+
+#define S_ISLNK(m)  (((m)&S_IFMT) == S_IFLNK)
+#define S_ISREG(m)  (((m)&S_IFMT) == S_IFREG)
+#define S_ISDIR(m)  (((m)&S_IFMT) == S_IFDIR)
+#define S_ISCHR(m)  (((m)&S_IFMT) == S_IFCHR)
+#define S_ISBLK(m)  (((m)&S_IFMT) == S_IFBLK)
+#define S_ISFIFO(m) (((m)&S_IFMT) == S_IFIFO)
+#ifndef LIBWIM_STATIC
+#if defined _M_AMD64
+#ifdef _DEBUG
+#pragma comment(lib, "../x64/Debug/libwim.lib")
+#else
+#pragma comment(lib, "../x64/Release/libwim.lib")
+#endif
+#elif defined _M_IX86
+#ifdef _DEBUG
+#pragma comment(lib, "../x86/Debug/libwim.lib")
+#else
+#pragma comment(lib, "../x86/Release/libwim.lib")
+#endif
+#elif defined _M_ARM
+#ifdef _DEBUG
+#pragma comment(lib, "../ARM/Debug/libwim.lib")
+#else
+#pragma comment(lib, "../ARM/Release/libwim.lib")
+#endif
+#elif defined _M_ARM64
+#ifdef _DEBUG
+#pragma comment(lib, "../ARM64/Debug/libwim.lib")
+#else
+#pragma comment(lib, "../ARM64/Release/libwim.lib")
+#endif
+#endif
+#else
+#if defined _M_AMD64
+#ifdef _DEBUG
+#pragma comment(lib, "../x64/Debug Static/libwim.lib")
+#else
+#pragma comment(lib, "../x64/Release Static/libwim.lib")
+#endif
+#elif defined _M_IX86
+#ifdef _DEBUG
+#pragma comment(lib, "../x86/Debug Static/libwim.lib")
+#else
+#pragma comment(lib, "../x86/Release Static/libwim.lib")
+#endif
+#elif defined _M_ARM
+#ifdef _DEBUG
+#pragma comment(lib, "../ARM/Debug Static/libwim.lib")
+#else
+#pragma comment(lib, "../ARM/Release Static/libwim.lib")
+#endif
+#elif defined _M_ARM64
+#ifdef _DEBUG
+#pragma comment(lib, "../ARM64/Debug Static/libwim.lib")
+#else
+#pragma comment(lib, "../ARM64/Release Static/libwim.lib")
+#endif
+#endif
+#endif
+#else
 #include <libgen.h>
+#include <unistd.h>
+#endif
 #include <limits.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <unistd.h>
 #include <locale.h>
 
 #ifdef HAVE_ALLOCA_H
@@ -753,14 +833,14 @@ do_metadata_not_found_warning(const tchar *wimfile,
 
 /* Returns the size of a file given its name, or -1 if the file does not exist
  * or its size cannot be determined.  */
-static off_t
+static uint64_t
 file_get_size(const tchar *filename)
 {
-	struct stat st;
+	struct _stat st;
 	if (tstat(filename, &st) == 0)
 		return st.st_size;
 	else
-		return (off_t)-1;
+		return (uint64_t)-1;
 }
 
 enum {
@@ -942,7 +1022,7 @@ parse_source_list(tchar **source_list_contents_p, size_t source_list_nchars,
 
 	/* Always allocate at least 1 slot, just in case the implementation of
 	 * calloc() returns NULL if 0 bytes are requested. */
-	sources = calloc(nlines ?: 1, sizeof(*sources));
+	sources = calloc(nlines ? nlines: 1, sizeof(*sources));
 	if (!sources) {
 		imagex_error(T("out of memory"));
 		return NULL;
@@ -1518,7 +1598,7 @@ parse_update_command_file(tchar **cmd_file_contents_p, size_t cmd_file_nchars,
 
 	/* Always allocate at least 1 slot, just in case the implementation of
 	 * calloc() returns NULL if 0 bytes are requested. */
-	cmds = calloc(nlines ?: 1, sizeof(struct wimlib_update_command));
+	cmds = calloc(nlines ? nlines: 1, sizeof(struct wimlib_update_command));
 	if (!cmds) {
 		imagex_error(T("out of memory"));
 		return NULL;
@@ -1977,7 +2057,7 @@ imagex_capture_or_append(int argc, tchar **argv, int cmd)
 		imagex_output_to_stderr();
 		set_fd_to_binary_mode(wim_fd);
 	} else {
-		struct stat stbuf;
+		struct _stat stbuf;
 
 		/* Check for 'wimappend --create' acting as wimcapture */
 		if (create && tstat(wimfile, &stbuf) != 0 && errno == ENOENT) {
@@ -2795,7 +2875,7 @@ imagex_export(int argc, tchar **argv, int cmd)
 	WIMStruct *dest_wim;
 	int ret;
 	int image;
-	struct stat stbuf;
+	struct _stat stbuf;
 	bool wim_is_new;
 	STRING_LIST(refglobs);
 	unsigned num_threads = 0;
@@ -3708,8 +3788,8 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 	WIMStruct *wim;
 	struct wimlib_wim_info info;
 	const tchar *wimfile;
-	off_t old_size;
-	off_t new_size;
+	uint64_t old_size;
+	uint64_t new_size;
 	unsigned num_threads = 0;
 
 	for_opt(c, optimize_options) {
@@ -3824,7 +3904,7 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 	if (old_size == -1)
 		tputs(T("Unknown"));
 	else
-		tprintf(T("%"PRIu64" KiB\n"), old_size >> 10);
+		tprintf(T("%"PRIu64" KiB\n"), ((unsigned long long)old_size) >> 10);
 
 	ret = wimlib_overwrite(wim, write_flags, num_threads);
 	if (ret) {
@@ -3837,7 +3917,7 @@ imagex_optimize(int argc, tchar **argv, int cmd)
 	if (new_size == -1)
 		tputs(T("Unknown"));
 	else
-		tprintf(T("%"PRIu64" KiB\n"), new_size >> 10);
+		tprintf(T("%"PRIu64" KiB\n"), ((unsigned long long)new_size) >> 10);
 
 	tfputs(T("Space saved: "), stdout);
 	if (new_size != -1 && old_size != -1) {

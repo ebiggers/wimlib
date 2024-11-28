@@ -374,8 +374,7 @@ request_vss_snapshot(IVssBackupComponents *vss, wchar_t *volume,
 		      (u32)res);
 		return false;
 	}
-
-	res = vss->vtable->AddToSnapshotSet(vss, volume, (GUID){}, snapshot_id);
+	res = vss->vtable->AddToSnapshotSet(vss, volume, (GUID){EMPTY}, snapshot_id);
 	if (FAILED(res)) {
 		ERROR("IVssBackupComponents.AddToSnapshotSet() error: %x",
 		      (u32)res);

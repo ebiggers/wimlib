@@ -28,7 +28,11 @@
 #include <fcntl.h>
 #include <string.h>
 #include <sys/stat.h>
+#ifdef _MSC_VER
+#include "msvc/unistd.h"
+#else
 #include <unistd.h>
+#endif
 
 #include "wimlib/encoding.h"
 #include "wimlib/error.h"

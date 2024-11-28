@@ -88,7 +88,7 @@ rol32(u32 v, int bits)
 #define SHA1_GENERIC_ROUND(i, a, b, c, d, e)				\
 	FORCE_NOT_CACHED_IF_FEW_REGS(w);				\
 	if ((i) < 16)							\
-		w[i] = get_unaligned_be32(data + ((i) * 4));		\
+		w[i] = get_unaligned_be32(POINTER_FIX()data + ((i) * 4));		\
 	else								\
 		w[(i) % 16] = rol32(w[((i) - 16) % 16] ^		\
 				    w[((i) - 14) % 16] ^		\
@@ -132,7 +132,7 @@ sha1_blocks_generic(u32 h[5], const void *data, size_t num_blocks)
 		h[2] += c;
 		h[3] += d;
 		h[4] += e;
-		data += SHA1_BLOCK_SIZE;
+		POINTER_FIX() data += SHA1_BLOCK_SIZE;
 	} while (--num_blocks);
 }
 
@@ -572,14 +572,14 @@ sha1_update(struct sha1_ctx *ctx, const void *data, size_t len)
 		}
 		memcpy(&ctx->buffer[buffered], data, remaining);
 		sha1_blocks(ctx->h, ctx->buffer, 1);
-		data += remaining;
+		POINTER_FIX() data += remaining;
 		len -= remaining;
 	}
 
 	blocks = len / SHA1_BLOCK_SIZE;
 	if (blocks) {
 		sha1_blocks(ctx->h, data, blocks);
-		data += blocks * SHA1_BLOCK_SIZE;
+		POINTER_FIX() data += blocks * SHA1_BLOCK_SIZE;
 		len -= blocks * SHA1_BLOCK_SIZE;
 	}
 
