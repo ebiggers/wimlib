@@ -205,7 +205,7 @@ win32_get_drive_path(const wchar_t *file_path, wchar_t drive_path[7])
 {
 	tchar *file_abspath;
 
-	file_abspath = realpath(file_path, NULL);
+	file_abspath = wimlib_realpath(file_path, NULL);
 	if (!file_abspath)
 		return WIMLIB_ERR_NOMEM;
 

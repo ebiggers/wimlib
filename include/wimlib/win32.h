@@ -38,7 +38,7 @@ int
 fsync(int fd);
 
 tchar *
-realpath(const tchar *path, tchar *resolved_path);
+wimlib_realpath(const tchar *path, tchar *resolved_path);
 
 int
 win32_rename_replacement(const tchar *oldpath, const tchar *newpath);
