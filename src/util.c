@@ -109,6 +109,9 @@ char *
 wimlib_realpath(const char *path, char *resolved_path)
 {
 	char *resolved = realpath(path, resolved_path);
+	if (resolved == NULL)
+		return NULL;
+	
 	if (resolved_path == NULL) {
 		char *reallocated = memdup(resolved, strlen(resolved) + 1);
 		free(resolved);
