@@ -921,7 +921,7 @@ unix_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	if ((ctx->common.extract_flags & WIMLIB_EXTRACT_FLAG_RPFIX) &&
 	    ctx->common.required_features.symlink_reparse_points)
 	{
-		ctx->target_abspath = realpath(ctx->common.target, NULL);
+		ctx->target_abspath = wimlib_realpath(ctx->common.target, NULL);
 		if (!ctx->target_abspath) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto out;

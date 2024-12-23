@@ -361,7 +361,7 @@ get_available_memory(void)
  * (resolved_path must be NULL).   Also I highly doubt that GetFullPathName
  * really does the right thing under all circumstances. */
 wchar_t *
-realpath(const wchar_t *path, wchar_t *resolved_path)
+wimlib_realpath(const wchar_t *path, wchar_t *resolved_path)
 {
 	DWORD ret;
 	DWORD err;

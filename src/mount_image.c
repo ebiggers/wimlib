@@ -2261,7 +2261,7 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	prepare_inodes(&ctx);
 
 	/* Save the absolute path to the mountpoint directory.  */
-	ctx.mountpoint_abspath = realpath(dir, NULL);
+	ctx.mountpoint_abspath = wimlib_realpath(dir, NULL);
 	if (ctx.mountpoint_abspath)
 		ctx.mountpoint_abspath_nchars = strlen(ctx.mountpoint_abspath);
 
