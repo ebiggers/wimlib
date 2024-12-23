@@ -111,7 +111,7 @@ wimlib_realpath (const char *name, char *resolved_path)
 	if (resolved_path == NULL)
 		resolved_path = wimlib_malloc(PATH_MAX);
 
-	realpath(name, resolved_path);
+	return realpath(name, resolved_path);
 }
 
 #ifdef _WIN32
