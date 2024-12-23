@@ -58,7 +58,7 @@ char *
 wimlib_strdup(const char *str);
 
 char *
-wimlib_realpath (const char *path, char *resolved_path);
+wimlib_realpath(const char *path, char *resolved_path);
 
 #ifdef _WIN32
 wchar_t *

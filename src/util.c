@@ -106,12 +106,12 @@ wimlib_strdup(const char *str)
 }
 
 char *
-wimlib_realpath (const char *name, char *resolved_path)
+wimlib_realpath(const char *path, char *resolved_path)
 {
 	if (resolved_path == NULL)
 		resolved_path = wimlib_malloc(PATH_MAX);
 
-	return realpath(name, resolved_path);
+	return realpath(path, resolved_path);
 }
 
 #ifdef _WIN32
