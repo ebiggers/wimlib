@@ -812,6 +812,21 @@ ntfs_3g_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 			goto out;
 
 		warn_special_reparse_points(inode, params, volume);
+
+		/*
+		 * In NTFS-3G capture mode, the Windows drive letter of the
+		 * volume is unknown, so there's no way to know whether absolute
+		 * symlinks point into the same volume or not.  Therefore, never
+		 * do reparse point fixups in this mode.  I.e., neither modify
+		 * the reparse data nor clear WIM_RP_FLAG_NOT_FIXED.
+		 *
+		 * wimlib v1.14.4 and earlier did clear WIM_RP_FLAG_NOT_FIXED in
+		 * this case, despite not modifying the reparse data.  It mostly
+		 * worked, since NTFS-3G capture mode only allows capturing an
+		 * entire volume anyway.  However, it caused issues where DISM
+		 * would sometimes misunderstand the symlinks or consider them
+		 * to be invalid when trying to apply the reverse fixup.
+		 */
 	}
 
 	/* Load the object ID.  */
@@ -831,12 +846,6 @@ ntfs_3g_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 					volume, AT_DATA);
 	if (ret)
 		goto out;
-
-	/* Reparse-point fixups are a no-op because in NTFS-3G capture mode we
-	 * only allow capturing an entire volume. */
-	if (params->add_flags & WIMLIB_ADD_FLAG_RPFIX &&
-	    inode_is_symlink(inode))
-		inode->i_rp_flags &= ~WIM_RP_FLAG_NOT_FIXED;
 
 	if (!(params->add_flags & WIMLIB_ADD_FLAG_NO_ACLS)) {
 		ret = get_security_descriptor(ni, inode, volume->vol,
