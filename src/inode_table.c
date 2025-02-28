@@ -135,6 +135,8 @@ inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
 				WARNING("Not honoring directory hard link "
 					"of \"%"TS"\"",
 					inode_any_full_path(inode));
+				WARNING("name=%"TS" ino=%"PRIu64" devno=%"PRIu64" noshare=%d",
+					name, ino, devno, noshare);
 				continue;
 			}
 			/* Inode found; use it.  */
