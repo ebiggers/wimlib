@@ -668,7 +668,7 @@ begin_read(WIMStruct *wim, const void *wim_filename_or_fd, int open_flags)
 		 * Warning: in Windows native builds, realpath() calls the
 		 * replacement function in win32_replacements.c.
 		 */
-		wim->filename = realpath(wimfile, NULL);
+		wim->filename = wimlib_realpath(wimfile, NULL);
 		if (!wim->filename) {
 			ERROR_WITH_ERRNO("Failed to get full path to file "
 					 "\"%"TS"\"", wimfile);

@@ -105,6 +105,22 @@ wimlib_strdup(const char *str)
 	return memdup(str, strlen(str) + 1);
 }
 
+char *
+wimlib_realpath(const char *path, char *resolved_path)
+{
+	char *resolved = realpath(path, resolved_path);
+	if (resolved == NULL)
+		return NULL;
+	
+	if (resolved_path == NULL) {
+		char *reallocated = memdup(resolved, strlen(resolved) + 1);
+		free(resolved);
+		return reallocated;
+	}
+
+	return resolved;
+}
+
 #ifdef _WIN32
 wchar_t *
 wimlib_wcsdup(const wchar_t *str)

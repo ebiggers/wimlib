@@ -437,7 +437,7 @@ vss_create_snapshot(const wchar_t *source, UNICODE_STRING *vss_path_ret,
 	HRESULT res;
 	int ret;
 
-	source_abspath = realpath(source, NULL);
+	source_abspath = wimlib_realpath(source, NULL);
 	if (!source_abspath) {
 		ret = WIMLIB_ERR_NOMEM;
 		goto err;
