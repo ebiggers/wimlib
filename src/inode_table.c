@@ -131,12 +131,19 @@ inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
 		hlist_for_each_entry(inode, list, i_hlist_node) {
 			if (inode->i_ino != ino || inode->i_devno != devno)
 				continue;
-			if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY) {
-				WARNING("Not honoring directory hard link "
-					"of \"%"TS"\"",
-					inode_any_full_path(inode));
+			/*
+			 * Since the WIM file format does not support directory
+			 * hard links, automatically un-hard-link any that are
+			 * found.  We no longer print a warning when doing this,
+			 * considering that this condition trips when capturing
+			 * hard-linked symlinks to directories on Linux.  (Those
+			 * get translated into "directory reparse points",
+			 * despite not being directories originally.  And
+			 * un-hard-linking them doesn't really matter.)
+			 */
+			if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
 				continue;
-			}
+
 			/* Inode found; use it.  */
 			return new_dentry_with_existing_inode(name, inode,
 							      dentry_ret);
