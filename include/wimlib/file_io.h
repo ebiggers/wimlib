@@ -11,27 +11,27 @@
 struct filedes {
 	int fd;
 	unsigned int is_pipe : 1;
-	off_t offset;
+	uint64_t offset;
 };
 
 int
 full_read(struct filedes *fd, void *buf, size_t n);
 
 int
-full_pread(struct filedes *fd, void *buf, size_t nbyte, off_t offset);
+full_pread(struct filedes *fd, void *buf, size_t nbyte, uint64_t offset);
 
 int
 full_write(struct filedes *fd, const void *buf, size_t n);
 
 int
-full_pwrite(struct filedes *fd, const void *buf, size_t count, off_t offset);
+full_pwrite(struct filedes *fd, const void *buf, size_t count, uint64_t offset);
 
 #ifndef _WIN32
 #  define O_BINARY 0
 #endif
 
-off_t
-filedes_seek(struct filedes *fd, off_t offset);
+uint64_t
+filedes_seek(struct filedes *fd, uint64_t offset);
 
 bool
 filedes_is_seekable(struct filedes *fd);

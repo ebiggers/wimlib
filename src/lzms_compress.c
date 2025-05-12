@@ -177,6 +177,9 @@ check_that_powers_fit_in_bitfield(void)
 
 /* A stripped-down version of the adaptive state in LZMS which excludes the
  * probability entries and Huffman codes  */
+#ifdef _MSC_VER
+#pragma pack(push, 64)
+#endif
 struct lzms_adaptive_state {
 
 	/* Recent offsets for LZ matches  */
@@ -253,6 +256,9 @@ struct lzms_optimum_node {
 	struct lzms_adaptive_state state;
 } __attribute__((aligned(64)));
 
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 /* The main compressor structure  */
 struct lzms_compressor {
 

@@ -87,6 +87,10 @@
  * evaluates to 1.  The other evaluates to 0.  Note that newer gcc supports
  * __BYTE_ORDER__ for easily determining the endianness; older gcc doesn't.  In
  * the latter case we fall back to a configure-time check.  */
+#ifdef _MSC_VER
+#define CPU_IS_BIG_ENDIAN() 0
+#include<assert.h>
+#endif
 #ifdef __BYTE_ORDER__
 #  define CPU_IS_BIG_ENDIAN()	(__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
 #elif defined(HAVE_CONFIG_H)
@@ -110,15 +114,23 @@
 
 /* Get the minimum of two variables, without multiple evaluation.  */
 #undef min
+#ifdef _MSC_VER
+#define min(a, b)  ((a < b) ? a : b)
+#else
 #define min(a, b)  ({ typeof(a) _a = (a); typeof(b) _b = (b); \
 		    (_a < _b) ? _a : _b; })
+#endif
 #undef MIN
 #define MIN(a, b)	min((a), (b))
 
 /* Get the maximum of two variables, without multiple evaluation.  */
 #undef max
+#ifdef _MSC_VER
+#define max(a, b) ((a > b) ? a : b)
+#else
 #define max(a, b)  ({ typeof(a) _a = (a); typeof(b) _b = (b); \
 		    (_a > _b) ? _a : _b; })
+#endif
 #undef MAX
 #define MAX(a, b)	max((a), (b))
 
@@ -127,10 +139,13 @@
 #define max3(a, b, c)	max(max((a), (b)), (c))
 
 /* Swap the values of two variables, without multiple evaluation.  */
-#ifndef swap
-#  define swap(a, b) ({ typeof(a) _a = (a); (a) = (b); (b) = _a; })
+#ifdef _MSC_VER
+#  define swap(a, b, type) { type _a = (a); (a) = (b); (b) = _a; }
 #endif
-#define SWAP(a, b)	swap((a), (b))
+#ifndef swap
+#  define swap(a, b, type) ({ typeof(a) _a = (a); (a) = (b); (b) = _a; })
+#endif
+#define SWAP(a, b ,type)	swap((a), (b),type)
 
 /* Optional definitions for checking with 'sparse'.  */
 #ifdef __CHECKER__
@@ -142,6 +157,9 @@
 #endif
 
 /* STATIC_ASSERT() - verify the truth of an expression at compilation time.  */
+#ifdef _MSC_VER
+#define STATIC_ASSERT(expr) assert(expr)
+#else
 #ifdef __CHECKER__
 #  define STATIC_ASSERT(expr)
 #elif __STDC_VERSION__ >= 201112L
@@ -149,14 +167,117 @@
 #else
 #  define STATIC_ASSERT(expr)	((void)sizeof(char[1 - 2 * !(expr)]))
 #endif
-
+#endif
 /* STATIC_ASSERT_ZERO() - verify the truth of an expression at compilation time
  * and also produce a result of value '0' to be used in constant expressions */
+#ifdef _MSC_VER
+#pragma comment(lib, "ntdll")
+#define STATIC_ASSERT_ZERO(expr) 0
+#else
 #define STATIC_ASSERT_ZERO(expr) ((int)sizeof(char[-!(expr)]))
-
+#endif
 #define CONCAT_IMPL(s1, s2)	s1##s2
 
 /* CONCAT() - concatenate two tokens at preprocessing time.  */
 #define CONCAT(s1, s2)		CONCAT_IMPL(s1, s2)
+#ifndef PACKAGE_VERSION
+#define PACKAGE_VERSION ""
+#endif
+#ifndef PACKAGE_BUGREPORT
+#define PACKAGE_BUGREPORT ""
+#endif
+#ifdef _MSC_VER
+//We are using Microsoft's MSVC, gcc specific functions are not available
+#include<assert.h>
+#define __attribute__(x)
+#define POINTER_FIX() (size_t)
+#define smart_array(type, name, size) type * name=_alloca((size)*(sizeof(type)))
+#define restrict
+#define EMPTY 0
+#define FILE_SHARE_VALID_FLAGS FILE_SHARE_DELETE | FILE_SHARE_READ |FILE_SHARE_WRITE
+#include<wchar.h>
+static inline wchar_t * wmempcpy(wchar_t *_S1, wchar_t const *_S2, size_t _N)
+{
+	return wmemcpy(_S1,_S2,_N)+_N;
 
-#endif /* _WIMLIB_COMPILER_H */
+}
+#define alloca _alloca
+
+#include <intrin.h>
+#include <stdint.h>
+uint32_t __inline __builtin_ctz(uint32_t value)
+{
+	unsigned long trailing_zero = 0;
+	if (_BitScanForward(&trailing_zero, value))
+		return trailing_zero;
+	return 32;
+}
+
+uint32_t __inline __builtin_clz(uint32_t value)
+{
+	unsigned long leading_zero = 0;
+	if (_BitScanReverse(&leading_zero, value))
+		return 31 - leading_zero;
+	return 32;
+}
+#define __builtin_constant_p(x)	 0
+#define __builtin_prefetch(x, y) 0
+#define __builtin_expect(x,y) (x)
+#define gmtime_r(x, y)		 gmtime_s(y,x)
+#define vsnwprintf		 _vsnwprintf
+#define snwprintf		 _snwprintf
+#undef PRIu64
+#define PRIu64 "I64u"
+#undef PRId64
+#define PRId64 "I64d"
+#undef PRIi64
+#define PRIi64 "I64i"
+#undef PRIo64
+#define PRIo64 "I64o"
+#undef PRIx64
+#define PRIx64 "I64x"
+#if defined(_M_ARM64) || defined(_M_X64)
+uint32_t __inline __builtin_clzll(uint64_t value)
+{
+	unsigned long leading_zero = 0;
+	if (_BitScanReverse64(&leading_zero, value))
+		return 63 - leading_zero;
+	return 64;
+}
+uint32_t __inline __builtin_ctzll(uint32_t value)
+{
+	unsigned long trailing_zero = 0;
+	if (_BitScanForward64(&trailing_zero, value))
+		return trailing_zero;
+	return 64;
+}
+#else
+uint32_t __inline __builtin_clzll(uint64_t value)
+{
+	if (value == 0)
+		return 64;
+	uint32_t msh = (uint32_t)(value >> 32);
+	uint32_t lsh = (uint32_t)(value & 0xFFFFFFFF);
+	if (msh != 0)
+		return __builtin_clz(msh);
+	return 32 + __builtin_clz(lsh);
+}
+uint32_t __inline __builtin_ctzll(uint64_t value)
+{
+	if (value == 0)
+		return 64;
+	uint32_t msh = (uint32_t)(value >> 32);
+	uint32_t lsh = (uint32_t)(value & 0xFFFFFFFF);
+	if (msh != 0)
+		return __builtin_ctz(msh);
+	return 32 + __builtin_ctz(lsh);
+}
+#endif
+#define __builtin_clzl __builtin_clzll
+#else
+#define POINTER_FIX()
+#define smart_array(type, name, size) type name[size]
+#define EMPTY
+#endif
+#endif
+/* _WIMLIB_COMPILER_H */

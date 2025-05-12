@@ -260,6 +260,9 @@ struct lzx_block_split_stats {
  * since items cannot be written until all items for the block have been chosen
  * and the block's Huffman codes have been computed.
  */
+#ifdef _MSC_VER
+#pragma pack(push, 8)
+#endif
 struct lzx_sequence {
 
 	/*
@@ -335,6 +338,9 @@ struct lzx_optimum_node {
 
 } __attribute__((aligned(8)));
 
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 /* The cost model for near-optimal parsing */
 struct lzx_costs {
 
@@ -849,7 +855,7 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
 	u32 precode_freqs[LZX_PRECODE_NUM_SYMBOLS];
 	u8 precode_lens[LZX_PRECODE_NUM_SYMBOLS];
 	u32 precode_codewords[LZX_PRECODE_NUM_SYMBOLS];
-	unsigned precode_items[num_lens];
+	smart_array(unsigned,precode_items,num_lens);
 	unsigned num_precode_items;
 	unsigned precode_item;
 	unsigned precode_sym;
@@ -1313,10 +1319,16 @@ lzx_should_end_block(struct lzx_block_split_stats *stats)
  * This is represented as a 64-bit integer for efficiency.  There are three
  * offsets of 21 bits each.  Bit 64 is garbage.
  */
+#ifdef _MSC_VER
+#pragma pack(push, 8)
+#endif
 struct lzx_lru_queue {
 	u64 R;
 } __attribute__((aligned(8)));
 
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 #define LZX_QUEUE_OFFSET_SHIFT	21
 #define LZX_QUEUE_OFFSET_MASK	(((u64)1 << LZX_QUEUE_OFFSET_SHIFT) - 1)
 
@@ -1564,12 +1576,17 @@ lzx_find_min_cost_path(struct lzx_compressor * const restrict c,
 	 * 'struct lzx_optimum_node' both being 8 bytes in size and alignment.
 	 */
 	struct lzx_lru_queue queues[512];
+	memset(queues, 0, sizeof(struct lzx_lru_queue) * 512);
 	STATIC_ASSERT(ARRAY_LEN(queues) >= LZX_MAX_MATCH_LEN + 1);
 	STATIC_ASSERT(sizeof(c->optimum_nodes[0]) == sizeof(queues[0]));
-#define QUEUE(node) \
+	#ifdef _MSC_VER
+    #define QUEUE(node) \
+	(queues[(uintptr_t)(node) / sizeof(*(node)) % ARRAY_LEN(queues)])
+	#else
+    #define QUEUE(node) \
 	(*(struct lzx_lru_queue *)((char *)queues + \
 			((uintptr_t)(node) % (ARRAY_LEN(queues) * sizeof(queues[0])))))
-	/*(queues[(uintptr_t)(node) / sizeof(*(node)) % ARRAY_LEN(queues)])*/
+	#endif
 
 #if CONSIDER_GAP_MATCHES
 	u32 matches_before_gap[ARRAY_LEN(queues)];
@@ -2395,7 +2412,7 @@ lzx_choose_match(struct lzx_compressor *c, unsigned length, u32 adjusted_offset,
 	/* Update the recent offsets queue. */
 	if (adjusted_offset < LZX_NUM_RECENT_OFFSETS) {
 		/* Repeat offset match. */
-		swap(recent_offsets[0], recent_offsets[adjusted_offset]);
+		swap(recent_offsets[0], recent_offsets[adjusted_offset],u32);
 	} else {
 		/* Explicit offset match. */
 

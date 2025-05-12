@@ -3,6 +3,9 @@
 #include <stdlib.h>
 #include <windows.h>
 
+#ifdef _MSC_VER
+#include "../include/wimlib/compiler.h"
+#endif
 static const wchar_t *
 win32_error_string(DWORD err)
 {
@@ -43,8 +46,7 @@ wmain(int argc, wchar_t **argv)
 			      NULL);
 	if (h == INVALID_HANDLE_VALUE)
 		fail("CreateFile");
-
-	uint8_t in[8 + rpdatalen];
+	smart_array(uint8_t, in, 8 + rpdatalen);
 	uint8_t *p = in;
 	*(uint32_t *)p = 0x80000000; /* rptag */
 	p += 4;

@@ -199,7 +199,7 @@ read_wim_header(WIMStruct *wim, struct wim_header *hdr);
 
 int
 write_wim_header(const struct wim_header *hdr, struct filedes *out_fd,
-		 off_t offset);
+		 uint64_t offset);
 
 int
 write_wim_header_flags(u32 hdr_flags, struct filedes *out_fd);

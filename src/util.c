@@ -36,7 +36,11 @@
 #ifdef HAVE_SYS_SYSCALL_H
 #  include <sys/syscall.h>
 #endif
+#ifdef _MSC_VER
+#include "msvc/unistd.h"
+#else
 #include <unistd.h>
+#endif
 
 #include "wimlib.h"
 #include "wimlib/assert.h"
@@ -162,7 +166,7 @@ wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
 #ifndef HAVE_MEMPCPY
 void *mempcpy(void *dst, const void *src, size_t n)
 {
-	return memcpy(dst, src, n) + n;
+	return POINTER_FIX()memcpy(dst, src, n) + n;
 }
 #endif
 

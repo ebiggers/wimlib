@@ -69,7 +69,7 @@ enlarge_inode_table(struct wim_inode_table *table)
 	table->array = new_array;
 	table->capacity = new_capacity;
 	for (size_t i = 0; i < old_capacity; i++) {
-		hlist_for_each_entry_safe(inode, tmp, &old_array[i], i_hlist_node) {
+		hlist_for_each_entry_safe(inode, tmp, &old_array[i], i_hlist_node,struct wim_inode) {
 			hlist_add_head(&inode->i_hlist_node,
 				       &new_array[hash_inode(table, inode->i_ino,
 							     inode->i_devno)]);
@@ -128,7 +128,7 @@ inode_table_new_dentry(struct wim_inode_table *table, const tchar *name,
 	} else {
 		/* Hard link detection  */
 		list = &table->array[hash_inode(table, ino, devno)];
-		hlist_for_each_entry(inode, list, i_hlist_node) {
+		hlist_for_each_entry(inode, list, i_hlist_node,struct wim_inode) {
 			if (inode->i_ino != ino || inode->i_devno != devno)
 				continue;
 			/*
@@ -181,18 +181,18 @@ inode_table_prepare_inode_list(struct wim_inode_table *table,
 	u64 cur_ino = 1;
 
 	/* Re-assign inode numbers in the existing list to avoid duplicates. */
-	hlist_for_each_entry(inode, head, i_hlist_node)
+	hlist_for_each_entry(inode, head, i_hlist_node,struct wim_inode)
 		inode->i_ino = cur_ino++;
 
 	/* Assign inode numbers to the new inodes and move them to the image's
 	 * inode list. */
 	for (size_t i = 0; i < table->capacity; i++) {
-		hlist_for_each_entry_safe(inode, tmp, &table->array[i], i_hlist_node) {
+		hlist_for_each_entry_safe(inode, tmp, &table->array[i], i_hlist_node,struct wim_inode) {
 			inode->i_ino = cur_ino++;
 			hlist_add_head(&inode->i_hlist_node, head);
 		}
 	}
-	hlist_for_each_entry_safe(inode, tmp, &table->extra_inodes, i_hlist_node) {
+	hlist_for_each_entry_safe(inode, tmp, &table->extra_inodes, i_hlist_node,struct wim_inode) {
 		inode->i_ino = cur_ino++;
 		hlist_add_head(&inode->i_hlist_node, head);
 	}

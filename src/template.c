@@ -180,7 +180,7 @@ wimlib_reference_template_image(WIMStruct *wim, int new_image,
 	if (ret)
 		return ret;
 
-	image_for_each_inode(inode, new_imd) {
+	image_for_each_inode(inode, new_imd, struct wim_inode) {
 		ret = reference_template_file(inode, wim, template_wim);
 		if (ret)
 			return ret;

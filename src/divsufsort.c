@@ -261,11 +261,11 @@ ss_heapsort(const unsigned char *Td, const int *PA, int *SA, int size) {
   m = size;
   if((size % 2) == 0) {
     m--;
-    if(Td[PA[SA[m / 2]]] < Td[PA[SA[m]]]) { SWAP(SA[m], SA[m / 2]); }
+    if(Td[PA[SA[m / 2]]] < Td[PA[SA[m]]]) { SWAP(SA[m], SA[m / 2],int); }
   }
 
   for(i = m / 2 - 1; 0 <= i; --i) { ss_fixdown(Td, PA, SA, i, m); }
-  if((size % 2) == 0) { SWAP(SA[0], SA[m]); ss_fixdown(Td, PA, SA, 0, m); }
+  if((size % 2) == 0) { SWAP(SA[0], SA[m],int); ss_fixdown(Td, PA, SA, 0, m); }
   for(i = m - 1; 0 < i; --i) {
     t = SA[0], SA[0] = SA[i];
     ss_fixdown(Td, PA, SA, 0, i);
@@ -281,7 +281,7 @@ static forceinline
 int *
 ss_median3(const unsigned char *Td, const int *PA,
            int *v1, int *v2, int *v3) {
-  if(Td[PA[*v1]] > Td[PA[*v2]]) { SWAP(v1, v2); }
+  if(Td[PA[*v1]] > Td[PA[*v2]]) { SWAP(v1, v2,int*); }
   if(Td[PA[*v2]] > Td[PA[*v3]]) {
     if(Td[PA[*v1]] > Td[PA[*v3]]) { return v1; }
     else { return v3; }
@@ -294,11 +294,11 @@ static forceinline
 int *
 ss_median5(const unsigned char *Td, const int *PA,
            int *v1, int *v2, int *v3, int *v4, int *v5) {
-  if(Td[PA[*v2]] > Td[PA[*v3]]) { SWAP(v2, v3); }
-  if(Td[PA[*v4]] > Td[PA[*v5]]) { SWAP(v4, v5); }
-  if(Td[PA[*v2]] > Td[PA[*v4]]) { SWAP(v2, v4); SWAP(v3, v5); }
-  if(Td[PA[*v1]] > Td[PA[*v3]]) { SWAP(v1, v3); }
-  if(Td[PA[*v1]] > Td[PA[*v4]]) { SWAP(v1, v4); SWAP(v3, v5); }
+  if(Td[PA[*v2]] > Td[PA[*v3]]) { SWAP(v2, v3,int*); }
+  if(Td[PA[*v4]] > Td[PA[*v5]]) { SWAP(v4, v5,int*); }
+  if(Td[PA[*v2]] > Td[PA[*v4]]) { SWAP(v2, v4,int*); SWAP(v3, v5,int*); }
+  if(Td[PA[*v1]] > Td[PA[*v3]]) { SWAP(v1, v3,int*); }
+  if(Td[PA[*v1]] > Td[PA[*v4]]) { SWAP(v1, v4,int*); SWAP(v3, v5,int*); }
   if(Td[PA[*v3]] > Td[PA[*v4]]) { return v4; }
   return v3;
 }
@@ -409,28 +409,28 @@ ss_mintrosort(const unsigned char *T, const int *PA,
     /* choose pivot */
     a = ss_pivot(Td, PA, first, last);
     v = Td[PA[*a]];
-    SWAP(*first, *a);
+    SWAP(*first, *a,int);
 
     /* partition */
     for(b = first; (++b < last) && ((x = Td[PA[*b]]) == v);) { }
     if(((a = b) < last) && (x < v)) {
       for(; (++b < last) && ((x = Td[PA[*b]]) <= v);) {
-        if(x == v) { SWAP(*b, *a); ++a; }
+        if(x == v) { SWAP(*b, *a,int); ++a; }
       }
     }
     for(c = last; (b < --c) && ((x = Td[PA[*c]]) == v);) { }
     if((b < (d = c)) && (x > v)) {
       for(; (b < --c) && ((x = Td[PA[*c]]) >= v);) {
-        if(x == v) { SWAP(*c, *d); --d; }
+        if(x == v) { SWAP(*c, *d,int); --d; }
       }
     }
     for(; b < c;) {
-      SWAP(*b, *c);
+      SWAP(*b, *c,int);
       for(; (++b < c) && ((x = Td[PA[*b]]) <= v);) {
-        if(x == v) { SWAP(*b, *a); ++a; }
+        if(x == v) { SWAP(*b, *a,int); ++a; }
       }
       for(; (b < --c) && ((x = Td[PA[*c]]) >= v);) {
-        if(x == v) { SWAP(*c, *d); --d; }
+        if(x == v) { SWAP(*c, *d,int); --d; }
       }
     }
 
@@ -438,9 +438,9 @@ ss_mintrosort(const unsigned char *T, const int *PA,
       c = b - 1;
 
       if((s = a - first) > (t = b - a)) { s = t; }
-      for(e = first, f = b - s; 0 < s; --s, ++e, ++f) { SWAP(*e, *f); }
+      for(e = first, f = b - s; 0 < s; --s, ++e, ++f) { SWAP(*e, *f,int); }
       if((s = d - c) > (t = last - d - 1)) { s = t; }
-      for(e = b, f = last - s; 0 < s; --s, ++e, ++f) { SWAP(*e, *f); }
+      for(e = b, f = last - s; 0 < s; --s, ++e, ++f) { SWAP(*e, *f,int); }
 
       a = first + (b - a), c = last - (d - c);
       b = (v <= Td[PA[*a] - 1]) ? a : ss_partition(PA, a, c, depth);
@@ -922,11 +922,11 @@ tr_heapsort(const int *ISAd, int *SA, int size) {
   m = size;
   if((size % 2) == 0) {
     m--;
-    if(ISAd[SA[m / 2]] < ISAd[SA[m]]) { SWAP(SA[m], SA[m / 2]); }
+    if(ISAd[SA[m / 2]] < ISAd[SA[m]]) { SWAP(SA[m], SA[m / 2],int); }
   }
 
   for(i = m / 2 - 1; 0 <= i; --i) { tr_fixdown(ISAd, SA, i, m); }
-  if((size % 2) == 0) { SWAP(SA[0], SA[m]); tr_fixdown(ISAd, SA, 0, m); }
+  if((size % 2) == 0) { SWAP(SA[0], SA[m],int); tr_fixdown(ISAd, SA, 0, m); }
   for(i = m - 1; 0 < i; --i) {
     t = SA[0], SA[0] = SA[i];
     tr_fixdown(ISAd, SA, 0, i);
@@ -941,7 +941,7 @@ tr_heapsort(const int *ISAd, int *SA, int size) {
 static forceinline
 int *
 tr_median3(const int *ISAd, int *v1, int *v2, int *v3) {
-  if(ISAd[*v1] > ISAd[*v2]) { SWAP(v1, v2); }
+  if(ISAd[*v1] > ISAd[*v2]) { SWAP(v1, v2,int*); }
   if(ISAd[*v2] > ISAd[*v3]) {
     if(ISAd[*v1] > ISAd[*v3]) { return v1; }
     else { return v3; }
@@ -954,11 +954,11 @@ static forceinline
 int *
 tr_median5(const int *ISAd,
            int *v1, int *v2, int *v3, int *v4, int *v5) {
-  if(ISAd[*v2] > ISAd[*v3]) { SWAP(v2, v3); }
-  if(ISAd[*v4] > ISAd[*v5]) { SWAP(v4, v5); }
-  if(ISAd[*v2] > ISAd[*v4]) { SWAP(v2, v4); SWAP(v3, v5); }
-  if(ISAd[*v1] > ISAd[*v3]) { SWAP(v1, v3); }
-  if(ISAd[*v1] > ISAd[*v4]) { SWAP(v1, v4); SWAP(v3, v5); }
+  if(ISAd[*v2] > ISAd[*v3]) { SWAP(v2, v3,int*); }
+  if(ISAd[*v4] > ISAd[*v5]) { SWAP(v4, v5,int*); }
+  if(ISAd[*v2] > ISAd[*v4]) { SWAP(v2, v4,int*); SWAP(v3, v5,int*); }
+  if(ISAd[*v1] > ISAd[*v3]) { SWAP(v1, v3,int*); }
+  if(ISAd[*v1] > ISAd[*v4]) { SWAP(v1, v4,int*); SWAP(v3, v5,int*); }
   if(ISAd[*v3] > ISAd[*v4]) { return v4; }
   return v3;
 }
@@ -1031,31 +1031,31 @@ tr_partition(const int *ISAd,
   for(b = middle - 1; (++b < last) && ((x = ISAd[*b]) == v);) { }
   if(((a = b) < last) && (x < v)) {
     for(; (++b < last) && ((x = ISAd[*b]) <= v);) {
-      if(x == v) { SWAP(*b, *a); ++a; }
+      if(x == v) { SWAP(*b, *a,int); ++a; }
     }
   }
   for(c = last; (b < --c) && ((x = ISAd[*c]) == v);) { }
   if((b < (d = c)) && (x > v)) {
     for(; (b < --c) && ((x = ISAd[*c]) >= v);) {
-      if(x == v) { SWAP(*c, *d); --d; }
+      if(x == v) { SWAP(*c, *d,int); --d; }
     }
   }
   for(; b < c;) {
-    SWAP(*b, *c);
+    SWAP(*b, *c,int);
     for(; (++b < c) && ((x = ISAd[*b]) <= v);) {
-      if(x == v) { SWAP(*b, *a); ++a; }
+      if(x == v) { SWAP(*b, *a,int); ++a; }
     }
     for(; (b < --c) && ((x = ISAd[*c]) >= v);) {
-      if(x == v) { SWAP(*c, *d); --d; }
+      if(x == v) { SWAP(*c, *d,int); --d; }
     }
   }
 
   if(a <= d) {
     c = b - 1;
     if((s = a - first) > (t = b - a)) { s = t; }
-    for(e = first, f = b - s; 0 < s; --s, ++e, ++f) { SWAP(*e, *f); }
+    for(e = first, f = b - s; 0 < s; --s, ++e, ++f) { SWAP(*e, *f,int); }
     if((s = d - c) > (t = last - d - 1)) { s = t; }
-    for(e = b, f = last - s; 0 < s; --s, ++e, ++f) { SWAP(*e, *f); }
+    for(e = b, f = last - s; 0 < s; --s, ++e, ++f) { SWAP(*e, *f,int); }
     first += (b - a), last -= (d - c);
   }
   *pa = first, *pb = last;
@@ -1244,7 +1244,7 @@ tr_introsort(int *ISA, const int *ISAd,
 
     /* choose pivot */
     a = tr_pivot(ISAd, first, last);
-    SWAP(*first, *a);
+    SWAP(*first, *a,int);
     v = ISAd[*first];
 
     /* partition */
