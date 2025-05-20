@@ -57,6 +57,9 @@ wimlib_calloc(size_t nmemb, size_t size);
 char *
 wimlib_strdup(const char *str);
 
+char *
+wimlib_realpath(const char *path, char *resolved_path);
+
 #ifdef _WIN32
 wchar_t *
 wimlib_wcsdup(const wchar_t *str);
@@ -76,6 +79,7 @@ memdup(const void *mem, size_t size);
 #define REALLOC		wimlib_realloc
 #define CALLOC		wimlib_calloc
 #define STRDUP		wimlib_strdup
+#define REALPATH    wimlib_realpath
 #define WCSDUP		wimlib_wcsdup
 #define ALIGNED_MALLOC	wimlib_aligned_malloc
 #define ALIGNED_FREE	wimlib_aligned_free
