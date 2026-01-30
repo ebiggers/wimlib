@@ -23,7 +23,7 @@ ZIP=false
 ZIPFILE=
 
 PREBUILT_LLVM_MINGW_ENABLED=false
-PREBUILT_LLVM_MINGW_URL=https://github.com/mstorsjo/llvm-mingw/releases/download/20230320/llvm-mingw-20230320-msvcrt-x86_64.zip
+PREBUILT_LLVM_MINGW_URL=https://github.com/mstorsjo/llvm-mingw/releases/download/20251216/llvm-mingw-20251216-msvcrt-x86_64.zip
 PREBUILT_LLVM_MINGW_ZIP=$(basename "$PREBUILT_LLVM_MINGW_URL")
 PREBUILT_LLVM_MINGW=${PREBUILT_LLVM_MINGW_ZIP%.zip}
 PREBUILT_LLVM_MINGW_BIN="/$PREBUILT_LLVM_MINGW/bin"
