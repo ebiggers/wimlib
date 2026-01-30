@@ -67,10 +67,6 @@ parse_options()
 		ARCH=x86_64
 		CC_PKG=mingw-w64-x86_64-gcc
 		;;
-	CLANG32)
-		ARCH=i686
-		CC_PKG=mingw-w64-clang-i686-clang
-		;;
 	CLANG64)
 		ARCH=x86_64
 		CC_PKG=mingw-w64-clang-x86_64-clang
@@ -88,7 +84,7 @@ parse_options()
 		;;
 	*)
 		echo 1>&2 "Unsupported MSYS2 environment: $MSYSTEM.  This script supports"
-		echo 1>&2 "MINGW32, MINGW64, CLANG32, CLANG64, and CLANGARM64."
+		echo 1>&2 "MINGW32, MINGW64, CLANG64, and CLANGARM64."
 		echo 1>&2 "See https://www.msys2.org/docs/environments/"
 		exit 1
 	esac

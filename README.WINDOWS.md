@@ -117,7 +117,6 @@ one of the following from the Start menu:
 - "MSYS2 MINGW64" - for `x86_64` binaries, built with gcc
 - "MSYS2 CLANG64" - for `x86_64` binaries, built with clang
 - "MSYS2 MINGW32" - for `i686` binaries, built with gcc
-- "MSYS2 CLANG32" - for `i686` binaries, built with clang
 - "MSYS2 CLANGARM64" - for ARM64 binaries (EXPERIMENTAL)
 
 (If unsure, use "MSYS2 MINGW64".)  Then run the following commands:
