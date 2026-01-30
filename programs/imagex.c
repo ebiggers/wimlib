@@ -757,6 +757,11 @@ static off_t
 file_get_size(const tchar *filename)
 {
 	struct stat st;
+
+#ifdef _WIN32
+	_Static_assert(sizeof(st.st_size) == 8, "");
+	_Static_assert(sizeof(st.st_mtime) == 8, "");
+#endif
 	if (tstat(filename, &st) == 0)
 		return st.st_size;
 	else
