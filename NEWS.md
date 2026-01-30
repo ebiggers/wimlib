@@ -1,5 +1,22 @@
 # wimlib release notes
 
+## Version 1.14.5
+
+- Fixed excessive progress messages from `wimlib-imagex`.  It now prints the
+  progress updates at a more reasonable rate, improving performance.
+
+- Fixed build error with the latest version of Mingw-w64.
+
+- Fixed build error in `mount_image.c` on some old Linux distros.
+
+- Changed the NTFS-3G image capture mode to no longer mark absolute symlink
+  targets as having been fixed.  This improves compatibility with DISM.
+
+- Removed unhelpful warning messages when capturing hard-linked symlinks to
+  directories on Linux.
+
+- The license for the library has been relaxed from LGPLv3+ to LGPLv2.1+.
+
 ## Version 1.14.4
 
 - Fixed potential crash when writing WIM XML data, introduced in v1.14.0.
