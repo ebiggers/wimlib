@@ -18,7 +18,7 @@ AM_CFLAGS	= -std=gnu99 $(PLATFORM_CFLAGS) -fno-common	\
 AM_LDFLAGS	= $(PLATFORM_LDFLAGS)
 
 EXTRA_DIST	= README.md README.WINDOWS.md NEWS.md		\
-		  COPYING COPYING.GPLv3	COPYING.LGPLv3		\
+		  COPYING COPYING.GPLv3	COPYING.LGPL		\
 		  examples					\
 		  tools/get-version-number.sh tools/windows-build.sh
 

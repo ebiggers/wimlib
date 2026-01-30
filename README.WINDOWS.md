@@ -25,7 +25,7 @@ The Windows distribution of wimlib is a ZIP file containing the following items:
 
 - License files for all software included.  These are all free software
   licenses.  `COPYING.txt` is the main license, and it refers to
-  `COPYING.GPLv3.txt` and `COPYING.LGPLv3.txt`.  The other licenses are for
+  `COPYING.GPLv3.txt` and `COPYING.LGPL.txt`.  The other licenses are for
   third-party software included in the library.
 
 - Development files in the `devel` folder.  These are only needed if you are

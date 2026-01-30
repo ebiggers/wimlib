@@ -6,10 +6,10 @@ of this license can be found in the file COPYING.GPLv3.
 
 Also, when not prohibited by a third-party software license, libwim (the library
 portion of wimlib) may be redistributed and/or modified under the terms of the
-GNU Lesser General Public License; either version 3 of the License, or (at your
-option) any later version.  A copy of this license can be found in the file
-COPYING.LGPLv3.  This is offered as a "dual license", meaning that you can
-choose either this LGPLv3+ option or the above-mentioned GPLv3+ option.
+GNU Lesser General Public License; either version 2.1 of the License, or (at
+your option) any later version.  A copy of this license can be found in the file
+COPYING.LGPL.  This is offered as a "dual license", meaning that you can choose
+either this LGPLv2.1+ option or the above-mentioned GPLv3+ option.
 
 In either case there is NO WARRANTY, to the extent permitted by law.
 
