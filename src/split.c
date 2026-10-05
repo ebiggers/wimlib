@@ -54,7 +54,16 @@ struct swm_info {
 	unsigned num_parts;
 	unsigned num_alloc_parts;
 	u64 total_bytes;
-	u64 max_part_size;
+
+	/* Size limit applied to each part that is not covered by @part_sizes.
+	 * May be UINT64_MAX, which means that no limit is applied.  */
+	u64 default_part_size;
+
+	/* Optional list of per-part size limits.  The limit for the Nth part
+	 * (1-based) is @part_sizes[N - 1] when N <= @num_part_sizes.  If this is
+	 * NULL, then @default_part_size applies to every part.  */
+	const u64 *part_sizes;
+	unsigned num_part_sizes;
 };
 
 static int
@@ -166,6 +175,27 @@ start_new_swm_part(struct swm_info *swm_info)
 	return 0;
 }
 
+/* Returns the maximum size, in bytes, that the current split WIM part is
+ * allowed to reach before a new part has to be started.
+ *
+ * If a list of per-part size limits was supplied, the Nth part uses the Nth
+ * entry of that list.  For the parts beyond the end of the list, and when no
+ * list was supplied at all, @default_part_size applies.  That is what makes an
+ * uneven split possible: the caller sets @default_part_size to UINT64_MAX to
+ * let the remaining parts absorb everything, or to the last limit in order to
+ * keep applying it.  Without a list, @default_part_size applies throughout,
+ * which is the historical behavior of wimlib_split().  */
+static u64
+current_part_size_limit(const struct swm_info *swm_info)
+{
+	if (swm_info->part_sizes != NULL &&
+	    swm_info->num_parts <= swm_info->num_part_sizes)
+		return swm_info->part_sizes[swm_info->num_parts - 1];
+
+	/* No per-part limit applies to this part.  */
+	return swm_info->default_part_size;
+}
+
 static int
 add_blob_to_swm(struct blob_descriptor *blob, void *_swm_info)
 {
@@ -178,11 +208,12 @@ add_blob_to_swm(struct blob_descriptor *blob, void *_swm_info)
 	else
 		blob_stored_size = blob->size;
 
-	/* Start the next part if adding this blob exceeds the maximum part
-	 * size, UNLESS the blob is metadata or if no blobs at all have been
-	 * added to the current part.  */
+	/* Start the next part if adding this blob would exceed the maximum size
+	 * of the current part, UNLESS the blob is metadata or if no blobs at
+	 * all have been added to the current part.  Note that the maximum size
+	 * may be different for each part; see current_part_size_limit().  */
 	if ((swm_info->parts[swm_info->num_parts - 1].size +
-	     blob_stored_size >= swm_info->max_part_size)
+	     blob_stored_size >= current_part_size_limit(swm_info))
 	    && !(blob->is_metadata ||
 		 swm_info->parts[swm_info->num_parts - 1].size == 0))
 	{
@@ -204,12 +235,35 @@ WIMLIBAPI int
 wimlib_split(WIMStruct *wim, const tchar *swm_name,
 	     u64 part_size, int write_flags)
 {
+	return wimlib_split_ex(wim, swm_name, NULL, 0, part_size, write_flags);
+}
+
+/* API function documented in wimlib.h  */
+WIMLIBAPI int
+wimlib_split_ex(WIMStruct *wim, const tchar *swm_name,
+		const u64 *part_sizes, unsigned num_part_sizes,
+		u64 default_part_size, int write_flags)
+{
 	struct swm_info swm_info;
 	unsigned i;
 	int ret;
 
-	if (swm_name == NULL || swm_name[0] == T('\0') || part_size == 0)
+	if (swm_name == NULL || swm_name[0] == T('\0'))
 		return WIMLIB_ERR_INVALID_PARAM;
+
+	if (default_part_size == 0)
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	if (num_part_sizes != 0) {
+		if (part_sizes == NULL)
+			return WIMLIB_ERR_INVALID_PARAM;
+		for (i = 0; i < num_part_sizes; i++) {
+			if (part_sizes[i] == 0)
+				return WIMLIB_ERR_INVALID_PARAM;
+		}
+	} else if (part_sizes != NULL) {
+		return WIMLIB_ERR_INVALID_PARAM;
+	}
 
 	if (write_flags & ~WIMLIB_WRITE_MASK_PUBLIC)
 		return WIMLIB_ERR_INVALID_PARAM;
@@ -231,7 +285,9 @@ wimlib_split(WIMStruct *wim, const tchar *swm_name,
 	}
 
 	memset(&swm_info, 0, sizeof(swm_info));
-	swm_info.max_part_size = part_size;
+	swm_info.default_part_size = default_part_size;
+	swm_info.part_sizes = part_sizes;
+	swm_info.num_part_sizes = num_part_sizes;
 
 	ret = start_new_swm_part(&swm_info);
 	if (ret)

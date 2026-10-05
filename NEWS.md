@@ -1,5 +1,19 @@
 # wimlib release notes
 
+## Unreleased
+
+- Added `wimlib_split_ex()`, a variant of `wimlib_split()` that accepts a
+  separate size limit for each split WIM part, with the option of leaving the
+  remaining parts unlimited.  This makes it possible to create a split WIM
+  whose parts have very different sizes.
+
+- `wimlib-imagex split` now additionally accepts a comma-separated list of part
+  sizes, e.g. `3467,4482`, in place of the traditional single size.  The last
+  value is repeated for any further parts, unless an explicit trailing `rest`
+  is given, which leaves those parts unlimited.  For example, `3467,rest`
+  produces a first part of at most 3467 MiB and a second part holding
+  everything else.
+
 ## Version 1.14.5
 
 - Fixed excessive progress messages from `wimlib-imagex`.  It now prints the

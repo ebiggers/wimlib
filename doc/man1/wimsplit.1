@@ -5,9 +5,28 @@ wimsplit \- Split a WIM archive into multiple parts
 \fBwimsplit\fR \fIWIMFILE\fR \fISPLIT_WIM_PART_1\fR \fIPART_SIZE\fR [\fIOPTION...\fR]
 .SH DESCRIPTION
 \fBwimsplit\fR, or equivalently \fBwimlib-imagex split\fR, splits \fIWIMFILE\fR
-into parts with size at most \fIPART_SIZE\fR mebibytes (power-of-2 megabytes),
-with the first part having the name \fISPLIT_WIM_PART_1\fR and the other parts
-having names numbered in order of the parts.
+into parts, with the first part having the name \fISPLIT_WIM_PART_1\fR and the
+other parts having names numbered in order of the parts.
+.PP
+\fIPART_SIZE\fR gives the maximum size of each part, in mebibytes (power-of-2
+megabytes).  It may be given in either of two forms:
+.TP 6
+\fIN\fR
+A single number, used as the maximum size of \fIevery\fR part.
+.TP
+\fIN1\fB,\fIN2\fB,...,\fBrest\fR
+A comma-separated list giving the maximum size of the 1st, 2nd, ... part.
+For every part beyond the end of the list, the last value is repeated.  An
+explicit trailing element \fBrest\fR (also spelled \fB*\fR)
+instead leaves those parts unlimited, and may only be given as the last
+element.
+.PP
+The list form makes it possible to split a WIM into parts of very different
+sizes, which is useful when the parts have to be written to media of unequal
+capacity.  For example, \fB3460,rest\fR creates a first part of at most 3460
+MiB and puts everything that is left into a second part, while \fB3460,4482\fR
+additionally caps the second part at 4482 MiB and keeps applying that limit to
+any further parts.
 .PP
 \fBwimsplit\fR can split both non-pipable and pipable WIMs.
 .SH OPTIONS
@@ -27,12 +46,22 @@ etc. where each part is at most 100 MiB:
 .PP
 wimsplit windows.wim windows.swm 100
 .RE
+.PP
+Splits the WIM 'install.wim' into a first part of at most 3460 MiB,
+and a second part holding everything that is left:
+.RS
+.PP
+wimsplit install.wim install.swm 3460,rest
+.RE
 .SH LIMITATIONS
 It is possible for the size of the parts to exceed the \fIPART_SIZE\fR given.
 This is impossible to avoid because the WIM file format provides no way to
 divide a single file resource among multiple split WIM parts.  So if you, for
 example, have a file inside the WIM that is 100 MiB compressed, then the split
 WIM will have at least one part that is 100 MiB in size to contain that file.
+.PP
+The sizes given in \fIPART_SIZE\fR are necessarily approximate, because the
+split points can only fall on file resource boundaries.
 .SH SEE ALSO
 .BR wimlib-imagex (1)
 .BR wimjoin (1)
