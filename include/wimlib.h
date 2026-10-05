@@ -4354,12 +4354,88 @@ wimlib_set_wim_info(WIMStruct *wim, const struct wimlib_wim_info *info,
  * ::WIMLIB_PROGRESS_MSG_SPLIT_END_PART.  Since wimlib v1.13.4 it will also
  * receive ::WIMLIB_PROGRESS_MSG_WRITE_STREAMS messages while writing each part;
  * these messages will report the progress of the current part only.
+ *
+ * @p part_size applies to every part.  To specify a different size limit for
+ * each part, use wimlib_split_ex() instead.
  */
 WIMLIBAPI int
 wimlib_split(WIMStruct *wim,
 	     const wimlib_tchar *swm_name,
 	     uint64_t part_size,
 	     int write_flags);
+
+/**
+ * @ingroup G_nonstandalone_wims
+ *
+ * Split a WIM into multiple parts, with a size limit that may differ for each
+ * part.
+ *
+ * This function is like wimlib_split(), except that instead of a single size
+ * limit that applies to every part, it accepts a list of per-part size limits.
+ * This allows the parts to have very different sizes --- for example, when the
+ * parts have to be written to media of unequal capacity, or when only the
+ * first part has to fit within a hard limit.
+ *
+ * For instance, passing @p part_sizes as an array containing a single element
+ * that holds 3460 MiB, @p num_part_sizes as 1, and @p default_part_size as
+ * @c UINT64_MAX creates exactly two parts: the first one at most 3460 MiB (as
+ * far as the file resource boundaries allow), and the second one containing
+ * everything that is left.
+ *
+ * @param wim
+ *	The ::WIMStruct for the WIM to split.
+ * @param swm_name
+ *	Name of the split WIM (SWM) file to create.  This will be the name of
+ *	the first part.  The other parts will, by default, have the same name
+ *	with 2, 3, 4, ..., etc.  appended before the suffix.  However, the exact
+ *	names can be customized using the progress function.
+ * @param part_sizes
+ *	An array of @p num_part_sizes size limits, in bytes.  The maximum size
+ *	of the Nth part (1-based) is @p part_sizes[N - 1] for
+ *	@c N @c <= @p num_part_sizes.  May be @c NULL, but only if
+ *	@p num_part_sizes is 0, in which case @p default_part_size applies to
+ *	every part.
+ * @param num_part_sizes
+ *	Number of entries in @p part_sizes.  May be 0, in which case this
+ *	function behaves exactly like wimlib_split().
+ * @param default_part_size
+ *	The maximum size, in bytes, of each part that is not covered by
+ *	@p part_sizes.  This must not be 0.  Pass @c UINT64_MAX to place no
+ *	limit on those parts, with the result that all the remaining file
+ *	resources are placed into a single part.
+ * @param write_flags
+ *	Bitwise OR of relevant flags prefixed with @c WIMLIB_WRITE_FLAG.  These
+ *	flags will be used to write each split WIM part.  Specify 0 here to get
+ *	the default behavior.
+ *
+ * @return 0 on success; a ::wimlib_error_code value on failure.  This function
+ * can return the same error codes as wimlib_split(), including
+ * ::WIMLIB_ERR_INVALID_PARAM if @p swm_name was not a nonempty string, if
+ * @p default_part_size was 0, if @p part_sizes was @c NULL while
+ * @p num_part_sizes was not 0, if @p part_sizes was not @c NULL while
+ * @p num_part_sizes was 0, or if any entry of @p part_sizes was 0.
+ *
+ * The same caveats as for wimlib_split() apply.  In particular, since the WIM
+ * file format provides no way to split up a single file resource among
+ * multiple parts, a part can end up larger than its specified limit if the WIM
+ * contains a single file resource larger than that limit.  Also, the limits
+ * are necessarily approximate, because part boundaries can only fall on file
+ * resource boundaries.
+ *
+ * If a progress function is registered with @p wim, then for each split WIM
+ * part that is written it will receive the messages
+ * ::WIMLIB_PROGRESS_MSG_SPLIT_BEGIN_PART and
+ * ::WIMLIB_PROGRESS_MSG_SPLIT_END_PART.  It will also receive
+ * ::WIMLIB_PROGRESS_MSG_WRITE_STREAMS messages while writing each part; these
+ * messages will report the progress of the current part only.
+ */
+WIMLIBAPI int
+wimlib_split_ex(WIMStruct *wim,
+		const wimlib_tchar *swm_name,
+		const uint64_t *part_sizes,
+		unsigned num_part_sizes,
+		uint64_t default_part_size,
+		int write_flags);
 
 /**
  * @ingroup G_general

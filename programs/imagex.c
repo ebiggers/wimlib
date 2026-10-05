@@ -3864,6 +3864,139 @@ out_err:
 	goto out;
 }
 
+/* Parses the size of a single split WIM part: a number of mebibytes, possibly
+ * fractional.  On success returns 0 and sets *@size_ret to the size in bytes
+ * and *@end_ret to the first unparsed character.  On failure returns -1.  */
+static int
+parse_part_size(const tchar *s, const tchar **end_ret, uint64_t *size_ret)
+{
+	tchar *tmp;
+	double mib;
+
+	mib = tstrtod(s, &tmp);
+	if (tmp == s || !(mib > 0))
+		return -1;
+
+	*size_ret = (uint64_t)(mib * (1 << 20));
+	if (*size_ret == 0)
+		return -1;
+
+	*end_ret = tmp;
+	return 0;
+}
+
+/* Returns nonzero iff @s is a keyword that means "no size limit for the
+ * remaining parts".  */
+static int
+is_part_size_rest_keyword(const tchar *s)
+{
+	return !tstrcmp(s, T("rest")) ||
+	       !tstrcmp(s, T("*"));
+}
+
+/* Parses the PART_SIZE argument of the split command.
+ *
+ * Two forms are accepted:
+ *
+ *   - "N": a single number of mebibytes, used as the maximum size of every
+ *     part.  This is the traditional behavior.
+ *
+ *   - "N1,N2,...,rest": a comma-separated list giving the maximum size of the
+ *     1st, 2nd, ... part, in mebibytes.  For every part beyond the end of the
+ *     list, the last value is repeated.  An explicit trailing element "rest"
+ *     (also spelled "*") instead leaves those parts unlimited,
+ *     and may only be given as the last element.
+ *
+ *     So "3460,rest" makes the first part at most 3460 MiB and puts everything
+ *     else into the second part, whereas "3460,4482" caps the second part at
+ *     4482 MiB too and keeps applying that limit to any further parts --- so a
+ *     misjudged input shows up as a visible extra part rather than as one
+ *     oversized part.
+ *
+ * On success, *@part_sizes_ret is set to a newly allocated array (or NULL for
+ * the single-value form) with *@num_part_sizes_ret elements, and
+ * *@default_part_size_ret is set to the size limit, in bytes, for the parts not
+ * covered by that array.  The caller must free() the returned array.  On
+ * failure returns -1.  */
+static int
+parse_split_part_sizes(const tchar *arg, uint64_t **part_sizes_ret,
+		       unsigned *num_part_sizes_ret,
+		       uint64_t *default_part_size_ret)
+{
+	const tchar *p;
+	uint64_t *sizes = NULL;
+	unsigned num_sizes = 0;
+	unsigned alloc_sizes = 0;
+	int saw_rest = 0;
+
+	if (tstrchr(arg, T(',')) == NULL) {
+		/* Single value: the same limit for every part.  */
+		uint64_t size;
+		const tchar *end;
+
+		if (parse_part_size(arg, &end, &size) || *end != T('\0'))
+			return -1;
+
+		*part_sizes_ret = NULL;
+		*num_part_sizes_ret = 0;
+		*default_part_size_ret = size;
+		return 0;
+	}
+
+	p = arg;
+	for (;;) {
+		uint64_t size;
+		const tchar *end;
+
+		if (is_part_size_rest_keyword(p)) {
+			/* An explicit "no limit" marker.  It is only valid as
+			 * the last element of the list.  */
+			p += tstrlen(p);
+			saw_rest = 1;
+			break;
+		}
+
+		if (parse_part_size(p, &end, &size))
+			goto out_err;
+
+		if (num_sizes == alloc_sizes) {
+			uint64_t *new_sizes;
+			unsigned new_alloc_sizes;
+
+			new_alloc_sizes = alloc_sizes ? alloc_sizes * 2 : 8;
+			new_sizes = realloc(sizes,
+					    new_alloc_sizes * sizeof(sizes[0]));
+			if (!new_sizes)
+				goto out_err;
+			sizes = new_sizes;
+			alloc_sizes = new_alloc_sizes;
+		}
+		sizes[num_sizes++] = size;
+		p = end;
+
+		if (*p == T('\0'))
+			break;
+		if (*p != T(','))
+			goto out_err;
+		p++;
+	}
+
+	if (num_sizes == 0)
+		goto out_err;
+
+	*part_sizes_ret = sizes;
+	*num_part_sizes_ret = num_sizes;
+
+	/* Unless "rest" was given explicitly, keep repeating the last limit for
+	 * the parts beyond the end of the list.  */
+	*default_part_size_ret = saw_rest ? UINT64_MAX : sizes[num_sizes - 1];
+	return 0;
+
+out_err:
+	free(sizes);
+	return -1;
+}
+
 /* Split a WIM into a spanned set */
 static int
 imagex_split(int argc, tchar **argv, int cmd)
@@ -3871,8 +4004,9 @@ imagex_split(int argc, tchar **argv, int cmd)
 	int c;
 	int open_flags = 0;
 	int write_flags = 0;
-	uint64_t part_size;
-	tchar *tmp;
+	uint64_t *part_sizes = NULL;
+	unsigned num_part_sizes = 0;
+	uint64_t default_part_size = 0;
 	int ret;
 	WIMStruct *wim;
 
@@ -3894,23 +4028,28 @@ imagex_split(int argc, tchar **argv, int cmd)
 	if (argc != 3)
 		goto out_usage;
 
-	part_size = tstrtod(argv[2], &tmp) * (1 << 20);
-	if (tmp == argv[2] || *tmp) {
+	if (parse_split_part_sizes(argv[2], &part_sizes, &num_part_sizes,
+				   &default_part_size)) {
 		imagex_error(T("Invalid part size \"%"TS"\""), argv[2]);
-		imagex_error(T("The part size must be an integer or "
-			       "floating-point number of megabytes."));
+		imagex_error(T("The part size must be one or more comma-separated "
+			       "numbers of megabytes, optionally terminated by "
+			       "\"rest\" to leave the remaining parts "
+			       "unlimited."));
 		goto out_err;
 	}
+
 	ret = wimlib_open_wim_with_progress(argv[0], open_flags, &wim,
 					    imagex_progress_func, NULL);
 	if (ret)
 		goto out;
 
-	ret = wimlib_split(wim, argv[1], part_size, write_flags);
+	ret = wimlib_split_ex(wim, argv[1], part_sizes, num_part_sizes,
+			      default_part_size, write_flags);
 	if (ret == 0)
 		tprintf(T("\nFinished splitting \"%"TS"\"\n"), argv[0]);
 	wimlib_free(wim);
 out:
+	free(part_sizes);
 	return ret;
 
 out_usage:
@@ -4443,6 +4582,14 @@ T(
 [CMD_SPLIT] =
 T(
 "    %"TS" WIMFILE SPLIT_WIM_PART_1 PART_SIZE_MB [--check]\n"
+"\n"
+"        PART_SIZE_MB gives the maximum size, in MiB, of every split part.\n"
+"        Alternatively, a comma-separated list gives the maximum size of the\n"
+"        1st, 2nd, ... part.  The last value is repeated for any further\n"
+"        parts; a trailing \"rest\" (or \"*\") instead leaves\n"
+"        those parts unlimited.  Thus \"3460,rest\" produces a first part of\n"
+"        at most 3460 MiB and a second part holding the rest, while\n"
+"        \"3460,4482\" caps the second part at 4482 MiB as well.\n"
 ),
 #if WIM_MOUNTING_SUPPORTED
 [CMD_UNMOUNT] =
